@@ -66,6 +66,8 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
 .pad.hit{background:var(--amber-soft);border-color:var(--amber)}
 .pad.hit .pn,.pad.hit .pname{color:#120d04}
 .pad.sel{border:2px solid var(--amber)}
+.pad.fx::after{content:'';position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;
+  background:var(--amber);box-shadow:0 0 5px var(--amber)}
 #editpanel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px}
 .pslider{display:flex;align-items:center;gap:8px;margin-bottom:2px}
 .pslider .lbl{min-width:44px}
@@ -353,7 +355,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      NotReadableError, SecurityError (Lockdown Mode hypothesis).
    - Version stamp to confirm deployed build identity.
    ================================================================ */
-const BUILD = 'MVX-880 · R5 · 2026-07-08 · per-pad FX inserts + chop workshop';
+const BUILD = 'MVX-880 · R6 · 2026-07-08 · pad FX audible in edit + FX dots';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -621,14 +623,16 @@ function padIndex(slot){ return S.bank*16+slot; }
 function padName(i){ return 'ABCD'[Math.floor(i/16)] + String(i%16+1).padStart(2,'0'); }
 function padPress(slot,vel){
   const idx=padIndex(slot);
-  if(S.edit){ S.editPad=idx; S.seqPad=idx; drawPads(); drawEdit(); return; }
-  S.editPad=idx; hitLive(idx,vel); drawEditTitleOnly();
+  S.editPad=idx;
+  if(S.edit){ S.seqPad=idx; hitLive(idx,vel); drawPads(); drawEdit(); return; }
+  hitLive(idx,vel); drawEditTitleOnly();
 }
 function drawPads(){
   for(let s=0;s<16;s++){
     const idx=padIndex(s), p=S.pads[idx], el=padEls[s];
     el.classList.toggle('loaded',p.bufId>=0);
     el.classList.toggle('sel',S.edit && idx===S.editPad);
+    el.classList.toggle('fx',hasFx(p));
     el.querySelector('.pn').textContent=padName(idx);
     el.querySelector('.pname').textContent=p.name||'';
   }
@@ -686,12 +690,25 @@ bindEdit('epRel','rel',null,null);
 $('epChoke').addEventListener('change',e=>{ S.pads[S.editPad].choke=parseInt(e.target.value,10); });
 $('epRevrs').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.reverse=!p.reverse; if(p.bufId>=0) getReversed(p.bufId); drawEdit(); });
 $('epMode').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.mode=p.mode==='gate'?'one':'gate'; drawEdit(); });
-function liveFx(){ const p=S.pads[S.editPad]; if(LIVE) applyPadFx(LIVE.pads[S.editPad],p,AC); drawEdit(); }
-$('epFType').addEventListener('change',e=>{ S.pads[S.editPad].ftype=e.target.value; liveFx(); });
+function liveFx(){ const p=S.pads[S.editPad]; if(LIVE) applyPadFx(LIVE.pads[S.editPad],p,AC); drawPads(); drawEdit(); }
+function hasFx(p){ return p.ftype!=='off' || p.drv>0 || p.crush<16; }
+$('epFType').addEventListener('change',e=>{
+  const p=S.pads[S.editPad]; p.ftype=e.target.value;
+  // jump cutoff somewhere audible when enabling — 16kHz LP sounds like nothing
+  if(p.ftype==='lowpass' && p.fcut>0.85) p.fcut=0.45;
+  if(p.ftype==='highpass' && p.fcut<0.15) p.fcut=0.45;
+  if(p.ftype==='bandpass') p.fcut=clamp(p.fcut,0.25,0.75);
+  liveFx(); trigSel();
+});
+function trigSel(){ if(S.pads[S.editPad].bufId>=0) hitLive(S.editPad,0.85); }
 $('epFCut').addEventListener('input',e=>{ S.pads[S.editPad].fcut=parseFloat(e.target.value); liveFx(); });
+$('epFCut').addEventListener('change',trigSel);
 $('epFRes').addEventListener('input',e=>{ S.pads[S.editPad].fres=parseFloat(e.target.value); liveFx(); });
+$('epFRes').addEventListener('change',trigSel);
 $('epDrv').addEventListener('input',e=>{ S.pads[S.editPad].drv=parseFloat(e.target.value); liveFx(); });
+$('epDrv').addEventListener('change',trigSel);
 $('epCrush').addEventListener('input',e=>{ S.pads[S.editPad].crush=parseInt(e.target.value,10); liveFx(); });
+$('epCrush').addEventListener('change',trigSel);
 
 /* ---------------- MIX view ---------------- */
 function bindMix(id, get, set, fmt){
