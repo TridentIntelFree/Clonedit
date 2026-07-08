@@ -96,6 +96,22 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
   font-size:10px;padding:8px;height:120px;overflow-y:auto;white-space:pre-wrap}
 .maprow{font-size:11px;color:var(--txt);padding:4px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
 
+/* dj deck */
+#djdeck{display:flex;gap:14px;margin:10px 0}
+#fadercol{width:96px;display:flex;flex-direction:column;gap:8px;align-items:stretch}
+#pfader{position:relative;height:250px;background:var(--lcd-bg);border:1px solid var(--line);
+  border-radius:10px;touch-action:none;overflow:hidden}
+#pfaderdetent{position:absolute;left:0;right:0;top:50%;height:1px;background:var(--lcd-dim)}
+#pfaderthumb{position:absolute;left:8px;right:8px;height:34px;top:calc(50% - 17px);
+  background:var(--panel2);border:2px solid var(--amber);border-radius:8px}
+#pfaderval,#wheelval{text-align:center;font-size:13px;color:var(--lcd)}
+#wheelcol{flex:1;display:flex;flex-direction:column;gap:8px}
+#wheel{width:150px;height:150px;margin:6px auto;border-radius:50%;position:relative;touch-action:none;
+  background:radial-gradient(circle at 50% 42%, #2c313c 0%, #1a1d24 65%, #101216 100%);
+  border:2px solid var(--line);box-shadow:inset 0 0 24px rgba(0,0,0,0.6)}
+#wheelgrip{position:absolute;left:50%;top:12px;width:10px;height:10px;margin-left:-5px;border-radius:50%;
+  background:var(--amber);box-shadow:0 0 8px var(--amber)}
+
 /* project */
 #projlog{font-size:11px;color:var(--txt-dim);margin-top:8px;white-space:pre-wrap}
 footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-height:1.5}
@@ -119,7 +135,8 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div id="lcdmsg">READY.</div>
   <div id="bpmbox">
     <button id="bpmDown">&#8722;</button>
-    <div id="bpmval">100.0</div>
+    <input type="number" id="bpmval" min="40" max="240" step="0.1" inputmode="decimal"
+      style="width:62px;text-align:center;font-size:14px;font-weight:700;background:transparent;border:none;color:var(--lcd)">
     <button id="bpmUp">+</button>
   </div>
 </div>
@@ -128,6 +145,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <button data-v="pads" class="on">PADS</button>
   <button data-v="smpl">SMPL</button>
   <button data-v="seq">SEQ</button>
+  <button data-v="dj">DJ</button>
   <button data-v="mix">MIX</button>
   <button data-v="midi">MIDI</button>
   <button data-v="proj">PROJ</button>
@@ -247,6 +265,36 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
 </div>
 
+<!-- DJ -->
+<div class="view" id="v-dj">
+  <div class="row">
+    <button id="btnJam" class="rec grow">&#9679; REC OUT</button>
+    <button id="btnJamSave" style="display:none">SAVE</button>
+    <button id="btnJamPad" style="display:none">TO PAD</button>
+  </div>
+  <div id="djdeck">
+    <div id="fadercol">
+      <div class="lbl" style="text-align:center">PITCH</div>
+      <div id="pfader"><div id="pfaderdetent"></div><div id="pfaderthumb"></div></div>
+      <div id="pfaderval">0.0 st</div>
+      <button id="btnVinyl">VINYL</button>
+    </div>
+    <div id="wheelcol">
+      <div class="lbl" style="text-align:center">WARBLE WHEEL — drag &amp; release</div>
+      <div id="wheel"><div id="wheelgrip"></div></div>
+      <div id="wheelval">0.0 st</div>
+      <div class="pslider"><span class="lbl">DEPTH</span><input type="range" id="warbDepth" min="0" max="0.12" step="0.002" value="0"><span class="val" id="warbDepthV">0%</span></div>
+      <div class="pslider"><span class="lbl">RATE</span><input type="range" id="warbRate" min="0.3" max="12" step="0.1" value="5"><span class="val" id="warbRateV">5.0Hz</span></div>
+    </div>
+  </div>
+  <h3>TEMPO</h3>
+  <div class="pslider"><span class="lbl">BPM</span><input type="range" id="djBpm" min="40" max="240" step="0.5"><span class="val" id="djBpmV"></span></div>
+  <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
+    Fader bends every sounding voice. VINYL drags tempo with pitch like a platter.
+    Wheel springs back to center. REC OUT captures the master — everything you hear.
+  </div>
+</div>
+
 <!-- MIX -->
 <div class="view" id="v-mix">
   <h3>MASTER</h3>
@@ -355,7 +403,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      NotReadableError, SecurityError (Lockdown Mode hypothesis).
    - Version stamp to confirm deployed build identity.
    ================================================================ */
-const BUILD = 'MVX-880 · R6 · 2026-07-08 · pad FX audible in edit + FX dots';
+const BUILD = 'MVX-880 · R7 · 2026-07-08 · DJ deck: pitch fader / warble wheel / vinyl / jam rec + BPM type-in';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -486,16 +534,31 @@ function getReversed(bid){
 /* trigger a pad into a given graph (live or offline) */
 const chokeLive = {};    // group -> last env GainNode (live path)
 const activeEnv = {};    // padIdx -> {env,src} for gate-mode release (live)
+const liveVoices = new Set();   // active live sources for DJ pitch/warble
+let perfPitch=0, perfBend=0;    // fader semitones + wheel bend semitones
+function perfFactor(){ return Math.pow(2,(perfPitch+perfBend)/12); }
+function updatePerf(){
+  if(!AC) return;
+  const t=AC.currentTime, f=perfFactor();
+  liveVoices.forEach(src=>{ try{ src.playbackRate.setTargetAtTime(src._base*f,t,0.02); }catch(e){} });
+}
 function triggerPad(ctx, g, idx, vel, when, chokeReg){
   const p=S.pads[idx]; if(p.bufId<0) return null;
   let buf=S.buffers[p.bufId]; if(!buf) return null;
   let s0=p.start, e0=p.end;
   if(p.reverse){ buf=getReversed(p.bufId); s0=1-p.end; e0=1-p.start; }
-  const rate=Math.pow(2,(p.pitch+p.fine/100)/12);
+  const baseRate=Math.pow(2,(p.pitch+p.fine/100)/12);
+  const live=(ctx===AC);
+  const rate=live? baseRate*perfFactor() : baseRate;
   const off=s0*buf.duration;
   const sliceDur=Math.max(0.005,(e0-s0)*buf.duration);
   const outDur=sliceDur/rate;
   const src=ctx.createBufferSource(); src.buffer=buf; src.playbackRate.value=rate;
+  if(live){
+    src._base=baseRate;
+    liveVoices.add(src);
+    if(LIVE.warbGain){ try{ LIVE.warbGain.connect(src.playbackRate); }catch(e){} }
+  }
   const env=ctx.createGain();
   const v=clamp(vel,0,1);
   env.gain.setValueAtTime(0,when);
@@ -511,8 +574,12 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg){
     chokeReg[p.choke]=env;
   }
   src.start(when,off,sliceDur);
-  src.stop(when+outDur+p.rel+0.05);
-  src.onended=()=>{ try{src.disconnect();env.disconnect();}catch(e){} };
+  src.stop(when+outDur+p.rel+0.25);
+  src.onended=()=>{
+    liveVoices.delete(src);
+    if(live && LIVE.warbGain){ try{ LIVE.warbGain.disconnect(src.playbackRate); }catch(e){} }
+    try{src.disconnect();env.disconnect();}catch(e){}
+  };
   return {env,src};
 }
 
@@ -538,21 +605,26 @@ function ensureAudio(){
   // ignores the ring/silent switch; direct ctx.destination does not.
   try{
     LIVE.comp.disconnect();
-    const msd=AC.createMediaStreamDestination();
-    LIVE.comp.connect(msd);
+    LIVE.msd=AC.createMediaStreamDestination();
+    LIVE.comp.connect(LIVE.msd);
     const ael=document.createElement('audio');
     ael.setAttribute('playsinline',''); ael.style.display='none';
-    ael.srcObject=msd.stream;
+    ael.srcObject=LIVE.msd.stream;
     document.body.appendChild(ael);
     const pr=ael.play();
-    if(pr && pr.catch) pr.catch(()=>{ // element playback refused — fall back to direct out
-      try{ LIVE.comp.disconnect(); }catch(e){}
+    if(pr && pr.catch) pr.catch(()=>{ // element playback refused — add direct out, keep msd for recording
       LIVE.comp.connect(AC.destination);
       lcd('OUT: direct (element path refused)');
     });
   }catch(e){
     try{ LIVE.comp.connect(AC.destination); }catch(e2){}
   }
+  // performance warble LFO — connects into each live voice's playbackRate
+  try{
+    LIVE.warbOsc=AC.createOscillator(); LIVE.warbOsc.frequency.value=5;
+    LIVE.warbGain=AC.createGain(); LIVE.warbGain.gain.value=0;
+    LIVE.warbOsc.connect(LIVE.warbGain); LIVE.warbOsc.start();
+  }catch(e){}
   // silent unlock buffer inside the gesture
   try{
     const b=AC.createBuffer(1,1,AC.sampleRate);
@@ -1096,11 +1168,126 @@ $('btnStop').addEventListener('click',stopSeq);
 $('btnRec').addEventListener('click',()=>{ S.liveRec=!S.liveRec; $('btnRec').classList.toggle('on',S.liveRec); $('btnLiveRec').classList.toggle('on',S.liveRec); lcd(S.liveRec?'LIVE REC ARMED — pad hits quantize to grid':'LIVE REC OFF'); });
 $('btnLiveRec').addEventListener('click',()=>$('btnRec').click());
 
-function setBpm(b){ S.bpm=clamp(b,40,240); $('bpmval').textContent=S.bpm.toFixed(1);
+function setBpm(b){ S.bpm=clamp(b,40,240);
+  $('bpmval').value=S.bpm.toFixed(1);
+  $('djBpm').value=S.bpm; $('djBpmV').textContent=S.bpm.toFixed(1);
   if(LIVE) LIVE.dlyNode.delayTime.setTargetAtTime(delayTime(),AC.currentTime,0.05); }
 $('bpmUp').addEventListener('click',()=>setBpm(S.bpm+1));
 $('bpmDown').addEventListener('click',()=>setBpm(S.bpm-1));
+$('bpmval').addEventListener('change',e=>{ const v=parseFloat(e.target.value); if(isFinite(v)) setBpm(v); else setBpm(S.bpm); });
+$('djBpm').addEventListener('input',e=>setBpm(parseFloat(e.target.value)));
 $('swing').addEventListener('input',e=>{ S.swing=parseFloat(e.target.value); $('swingV').textContent=Math.round(S.swing*100)+'%'; });
+
+/* ---------------- DJ deck ---------------- */
+let vinylOn=false, vinylBaseBpm=100;
+function drawFader(){
+  const st=perfPitch;
+  $('pfaderthumb').style.top='calc('+(50-st/12*50)+'% - 17px)';
+  $('pfaderval').textContent=(st>=0?'+':'')+st.toFixed(1)+' st';
+}
+function setPerfPitch(st){
+  perfPitch=clamp(st,-12,12);
+  drawFader(); updatePerf();
+  if(vinylOn) setBpm(vinylBaseBpm*Math.pow(2,perfPitch/12));
+}
+(function(){
+  const f=$('pfader');
+  function fromY(clientY){
+    const r=f.getBoundingClientRect();
+    const n=clamp((clientY-r.top)/r.height,0,1);   // 0 top .. 1 bottom
+    setPerfPitch((0.5-n)*24);
+  }
+  f.addEventListener('touchstart',e=>{ e.preventDefault(); ensureAudio(); fromY(e.changedTouches[0].clientY); },{passive:false});
+  f.addEventListener('touchmove',e=>{ e.preventDefault(); fromY(e.changedTouches[0].clientY); },{passive:false});
+  let md=false;
+  f.addEventListener('mousedown',e=>{ md=true; ensureAudio(); fromY(e.clientY); });
+  window.addEventListener('mousemove',e=>{ if(md) fromY(e.clientY); });
+  window.addEventListener('mouseup',()=>{ md=false; });
+  f.addEventListener('dblclick',()=>setPerfPitch(0));
+})();
+$('btnVinyl').addEventListener('click',()=>{
+  vinylOn=!vinylOn; $('btnVinyl').classList.toggle('on',vinylOn);
+  if(vinylOn){ vinylBaseBpm=S.bpm/Math.pow(2,perfPitch/12); setBpm(vinylBaseBpm*Math.pow(2,perfPitch/12)); lcd('VINYL: tempo rides the fader'); }
+  else lcd('VINYL OFF: fader is pitch-only');
+});
+
+/* wheel — drag to bend, springs back to 0 */
+(function(){
+  const w=$('wheel');
+  let dragging=false, startY=0, raf=0;
+  function setBend(st){
+    perfBend=clamp(st,-7,7);
+    $('wheelval').textContent=(perfBend>=0?'+':'')+perfBend.toFixed(1)+' st';
+    w.style.transform='rotate('+(perfBend*8)+'deg)';
+    updatePerf();
+  }
+  function spring(){
+    cancelAnimationFrame(raf);
+    (function step(){
+      if(dragging) return;
+      perfBend*=0.82;
+      if(Math.abs(perfBend)<0.02){ setBend(0); return; }
+      setBend(perfBend);
+      raf=requestAnimationFrame(step);
+    })();
+  }
+  function start(y){ dragging=true; startY=y; ensureAudio(); cancelAnimationFrame(raf); }
+  function move(y){ if(dragging) setBend((startY-y)/18); }
+  function end(){ dragging=false; spring(); }
+  w.addEventListener('touchstart',e=>{ e.preventDefault(); start(e.changedTouches[0].clientY); },{passive:false});
+  w.addEventListener('touchmove',e=>{ e.preventDefault(); move(e.changedTouches[0].clientY); },{passive:false});
+  w.addEventListener('touchend',e=>{ e.preventDefault(); end(); },{passive:false});
+  w.addEventListener('mousedown',e=>start(e.clientY));
+  window.addEventListener('mousemove',e=>{ if(dragging) move(e.clientY); });
+  window.addEventListener('mouseup',()=>{ if(dragging) end(); });
+})();
+$('warbDepth').addEventListener('input',e=>{
+  const v=parseFloat(e.target.value);
+  $('warbDepthV').textContent=Math.round(v/0.12*100)+'%';
+  ensureAudio();
+  if(LIVE.warbGain) LIVE.warbGain.gain.setTargetAtTime(v,AC.currentTime,0.05);
+});
+$('warbRate').addEventListener('input',e=>{
+  const v=parseFloat(e.target.value);
+  $('warbRateV').textContent=v.toFixed(1)+'Hz';
+  ensureAudio();
+  if(LIVE.warbOsc) LIVE.warbOsc.frequency.setTargetAtTime(v,AC.currentTime,0.05);
+});
+
+/* jam recorder — captures master out */
+let jamRec=null, jamBlob=null;
+$('btnJam').addEventListener('click',()=>{
+  if(jamRec && jamRec.state==='recording'){ jamRec.stop(); return; }
+  ensureAudio();
+  if(!LIVE.msd){ lcd('REC OUT unavailable — no capture stream.'); return; }
+  const chunks=[];
+  try{ jamRec=new MediaRecorder(LIVE.msd.stream); }
+  catch(e){ lcd('MediaRecorder unavailable in this browser.'); return; }
+  jamRec.ondataavailable=ev=>{ if(ev.data && ev.data.size) chunks.push(ev.data); };
+  jamRec.onstop=()=>{
+    jamBlob=new Blob(chunks,{type:jamRec.mimeType||'audio/mp4'});
+    $('btnJam').classList.remove('on'); $('btnJam').innerHTML='&#9679; REC OUT';
+    $('btnJamSave').style.display=''; $('btnJamPad').style.display='';
+    lcd('JAM CAPTURED · '+Math.round(jamBlob.size/1024)+' KB — SAVE or TO PAD');
+  };
+  jamRec.start();
+  $('btnJam').classList.add('on'); $('btnJam').textContent='STOP REC';
+  lcd('RECORDING MASTER OUT — everything you hear.');
+});
+$('btnJamSave').addEventListener('click',()=>{
+  if(!jamBlob) return;
+  const ext=(jamBlob.type.indexOf('mp4')>=0)?'m4a':(jamBlob.type.indexOf('webm')>=0?'webm':'audio');
+  download(jamBlob,'jam-'+new Date().toISOString().slice(11,19).replace(/:/g,'')+'.'+ext);
+});
+$('btnJamPad').addEventListener('click',async ()=>{
+  if(!jamBlob) return;
+  lcd('DECODING JAM → '+padName(S.editPad)+' …');
+  try{
+    const ab=await jamBlob.arrayBuffer();
+    const buf=await decode(ab);
+    loadIntoTarget(buf,'jam-'+new Date().toISOString().slice(14,19).replace(':',''));
+  }catch(e){ lcd('JAM DECODE FAILED.'); }
+});
 
 /* seq UI */
 function drawSeq(){
@@ -1407,7 +1594,7 @@ $('btnBounce').addEventListener('click',async ()=>{
 });
 
 /* ---------------- boot ---------------- */
-buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100);
+buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader();
 document.body.addEventListener('touchstart',function once(){ ensureAudio(); document.body.removeEventListener('touchstart',once); },{passive:true});
 lcd('READY · load a sample into a pad (SMPL tab).');
 
