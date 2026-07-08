@@ -162,6 +162,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <span class="lbl">NOTE</span><span id="epNote" style="color:var(--lcd);font-size:12px">—</span>
       <button id="epLearn">LEARN</button>
     </div>
+    <h3>PAD FX (per-chop insert — bakes into bounce)</h3>
+    <div class="row">
+      <span class="lbl">FILTER</span>
+      <select id="epFType"><option value="off">OFF</option><option value="lowpass">LP</option><option value="highpass">HP</option><option value="bandpass">BP</option></select>
+    </div>
+    <div class="pslider"><span class="lbl">CUTOFF</span><input type="range" id="epFCut" min="0" max="1" step="0.005"><span class="val" id="epFCutV"></span></div>
+    <div class="pslider"><span class="lbl">RESO</span><input type="range" id="epFRes" min="0.5" max="18" step="0.1"><span class="val" id="epFResV"></span></div>
+    <div class="pslider"><span class="lbl">DRIVE</span><input type="range" id="epDrv" min="0" max="1" step="0.01"><span class="val" id="epDrvV"></span></div>
+    <div class="pslider"><span class="lbl">CRUSH</span><input type="range" id="epCrush" min="4" max="16" step="1"><span class="val" id="epCrushV"></span></div>
   </div>
 </div>
 
@@ -177,7 +186,12 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <input type="file" id="fileIn" style="display:none">
   <div class="row"><span class="lbl">MIC LVL</span><div id="miclvl"><div></div></div></div>
   <div id="wavewrap"><canvas id="wave" width="800" height="260"></canvas></div>
-  <h3>CHOP</h3>
+  <div class="row">
+    <button id="btnPrev">&#9654; PREVIEW</button>
+    <button id="btnNorm">NORMALIZE</button>
+    <button id="btnTrim">TRIM SILENCE</button>
+  </div>
+  <h3>CHOP <span style="color:var(--txt-dim);letter-spacing:0">— tap wave to select &amp; audition a slice</span></h3>
   <div class="row">
     <span class="lbl">SLICES</span>
     <select id="chopN"><option>4</option><option>8</option><option selected>16</option><option>32</option></select>
@@ -185,6 +199,20 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnTrans">TRANSIENT</button>
   </div>
   <div class="pslider"><span class="lbl">SENS</span><input type="range" id="chopSens" min="1.2" max="4" step="0.05" value="2"><span class="val" id="chopSensV">2.00</span></div>
+  <div class="row">
+    <span class="lbl">SLICE</span>
+    <span id="selInfo" style="color:var(--lcd);font-size:12px;min-width:70px">—</span>
+    <button id="btnSplit">SPLIT @ TAP</button>
+    <button id="btnMerge">MERGE &#8594;</button>
+    <button id="btnZero" class="on">ZERO SNAP</button>
+  </div>
+  <div class="row">
+    <span class="lbl">START</span>
+    <button id="btnSm">&#8722;</button><button id="btnSp">+</button>
+    <span class="lbl">END</span>
+    <button id="btnEm">&#8722;</button><button id="btnEp">+</button>
+    <span style="font-size:10px;color:var(--txt-dim)">10ms steps</span>
+  </div>
   <div class="row">
     <span class="lbl">TO PADS</span>
     <select id="assignFrom"></select>
@@ -276,6 +304,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <option value="p:pan">SEL PAD PAN</option>
       <option value="p:rev">SEL PAD REV SEND</option>
       <option value="p:dly">SEL PAD DLY SEND</option>
+      <option value="p:cut">SEL PAD FILTER CUTOFF</option>
     </select>
     <button id="btnCcLearn">LEARN</button>
   </div>
@@ -324,7 +353,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      NotReadableError, SecurityError (Lockdown Mode hypothesis).
    - Version stamp to confirm deployed build identity.
    ================================================================ */
-const BUILD = 'MVX-880 · R4 · 2026-07-08 · MIX view + reverse/fine/gate + GM map';
+const BUILD = 'MVX-880 · R5 · 2026-07-08 · per-pad FX inserts + chop workshop';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -337,7 +366,8 @@ const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
 const NPADS = 64, NSTEPS = 16, NPAT = 8;
 function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   gain:0.9, pitch:0, fine:0, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
-  choke:0, note:36+i, reverse:false, mode:'one' }; }
+  choke:0, note:36+i, reverse:false, mode:'one',
+  ftype:'off', fcut:1, fres:0.9, drv:0, crush:16 }; }
 function newPattern(){ const s=[]; for(let p=0;p<NPADS;p++) s.push(new Array(NSTEPS).fill(0)); return { steps:s }; }
 
 const S = {
@@ -370,6 +400,27 @@ function makeIR(ctx, size){ // deterministic IR — identical live and offline
 }
 function compThresh(){ return -6 - S.compAmt*26; }
 
+function makeDriveCurve(amt){
+  if(amt<=0) return null;                      // null curve = pass-through
+  const n=1024, c=new Float32Array(n), k=1+amt*40, norm=Math.tanh(k);
+  for(let i=0;i<n;i++){ const x=i/(n-1)*2-1; c[i]=Math.tanh(k*x)/norm; }
+  return c;
+}
+function makeCrushCurve(bits){
+  if(bits>=16) return null;
+  const n=2048, c=new Float32Array(n), steps=Math.pow(2,bits);
+  for(let i=0;i<n;i++){ const x=i/(n-1)*2-1; c[i]=Math.round(x*steps)/steps; }
+  return c;
+}
+function cutHz(x){ return 60*Math.pow(16000/60, clamp(x,0,1)); } // log map 60Hz–16kHz
+
+function applyPadFx(n, p, ctx){
+  n.drv.curve = makeDriveCurve(p.drv);
+  n.crush.curve = makeCrushCurve(p.crush);
+  if(p.ftype==='off'){ n.flt.type='peaking'; n.flt.gain.value=0; n.flt.frequency.value=1000; n.flt.Q.value=0.5; }
+  else{ n.flt.type=p.ftype; n.flt.gain.value=0; n.flt.frequency.value=cutHz(p.fcut); n.flt.Q.value=p.fres; }
+}
+
 function buildGraph(ctx){
   const g={};
   g.master = ctx.createGain(); g.master.gain.value = S.masterVol;
@@ -392,18 +443,25 @@ function buildGraph(ctx){
   g.dlyIn.connect(g.dlyNode); g.dlyNode.connect(g.dlyFilt);
   g.dlyFilt.connect(g.master); g.dlyFilt.connect(g.dlyFb); g.dlyFb.connect(g.dlyNode);
   // pad channels — built ONCE, connected ONCE (fan-out fix)
+  // per-hit env → [drv → crush → flt] insert chain → ch gain → pan → dry + sends
   g.pads=[];
   for(let i=0;i<NPADS;i++){
     const p=S.pads[i];
+    const drv=ctx.createWaveShaper();
+    const crush=ctx.createWaveShaper();
+    const flt=ctx.createBiquadFilter();
     const ch=ctx.createGain(); ch.gain.value=p.gain;
     const pan=ctx.createStereoPanner ? ctx.createStereoPanner() : null;
     const rev=ctx.createGain(); rev.gain.value=p.rev;
     const dly=ctx.createGain(); dly.gain.value=p.dly;
+    drv.connect(crush); crush.connect(flt); flt.connect(ch);
     let tail=ch;
     if(pan){ pan.pan.value=p.pan; ch.connect(pan); tail=pan; }
     tail.connect(g.master); tail.connect(rev); tail.connect(dly);
     rev.connect(g.revIn); dly.connect(g.dlyIn);
-    g.pads.push({ch,pan,rev,dly});
+    const node={in:drv,drv,crush,flt,ch,pan,rev,dly};
+    applyPadFx(node,p,ctx);
+    g.pads.push(node);
   }
   return g;
 }
@@ -443,7 +501,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg){
   const relStart=when+Math.max(p.att+0.002,outDur-p.rel);
   env.gain.setValueAtTime(v,relStart);
   env.gain.linearRampToValueAtTime(0.0001,relStart+p.rel);
-  src.connect(env); env.connect(g.pads[idx].ch);
+  src.connect(env); env.connect(g.pads[idx].in);
   // choke
   if(p.choke>0 && chokeReg){
     const prev=chokeReg[p.choke];
@@ -598,7 +656,12 @@ function drawEdit(){
   $('epRevrs').classList.toggle('on',p.reverse);
   $('epMode').textContent=p.mode==='gate'?'GATE':'1-SHOT';
   $('epMode').classList.toggle('on',p.mode==='gate');
-  $('epNote').textContent=p.note;
+  $('epNote').textContent=p.note<0?'—':p.note;
+  $('epFType').value=p.ftype;
+  $('epFCut').value=p.fcut; $('epFCutV').textContent=Math.round(cutHz(p.fcut))+'Hz';
+  $('epFRes').value=p.fres; $('epFResV').textContent='Q '+p.fres.toFixed(1);
+  $('epDrv').value=p.drv; $('epDrvV').textContent=Math.round(p.drv*100)+'%';
+  $('epCrush').value=p.crush; $('epCrushV').textContent=p.crush>=16?'OFF':p.crush+' bit';
   $('smTarget').textContent=padName(S.editPad);
   $('seqPadName').textContent=padName(S.seqPad);
   $('mxPad').textContent=padName(S.editPad);
@@ -623,6 +686,12 @@ bindEdit('epRel','rel',null,null);
 $('epChoke').addEventListener('change',e=>{ S.pads[S.editPad].choke=parseInt(e.target.value,10); });
 $('epRevrs').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.reverse=!p.reverse; if(p.bufId>=0) getReversed(p.bufId); drawEdit(); });
 $('epMode').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.mode=p.mode==='gate'?'one':'gate'; drawEdit(); });
+function liveFx(){ const p=S.pads[S.editPad]; if(LIVE) applyPadFx(LIVE.pads[S.editPad],p,AC); drawEdit(); }
+$('epFType').addEventListener('change',e=>{ S.pads[S.editPad].ftype=e.target.value; liveFx(); });
+$('epFCut').addEventListener('input',e=>{ S.pads[S.editPad].fcut=parseFloat(e.target.value); liveFx(); });
+$('epFRes').addEventListener('input',e=>{ S.pads[S.editPad].fres=parseFloat(e.target.value); liveFx(); });
+$('epDrv').addEventListener('input',e=>{ S.pads[S.editPad].drv=parseFloat(e.target.value); liveFx(); });
+$('epCrush').addEventListener('input',e=>{ S.pads[S.editPad].crush=parseInt(e.target.value,10); liveFx(); });
 
 /* ---------------- MIX view ---------------- */
 function bindMix(id, get, set, fmt){
@@ -694,7 +763,7 @@ $('fileIn').addEventListener('change',async e=>{
 });
 
 function loadIntoTarget(buf,name){
-  workBuf=buf; slices=[];
+  workBuf=buf; slices=[]; selSlice=-1;
   S.buffers.push(buf);
   const bid=S.buffers.length-1;
   const p=S.pads[S.editPad];
@@ -763,11 +832,31 @@ function meterMic(){
 }
 
 /* waveform + chop */
+let selSlice=-1, lastTapNorm=0, zeroSnap=true;
+
+function zeroCross(norm){ // snap a normalized position to nearest zero crossing within 20ms
+  if(!workBuf) return norm;
+  const d=workBuf.getChannelData(0), n=d.length;
+  const c=Math.floor(norm*n), w=Math.floor(workBuf.sampleRate*0.02);
+  for(let o=0;o<w;o++){
+    const a=c+o, b=c-o;
+    if(a+1<n && d[a]<=0!==d[a+1]<=0) return a/n;
+    if(b>0 && d[b-1]<=0!==d[b]<=0) return b/n;
+  }
+  return norm;
+}
 function drawWave(){
   const cv=$('wave'), cx=cv.getContext('2d');
   cx.fillStyle='#120d04'; cx.fillRect(0,0,cv.width,cv.height);
   if(!workBuf){ cx.fillStyle='#8a6530'; cx.font='20px ui-monospace'; cx.fillText('NO SAMPLE — import or record',20,cv.height/2); return; }
-  const d=workBuf.getChannelData(0), W=cv.width, H=cv.height, mid=H/2;
+  const W=cv.width, H=cv.height, mid=H/2;
+  // selected slice highlight behind waveform
+  if(selSlice>=0 && slices[selSlice]){
+    const sl=slices[selSlice];
+    cx.fillStyle='rgba(255,140,46,0.18)';
+    cx.fillRect(sl.s*W,0,(sl.e-sl.s)*W,H);
+  }
+  const d=workBuf.getChannelData(0);
   cx.strokeStyle='#ffb454'; cx.beginPath();
   const spp=Math.max(1,Math.floor(d.length/W));
   for(let x=0;x<W;x++){
@@ -778,17 +867,121 @@ function drawWave(){
   }
   cx.stroke();
   cx.strokeStyle='#63c76a';
-  slices.forEach(sl=>{
+  slices.forEach((sl,i)=>{
     const x=sl.s*W;
+    cx.lineWidth=(i===selSlice)?3:1;
     cx.beginPath(); cx.moveTo(x,0); cx.lineTo(x,H); cx.stroke();
   });
+  cx.lineWidth=1;
+  $('selInfo').textContent = selSlice>=0 && slices[selSlice]
+    ? (selSlice+1)+'/'+slices.length+' · '+((slices[selSlice].e-slices[selSlice].s)*workBuf.duration).toFixed(2)+'s' : '—';
 }
+function auditionRegion(s,e){
+  if(!workBuf) return;
+  ensureAudio();
+  const src=AC.createBufferSource(); src.buffer=workBuf;
+  const gn=AC.createGain(); gn.gain.value=0.9;
+  src.connect(gn); gn.connect(LIVE.master);
+  const off=s*workBuf.duration, dur=Math.max(0.01,(e-s)*workBuf.duration);
+  src.start(AC.currentTime,off,dur);
+  src.onended=()=>{ try{src.disconnect();gn.disconnect();}catch(err){} };
+}
+function waveTap(clientX){
+  const cv=$('wave'), r=cv.getBoundingClientRect();
+  lastTapNorm=clamp((clientX-r.left)/r.width,0,1);
+  if(slices.length){
+    selSlice=slices.findIndex(sl=>lastTapNorm>=sl.s && lastTapNorm<sl.e);
+    if(selSlice>=0) auditionRegion(slices[selSlice].s, slices[selSlice].e);
+  }else{
+    auditionRegion(lastTapNorm,1);
+  }
+  drawWave();
+}
+$('wave').addEventListener('touchstart',e=>{ e.preventDefault(); waveTap(e.changedTouches[0].clientX); },{passive:false});
+$('wave').addEventListener('mousedown',e=>waveTap(e.clientX));
+
+$('btnPrev').addEventListener('click',()=>auditionRegion(0,1));
+$('btnZero').addEventListener('click',()=>{ zeroSnap=!zeroSnap; $('btnZero').classList.toggle('on',zeroSnap); });
+$('btnSplit').addEventListener('click',()=>{
+  if(!workBuf){ lcd('NO SAMPLE.'); return; }
+  let pos=zeroSnap? zeroCross(lastTapNorm) : lastTapNorm;
+  if(!slices.length){ slices=[{s:0,e:pos},{s:pos,e:1}]; selSlice=0; drawWave(); return; }
+  const i=slices.findIndex(sl=>pos>sl.s+0.001 && pos<sl.e-0.001);
+  if(i<0){ lcd('TAP INSIDE A SLICE FIRST.'); return; }
+  const sl=slices[i];
+  slices.splice(i,1,{s:sl.s,e:pos},{s:pos,e:sl.e});
+  selSlice=i; drawWave(); lcd('SPLIT → '+slices.length+' slices');
+});
+$('btnMerge').addEventListener('click',()=>{
+  if(selSlice<0 || selSlice>=slices.length-1){ lcd('SELECT A SLICE (not the last).'); return; }
+  slices[selSlice].e=slices[selSlice+1].e;
+  slices.splice(selSlice+1,1);
+  drawWave(); lcd('MERGED → '+slices.length+' slices');
+});
+function nudge(which,dir){
+  if(selSlice<0 || !workBuf){ lcd('SELECT A SLICE.'); return; }
+  const step=0.010/workBuf.duration*dir;   // 10ms
+  const sl=slices[selSlice];
+  if(which==='s'){
+    let v=clamp(sl.s+step, selSlice>0?slices[selSlice-1].s+0.001:0, sl.e-0.002);
+    if(zeroSnap) v=zeroCross(v);
+    sl.s=v; if(selSlice>0) slices[selSlice-1].e=v;   // keep slices contiguous
+  }else{
+    let v=clamp(sl.e+step, sl.s+0.002, selSlice<slices.length-1?slices[selSlice+1].e-0.001:1);
+    if(zeroSnap) v=zeroCross(v);
+    sl.e=v; if(selSlice<slices.length-1) slices[selSlice+1].s=v;
+  }
+  drawWave(); auditionRegion(sl.s,sl.e);
+}
+$('btnSm').addEventListener('click',()=>nudge('s',-1));
+$('btnSp').addEventListener('click',()=>nudge('s',1));
+$('btnEm').addEventListener('click',()=>nudge('e',-1));
+$('btnEp').addEventListener('click',()=>nudge('e',1));
+
+$('btnNorm').addEventListener('click',()=>{
+  if(!workBuf){ lcd('NO SAMPLE.'); return; }
+  let peak=0;
+  for(let c=0;c<workBuf.numberOfChannels;c++){
+    const d=workBuf.getChannelData(c);
+    for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>peak) peak=a; }
+  }
+  if(peak<1e-5){ lcd('SILENT SAMPLE.'); return; }
+  const k=0.99/peak;
+  for(let c=0;c<workBuf.numberOfChannels;c++){
+    const d=workBuf.getChannelData(c);
+    for(let i=0;i<d.length;i++) d[i]*=k;
+  }
+  const bid=S.buffers.indexOf(workBuf);
+  if(bid>=0) delete revCache[bid];   // reversed copies now stale
+  drawWave(); lcd('NORMALIZED ×'+k.toFixed(2));
+});
+$('btnTrim').addEventListener('click',()=>{
+  if(!workBuf){ lcd('NO SAMPLE.'); return; }
+  const th=0.004, nch=workBuf.numberOfChannels, n=workBuf.length;
+  let a=0,b=n-1,found=false;
+  outer: for(a=0;a<n;a++){ for(let c=0;c<nch;c++) if(Math.abs(workBuf.getChannelData(c)[a])>th){ found=true; break outer; } }
+  if(!found){ lcd('ALL SILENCE — nothing kept.'); return; }
+  outer2: for(b=n-1;b>a;b--){ for(let c=0;c<nch;c++) if(Math.abs(workBuf.getChannelData(c)[b])>th){ break outer2; } }
+  const len=b-a+1;
+  if(len>=n-8){ lcd('NO SILENCE TO TRIM.'); return; }
+  let nb;
+  try{ nb=new AudioBuffer({length:len,sampleRate:workBuf.sampleRate,numberOfChannels:nch}); }
+  catch(e){ ensureAudio(); nb=AC.createBuffer(nch,len,workBuf.sampleRate); }
+  for(let c=0;c<nch;c++) nb.copyToChannel(workBuf.getChannelData(c).subarray(a,b+1),c);
+  S.buffers.push(nb);
+  const bid=S.buffers.length-1;
+  workBuf=nb; slices=[]; selSlice=-1;
+  const p=S.pads[S.editPad];
+  p.bufId=bid; p.start=0; p.end=1;
+  drawPads(); drawWave();
+  lcd('TRIMMED → '+nb.duration.toFixed(2)+'s (new buffer on '+padName(S.editPad)+')');
+});
 $('chopSens').addEventListener('input',e=>{ $('chopSensV').textContent=parseFloat(e.target.value).toFixed(2); });
 
 $('btnEqual').addEventListener('click',()=>{
   if(!workBuf){ lcd('NO SAMPLE TO CHOP.'); return; }
   const n=parseInt($('chopN').value,10);
-  slices=[]; for(let i=0;i<n;i++) slices.push({s:i/n,e:(i+1)/n});
+  slices=[]; selSlice=-1; for(let i=0;i<n;i++) slices.push({s:i/n,e:(i+1)/n});
   drawWave(); lcd(n+' EQUAL SLICES.');
 });
 $('btnTrans').addEventListener('click',()=>{
@@ -806,7 +999,7 @@ $('btnTrans').addEventListener('click',()=>{
     if(en[i]>k*Math.max(avg,1e-5) && i-last>3){ onsets.push(i); last=i; }
   }
   const total=en.length;
-  slices=[];
+  slices=[]; selSlice=-1;
   for(let i=0;i<onsets.length;i++){
     const s=onsets[i]/total, e=(i+1<onsets.length? onsets[i+1]/total : 1);
     if(e-s>0.002) slices.push({s,e});
@@ -1041,6 +1234,7 @@ function applyCc(cc,val){
     else if(t==='p:pan'){ p.pan=x*2-1; if(n&&n.pan) n.pan.pan.setTargetAtTime(p.pan,AC.currentTime,0.02); }
     else if(t==='p:rev'){ p.rev=x; if(n) n.rev.gain.setTargetAtTime(x,AC.currentTime,0.02); }
     else if(t==='p:dly'){ p.dly=x; if(n) n.dly.gain.setTargetAtTime(x,AC.currentTime,0.02); }
+    else if(t==='p:cut'){ p.fcut=x; if(n) n.flt.frequency.setTargetAtTime(cutHz(x),AC.currentTime,0.02); }
     if($('v-pads').classList.contains('on')) drawEdit();
   }
 }
@@ -1109,7 +1303,7 @@ $('jsonIn').addEventListener('change',async e=>{
     S.compAmt=(doc.compAmt!=null)?doc.compAmt:0.4;
     S.vcurve=doc.vcurve; S.midiCh=doc.midiCh; S.pcPat=doc.pcPat; S.ccMaps=doc.ccMaps||{};
     S.chain=doc.chain||[]; S.pads=doc.pads; S.patterns=doc.patterns;
-    S.pads.forEach(p=>{ if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; });
+    S.pads.forEach(p=>{ if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16; });
     Object.keys(revCache).forEach(k=>delete revCache[k]);
     S.buffers=doc.buffers.map(b=>{
       let ab;
@@ -1123,7 +1317,7 @@ $('jsonIn').addEventListener('change',async e=>{
     $('vcurve').value=S.vcurve; $('midiCh').value=String(S.midiCh);
     if(AC){ // re-apply pad channel params to live graph
       for(let i=0;i<NPADS;i++){ const p=S.pads[i], n=LIVE.pads[i];
-        n.ch.gain.value=p.gain; if(n.pan)n.pan.pan.value=p.pan; n.rev.gain.value=p.rev; n.dly.gain.value=p.dly; }
+        n.ch.gain.value=p.gain; if(n.pan)n.pan.pan.value=p.pan; n.rev.gain.value=p.rev; n.dly.gain.value=p.dly; applyPadFx(n,p,AC); }
       LIVE.master.gain.value=S.masterVol; LIVE.dlyFb.gain.value=S.delayFb;
       LIVE.revRet.gain.value=S.revLvl; LIVE.conv.buffer=makeIR(AC,S.revSize);
       LIVE.dlyFilt.frequency.value=S.dlyTone; LIVE.comp.threshold.value=compThresh();
