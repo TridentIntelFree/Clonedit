@@ -258,6 +258,10 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnChainOn">CHAIN</button>
   </div>
   <div class="pslider"><span class="lbl">SWING</span><input type="range" id="swing" min="0" max="0.6" step="0.01" value="0"><span class="val" id="swingV">0%</span></div>
+  <div class="row">
+    <button id="btnPtnBpm">PTN TEMPO</button>
+    <span id="ptnBpmInfo" style="font-size:10px;color:var(--txt-dim)">each pattern keeps its own BPM</span>
+  </div>
   <h3>TRACK <span id="seqPadName" style="color:var(--amber)"></span></h3>
   <div id="seqpadstrip"></div>
   <div id="stepgrid"></div>
@@ -410,7 +414,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      NotReadableError, SecurityError (Lockdown Mode hypothesis).
    - Version stamp to confirm deployed build identity.
    ================================================================ */
-const BUILD = 'MVX-880 · R9 · 2026-07-08 · IndexedDB session vault (autosave + restore)';
+const BUILD = 'MVX-880 · R10 · 2026-07-08 · per-pattern tempo';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -425,7 +429,7 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   gain:0.9, pitch:0, fine:0, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
   choke:0, note:36+i, reverse:false, mode:'one',
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16 }; }
-function newPattern(){ const s=[]; for(let p=0;p<NPADS;p++) s.push(new Array(NSTEPS).fill(0)); return { steps:s }; }
+function newPattern(){ const s=[]; for(let p=0;p<NPADS;p++) s.push(new Array(NSTEPS).fill(0)); return { steps:s, bpm:null }; }
 
 const S = {
   pads: Array.from({length:NPADS},(_,i)=>newPad(i)),
@@ -437,7 +441,7 @@ const S = {
   chain: [], chainOn: false, chainPos: 0,
   vcurve: 'linear', midiCh: -1, extClk: false, pcPat: true,
   ccMaps: {},             // ccNum -> target string
-  edit:false, liveRec:false
+  edit:false, liveRec:false, ptnBpm:false
 };
 const revCache = {};      // bufId -> reversed AudioBuffer
 
@@ -1148,7 +1152,7 @@ function seqTick(){
     curStepSched=(curStepSched+1)%NSTEPS;
     if(curStepSched===0 && S.chainOn && S.chain.length){
       S.chainPos=(S.chainPos+1)%S.chain.length;
-      S.pattern=S.chain[S.chainPos];
+      selectPattern(S.chain[S.chainPos]);
       drawSeq();
     }
   }
@@ -1158,7 +1162,7 @@ function startSeq(){
   ensureAudio();
   if(playing) return;
   playing=true;
-  if(S.chainOn && S.chain.length){ S.chainPos=0; S.pattern=S.chain[0]; drawSeq(); }
+  if(S.chainOn && S.chain.length){ S.chainPos=0; selectPattern(S.chain[0]); drawSeq(); }
   curStepSched=0; curStep=0;
   nextStepTime=AC.currentTime+0.08;   // offsets set BEFORE the loop reads them (ordering fix)
   if(!S.extClk) seqTimer=setInterval(seqTick,25);
@@ -1177,6 +1181,7 @@ $('btnRec').addEventListener('click',()=>{ S.liveRec=!S.liveRec; $('btnRec').cla
 $('btnLiveRec').addEventListener('click',()=>$('btnRec').click());
 
 function setBpm(b){ S.bpm=clamp(b,40,240);
+  if(S.ptnBpm && !S.extClk && !vinylOn) S.patterns[S.pattern].bpm=S.bpm;
   $('bpmval').value=S.bpm.toFixed(1);
   $('djBpm').value=S.bpm; $('djBpmV').textContent=S.bpm.toFixed(1);
   if(LIVE) LIVE.dlyNode.delayTime.setTargetAtTime(delayTime(),AC.currentTime,0.05); }
@@ -1298,13 +1303,23 @@ $('btnJamPad').addEventListener('click',async ()=>{
 });
 
 /* seq UI */
+function selectPattern(i){
+  S.pattern=i;
+  const pb=S.patterns[i].bpm;
+  if(S.ptnBpm && pb && !S.extClk){
+    S.bpm=clamp(pb,40,240);
+    $('bpmval').value=S.bpm.toFixed(1);
+    $('djBpm').value=S.bpm; $('djBpmV').textContent=S.bpm.toFixed(1);
+    if(LIVE) LIVE.dlyNode.delayTime.setTargetAtTime(delayTime(),AC.currentTime,0.05);
+  }
+}
 function drawSeq(){
   const pr=$('patrow');
   pr.querySelectorAll('button').forEach(b=>b.remove());
   for(let i=0;i<NPAT;i++){
     const b=document.createElement('button'); b.textContent=i+1;
     if(i===S.pattern) b.classList.add('on');
-    b.addEventListener('click',()=>{ S.pattern=i; drawSeq(); lcd('PTN '+(i+1)); });
+    b.addEventListener('click',()=>{ selectPattern(i); drawSeq(); lcd('PTN '+(i+1)+(S.ptnBpm&&S.patterns[i].bpm?' · '+S.patterns[i].bpm.toFixed(1)+' BPM':'')); });
     pr.appendChild(b);
   }
   $('chainview').textContent=S.chain.length? S.chain.map(x=>x+1).join(' → ') : '—';
@@ -1339,6 +1354,14 @@ $('btnChainAdd').addEventListener('click',()=>{ S.chain.push(S.pattern); drawSeq
 $('btnChainClr').addEventListener('click',()=>{ S.chain=[]; S.chainPos=0; drawSeq(); });
 $('btnChainOn').addEventListener('click',()=>{ S.chainOn=!S.chainOn; drawSeq(); });
 $('btnRowClr').addEventListener('click',()=>{ S.patterns[S.pattern].steps[S.seqPad].fill(0); drawSteps(); });
+$('btnPtnBpm').addEventListener('click',()=>{
+  S.ptnBpm=!S.ptnBpm;
+  $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
+  if(S.ptnBpm){
+    if(S.patterns[S.pattern].bpm==null) S.patterns[S.pattern].bpm=S.bpm;
+    lcd('PTN TEMPO ON · PTN '+(S.pattern+1)+' @ '+S.bpm.toFixed(1)+' BPM');
+  }else lcd('PTN TEMPO OFF · global BPM');
+});
 $('btnPatClr').addEventListener('click',()=>{ S.patterns[S.pattern]=newPattern(); drawSteps(); lcd('PTN '+(S.pattern+1)+' CLEARED'); });
 
 /* ---------------- MIDI ---------------- */
@@ -1408,7 +1431,7 @@ function onMidi(ev){
     applyCc(d[1],d[2]);
   }else if(st===0xC0){
     mlog('PGM ch'+(ch+1)+' → '+d[1]);
-    if(S.pcPat && d[1]<NPAT){ S.pattern=d[1]; drawSeq(); lcd('PC → PTN '+(d[1]+1)); }
+    if(S.pcPat && d[1]<NPAT){ selectPattern(d[1]); drawSeq(); lcd('PC → PTN '+(d[1]+1)); }
   }
 }
 function onClockTick(){
@@ -1427,7 +1450,7 @@ function onClockTick(){
       schedStep(curStepSched, AC.currentTime+0.005);
       curStepSched=(curStepSched+1)%NSTEPS;
       if(curStepSched===0 && S.chainOn && S.chain.length){
-        S.chainPos=(S.chainPos+1)%S.chain.length; S.pattern=S.chain[S.chainPos]; drawSeq();
+        S.chainPos=(S.chainPos+1)%S.chain.length; selectPattern(S.chain[S.chainPos]); drawSeq();
       }
     }
   }
@@ -1495,7 +1518,7 @@ $('btnSave').addEventListener('click',()=>{
   const doc={ fmt:'mvx880-project', build:BUILD,
     bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, delayDiv:S.delayDiv, dlyTone:S.dlyTone, compAmt:S.compAmt,
-    vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps,
+    vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     chain:S.chain, pads:S.pads, patterns:S.patterns, buffers:bufs };
   const blob=new Blob([JSON.stringify(doc)],{type:'application/json'});
   download(blob, ($('projName').value||'mvx-session')+'.json');
@@ -1515,6 +1538,8 @@ function applySessionDoc(doc, bufs){
   S.compAmt=(doc.compAmt!=null)?doc.compAmt:0.4;
   S.vcurve=doc.vcurve; S.midiCh=doc.midiCh; S.pcPat=doc.pcPat; S.ccMaps=doc.ccMaps||{};
   S.chain=doc.chain||[]; S.pads=doc.pads; S.patterns=doc.patterns;
+  S.ptnBpm=!!doc.ptnBpm; $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
+  S.patterns.forEach(pt=>{ if(pt.bpm===undefined) pt.bpm=null; });
   S.pads.forEach(p=>{ if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16; });
   Object.keys(revCache).forEach(k=>delete revCache[k]);
   S.buffers=bufs;
@@ -1589,7 +1614,7 @@ function snapshotSession(){
   return { fmt:'mvx880-project', t:Date.now(), name:$('projName').value,
     bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, delayDiv:S.delayDiv, dlyTone:S.dlyTone, compAmt:S.compAmt,
-    vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps,
+    vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     chain:S.chain, pads:S.pads, patterns:S.patterns, buffers:bufs };
 }
 let autosaving=false;
