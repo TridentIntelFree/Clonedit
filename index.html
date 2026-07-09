@@ -413,8 +413,10 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
    - Mic errors: specific handling for NotAllowedError, NotFoundError,
      NotReadableError, SecurityError (Lockdown Mode hypothesis).
    - Version stamp to confirm deployed build identity.
+   - R11: background-return silence — full revival ladder (resume →
+     element replay → stream rebuild → context rebuild + watchdog).
    ================================================================ */
-const BUILD = 'MVX-880 · R10 · 2026-07-08 · per-pattern tempo';
+const BUILD = 'MVX-880 · R11 · 2026-07-09 · bg-audio revive';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1712,19 +1714,71 @@ $('btnBounce').addEventListener('click',async ()=>{
 });
 
 /* ---------------- session lifecycle (iOS backgrounding) ----------------
-   Backgrounding kills two things: the AudioContext (state -> 'interrupted'/
-   'suspended') and the hidden <audio> element carrying master out (paused).
-   Both must be revived, and element .play() is only reliable inside a user
-   gesture — so revival is wired to visibility, pageshow, AND every touch. */
+   Backgrounding can kill THREE things, in escalating order of damage:
+   1. AudioContext → 'interrupted'/'suspended'          fix: resume()
+   2. hidden <audio> element paused                     fix: .play()
+   3. the MediaStream feeding it DEAD (track ended or
+      muted) — the element then "plays" a dead pipe,
+      which is running transport with total silence     fix: rebuild MSD,
+                                                        reattach srcObject
+   Plus a watchdog: if the context claims 'running' but its clock is
+   frozen, the whole context is wedged — close it and rebuild from scratch
+   (AudioBuffers are context-independent, so samples survive).
+   resume() and element .play() are only reliable inside a user gesture,
+   so revival is wired to visibility, pageshow, focus, AND every touch. */
+function outIsDead(){
+  if(!LIVE || !LIVE.msd) return false;
+  const tr=LIVE.msd.stream.getAudioTracks()[0];
+  return !tr || tr.readyState==='ended' || tr.muted;
+}
+function rebuildOut(){
+  if(!AC || !LIVE) return;
+  try{ LIVE.comp.disconnect(); }catch(e){}   // clears msd AND any direct fallback — no doubling
+  try{
+    LIVE.msd=AC.createMediaStreamDestination();
+    LIVE.comp.connect(LIVE.msd);
+    if(!LIVE.ael){
+      const ael=document.createElement('audio');
+      ael.setAttribute('playsinline',''); ael.style.display='none';
+      document.body.appendChild(ael); LIVE.ael=ael;
+    }
+    LIVE.ael.srcObject=LIVE.msd.stream;
+    const p=LIVE.ael.play();
+    if(p && p.catch) p.catch(()=>{ try{ LIVE.comp.connect(AC.destination); }catch(e){} });
+    lcd('OUT REVIVED · '+AC.state);
+  }catch(e){
+    try{ LIVE.comp.connect(AC.destination); }catch(e2){}
+  }
+}
+function rebuildAudio(){ // last resort: wedged context — new context, new graph, same session
+  try{ if(LIVE && LIVE.ael){ LIVE.ael.srcObject=null; LIVE.ael.remove(); } }catch(e){}
+  try{ if(AC) AC.close(); }catch(e){}
+  AC=null; LIVE=null;
+  liveVoices.clear();
+  Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
+  Object.keys(activeEnv).forEach(k=>delete activeEnv[k]);
+  ensureAudio();
+  lcd('AUDIO REBUILT · press PLAY');
+}
 function resumeSession(){
   if(!AC) return;
-  let acted=false;
-  if(AC.state!=='running'){ try{ AC.resume(); }catch(e){} acted=true; }
-  if(LIVE && LIVE.ael && LIVE.ael.paused){
-    try{ const p=LIVE.ael.play(); if(p&&p.catch)p.catch(()=>{}); }catch(e){}
-    acted=true;
+  // re-assert playback session category (DRUKBOX lesson — iOS can revert it)
+  try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
+  if(AC.state!=='running'){
+    try{ const p=AC.resume(); if(p && p.catch) p.catch(()=>{}); }catch(e){}
   }
-  if(acted) lcd('SESSION RESUMED · '+AC.state+' — press PLAY to restart transport');
+  if(outIsDead()){ rebuildOut(); }
+  else if(LIVE && LIVE.ael && LIVE.ael.paused){
+    try{ const p=LIVE.ael.play(); if(p && p.catch) p.catch(()=>{}); }catch(e){}
+  }
+  // watchdog: verify the clock actually advances after revival attempts
+  clearTimeout(resumeSession._t);
+  const t0=AC.currentTime;
+  resumeSession._t=setTimeout(()=>{
+    if(!AC || document.hidden) return;
+    if(AC.state==='running' && AC.currentTime===t0) rebuildAudio();   // wedged
+    else if(outIsDead()) rebuildOut();                                // stream died late
+  },400);
 }
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){
