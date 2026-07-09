@@ -141,6 +141,13 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
 </div>
 
+<div id="restoreBar" style="display:none;align-items:center;gap:8px;padding:7px 10px;background:var(--panel2);border-bottom:1px solid var(--amber);font-size:11px">
+  <span style="color:var(--amber)">&#9209; LAST SESSION</span>
+  <span id="restoreAge" style="color:var(--txt-dim);flex:1"></span>
+  <button id="btnRestore" class="on">RESTORE</button>
+  <button id="btnRestoreX">&#215;</button>
+</div>
+
 <div id="tabs">
   <button data-v="pads" class="on">PADS</button>
   <button data-v="smpl">SMPL</button>
@@ -403,7 +410,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      NotReadableError, SecurityError (Lockdown Mode hypothesis).
    - Version stamp to confirm deployed build identity.
    ================================================================ */
-const BUILD = 'MVX-880 · R8 · 2026-07-08 · background/resume session recovery';
+const BUILD = 'MVX-880 · R9 · 2026-07-08 · IndexedDB session vault (autosave + restore)';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1495,51 +1502,136 @@ $('btnSave').addEventListener('click',()=>{
   plog('Saved project JSON ('+Math.round(blob.size/1024)+' KB).');
 });
 $('btnLoad').addEventListener('click',()=>{ $('jsonIn').value=''; $('jsonIn').click(); });
+function mkAudioBuf(len,sr,nch){
+  try{ return new AudioBuffer({length:len,sampleRate:sr,numberOfChannels:nch}); }
+  catch(e){ ensureAudio(); return AC.createBuffer(nch,len,sr); }
+}
+function applySessionDoc(doc, bufs){
+  S.bpm=doc.bpm; S.swing=doc.swing; S.masterVol=doc.masterVol; S.delayFb=doc.delayFb;
+  S.revLvl=(doc.revLvl!=null)?doc.revLvl:0.9;
+  S.revSize=(doc.revSize!=null)?doc.revSize:3.0;
+  S.delayDiv=(doc.delayDiv!=null)?doc.delayDiv:0.375;
+  S.dlyTone=(doc.dlyTone!=null)?doc.dlyTone:5200;
+  S.compAmt=(doc.compAmt!=null)?doc.compAmt:0.4;
+  S.vcurve=doc.vcurve; S.midiCh=doc.midiCh; S.pcPat=doc.pcPat; S.ccMaps=doc.ccMaps||{};
+  S.chain=doc.chain||[]; S.pads=doc.pads; S.patterns=doc.patterns;
+  S.pads.forEach(p=>{ if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16; });
+  Object.keys(revCache).forEach(k=>delete revCache[k]);
+  S.buffers=bufs;
+  if(doc.name) $('projName').value=doc.name;
+  setBpm(S.bpm);
+  $('swing').value=S.swing; $('swingV').textContent=Math.round(S.swing*100)+'%';
+  $('vcurve').value=S.vcurve; $('midiCh').value=String(S.midiCh);
+  if(AC){ // re-apply pad channel params to live graph
+    for(let i=0;i<NPADS;i++){ const p=S.pads[i], n=LIVE.pads[i];
+      n.ch.gain.value=p.gain; if(n.pan)n.pan.pan.value=p.pan; n.rev.gain.value=p.rev; n.dly.gain.value=p.dly; applyPadFx(n,p,AC); }
+    LIVE.master.gain.value=S.masterVol; LIVE.dlyFb.gain.value=S.delayFb;
+    LIVE.revRet.gain.value=S.revLvl; LIVE.conv.buffer=makeIR(AC,S.revSize);
+    LIVE.dlyFilt.frequency.value=S.dlyTone; LIVE.comp.threshold.value=compThresh();
+    LIVE.dlyNode.delayTime.value=delayTime();
+  }
+  $('mxVol').value=S.masterVol; $('mxVolV').textContent=Math.round(S.masterVol*100)+'%';
+  $('mxComp').value=S.compAmt; $('mxCompV').textContent=Math.round(S.compAmt*100)+'%';
+  $('mxRevLvl').value=S.revLvl; $('mxRevLvlV').textContent=Math.round(S.revLvl*100)+'%';
+  $('mxRevSize').value=S.revSize; $('mxRevSizeV').textContent=S.revSize.toFixed(1)+'s';
+  $('mxDlyFb').value=S.delayFb; $('mxDlyFbV').textContent=Math.round(S.delayFb*100)+'%';
+  $('mxDlyTone').value=S.dlyTone; $('mxDlyToneV').textContent=Math.round(S.dlyTone/100)/10+'k';
+  $('mxDlyDiv').value=String(S.delayDiv);
+  drawPads(); drawEdit(); drawSeq(); drawCcMaps();
+}
 $('jsonIn').addEventListener('change',async e=>{
   const f=e.target.files && e.target.files[0]; if(!f) return;
   try{
     const doc=JSON.parse(await f.text());
     if(doc.fmt!=='mvx880-project') throw new Error('not an MVX project');
-    S.bpm=doc.bpm; S.swing=doc.swing; S.masterVol=doc.masterVol; S.delayFb=doc.delayFb;
-    S.revLvl=(doc.revLvl!=null)?doc.revLvl:0.9;
-    S.revSize=(doc.revSize!=null)?doc.revSize:3.0;
-    S.delayDiv=(doc.delayDiv!=null)?doc.delayDiv:0.375;
-    S.dlyTone=(doc.dlyTone!=null)?doc.dlyTone:5200;
-    S.compAmt=(doc.compAmt!=null)?doc.compAmt:0.4;
-    S.vcurve=doc.vcurve; S.midiCh=doc.midiCh; S.pcPat=doc.pcPat; S.ccMaps=doc.ccMaps||{};
-    S.chain=doc.chain||[]; S.pads=doc.pads; S.patterns=doc.patterns;
-    S.pads.forEach(p=>{ if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16; });
-    Object.keys(revCache).forEach(k=>delete revCache[k]);
-    S.buffers=doc.buffers.map(b=>{
-      let ab;
-      try{ ab=new AudioBuffer({length:b.len,sampleRate:b.sr,numberOfChannels:b.ch.length}); }
-      catch(e){ ensureAudio(); ab=AC.createBuffer(b.ch.length,b.len,b.sr); }
+    const bufs=doc.buffers.map(b=>{
+      const ab=mkAudioBuf(b.len,b.sr,b.ch.length);
       b.ch.forEach((c64,i)=>ab.copyToChannel(b64ToF32(c64),i));
       return ab;
     });
-    setBpm(S.bpm);
-    $('swing').value=S.swing; $('swingV').textContent=Math.round(S.swing*100)+'%';
-    $('vcurve').value=S.vcurve; $('midiCh').value=String(S.midiCh);
-    if(AC){ // re-apply pad channel params to live graph
-      for(let i=0;i<NPADS;i++){ const p=S.pads[i], n=LIVE.pads[i];
-        n.ch.gain.value=p.gain; if(n.pan)n.pan.pan.value=p.pan; n.rev.gain.value=p.rev; n.dly.gain.value=p.dly; applyPadFx(n,p,AC); }
-      LIVE.master.gain.value=S.masterVol; LIVE.dlyFb.gain.value=S.delayFb;
-      LIVE.revRet.gain.value=S.revLvl; LIVE.conv.buffer=makeIR(AC,S.revSize);
-      LIVE.dlyFilt.frequency.value=S.dlyTone; LIVE.comp.threshold.value=compThresh();
-      LIVE.dlyNode.delayTime.value=delayTime();
-    }
-    $('mxVol').value=S.masterVol; $('mxVolV').textContent=Math.round(S.masterVol*100)+'%';
-    $('mxComp').value=S.compAmt; $('mxCompV').textContent=Math.round(S.compAmt*100)+'%';
-    $('mxRevLvl').value=S.revLvl; $('mxRevLvlV').textContent=Math.round(S.revLvl*100)+'%';
-    $('mxRevSize').value=S.revSize; $('mxRevSizeV').textContent=S.revSize.toFixed(1)+'s';
-    $('mxDlyFb').value=S.delayFb; $('mxDlyFbV').textContent=Math.round(S.delayFb*100)+'%';
-    $('mxDlyTone').value=S.dlyTone; $('mxDlyToneV').textContent=Math.round(S.dlyTone/100)/10+'k';
-    $('mxDlyDiv').value=String(S.delayDiv);
-    drawPads(); drawEdit(); drawSeq(); drawCcMaps();
+    applySessionDoc(doc,bufs);
     plog('Loaded project: '+f.name);
     lcd('PROJECT LOADED.');
   }catch(err){ plog('Load failed: '+err.message); lcd('LOAD FAILED.'); }
 });
+
+/* ---------------- IndexedDB session vault (survives page kill) ---------------- */
+const IDB_NAME='mvx880', IDB_STORE='session';
+function idbOpen(){ return new Promise((res,rej)=>{
+  const rq=indexedDB.open(IDB_NAME,1);
+  rq.onupgradeneeded=()=>{ rq.result.createObjectStore(IDB_STORE); };
+  rq.onsuccess=()=>res(rq.result);
+  rq.onerror=()=>rej(rq.error);
+});}
+function idbPut(key,val){ return idbOpen().then(db=>new Promise((res,rej)=>{
+  const tx=db.transaction(IDB_STORE,'readwrite');
+  tx.objectStore(IDB_STORE).put(val,key);
+  tx.oncomplete=()=>{ db.close(); res(); };
+  tx.onerror=()=>{ db.close(); rej(tx.error); };
+}));}
+function idbGet(key){ return idbOpen().then(db=>new Promise((res,rej)=>{
+  const tx=db.transaction(IDB_STORE,'readonly');
+  const rq=tx.objectStore(IDB_STORE).get(key);
+  rq.onsuccess=()=>{ db.close(); res(rq.result); };
+  rq.onerror=()=>{ db.close(); rej(rq.error); };
+}));}
+
+function snapshotSession(){
+  const bufs=S.buffers.map(b=>{
+    const ch=[];
+    for(let c=0;c<b.numberOfChannels;c++){
+      const f=b.getChannelData(c), i16=new Int16Array(f.length);
+      for(let i=0;i<f.length;i++) i16[i]=Math.max(-32768,Math.min(32767,Math.round(f[i]*32767)));
+      ch.push(i16.buffer);
+    }
+    return {sr:b.sampleRate,len:b.length,ch};
+  });
+  return { fmt:'mvx880-project', t:Date.now(), name:$('projName').value,
+    bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
+    revLvl:S.revLvl, revSize:S.revSize, delayDiv:S.delayDiv, dlyTone:S.dlyTone, compAmt:S.compAmt,
+    vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps,
+    chain:S.chain, pads:S.pads, patterns:S.patterns, buffers:bufs };
+}
+let autosaving=false;
+async function autosave(){
+  if(autosaving) return;
+  autosaving=true;
+  try{ await idbPut('last',snapshotSession()); }catch(e){}
+  autosaving=false;
+}
+function ageText(ms){
+  const m=Math.round(ms/60000);
+  if(m<1) return 'moments ago';
+  if(m<60) return m+' min ago';
+  const h=Math.round(m/60);
+  if(h<48) return h+' hr ago';
+  return Math.round(h/24)+' days ago';
+}
+async function offerRestore(){
+  let doc=null;
+  try{ doc=await idbGet('last'); }catch(e){ return; }
+  if(!doc || !doc.pads) return;
+  const bar=$('restoreBar');
+  $('restoreAge').textContent=(doc.name?doc.name+' · ':'')+ageText(Date.now()-doc.t);
+  bar.style.display='flex';
+  $('btnRestore').onclick=()=>{
+    try{
+      const bufs=doc.buffers.map(b=>{
+        const ab=mkAudioBuf(b.len,b.sr,b.ch.length);
+        b.ch.forEach((raw,i)=>{
+          const i16=new Int16Array(raw), f=new Float32Array(i16.length);
+          for(let j=0;j<i16.length;j++) f[j]=i16[j]/32767;
+          ab.copyToChannel(f,i);
+        });
+        return ab;
+      });
+      applySessionDoc(doc,bufs);
+      bar.style.display='none';
+      lcd('SESSION RESTORED · '+ageText(Date.now()-doc.t));
+    }catch(err){ lcd('RESTORE FAILED: '+err.message); }
+  };
+  $('btnRestoreX').onclick=()=>{ bar.style.display='none'; };
+}
 function plog(s){ $('projlog').textContent=(new Date().toTimeString().slice(0,8))+'  '+s+'\n'+$('projlog').textContent; }
 
 /* ---------------- WAV bounce (OfflineAudioContext) ---------------- */
@@ -1614,11 +1706,14 @@ document.addEventListener('visibilitychange',()=>{
     if(playing) stopSeq();
     if(jamRec && jamRec.state==='recording') jamRec.stop();
     if(mediaRec && mediaRec.state==='recording') mediaRec.stop();
+    autosave();
   }else{
     resumeSession();
   }
 });
 window.addEventListener('pageshow',resumeSession);
+window.addEventListener('pagehide',()=>autosave());
+setInterval(()=>{ if(!document.hidden && S.buffers.length) autosave(); },60000);
 window.addEventListener('focus',resumeSession);
 document.body.addEventListener('touchstart',()=>{ if(AC) resumeSession(); },{passive:true});
 
@@ -1626,6 +1721,7 @@ document.body.addEventListener('touchstart',()=>{ if(AC) resumeSession(); },{pas
 buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader();
 document.body.addEventListener('touchstart',function once(){ ensureAudio(); document.body.removeEventListener('touchstart',once); },{passive:true});
 lcd('READY · load a sample into a pad (SMPL tab).');
+offerRestore();
 
 </script>
 </body>
