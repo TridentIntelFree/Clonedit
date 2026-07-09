@@ -403,7 +403,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      NotReadableError, SecurityError (Lockdown Mode hypothesis).
    - Version stamp to confirm deployed build identity.
    ================================================================ */
-const BUILD = 'MVX-880 · R7 · 2026-07-08 · DJ deck: pitch fader / warble wheel / vinyl / jam rec + BPM type-in';
+const BUILD = 'MVX-880 · R8 · 2026-07-08 · background/resume session recovery';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -596,7 +596,7 @@ function padRelease(idx){ // gate mode: note-off on touch release (live only)
 }
 
 function ensureAudio(){
-  if(AC) { if(AC.state!=='running') AC.resume(); return; }
+  if(AC) { resumeSession(); return; }
   const Ctor = window.AudioContext || window.webkitAudioContext;
   AC = new Ctor();
   LIVE = buildGraph(AC);      // graph fully built before anything reads it (ordering fix)
@@ -611,6 +611,7 @@ function ensureAudio(){
     ael.setAttribute('playsinline',''); ael.style.display='none';
     ael.srcObject=LIVE.msd.stream;
     document.body.appendChild(ael);
+    LIVE.ael=ael;
     const pr=ael.play();
     if(pr && pr.catch) pr.catch(()=>{ // element playback refused — add direct out, keep msd for recording
       LIVE.comp.connect(AC.destination);
@@ -1592,6 +1593,34 @@ $('btnBounce').addEventListener('click',async ()=>{
     lcd('BOUNCE COMPLETE.');
   }catch(err){ plog('Bounce failed: '+err.message); lcd('BOUNCE FAILED.'); }
 });
+
+/* ---------------- session lifecycle (iOS backgrounding) ----------------
+   Backgrounding kills two things: the AudioContext (state -> 'interrupted'/
+   'suspended') and the hidden <audio> element carrying master out (paused).
+   Both must be revived, and element .play() is only reliable inside a user
+   gesture — so revival is wired to visibility, pageshow, AND every touch. */
+function resumeSession(){
+  if(!AC) return;
+  let acted=false;
+  if(AC.state!=='running'){ try{ AC.resume(); }catch(e){} acted=true; }
+  if(LIVE && LIVE.ael && LIVE.ael.paused){
+    try{ const p=LIVE.ael.play(); if(p&&p.catch)p.catch(()=>{}); }catch(e){}
+    acted=true;
+  }
+  if(acted) lcd('SESSION RESUMED · '+AC.state+' — press PLAY to restart transport');
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){
+    if(playing) stopSeq();
+    if(jamRec && jamRec.state==='recording') jamRec.stop();
+    if(mediaRec && mediaRec.state==='recording') mediaRec.stop();
+  }else{
+    resumeSession();
+  }
+});
+window.addEventListener('pageshow',resumeSession);
+window.addEventListener('focus',resumeSession);
+document.body.addEventListener('touchstart',()=>{ if(AC) resumeSession(); },{passive:true});
 
 /* ---------------- boot ---------------- */
 buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader();
