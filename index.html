@@ -449,8 +449,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      Sequencer fires now flash the track strip + pad grid, SEQ gains
      a SOLO button, and mic capture re-asserts the playback session
      on iOS so bass doesn't die into the earpiece route.
+   - R17: mic InvalidStateError — WebKit throws when the mic stream's
+     hardware rate (48k) differs from the context rate (44.1k) inside
+     createMediaStreamSource. The level meter now falls back to a
+     throwaway context at the hardware rate (or skips metering) and
+     can never break the recording; the revival watchdog holds off
+     while the mic owns the audio session.
    ================================================================ */
-const BUILD = 'MVX-880 · R16 · 2026-07-11 · voice-cap + solo';
+const BUILD = 'MVX-880 · R17 · 2026-07-11 · mic InvalidState fix';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -924,16 +930,18 @@ function loadIntoTarget(buf,name){
 }
 
 /* mic — specific error handling (incl. Lockdown Mode hypothesis) */
-let mediaRec=null, micStream=null, micRAF=0;
+let mediaRec=null, micStream=null, micRAF=0, micBusy=false, meterCtx=null;
 $('btnMic').addEventListener('click',async ()=>{
   if(mediaRec && mediaRec.state==='recording'){ mediaRec.stop(); return; }
   ensureAudio();
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
     lcd('MIC: getUserMedia unavailable. If Lockdown Mode is on, media APIs may be disabled.'); return;
   }
+  micBusy=true;   // hold the watchdog off — iOS reconfigures the session around getUserMedia
   try{
     micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});
   }catch(err){
+    micBusy=false;
     const n=err && err.name;
     if(n==='NotAllowedError') lcd('MIC DENIED — allow in Settings → Safari (or the site permissions prompt).');
     else if(n==='NotFoundError') lcd('MIC: no microphone found on this device.');
@@ -944,11 +952,14 @@ $('btnMic').addEventListener('click',async ()=>{
   }
   const chunks=[];
   try{ mediaRec=new MediaRecorder(micStream); }
-  catch(e){ lcd('MediaRecorder unavailable in this browser.'); stopMicStream(); return; }
+  catch(e){ micBusy=false; lcd('MediaRecorder unavailable in this browser.'); stopMicStream(); return; }
   mediaRec.ondataavailable=ev=>{ if(ev.data && ev.data.size) chunks.push(ev.data); };
   mediaRec.onstop=async ()=>{
     stopMicStream();
+    micBusy=false;
+    resumeSession();   // mic capture flips iOS to play-and-record — reclaim the playback route first
     $('btnMic').classList.remove('on'); $('btnMic').textContent='REC MIC';
+    if(!chunks.length){ lcd('NOTHING CAPTURED — recording too short?'); return; }
     lcd('DECODING RECORDING …');
     try{
       const blob=new Blob(chunks,{type:mediaRec.mimeType||'audio/mp4'});
@@ -956,7 +967,6 @@ $('btnMic').addEventListener('click',async ()=>{
       const buf=await decode(ab);
       loadIntoTarget(buf,'mic-'+new Date().toISOString().slice(11,19).replace(/:/g,''));
     }catch(e){ lcd('RECORDING DECODE FAILED.'); }
-    resumeSession();   // mic capture flips iOS to play-and-record — reclaim the playback route
   };
   mediaRec.start();
   $('btnMic').classList.add('on'); $('btnMic').textContent='STOP';
@@ -967,11 +977,23 @@ function stopMicStream(){
   cancelAnimationFrame(micRAF);
   const bar=$('miclvl').firstElementChild; bar.style.width='0%';
   if(micStream){ micStream.getTracks().forEach(t=>t.stop()); micStream=null; }
+  if(meterCtx){ try{ meterCtx.close(); }catch(e){} meterCtx=null; }
 }
-function meterMic(){
+function meterMic(){ // level meter is cosmetic — never let it break the recording
   if(!micStream || !AC) return;
-  const src=AC.createMediaStreamSource(micStream);
-  const an=AC.createAnalyser(); an.fftSize=512; src.connect(an);
+  let ctx=AC, src=null;
+  try{ src=ctx.createMediaStreamSource(micStream); }
+  catch(e){
+    // WebKit: InvalidStateError when the mic stream's hardware rate (48k)
+    // differs from the context rate (44.1k). Meter via a throwaway context
+    // created NOW, which adopts the current hardware rate.
+    try{
+      const Ctor=window.AudioContext||window.webkitAudioContext;
+      meterCtx=new Ctor(); ctx=meterCtx;
+      src=ctx.createMediaStreamSource(micStream);
+    }catch(e2){ return; }
+  }
+  const an=ctx.createAnalyser(); an.fftSize=512; src.connect(an);
   const data=new Uint8Array(an.fftSize);
   const bar=$('miclvl').firstElementChild;
   (function loop(){
@@ -2210,6 +2232,7 @@ function resumeSession(){
   const t0=AC.currentTime;
   resumeSession._t=setTimeout(()=>{
     if(!AC || document.hidden) return;
+    if(micBusy || (mediaRec && mediaRec.state==='recording')) return;   // session belongs to the mic right now
     if(AC.state==='running' && AC.currentTime===t0) rebuildAudio();   // wedged
     else if(outIsDead()) rebuildOut();                                // stream died late
   },400);
