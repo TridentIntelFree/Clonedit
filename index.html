@@ -455,8 +455,12 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      throwaway context at the hardware rate (or skips metering) and
      can never break the recording; the revival watchdog holds off
      while the mic owns the audio session.
+   - R18: bounce matches live playback — per-pattern tempo (PTN TEMPO)
+     honored per chained pattern with the synced delay following, and
+     the PROJ SOURCE defaults to CHAIN when chain mode is armed so the
+     bounce renders the sequence the way PLAY plays it.
    ================================================================ */
-const BUILD = 'MVX-880 · R17 · 2026-07-11 · mic InvalidState fix';
+const BUILD = 'MVX-880 · R18 · 2026-07-11 · bounce = live playback';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -891,6 +895,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
     drawWave(); drawEdit();
   }
   if(b.dataset.v==='mix'){ drawEdit(); }
+  if(b.dataset.v==='proj'){ $('bSrc').value=(S.chainOn&&S.chain.length)?'chain':'pat'; }
 }));
 
 /* ---------------- sampler ---------------- */
@@ -2137,26 +2142,31 @@ $('btnBounce').addEventListener('click',async ()=>{
   const loops=parseInt($('bLoops').value,10);
   const useChain=$('bSrc').value==='chain' && S.chain.length>0;
   const seq=useChain? S.chain : [S.pattern];
-  const sd=stepDur(), barDur=sd*NSTEPS;
-  // event list, time-ordered by construction
-  const events=[]; let t=0.05;
+  // event list, time-ordered by construction — each pattern renders at its
+  // own tempo when PTN TEMPO is on, exactly like live playback
+  const events=[], tempoSeg=[]; let t=0.05;
   for(let l=0;l<loops;l++){
     for(const pi of seq){
       const pat=S.patterns[pi];
+      const bpm=(S.ptnBpm && pat.bpm)? clamp(pat.bpm,40,240) : S.bpm;
+      const sd=60/bpm/4;
+      tempoSeg.push({t,bpm});
       for(let st=0;st<NSTEPS;st++){
         const when=t+st*sd+(st%2===1?S.swing*sd:0);
         for(let p=0;p<NPADS;p++){ const v=pat.steps[p][st]; if(v>0) events.push({when,p,v}); }
       }
-      t+=barDur;
+      t+=sd*NSTEPS;
     }
   }
   if(!events.length){ plog('Nothing to bounce — pattern is empty.'); return; }
+  if(seqSolo) plog('Note: SOLO is armed in the SEQ view — the bounce still renders ALL tracks.');
   const SR=44100, total=t+Math.max(3.0,S.revSize+0.5);   // tail covers reverb size
   lcd('RENDERING '+total.toFixed(1)+'s …'); plog('Bounce: '+events.length+' events, '+total.toFixed(1)+'s, '+loops+' loop(s)'+(useChain?' of chain':'')+'.');
   try{
     const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
     const g=buildGraph(oc);
-    g.dlyNode.delayTime.value=delayTime();       // mirror live delay sync
+    // tempo-synced delay follows each pattern's tempo, like live playback
+    tempoSeg.forEach(seg=>{ g.dlyNode.delayTime.setValueAtTime(clamp(60/seg.bpm*S.delayDiv,0.02,1.9), seg.t); });
     const chokeOff={};
     events.sort((a,b)=>a.when-b.when);
     for(const ev of events) triggerPad(oc, g, ev.p, ev.v, ev.when, chokeOff);
