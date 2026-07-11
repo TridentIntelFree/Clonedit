@@ -431,8 +431,13 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      the last minute of edits. Every mutation now schedules a debounced
      autosave (~1.5s). PLAY also re-applies the current pattern's own
      tempo so a stale per-pattern BPM can't diverge from the display.
+   - R14: REC OUT rebuilt as a PCM tap on the master bus. The old
+     MediaRecorder path compressed to AAC and iOS can stamp the wrong
+     sample rate into the container — captures decoded back to a pad
+     pitch/tempo-shifted. Raw Float32 capture at the context rate is
+     sample-accurate; SAVE now writes lossless WAV.
    ================================================================ */
-const BUILD = 'MVX-880 · R13 · 2026-07-11 · save-on-edit';
+const BUILD = 'MVX-880 · R14 · 2026-07-11 · pcm rec-out';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1586,39 +1591,62 @@ $('warbRate').addEventListener('input',e=>{
   if(LIVE.warbOsc) LIVE.warbOsc.frequency.setTargetAtTime(v,AC.currentTime,0.05);
 });
 
-/* jam recorder — captures master out */
-let jamRec=null, jamBlob=null;
+/* jam recorder — sample-accurate PCM tap on the master bus.
+   MediaRecorder compressed to AAC and iOS can stamp the wrong sample
+   rate into that container, so captures decoded back pitch/tempo-shifted.
+   Tapping the compressor output into Float32 chunks keeps everything at
+   the context rate — the pad plays back exactly what was heard, and
+   SAVE writes lossless WAV instead of M4A. */
+let jamTap=null, jamL=[], jamR=[], jamLen=0, jamOn=false, jamBuf=null;
+const JAM_MAX_S=300;
+function jamStamp(){ return 'jam-'+new Date().toISOString().slice(11,19).replace(/:/g,''); }
 $('btnJam').addEventListener('click',()=>{
-  if(jamRec && jamRec.state==='recording'){ jamRec.stop(); return; }
+  if(jamOn){ stopJam(); return; }
   ensureAudio();
-  if(!LIVE.msd){ lcd('REC OUT unavailable — no capture stream.'); return; }
-  const chunks=[];
-  try{ jamRec=new MediaRecorder(LIVE.msd.stream); }
-  catch(e){ lcd('MediaRecorder unavailable in this browser.'); return; }
-  jamRec.ondataavailable=ev=>{ if(ev.data && ev.data.size) chunks.push(ev.data); };
-  jamRec.onstop=()=>{
-    jamBlob=new Blob(chunks,{type:jamRec.mimeType||'audio/mp4'});
-    $('btnJam').classList.remove('on'); $('btnJam').innerHTML='&#9679; REC OUT';
-    $('btnJamSave').style.display=''; $('btnJamPad').style.display='';
-    lcd('JAM CAPTURED · '+Math.round(jamBlob.size/1024)+' KB — SAVE or TO PAD');
-  };
-  jamRec.start();
-  $('btnJam').classList.add('on'); $('btnJam').textContent='STOP REC';
-  lcd('RECORDING MASTER OUT — everything you hear.');
-});
-$('btnJamSave').addEventListener('click',()=>{
-  if(!jamBlob) return;
-  const ext=(jamBlob.type.indexOf('mp4')>=0)?'m4a':(jamBlob.type.indexOf('webm')>=0?'webm':'audio');
-  download(jamBlob,'jam-'+new Date().toISOString().slice(11,19).replace(/:/g,'')+'.'+ext);
-});
-$('btnJamPad').addEventListener('click',async ()=>{
-  if(!jamBlob) return;
-  lcd('DECODING JAM → '+padName(S.editPad)+' …');
+  jamL=[]; jamR=[]; jamLen=0; jamBuf=null;
   try{
-    const ab=await jamBlob.arrayBuffer();
-    const buf=await decode(ab);
-    loadIntoTarget(buf,'jam-'+new Date().toISOString().slice(14,19).replace(':',''));
-  }catch(e){ lcd('JAM DECODE FAILED.'); }
+    jamTap=AC.createScriptProcessor(4096,2,2);   // deprecated but universal, incl. iOS Safari
+    jamTap.onaudioprocess=e=>{
+      if(!jamOn) return;
+      const b=e.inputBuffer;
+      jamL.push(new Float32Array(b.getChannelData(0)));
+      jamR.push(new Float32Array(b.getChannelData(b.numberOfChannels>1?1:0)));
+      jamLen+=b.length;
+      if(jamLen>=AC.sampleRate*JAM_MAX_S) stopJam();
+    };
+    const sink=AC.createGain(); sink.gain.value=0; // SP needs a route to destination to run; keep it silent
+    LIVE.comp.connect(jamTap); jamTap.connect(sink); sink.connect(AC.destination);
+    jamTap._sink=sink;
+  }catch(e){ jamTap=null; lcd('REC OUT unavailable: '+(e.message||'no tap')); return; }
+  jamOn=true;
+  $('btnJam').classList.add('on'); $('btnJam').textContent='STOP REC';
+  lcd('RECORDING MASTER OUT — everything you hear (max '+(JAM_MAX_S/60)+' min).');
+});
+function stopJam(){
+  if(!jamOn) return;
+  jamOn=false;
+  try{ LIVE.comp.disconnect(jamTap); }catch(e){}
+  try{ jamTap._sink.disconnect(); jamTap.disconnect(); }catch(e){}
+  jamTap=null;
+  $('btnJam').classList.remove('on'); $('btnJam').innerHTML='&#9679; REC OUT';
+  if(!jamLen){ lcd('JAM EMPTY.'); return; }
+  jamBuf=AC.createBuffer(2,jamLen,AC.sampleRate);
+  const L=jamBuf.getChannelData(0), R=jamBuf.getChannelData(1);
+  let o=0; for(const c of jamL){ L.set(c,o); o+=c.length; }
+  o=0; for(const c of jamR){ R.set(c,o); o+=c.length; }
+  jamL=[]; jamR=[]; jamLen=0;
+  $('btnJamSave').style.display=''; $('btnJamPad').style.display='';
+  lcd('JAM CAPTURED · '+jamBuf.duration.toFixed(1)+'s @ '+Math.round(jamBuf.sampleRate)+' Hz — SAVE or TO PAD');
+}
+$('btnJamSave').addEventListener('click',()=>{
+  if(!jamBuf) return;
+  download(encodeWav(jamBuf), jamStamp()+'.wav');
+});
+$('btnJamPad').addEventListener('click',()=>{
+  if(!jamBuf) return;
+  loadIntoTarget(jamBuf, jamStamp());
+  if(Math.abs(perfPitch+perfBend)>0.01)
+    lcd('LOADED → '+padName(S.editPad)+' — note: pitch fader at '+(perfPitch>=0?'+':'')+perfPitch.toFixed(1)+' st bends this pad too (double-tap fader to zero).');
 });
 
 /* seq UI */
@@ -2093,6 +2121,7 @@ function rebuildOut(){
   }
 }
 function rebuildAudio(){ // last resort: wedged context — new context, new graph, same session
+  try{ if(jamOn) stopJam(); }catch(e){}   // finalize the capture on the old context before it dies
   try{ if(LIVE && LIVE.ael){ LIVE.ael.srcObject=null; LIVE.ael.remove(); } }catch(e){}
   try{ if(AC) AC.close(); }catch(e){}
   AC=null; LIVE=null;
@@ -2125,7 +2154,7 @@ function resumeSession(){
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){
     if(playing) stopSeq();
-    if(jamRec && jamRec.state==='recording') jamRec.stop();
+    if(jamOn) stopJam();
     if(mediaRec && mediaRec.state==='recording') mediaRec.stop();
     autosave();
   }else{
