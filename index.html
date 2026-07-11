@@ -87,6 +87,7 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
 .step.cur{outline:2px solid var(--lcd);outline-offset:-2px}
 #seqpadstrip{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin:6px 0}
 #seqpadstrip button{padding:8px 0;font-size:10px}
+#seqpadstrip button.hit{background:var(--amber-soft);border-color:var(--amber);color:#120d04}
 #patrow button,#chainrow button{min-width:36px}
 #chainview{font-size:11px;color:var(--lcd);background:var(--lcd-bg);border:1px solid var(--line);
   border-radius:5px;padding:7px 8px;flex:1;min-height:32px}
@@ -274,6 +275,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div class="row">
     <span class="lbl">VEL</span>
     <input type="range" id="stepVel" min="0.2" max="1" step="0.05" value="0.85" class="grow">
+    <button id="btnSolo">SOLO</button>
     <button id="btnRowClr">CLR ROW</button>
     <button id="btnPatClr">CLR PTN</button>
   </div>
@@ -441,8 +443,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      says so when it finds nothing instead of yielding 1 silent slice;
      orphaned buffers are GC'd before snapshots so the autosave vault
      can't bloat into silent iOS IndexedDB write failures.
+   - R16: per-pad voice cap (3) — dense steps on sustained samples
+     stacked 40+ full-length voices into a wash that masked quieter
+     tracks (measured: sub still present electrically but buried).
+     Sequencer fires now flash the track strip + pad grid, SEQ gains
+     a SOLO button, and mic capture re-asserts the playback session
+     on iOS so bass doesn't die into the earpiece route.
    ================================================================ */
-const BUILD = 'MVX-880 · R15 · 2026-07-11 · chop-revive + vault-gc';
+const BUILD = 'MVX-880 · R16 · 2026-07-11 · voice-cap + solo';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -606,6 +614,14 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg){
   env.gain.setValueAtTime(v,relStart);
   env.gain.linearRampToValueAtTime(0.0001,relStart+p.rel);
   src.connect(env); env.connect(g.pads[idx].in);
+  // per-pad voice cap — sustained samples on dense steps used to stack
+  // dozens of full-length voices into a wash that masks everything else
+  const act=g.pads[idx].act || (g.pads[idx].act=[]);
+  act.push(env._v={env,src});
+  if(act.length>3){
+    const old=act.shift();
+    try{ old.env.gain.cancelScheduledValues(when); old.env.gain.setTargetAtTime(0,when,0.015); old.src.stop(when+0.12); }catch(e){}
+  }
   // choke
   if(p.choke>0 && chokeReg){
     const prev=chokeReg[p.choke];
@@ -615,6 +631,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg){
   src.start(when,off,sliceDur);
   src.stop(when+outDur+p.rel+0.25);
   src.onended=()=>{
+    const i=act.indexOf(env._v); if(i>=0) act.splice(i,1);
     liveVoices.delete(src);
     if(live && LIVE.warbGain){ try{ LIVE.warbGain.disconnect(src.playbackRate); }catch(e){} }
     try{src.disconnect();env.disconnect();}catch(e){}
@@ -939,6 +956,7 @@ $('btnMic').addEventListener('click',async ()=>{
       const buf=await decode(ab);
       loadIntoTarget(buf,'mic-'+new Date().toISOString().slice(11,19).replace(/:/g,''));
     }catch(e){ lcd('RECORDING DECODE FAILED.'); }
+    resumeSession();   // mic capture flips iOS to play-and-record — reclaim the playback route
   };
   mediaRec.start();
   $('btnMic').classList.add('on'); $('btnMic').textContent='STOP';
@@ -1460,19 +1478,32 @@ $('btnPresetLoad').addEventListener('click',async ()=>{
 });
 
 /* ---------------- sequencer ---------------- */
-let playing=false, curStep=0, nextStepTime=0, lastStepTime=0, seqTimer=0;
+let playing=false, curStep=0, nextStepTime=0, lastStepTime=0, seqTimer=0, seqSolo=false;
 function stepDur(){ return 60/S.bpm/4; }
 
 function schedStep(step, t){
   const sd=stepDur();
   const when = t + (step%2===1 ? S.swing*sd : 0);
-  const pat=S.patterns[S.pattern];
+  const pat=S.patterns[S.pattern], fired=[];
   for(let p=0;p<NPADS;p++){
     const v=pat.steps[p][step];
-    if(v>0) triggerPad(AC, LIVE, p, v, when, chokeLive);
+    if(v>0){
+      if(seqSolo && p!==S.seqPad) continue;
+      triggerPad(AC, LIVE, p, v, when, chokeLive);
+      fired.push(p);
+    }
   }
   const delay=Math.max(0,(t-AC.currentTime)*1000);
-  setTimeout(()=>{ markStep(step); },delay);
+  setTimeout(()=>{ markStep(step); flashFired(fired); },delay);
+}
+function flashFired(fired){ // visual proof a row actually triggered
+  const btns=document.querySelectorAll('#seqpadstrip button');
+  fired.forEach(p=>{
+    flashPad(p);
+    if(Math.floor(p/16)!==S.bank) return;
+    const b=btns[p%16]; if(!b) return;
+    b.classList.add('hit'); setTimeout(()=>b.classList.remove('hit'),80);
+  });
 }
 function markStep(step){
   curStep=step; lastStepTime=AC?AC.currentTime:0;
@@ -1711,6 +1742,10 @@ function drawSteps(){
 $('btnChainAdd').addEventListener('click',()=>{ S.chain.push(S.pattern); drawSeq(); dirty(); });
 $('btnChainClr').addEventListener('click',()=>{ S.chain=[]; S.chainPos=0; drawSeq(); dirty(); });
 $('btnChainOn').addEventListener('click',()=>{ S.chainOn=!S.chainOn; drawSeq(); dirty(); });
+$('btnSolo').addEventListener('click',()=>{
+  seqSolo=!seqSolo; $('btnSolo').classList.toggle('on',seqSolo);
+  lcd(seqSolo?'SOLO: only '+padName(S.seqPad)+' plays — tap SOLO again to unmute all':'SOLO OFF — all tracks play');
+});
 $('btnRowClr').addEventListener('click',()=>{ S.patterns[S.pattern].steps[S.seqPad].fill(0); drawSteps(); dirty(); });
 $('btnPtnBpm').addEventListener('click',()=>{
   S.ptnBpm=!S.ptnBpm; dirty();
