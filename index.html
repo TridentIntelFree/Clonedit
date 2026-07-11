@@ -465,8 +465,12 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      InvalidStateError. Arm now requests 'play-and-record' first,
      resumeSession leaves the session alone while the mic owns it,
      start() is guarded, and 'playback' is restored after capture.
+   - R20: mic permission preflight — a remembered site-level 'deny'
+     means iOS never re-prompts; the LCD now says exactly where to
+     re-enable it (aA menu → Website Settings → Microphone) instead
+     of failing mutely.
    ================================================================ */
-const BUILD = 'MVX-880 · R19 · 2026-07-11 · mic arm session fix';
+const BUILD = 'MVX-880 · R20 · 2026-07-11 · mic permission preflight';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -949,6 +953,18 @@ $('btnMic').addEventListener('click',async ()=>{
     lcd('MIC: getUserMedia unavailable. If Lockdown Mode is on, media APIs may be disabled.'); return;
   }
   micBusy=true;   // hold the watchdog off — iOS reconfigures the session around getUserMedia
+  // preflight: a remembered 'deny' means iOS never shows the prompt again —
+  // surface that instead of failing mutely
+  try{
+    if(navigator.permissions && navigator.permissions.query){
+      const st=await navigator.permissions.query({name:'microphone'});
+      if(st.state==='denied'){
+        micBusy=false;
+        lcd('MIC BLOCKED for this site — Safari: tap aA in the address bar → Website Settings → Microphone → Allow.');
+        return;
+      }
+    }
+  }catch(e){}
   // a 'playback' session category forbids capture on iOS — the mic track arrives
   // dead and MediaRecorder.start() throws InvalidStateError. Ask for record rights first.
   try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
@@ -957,7 +973,7 @@ $('btnMic').addEventListener('click',async ()=>{
   }catch(err){
     micBusy=false;
     const n=err && err.name;
-    if(n==='NotAllowedError') lcd('MIC DENIED — allow in Settings → Safari (or the site permissions prompt).');
+    if(n==='NotAllowedError') lcd('MIC DENIED — Safari: aA menu → Website Settings → Microphone → Allow. Or iOS Settings → Safari → Microphone.');
     else if(n==='NotFoundError') lcd('MIC: no microphone found on this device.');
     else if(n==='NotReadableError') lcd('MIC BUSY — another app may be holding the microphone.');
     else if(n==='SecurityError') lcd('MIC BLOCKED by browser security. If Lockdown Mode is enabled, mic capture may be disabled.');
