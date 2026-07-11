@@ -426,8 +426,13 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      load; live params re-applied automation-safe (cancel before set);
      stale sampler work state cleared. New: synth-rendered preset
      library (SMPL tab) — bass, piano, strings, brass, experimental.
+   - R13: save-on-edit. iOS kills the page before the pagehide/hidden
+     async IndexedDB write commits, so lifecycle+60s saves could lose
+     the last minute of edits. Every mutation now schedules a debounced
+     autosave (~1.5s). PLAY also re-applies the current pattern's own
+     tempo so a stale per-pattern BPM can't diverge from the display.
    ================================================================ */
-const BUILD = 'MVX-880 · R12 · 2026-07-10 · restore-fix + presets';
+const BUILD = 'MVX-880 · R13 · 2026-07-11 · save-on-edit';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -689,6 +694,7 @@ function hitLive(idx, vel){
     const st=Math.round(pos)%NSTEPS;
     S.patterns[S.pattern].steps[idx][st]=vel;
     if(idx===S.seqPad) drawSteps();
+    dirty();
   }
 }
 
@@ -772,7 +778,7 @@ function drawEdit(){
 function bindEdit(id, key, fmt, applyLive){
   $(id).addEventListener('input',e=>{
     const p=S.pads[S.editPad]; p[key]=parseFloat(e.target.value);
-    drawEdit();
+    drawEdit(); dirty();
     if(LIVE && applyLive) applyLive(LIVE.pads[S.editPad], p);
   });
 }
@@ -784,10 +790,10 @@ bindEdit('epRev','rev',null,(n,p)=>{ n.rev.gain.setTargetAtTime(p.rev,AC.current
 bindEdit('epDly','dly',null,(n,p)=>{ n.dly.gain.setTargetAtTime(p.dly,AC.currentTime,0.01); });
 bindEdit('epAtt','att',null,null);
 bindEdit('epRel','rel',null,null);
-$('epChoke').addEventListener('change',e=>{ S.pads[S.editPad].choke=parseInt(e.target.value,10); });
-$('epRevrs').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.reverse=!p.reverse; if(p.bufId>=0) getReversed(p.bufId); drawEdit(); });
-$('epMode').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.mode=p.mode==='gate'?'one':'gate'; drawEdit(); });
-function liveFx(){ const p=S.pads[S.editPad]; if(LIVE) applyPadFx(LIVE.pads[S.editPad],p,AC); drawPads(); drawEdit(); }
+$('epChoke').addEventListener('change',e=>{ S.pads[S.editPad].choke=parseInt(e.target.value,10); dirty(); });
+$('epRevrs').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.reverse=!p.reverse; if(p.bufId>=0) getReversed(p.bufId); drawEdit(); dirty(); });
+$('epMode').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.mode=p.mode==='gate'?'one':'gate'; drawEdit(); dirty(); });
+function liveFx(){ const p=S.pads[S.editPad]; if(LIVE) applyPadFx(LIVE.pads[S.editPad],p,AC); drawPads(); drawEdit(); dirty(); }
 function hasFx(p){ return p.ftype!=='off' || p.drv>0 || p.crush<16; }
 $('epFType').addEventListener('change',e=>{
   const p=S.pads[S.editPad]; p.ftype=e.target.value;
@@ -811,7 +817,7 @@ $('epCrush').addEventListener('change',trigSel);
 function bindMix(id, get, set, fmt){
   const el=$(id), vel=$(id+'V');
   const draw=()=>{ el.value=get(); if(vel) vel.textContent=fmt(get()); };
-  el.addEventListener('input',e=>{ set(parseFloat(e.target.value)); if(vel) vel.textContent=fmt(get()); });
+  el.addEventListener('input',e=>{ set(parseFloat(e.target.value)); if(vel) vel.textContent=fmt(get()); dirty(); });
   draw(); return draw;
 }
 const pct=x=>Math.round(x*100)+'%';
@@ -822,15 +828,15 @@ bindMix('mxRevSize',()=>S.revSize,v=>{ S.revSize=v; if(LIVE) LIVE.conv.buffer=ma
 bindMix('mxDlyFb',()=>S.delayFb,v=>{ S.delayFb=v; if(LIVE) LIVE.dlyFb.gain.setTargetAtTime(v,AC.currentTime,0.02); },pct);
 bindMix('mxDlyTone',()=>S.dlyTone,v=>{ S.dlyTone=v; if(LIVE) LIVE.dlyFilt.frequency.setTargetAtTime(v,AC.currentTime,0.03); },v=>Math.round(v/100)/10+'k');
 $('mxDlyDiv').value=String(S.delayDiv);
-$('mxDlyDiv').addEventListener('change',e=>{ S.delayDiv=parseFloat(e.target.value);
+$('mxDlyDiv').addEventListener('change',e=>{ S.delayDiv=parseFloat(e.target.value); dirty();
   if(LIVE) LIVE.dlyNode.delayTime.setTargetAtTime(delayTime(),AC.currentTime,0.05); });
-$('mxPadRev').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.rev=parseFloat(e.target.value);
+$('mxPadRev').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.rev=parseFloat(e.target.value); dirty();
   $('mxPadRevV').textContent=p.rev.toFixed(2);
   if(LIVE) LIVE.pads[S.editPad].rev.gain.setTargetAtTime(p.rev,AC.currentTime,0.01); });
-$('mxPadDly').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.dly=parseFloat(e.target.value);
+$('mxPadDly').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.dly=parseFloat(e.target.value); dirty();
   $('mxPadDlyV').textContent=p.dly.toFixed(2);
   if(LIVE) LIVE.pads[S.editPad].dly.gain.setTargetAtTime(p.dly,AC.currentTime,0.01); });
-$('epClear').addEventListener('click',()=>{ const i=S.editPad; S.pads[i]=newPad(i); drawPads(); drawEdit(); lcd('PAD '+padName(i)+' CLEARED'); });
+$('epClear').addEventListener('click',()=>{ const i=S.editPad; S.pads[i]=newPad(i); drawPads(); drawEdit(); dirty(); lcd('PAD '+padName(i)+' CLEARED'); });
 $('epLearn').addEventListener('click',()=>{ noteLearnPad=S.editPad; lcd('NOTE LEARN: play a MIDI note for '+padName(S.editPad)); });
 
 $('btnEdit').addEventListener('click',()=>{ S.edit=!S.edit; $('btnEdit').classList.toggle('on',S.edit); $('editpanel').style.display=S.edit?'block':'none'; drawPads(); drawEdit(); });
@@ -882,7 +888,7 @@ function loadIntoTarget(buf,name){
   const bid=S.buffers.length-1;
   const p=S.pads[S.editPad];
   p.bufId=bid; p.start=0; p.end=1; p.name=name.slice(0,14);
-  drawPads(); drawEdit(); drawWave();
+  drawPads(); drawEdit(); drawWave(); dirty();
   lcd('LOADED → '+padName(S.editPad)+' · '+buf.duration.toFixed(2)+'s');
 }
 
@@ -1067,7 +1073,7 @@ $('btnNorm').addEventListener('click',()=>{
   }
   const bid=S.buffers.indexOf(workBuf);
   if(bid>=0) delete revCache[bid];   // reversed copies now stale
-  drawWave(); lcd('NORMALIZED ×'+k.toFixed(2));
+  drawWave(); dirty(); lcd('NORMALIZED ×'+k.toFixed(2));
 });
 $('btnTrim').addEventListener('click',()=>{
   if(!workBuf){ lcd('NO SAMPLE.'); return; }
@@ -1087,7 +1093,7 @@ $('btnTrim').addEventListener('click',()=>{
   workBuf=nb; slices=[]; selSlice=-1;
   const p=S.pads[S.editPad];
   p.bufId=bid; p.start=0; p.end=1;
-  drawPads(); drawWave();
+  drawPads(); drawWave(); dirty();
   lcd('TRIMMED → '+nb.duration.toFixed(2)+'s (new buffer on '+padName(S.editPad)+')');
 });
 $('chopSens').addEventListener('input',e=>{ $('chopSensV').textContent=parseFloat(e.target.value).toFixed(2); });
@@ -1136,7 +1142,7 @@ $('btnAssign').addEventListener('click',()=>{
     p.bufId=bid; p.start=sl.s; p.end=sl.e; p.name='slc'+String(i+1).padStart(2,'0');
     n++;
   });
-  drawPads(); lcd(n+' SLICES → '+padName(from)+'…');
+  drawPads(); dirty(); lcd(n+' SLICES → '+padName(from)+'…');
 });
 
 /* ---------------- presets — synth-rendered instrument library ----------------
@@ -1474,6 +1480,7 @@ function startSeq(){
   if(playing) return;
   playing=true;
   if(S.chainOn && S.chain.length){ S.chainPos=0; selectPattern(S.chain[0]); drawSeq(); }
+  else selectPattern(S.pattern);   // re-apply this pattern's own tempo before the clock is read
   curStepSched=0; curStep=0;
   nextStepTime=AC.currentTime+0.08;   // offsets set BEFORE the loop reads them (ordering fix)
   if(!S.extClk) seqTimer=setInterval(seqTick,25);
@@ -1495,12 +1502,13 @@ function setBpm(b){ S.bpm=clamp(b,40,240);
   if(S.ptnBpm && !S.extClk && !vinylOn) S.patterns[S.pattern].bpm=S.bpm;
   $('bpmval').value=S.bpm.toFixed(1);
   $('djBpm').value=S.bpm; $('djBpmV').textContent=S.bpm.toFixed(1);
-  if(LIVE) LIVE.dlyNode.delayTime.setTargetAtTime(delayTime(),AC.currentTime,0.05); }
+  if(LIVE) LIVE.dlyNode.delayTime.setTargetAtTime(delayTime(),AC.currentTime,0.05);
+  dirty(); }
 $('bpmUp').addEventListener('click',()=>setBpm(S.bpm+1));
 $('bpmDown').addEventListener('click',()=>setBpm(S.bpm-1));
 $('bpmval').addEventListener('change',e=>{ const v=parseFloat(e.target.value); if(isFinite(v)) setBpm(v); else setBpm(S.bpm); });
 $('djBpm').addEventListener('input',e=>setBpm(parseFloat(e.target.value)));
-$('swing').addEventListener('input',e=>{ S.swing=parseFloat(e.target.value); $('swingV').textContent=Math.round(S.swing*100)+'%'; });
+$('swing').addEventListener('input',e=>{ S.swing=parseFloat(e.target.value); $('swingV').textContent=Math.round(S.swing*100)+'%'; dirty(); });
 
 /* ---------------- DJ deck ---------------- */
 let vinylOn=false, vinylBaseBpm=100;
@@ -1656,24 +1664,24 @@ function drawSteps(){
     if(v>0){ el.classList.add('on'); el.style.opacity=String(0.45+v*0.55); }
     el.addEventListener('click',()=>{
       row[i]=row[i]>0?0:parseFloat($('stepVel').value);
-      drawSteps();
+      drawSteps(); dirty();
     });
     gr.appendChild(el);
   }
 }
-$('btnChainAdd').addEventListener('click',()=>{ S.chain.push(S.pattern); drawSeq(); });
-$('btnChainClr').addEventListener('click',()=>{ S.chain=[]; S.chainPos=0; drawSeq(); });
-$('btnChainOn').addEventListener('click',()=>{ S.chainOn=!S.chainOn; drawSeq(); });
-$('btnRowClr').addEventListener('click',()=>{ S.patterns[S.pattern].steps[S.seqPad].fill(0); drawSteps(); });
+$('btnChainAdd').addEventListener('click',()=>{ S.chain.push(S.pattern); drawSeq(); dirty(); });
+$('btnChainClr').addEventListener('click',()=>{ S.chain=[]; S.chainPos=0; drawSeq(); dirty(); });
+$('btnChainOn').addEventListener('click',()=>{ S.chainOn=!S.chainOn; drawSeq(); dirty(); });
+$('btnRowClr').addEventListener('click',()=>{ S.patterns[S.pattern].steps[S.seqPad].fill(0); drawSteps(); dirty(); });
 $('btnPtnBpm').addEventListener('click',()=>{
-  S.ptnBpm=!S.ptnBpm;
+  S.ptnBpm=!S.ptnBpm; dirty();
   $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
   if(S.ptnBpm){
     if(S.patterns[S.pattern].bpm==null) S.patterns[S.pattern].bpm=S.bpm;
     lcd('PTN TEMPO ON · PTN '+(S.pattern+1)+' @ '+S.bpm.toFixed(1)+' BPM');
   }else lcd('PTN TEMPO OFF · global BPM');
 });
-$('btnPatClr').addEventListener('click',()=>{ S.patterns[S.pattern]=newPattern(); drawSteps(); lcd('PTN '+(S.pattern+1)+' CLEARED'); });
+$('btnPatClr').addEventListener('click',()=>{ S.patterns[S.pattern]=newPattern(); drawSteps(); dirty(); lcd('PTN '+(S.pattern+1)+' CLEARED'); });
 
 /* ---------------- MIDI ---------------- */
 let midiAccess=null, midiInput=null, noteLearnPad=null, ccLearnArm=false;
@@ -1955,6 +1963,11 @@ async function autosave(){
   try{ await idbPut('last',snapshotSession()); }catch(e){}
   autosaving=false;
 }
+/* iOS kills the page without letting the pagehide/hidden async IDB write
+   finish, so lifecycle saves alone lose the last minute of work. Save
+   shortly after every edit instead — the vault is never more than ~2s stale. */
+let dirtyT=0;
+function dirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(autosave,1500); }
 function ageText(ms){
   const m=Math.round(ms/60000);
   if(m<1) return 'moments ago';
