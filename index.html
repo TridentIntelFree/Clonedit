@@ -436,8 +436,13 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      sample rate into the container — captures decoded back to a pad
      pitch/tempo-shifted. Raw Float32 capture at the context rate is
      sample-accurate; SAVE now writes lossless WAV.
+   - R15: chop workspace re-points at the target pad's sample after a
+     restore (and on entering SMPL) instead of going dead; TRANSIENT
+     says so when it finds nothing instead of yielding 1 silent slice;
+     orphaned buffers are GC'd before snapshots so the autosave vault
+     can't bloat into silent iOS IndexedDB write failures.
    ================================================================ */
-const BUILD = 'MVX-880 · R14 · 2026-07-11 · pcm rec-out';
+const BUILD = 'MVX-880 · R15 · 2026-07-11 · chop-revive + vault-gc';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -857,7 +862,11 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   $('v-'+b.dataset.v).classList.add('on');
   if(b.dataset.v==='seq'){ drawSeq(); }
-  if(b.dataset.v==='smpl'){ drawWave(); drawEdit(); }
+  if(b.dataset.v==='smpl'){
+    if(!workBuf){ const p=S.pads[S.editPad];   // empty workspace: adopt the target pad's sample
+      if(p.bufId>=0 && S.buffers[p.bufId]){ workBuf=S.buffers[p.bufId]; slices=[]; selSlice=-1; } }
+    drawWave(); drawEdit();
+  }
   if(b.dataset.v==='mix'){ drawEdit(); }
 }));
 
@@ -1129,7 +1138,9 @@ $('btnTrans').addEventListener('click',()=>{
     const s=onsets[i]/total, e=(i+1<onsets.length? onsets[i+1]/total : 1);
     if(e-s>0.002) slices.push({s,e});
   }
-  drawWave(); lcd(slices.length+' TRANSIENT SLICES @ sens '+k.toFixed(2));
+  drawWave();
+  lcd(slices.length>1 ? slices.length+' TRANSIENT SLICES @ sens '+k.toFixed(2)
+                      : 'NO TRANSIENTS FOUND — lower SENS or use EQUAL.');
 });
 function fillAssignFrom(){
   const sel=$('assignFrom'); sel.innerHTML='';
@@ -1857,6 +1868,7 @@ function download(blob,name){
   setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },4000);
 }
 $('btnSave').addEventListener('click',()=>{
+  gcBuffers();
   const bufs=S.buffers.map(b=>{
     const chans=[];
     for(let c=0;c<b.numberOfChannels;c++) chans.push(f32ToB64(b.getChannelData(c)));
@@ -1906,7 +1918,10 @@ function applySessionDoc(doc, bufs){
   Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
   Object.keys(activeEnv).forEach(k=>delete activeEnv[k]);
   S.buffers=bufs;
-  workBuf=null; slices=[]; selSlice=-1;   // old work sample no longer lives in S.buffers
+  // re-point the chop workspace at the restored target pad's sample —
+  // nulling it left CHOP/TRANSIENT dead ("NO SAMPLE") after every restore
+  slices=[]; selSlice=-1;
+  { const p=S.pads[S.editPad]; workBuf=(p.bufId>=0 && S.buffers[p.bufId])||null; }
   if(doc.name) $('projName').value=doc.name;
   { const keep=S.ptnBpm; S.ptnBpm=false; setBpm(S.bpm); S.ptnBpm=keep; }  // don't clobber the restored pattern's own BPM
   $('swing').value=S.swing; $('swingV').textContent=Math.round(S.swing*100)+'%';
@@ -1966,7 +1981,20 @@ function idbGet(key){ return idbOpen().then(db=>new Promise((res,rej)=>{
   rq.onerror=()=>{ db.close(); rej(rq.error); };
 }));}
 
+function gcBuffers(){ // drop orphaned samples (every re-render leaves one) so the vault doesn't bloat past iOS IDB limits
+  const used=new Set();
+  S.pads.forEach(p=>{ if(p.bufId>=0) used.add(p.bufId); });
+  const wi=workBuf?S.buffers.indexOf(workBuf):-1;
+  if(wi>=0) used.add(wi);
+  if(used.size>=S.buffers.length) return;
+  const map={}, nb=[];
+  S.buffers.forEach((b,i)=>{ if(used.has(i)){ map[i]=nb.length; nb.push(b); } });
+  S.pads.forEach(p=>{ if(p.bufId>=0) p.bufId=map[p.bufId]; });
+  Object.keys(revCache).forEach(k=>delete revCache[k]);   // keyed by old ids
+  S.buffers=nb;
+}
 function snapshotSession(){
+  gcBuffers();
   const bufs=S.buffers.map(b=>{
     const ch=[];
     for(let c=0;c<b.numberOfChannels;c++){
