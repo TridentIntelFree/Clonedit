@@ -459,8 +459,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      honored per chained pattern with the synced delay following, and
      the PROJ SOURCE defaults to CHAIN when chain mode is armed so the
      bounce renders the sequence the way PLAY plays it.
+   - R19: mic wouldn't arm — every touch re-asserted the 'playback'
+     session (which forbids capture on iOS), so the arming tap itself
+     killed the mic track and MediaRecorder.start() threw
+     InvalidStateError. Arm now requests 'play-and-record' first,
+     resumeSession leaves the session alone while the mic owns it,
+     start() is guarded, and 'playback' is restored after capture.
    ================================================================ */
-const BUILD = 'MVX-880 · R18 · 2026-07-11 · bounce = live playback';
+const BUILD = 'MVX-880 · R19 · 2026-07-11 · mic arm session fix';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -943,6 +949,9 @@ $('btnMic').addEventListener('click',async ()=>{
     lcd('MIC: getUserMedia unavailable. If Lockdown Mode is on, media APIs may be disabled.'); return;
   }
   micBusy=true;   // hold the watchdog off — iOS reconfigures the session around getUserMedia
+  // a 'playback' session category forbids capture on iOS — the mic track arrives
+  // dead and MediaRecorder.start() throws InvalidStateError. Ask for record rights first.
+  try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
   try{
     micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});
   }catch(err){
@@ -973,7 +982,13 @@ $('btnMic').addEventListener('click',async ()=>{
       loadIntoTarget(buf,'mic-'+new Date().toISOString().slice(11,19).replace(/:/g,''));
     }catch(e){ lcd('RECORDING DECODE FAILED.'); }
   };
-  mediaRec.start();
+  try{ mediaRec.start(); }
+  catch(e){
+    micBusy=false; stopMicStream(); mediaRec=null;
+    resumeSession();
+    lcd('MIC ARM FAILED ('+(e.name||'error')+') — close other audio apps, then retry.');
+    return;
+  }
   $('btnMic').classList.add('on'); $('btnMic').textContent='STOP';
   lcd('RECORDING… tap STOP to capture into '+padName(S.editPad));
   meterMic();
@@ -2228,6 +2243,7 @@ function rebuildAudio(){ // last resort: wedged context — new context, new gra
 }
 function resumeSession(){
   if(!AC) return;
+  if(micBusy || (mediaRec && mediaRec.state==='recording')) return;   // mic owns the session — forcing 'playback' here kills the capture
   // re-assert playback session category (DRUKBOX lesson — iOS can revert it)
   try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
   if(AC.state!=='running'){
