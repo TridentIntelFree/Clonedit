@@ -1,0 +1,9 @@
+{
+  "name": "MVX-880",
+  "short_name": "MVX-880",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#17191d",
+  "theme_color": "#17191d",
+  "icons": [{ "src": "icon.png", "sizes": "180x180", "type": "image/png" }]
+}

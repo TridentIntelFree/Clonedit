@@ -6,6 +6,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>MVX-880</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.png">
+<meta name="theme-color" content="#17191d">
 <style>
 :root{
   --chassis:#17191d; --panel:#1e2127; --panel2:#242833; --line:#31363f;
@@ -153,6 +156,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <button data-v="pads" class="on">PADS</button>
   <button data-v="smpl">SMPL</button>
   <button data-v="seq">SEQ</button>
+  <button data-v="trax">TRAX</button>
   <button data-v="dj">DJ</button>
   <button data-v="mix">MIX</button>
   <button data-v="midi">MIDI</button>
@@ -281,6 +285,20 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <div class="row">
     <button id="btnLiveRec" class="rec grow">LIVE REC (quantized pad input)</button>
+  </div>
+</div>
+
+<!-- TRAX -->
+<div class="view" id="v-trax">
+  <div class="row">
+    <span class="lbl">SOURCE</span>
+    <select id="traxSrc"><option value="bus">MASTER BUS</option><option value="mic">MIC</option></select>
+    <span class="grow" style="font-size:10px;color:var(--txt-dim)">arm &#9679; · PLAY rolls &amp; records · STOP commits</span>
+  </div>
+  <div id="traxlist"></div>
+  <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
+    Tape lanes roll from bar 1 with the sequencer, save with the session, and mix into the
+    WAV bounce. BUS records everything you hear except the tracks themselves — overdub freely.
   </div>
 </div>
 
@@ -469,8 +487,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      means iOS never re-prompts; the LCD now says exactly where to
      re-enable it (aA menu → Website Settings → Microphone) instead
      of failing mutely.
+   - R21: TRAX — 8 cakewalk-style tape lanes. Arm a track, PLAY rolls
+     and records (BUS taps the master pre-track-return so overdubs
+     never bleed; MIC uses the R17/R19 session dance), STOP commits
+     the take aligned to bar 1. Mute/solo/volume per lane, takes go
+     to pads, persist in the session, GC-tracked, and mix into the
+     bounce. Plus offline PWA: manifest + network-first service
+     worker — fresh build when online, full app with no connection.
    ================================================================ */
-const BUILD = 'MVX-880 · R20 · 2026-07-11 · mic permission preflight';
+const BUILD = 'MVX-880 · R21 · 2026-07-12 · TRAX + offline PWA';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -559,6 +584,10 @@ function buildGraph(ctx){
   g.dlyFilt = ctx.createBiquadFilter(); g.dlyFilt.type='lowpass'; g.dlyFilt.frequency.value=S.dlyTone;
   g.dlyIn.connect(g.dlyNode); g.dlyNode.connect(g.dlyFilt);
   g.dlyFilt.connect(g.master); g.dlyFilt.connect(g.dlyFb); g.dlyFb.connect(g.dlyNode);
+  // tape-track return — joins at the compressor, after the master tap
+  // point, so BUS overdubs never re-record existing tracks
+  g.trackBus=ctx.createGain();
+  g.trackBus.connect(g.comp);
   // pad channels — built ONCE, connected ONCE (fan-out fix)
   // per-hit env → [drv → crush → flt] insert chain → ch gain → pan → dry + sends
   g.pads=[];
@@ -906,6 +935,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
   }
   if(b.dataset.v==='mix'){ drawEdit(); }
   if(b.dataset.v==='proj'){ $('bSrc').value=(S.chainOn&&S.chain.length)?'chain':'pat'; }
+  if(b.dataset.v==='trax'){ drawTrax(); }
 }));
 
 /* ---------------- sampler ---------------- */
@@ -1588,12 +1618,15 @@ function startSeq(){
   else selectPattern(S.pattern);   // re-apply this pattern's own tempo before the clock is read
   curStepSched=0; curStep=0;
   nextStepTime=AC.currentTime+0.08;   // offsets set BEFORE the loop reads them (ordering fix)
+  startTrax(nextStepTime);            // tape lanes roll (and record) from bar 1
   if(!S.extClk) seqTimer=setInterval(seqTick,25);
   $('btnPlay').classList.add('on');
   lcd('PLAY · PTN '+(S.pattern+1)+(S.extClk?' · EXT CLK':''));
 }
 function stopSeq(){
   playing=false; clearInterval(seqTimer);
+  stopTraxVoices();
+  if(traxCap) traxCommit();
   $('btnPlay').classList.remove('on');
   document.querySelectorAll('#stepgrid .step').forEach(el=>el.classList.remove('cur'));
   lcd('STOP.');
@@ -1748,6 +1781,167 @@ $('btnJamPad').addEventListener('click',()=>{
   if(Math.abs(perfPitch+perfBend)>0.01)
     lcd('LOADED → '+padName(S.editPad)+' — note: pitch fader at '+(perfPitch>=0?'+':'')+perfPitch.toFixed(1)+' st bends this pad too (double-tap fader to zero).');
 });
+
+/* ---------------- TRAX — cakewalk-style tape lanes ---------------- */
+const NTRAX=8, TRAX_MAX_S=180;
+function newTrack(){ return {bufId:-1,name:'',gain:0.9,pan:0,mute:false}; }
+S.trax=Array.from({length:NTRAX},()=>newTrack());
+let traxArm=-1, traxSolo=-1, traxVoices=[], traxCap=null, traxStream=null;
+
+function drawTrax(){
+  const el=$('traxlist'); el.innerHTML='';
+  S.trax.forEach((tr,i)=>{
+    const row=document.createElement('div'); row.className='row';
+    const num=document.createElement('span'); num.className='lbl'; num.style.minWidth='22px'; num.textContent='T'+(i+1);
+    const rec=document.createElement('button'); rec.className='rec'; rec.innerHTML='&#9679;';
+    rec.classList.toggle('on',traxArm===i);
+    rec.addEventListener('click',()=>armTrack(i));
+    const mu=document.createElement('button'); mu.textContent='M'; mu.classList.toggle('on',tr.mute);
+    mu.addEventListener('click',()=>{ tr.mute=!tr.mute; applyTraxMix(); drawTrax(); dirty(); });
+    const so=document.createElement('button'); so.textContent='S'; so.classList.toggle('on',traxSolo===i);
+    so.addEventListener('click',()=>{ traxSolo=traxSolo===i?-1:i; applyTraxMix(); drawTrax(); });
+    const b=tr.bufId>=0?S.buffers[tr.bufId]:null;
+    const nm=document.createElement('span');
+    nm.style.cssText='font-size:10px;min-width:64px;color:'+(b?'var(--lcd)':'var(--txt-dim)');
+    nm.textContent=b?(tr.name||'take')+' '+b.duration.toFixed(1)+'s':'— empty —';
+    const vol=document.createElement('input'); vol.type='range'; vol.min='0'; vol.max='1.2'; vol.step='0.01';
+    vol.value=tr.gain; vol.style.flex='1'; vol.style.minWidth='60px';
+    vol.addEventListener('input',e=>{ tr.gain=parseFloat(e.target.value); applyTraxMix(); dirty(); });
+    const pad=document.createElement('button'); pad.textContent='PAD';
+    pad.addEventListener('click',()=>{
+      if(tr.bufId<0){ lcd('TRACK '+(i+1)+' IS EMPTY.'); return; }
+      const p=S.pads[S.editPad]; p.bufId=tr.bufId; p.start=0; p.end=1; p.name=(tr.name||'take').slice(0,14);
+      drawPads(); drawEdit(); dirty(); lcd('TRACK '+(i+1)+' → '+padName(S.editPad));
+    });
+    const clr=document.createElement('button'); clr.textContent='\u00d7';
+    clr.addEventListener('click',()=>{ S.trax[i]=newTrack(); if(traxArm===i) disarmTrax(); applyTraxMix(); drawTrax(); dirty(); });
+    row.append(num,rec,mu,so,nm,vol,pad,clr);
+    el.appendChild(row);
+  });
+}
+async function armTrack(i){
+  if(traxCap){ lcd('ALREADY ROLLING — press STOP first.'); return; }
+  if(traxArm===i){ disarmTrax(); drawTrax(); lcd('TRACK '+(i+1)+' DISARMED.'); return; }
+  ensureAudio();
+  disarmTrax();
+  if($('traxSrc').value==='mic'){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ lcd('MIC unavailable on this browser.'); drawTrax(); return; }
+    micBusy=true;
+    try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
+    try{ traxStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}}); }
+    catch(err){ micBusy=false; drawTrax(); lcd('MIC DENIED/UNAVAILABLE ('+((err&&err.name)||'error')+').'); return; }
+  }
+  traxArm=i; drawTrax();
+  lcd('TRACK '+(i+1)+' ARMED · '+($('traxSrc').value==='mic'?'MIC':'BUS')+' — press PLAY to roll, STOP to commit.');
+}
+function disarmTrax(){
+  traxArm=-1;
+  if(traxStream){ try{ traxStream.getTracks().forEach(t=>t.stop()); }catch(e){} traxStream=null; micBusy=false; resumeSession(); }
+}
+function startTrax(when){
+  stopTraxVoices();
+  S.trax.forEach((tr,i)=>{
+    if(tr.bufId<0) return;
+    const b=S.buffers[tr.bufId]; if(!b) return;
+    const src=AC.createBufferSource(); src.buffer=b;
+    const gn=AC.createGain();
+    gn.gain.value=(!tr.mute && (traxSolo<0||traxSolo===i))?tr.gain:0;
+    src.connect(gn); gn.connect(LIVE.trackBus);
+    src.start(when);
+    src.onended=()=>{ try{src.disconnect();gn.disconnect();}catch(e){} };
+    traxVoices.push({i,src,gn});
+  });
+  if(traxArm>=0) traxBeginCapture(when);
+}
+function applyTraxMix(){
+  traxVoices.forEach(v=>{
+    const tr=S.trax[v.i];
+    const aud=!tr.mute && (traxSolo<0 || traxSolo===v.i);
+    try{ v.gn.gain.setTargetAtTime(aud?tr.gain:0,AC.currentTime,0.02); }catch(e){}
+  });
+}
+function stopTraxVoices(){ traxVoices.forEach(v=>{ try{v.src.stop();}catch(e){} }); traxVoices=[]; }
+function traxBeginCapture(when){
+  const useMic=!!traxStream;
+  let ctx=AC, srcNode=null;
+  try{
+    if(useMic){
+      try{ srcNode=AC.createMediaStreamSource(traxStream); }
+      catch(e){ // WebKit rate mismatch — capture in a context at the hardware rate
+        const Ctor=window.AudioContext||window.webkitAudioContext;
+        ctx=new Ctor(); srcNode=ctx.createMediaStreamSource(traxStream);
+      }
+    }
+    const cap={ctx,srcNode,L:[],R:[],len:0,first:-1,
+      seqStartCap: ctx===AC ? when : ctx.currentTime+(when-AC.currentTime)};
+    const tap=ctx.createScriptProcessor(4096,2,2);
+    cap.bufSize=tap.bufferSize||4096;
+    tap.onaudioprocess=e=>{
+      const b=e.inputBuffer;
+      if(cap.first<0) cap.first=(e.playbackTime!=null?e.playbackTime:ctx.currentTime);
+      cap.L.push(new Float32Array(b.getChannelData(0)));
+      cap.R.push(new Float32Array(b.getChannelData(b.numberOfChannels>1?1:0)));
+      cap.len+=b.length;
+      if(cap.len>=ctx.sampleRate*TRAX_MAX_S) traxCommit();
+    };
+    const sink=ctx.createGain(); sink.gain.value=0;
+    if(useMic) srcNode.connect(tap); else LIVE.master.connect(tap);
+    tap.connect(sink); sink.connect(ctx.destination);
+    cap.tap=tap; cap.sink=sink;
+    // sync marker: a ±4.0 impulse pair fired into the TAP ONLY (never audible)
+    // exactly at bar 1 — located in the raw capture at commit for
+    // sample-accurate alignment, then scrubbed from the take head.
+    // SP callback timestamps proved unreliable (cold vs warm starts differ
+    // by a whole buffer), so we align in the audio domain instead.
+    try{
+      const mb=ctx.createBuffer(1,80,ctx.sampleRate), md=mb.getChannelData(0);
+      md[0]=4; md[64]=-4;
+      const ms=ctx.createBufferSource(); ms.buffer=mb;
+      ms.connect(tap);
+      ms.start(Math.max(ctx.currentTime+0.005, cap.seqStartCap));
+      ms.onended=()=>{ try{ms.disconnect();}catch(e){} };
+    }catch(e){}
+    traxCap=cap;
+    lcd('ROLLING — TRACK '+(traxArm+1)+' recording ('+(useMic?'MIC':'BUS')+') · STOP commits.');
+  }catch(e){ traxCap=null; lcd('TRACK REC FAILED: '+(e.message||'tap error')); }
+}
+function traxCommit(){
+  const cap=traxCap; if(!cap) return;
+  traxCap=null;
+  try{ if(cap.srcNode) cap.srcNode.disconnect(); else LIVE.master.disconnect(cap.tap); }catch(e){}
+  try{ cap.tap.disconnect(); cap.sink.disconnect(); }catch(e){}
+  const i=traxArm;
+  disarmTrax();
+  if(cap.ctx!==AC){ try{ cap.ctx.close(); }catch(e){} }
+  if(i<0 || !cap.len){ drawTrax(); lcd('TAKE EMPTY.'); return; }
+  const sr=cap.ctx.sampleRate;
+  const L=new Float32Array(cap.len), R=new Float32Array(cap.len);
+  let o=0; for(const c of cap.L){ L.set(c,o); o+=c.length; }
+  o=0; for(const c of cap.R){ R.set(c,o); o+=c.length; }
+  // align sample 0 with bar 1: find the sync marker in the raw capture
+  let mi=-1;
+  const lim=Math.min(L.length-65, sr*2);
+  for(let i=0;i<lim;i++){ if(L[i]>2.5 && L[i+64]<-2.5){ mi=i; break; } }
+  let dl,dr;
+  if(mi>=0){
+    dl=L.subarray(mi); dr=R.subarray(mi);
+    for(let k=0;k<128 && k<dl.length;k++){ dl[k]=0; dr[k]=0; }   // scrub the marker
+  }else{
+    // marker missed (capture started after bar 1) — timestamp fallback
+    const first=(cap.first<0?cap.seqStartCap:cap.first)-cap.bufSize/sr;
+    const lead=Math.round((cap.seqStartCap-first)*sr);
+    if(lead>=0){ const k=Math.min(lead,L.length); dl=L.subarray(k); dr=R.subarray(k); }
+    else{ dl=new Float32Array(L.length-lead); dl.set(L,-lead); dr=new Float32Array(R.length-lead); dr.set(R,-lead); }
+  }
+  if(dl.length<sr*0.05){ drawTrax(); lcd('TAKE TOO SHORT.'); return; }
+  const buf=AC.createBuffer(2,dl.length,sr);
+  buf.copyToChannel(dl,0); buf.copyToChannel(dr,1);
+  S.buffers.push(buf);
+  S.trax[i].bufId=S.buffers.length-1;
+  S.trax[i].name='take'+(i+1);
+  drawTrax(); dirty();
+  lcd('TAKE \u2192 TRACK '+(i+1)+' \u00b7 '+buf.duration.toFixed(1)+'s');
+}
 
 /* seq UI */
 function selectPattern(i){
@@ -1973,7 +2167,7 @@ $('btnSave').addEventListener('click',()=>{
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
-    pads:S.pads, patterns:S.patterns, buffers:bufs };
+    trax:S.trax, pads:S.pads, patterns:S.patterns, buffers:bufs };
   const blob=new Blob([JSON.stringify(doc)],{type:'application/json'});
   download(blob, ($('projName').value||'mvx-session')+'.json');
   plog('Saved project JSON ('+Math.round(blob.size/1024)+' KB).');
@@ -2004,6 +2198,10 @@ function applySessionDoc(doc, bufs){
   S.bank=clamp(doc.bank|0,0,3);
   S.editPad=clamp(doc.editPad|0,0,NPADS-1);
   S.seqPad=clamp(doc.seqPad|0,0,NPADS-1);
+  S.trax=(Array.isArray(doc.trax)&&doc.trax.length)?doc.trax:Array.from({length:NTRAX},()=>newTrack());
+  while(S.trax.length<NTRAX) S.trax.push(newTrack());
+  S.trax.forEach(tr=>{ if(tr.gain==null)tr.gain=0.9; if(tr.pan==null)tr.pan=0; tr.mute=!!tr.mute; if(tr.bufId==null)tr.bufId=-1; });
+  traxArm=-1; traxSolo=-1;
   S.ptnBpm=!!doc.ptnBpm; $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
   S.patterns.forEach(pt=>{ if(pt.bpm===undefined) pt.bpm=null; });
   S.pads.forEach(p=>{ if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16; });
@@ -2035,7 +2233,7 @@ function applySessionDoc(doc, bufs){
   $('mxDlyTone').value=S.dlyTone; $('mxDlyToneV').textContent=Math.round(S.dlyTone/100)/10+'k';
   $('mxDlyDiv').value=String(S.delayDiv);
   document.querySelectorAll('#bankrow [data-b]').forEach(x=>x.classList.toggle('on',parseInt(x.dataset.b,10)===S.bank));
-  drawPads(); drawEdit(); drawSeq(); drawCcMaps(); drawWave();
+  drawPads(); drawEdit(); drawSeq(); drawCcMaps(); drawWave(); drawTrax();
 }
 $('jsonIn').addEventListener('change',async e=>{
   const f=e.target.files && e.target.files[0]; if(!f) return;
@@ -2077,12 +2275,14 @@ function idbGet(key){ return idbOpen().then(db=>new Promise((res,rej)=>{
 function gcBuffers(){ // drop orphaned samples (every re-render leaves one) so the vault doesn't bloat past iOS IDB limits
   const used=new Set();
   S.pads.forEach(p=>{ if(p.bufId>=0) used.add(p.bufId); });
+  S.trax.forEach(tr=>{ if(tr.bufId>=0) used.add(tr.bufId); });
   const wi=workBuf?S.buffers.indexOf(workBuf):-1;
   if(wi>=0) used.add(wi);
   if(used.size>=S.buffers.length) return;
   const map={}, nb=[];
   S.buffers.forEach((b,i)=>{ if(used.has(i)){ map[i]=nb.length; nb.push(b); } });
   S.pads.forEach(p=>{ if(p.bufId>=0) p.bufId=map[p.bufId]; });
+  S.trax.forEach(tr=>{ if(tr.bufId>=0) tr.bufId=map[tr.bufId]; });
   Object.keys(revCache).forEach(k=>delete revCache[k]);   // keyed by old ids
   S.buffers=nb;
 }
@@ -2103,7 +2303,7 @@ function snapshotSession(){
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
-    pads:S.pads, patterns:S.patterns, buffers:bufs };
+    trax:S.trax, pads:S.pads, patterns:S.patterns, buffers:bufs };
 }
 let autosaving=false;
 async function autosave(){
@@ -2189,9 +2389,17 @@ $('btnBounce').addEventListener('click',async ()=>{
       t+=sd*NSTEPS;
     }
   }
-  if(!events.length){ plog('Nothing to bounce — pattern is empty.'); return; }
-  if(seqSolo) plog('Note: SOLO is armed in the SEQ view — the bounce still renders ALL tracks.');
-  const SR=44100, total=t+Math.max(3.0,S.revSize+0.5);   // tail covers reverb size
+  const trax=[];
+  S.trax.forEach((tr,i)=>{
+    if(tr.bufId<0 || tr.mute) return;
+    if(traxSolo>=0 && i!==traxSolo) return;
+    const b=S.buffers[tr.bufId]; if(b) trax.push({tr,b});
+  });
+  if(!events.length && !trax.length){ plog('Nothing to bounce — pattern and tracks are empty.'); return; }
+  if(seqSolo) plog('Note: SOLO is armed in the SEQ view — the bounce still renders ALL pattern tracks.');
+  let dur=t;
+  trax.forEach(x=>{ dur=Math.max(dur,0.05+x.b.duration); });
+  const SR=44100, total=dur+Math.max(3.0,S.revSize+0.5);   // tail covers reverb size
   lcd('RENDERING '+total.toFixed(1)+'s …'); plog('Bounce: '+events.length+' events, '+total.toFixed(1)+'s, '+loops+' loop(s)'+(useChain?' of chain':'')+'.');
   try{
     const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
@@ -2201,6 +2409,12 @@ $('btnBounce').addEventListener('click',async ()=>{
     const chokeOff={};
     events.sort((a,b)=>a.when-b.when);
     for(const ev of events) triggerPad(oc, g, ev.p, ev.v, ev.when, chokeOff);
+    for(const x of trax){ // tape lanes, aligned to bar 1 like the live transport
+      const src=oc.createBufferSource(); src.buffer=x.b;
+      const gn=oc.createGain(); gn.gain.value=x.tr.gain;
+      src.connect(gn); gn.connect(g.trackBus);
+      src.start(0.05);
+    }
     const rendered=await oc.startRendering();
     const wav=encodeWav(rendered);
     download(wav, ($('projName').value||'mvx-session')+'.wav');
@@ -2248,6 +2462,7 @@ function rebuildOut(){
 }
 function rebuildAudio(){ // last resort: wedged context — new context, new graph, same session
   try{ if(jamOn) stopJam(); }catch(e){}   // finalize the capture on the old context before it dies
+  try{ stopTraxVoices(); if(traxCap) traxCommit(); }catch(e){}
   try{ if(LIVE && LIVE.ael){ LIVE.ael.srcObject=null; LIVE.ael.remove(); } }catch(e){}
   try{ if(AC) AC.close(); }catch(e){}
   AC=null; LIVE=null;
@@ -2296,7 +2511,10 @@ window.addEventListener('focus',resumeSession);
 document.body.addEventListener('touchstart',()=>{ if(AC) resumeSession(); },{passive:true});
 
 /* ---------------- boot ---------------- */
-buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader();
+buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader(); drawTrax();
+if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});   // offline shell — network-first, so updates land when online
+}
 document.body.addEventListener('touchstart',function once(){ ensureAudio(); document.body.removeEventListener('touchstart',once); },{passive:true});
 lcd('READY · load a sample into a pad (SMPL tab).');
 offerRestore();

@@ -25,3 +25,10 @@ Driver essentials:
 - App state is all in the global `S`; audio graph in `AC`/`LIVE`. Everything is reachable from `page.evaluate`.
 - Live param changes go through `setTargetAtTime` — read `param.value` a few hundred ms after a change.
 - File pickers (`#fileIn`, `#jsonIn`) need `page.setInputFiles`; decode requires AC, so click `#logo` first.
+
+## PWA / service worker
+
+SW only registers over http(s). Serve with `python3 -m http.server 8899` from the
+repo root and drive `http://localhost:8899/index.html`. Test offline with
+Playwright `context.setOffline(true)` + reload. TRAX flows: `armTrack(i)` then
+`#btnPlay` rolls and records, `#btnStop` commits the take to `S.trax[i]`.
