@@ -304,6 +304,21 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <span class="grow" style="font-size:10px;color:var(--txt-dim)">arm &#9679; · PLAY rolls &amp; records · STOP commits</span>
   </div>
   <div id="traxlist"></div>
+  <div id="traxfx" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
+    <div class="row"><span class="lbl">TRACK</span><span id="tfxTitle" style="color:var(--amber);font-size:12px">T1</span>
+      <span class="grow"></span>
+      <button id="tfxPad">TO PAD</button>
+      <button id="tfxClr">CLEAR</button>
+    </div>
+    <div class="row">
+      <span class="lbl">FILTER</span>
+      <select id="tfxType"><option value="off">OFF</option><option value="lowpass">LP</option><option value="highpass">HP</option><option value="bandpass">BP</option></select>
+    </div>
+    <div class="pslider"><span class="lbl">CUTOFF</span><input type="range" id="tfxCut" min="0" max="1" step="0.005"><span class="val" id="tfxCutV"></span></div>
+    <div class="pslider"><span class="lbl">PAN</span><input type="range" id="tfxPan" min="-1" max="1" step="0.05"><span class="val" id="tfxPanV"></span></div>
+    <div class="pslider"><span class="lbl">REV</span><input type="range" id="tfxRev" min="0" max="1" step="0.01"><span class="val" id="tfxRevV"></span></div>
+    <div class="pslider"><span class="lbl">DLY</span><input type="range" id="tfxDly" min="0" max="1" step="0.01"><span class="val" id="tfxDlyV"></span></div>
+  </div>
   <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
     Tape lanes roll from bar 1 with the sequencer, save with the session, and mix into the
     WAV bounce. BUS records everything you hear except the tracks themselves — overdub freely.
@@ -415,6 +430,17 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div class="pslider"><span class="lbl">VOLUME</span><input type="range" id="mxVol" min="0" max="1.2" step="0.01"><span class="val" id="mxVolV"></span></div>
   <div class="pslider"><span class="lbl">COMP</span><input type="range" id="mxComp" min="0" max="1" step="0.01"><span class="val" id="mxCompV"></span></div>
   <h3>REVERB</h3>
+  <div class="row">
+    <span class="lbl">TYPE</span>
+    <select id="mxRevType">
+      <option value="hall">HALL</option>
+      <option value="room">ROOM</option>
+      <option value="plate">PLATE</option>
+      <option value="spring">SPRING</option>
+      <option value="cath">CATHEDRAL</option>
+      <option value="gated">GATED 80s</option>
+    </select>
+  </div>
   <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="mxRevLvl" min="0" max="1.2" step="0.01"><span class="val" id="mxRevLvlV"></span></div>
   <div class="pslider"><span class="lbl">SIZE</span><input type="range" id="mxRevSize" min="0.8" max="6" step="0.1"><span class="val" id="mxRevSizeV"></span></div>
   <h3>DELAY</h3>
@@ -427,6 +453,11 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <option value="0.75">1/8.</option>
       <option value="1">1/4</option>
       <option value="1.5">1/4.</option>
+    </select>
+    <select id="mxDlyMode">
+      <option value="digital">DIGITAL</option>
+      <option value="pingpong">PING-PONG</option>
+      <option value="tape">TAPE</option>
     </select>
     <span style="font-size:10px;color:var(--txt-dim)">tempo-synced</span>
   </div>
@@ -582,8 +613,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      gains a performance insert on the whole mix: TILT WAH
      (deviceorientation), TAPE STOP, tempo-synced STUTTER — all ahead
      of the TRAX bus tap so performances record with their FX.
+   - R24: fx rack + looper. Six reverb algorithms (hall/room/plate/
+     spring/cathedral/gated) on the shared bus; delay modes digital/
+     ping-pong/tape (saturated feedback + wow), rebuildable live and
+     identical in the bounce. Each TRAX lane gets FX (filter/pan/
+     rev/dly sends, live-adjustable) and an \u221e loop toggle that
+     loops the take at the nearest whole bar.
    ================================================================ */
-const BUILD = 'MVX-880 · R23 · 2026-07-12 · sensors + perf FX';
+const BUILD = 'MVX-880 · R24 · 2026-07-12 · fx-rack + looper';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -606,7 +643,7 @@ const S = {
   patterns: Array.from({length:NPAT},()=>newPattern()),
   pattern: 0, bank: 0, editPad: 0, seqPad: 0,
   bpm: 100, swing: 0, masterVol: 0.9, delayFb: 0.35,
-  revLvl: 0.9, revSize: 3.0, delayDiv: 0.375, dlyTone: 5200, compAmt: 0.4,
+  revLvl: 0.9, revSize: 3.0, revType: 'hall', delayDiv: 0.375, dlyTone: 5200, dlyMode: 'digital', compAmt: 0.4,
   chain: [], chainOn: false, chainPos: 0,
   vcurve: 'linear', midiCh: -1, extClk: false, pcPat: true,
   ccMaps: {},             // ccNum -> target string
@@ -620,14 +657,72 @@ let AC=null, LIVE=null;      // LIVE = {master,comp,revIn,dlyIn,dlyFb,dlyNode,pa
 
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 
-function makeIR(ctx, size){ // deterministic IR — identical live and offline
-  const sr=ctx.sampleRate, dur=size||3, len=Math.floor(sr*dur), b=ctx.createBuffer(2,len,sr);
+function makeIR(ctx, size, type){ // deterministic IR family — identical live and offline
+  const t=type||'hall', sr=ctx.sampleRate;
+  let dur=size||3;
+  if(t==='room') dur=Math.min(dur,1.2);
+  else if(t==='gated') dur=0.55;
+  else if(t==='spring') dur=Math.min(dur,2.2);
+  else if(t==='cath') dur=Math.max(dur,4.5);
+  const len=Math.floor(sr*Math.max(0.25,dur)), b=ctx.createBuffer(2,len,sr);
   for(let ch=0; ch<2; ch++){
-    const d=b.getChannelData(ch), rnd=mulberry32(880+ch);
-    for(let i=0;i<len;i++){ const t=i/len; d[i]=(rnd()*2-1)*Math.pow(1-t,2.6)*0.5; }
+    const d=b.getChannelData(ch), rnd=mulberry32(880+ch+t.length*7);
+    let st=0;
+    for(let i=0;i<len;i++){
+      const x=i/len, n=rnd()*2-1;
+      let v;
+      if(t==='room'){ v=n*Math.pow(1-x,1.7)*0.6; }
+      else if(t==='plate'){ v=(n-st*0.55)*Math.pow(1-x,2.1)*0.55; st=n; }               // pre-emphasized: bright & dense
+      else if(t==='spring'){ const flut=0.25+0.75*Math.abs(Math.sin(Math.PI*i/(0.048*sr)));
+        v=n*Math.pow(1-x,2.0)*flut*0.55; }                                              // periodic boing flutter
+      else if(t==='cath'){ const a=0.35*(1-x)+0.03; st+=(n-st)*a; v=st*Math.pow(1-x,3.0)*0.9; } // darkens as it dies
+      else if(t==='gated'){ v=(x<0.72? n*(0.5-x*0.25) : 0); }                           // 80s hard gate
+      else { v=n*Math.pow(1-x,2.6)*0.5; }                                               // hall
+      d[i]=v;
+    }
+    if(t==='room'){ for(let k=1;k<=6;k++){ const p=Math.floor(sr*0.008*k*(1+k*0.13)); if(p<len) d[p]+=(k%2?0.5:-0.4)/k; } }
   }
   return b;
 }
+function buildDelayNet(ctx,g){ // delay network per S.dlyMode — dlyIn stays as the stable send target
+  if(!g.dlyIn) g.dlyIn=ctx.createGain(); else { try{ g.dlyIn.disconnect(); }catch(e){} }
+  (g._dlyKill||[]).forEach(n=>{ try{ n.disconnect(); if(n.stop) n.stop(); }catch(e){} });
+  const mode=S.dlyMode||'digital', dt=delayTime();
+  g.dlyFilt=ctx.createBiquadFilter(); g.dlyFilt.type='lowpass'; g.dlyFilt.frequency.value=S.dlyTone;
+  g.dlyFb=ctx.createGain(); g.dlyFb.gain.value=S.delayFb;
+  g.dlyFb2=null;
+  if(mode==='pingpong' && ctx.createStereoPanner){
+    const dL=ctx.createDelay(2), dR=ctx.createDelay(2);
+    dL.delayTime.value=dt; dR.delayTime.value=dt;
+    const pL=ctx.createStereoPanner(), pR=ctx.createStereoPanner();
+    pL.pan.value=-0.85; pR.pan.value=0.85;
+    g.dlyFb2=ctx.createGain(); g.dlyFb2.gain.value=S.delayFb;
+    g.dlyIn.connect(dL);
+    dL.connect(pL); dR.connect(pR);
+    pL.connect(g.dlyFilt); pR.connect(g.dlyFilt);
+    dL.connect(g.dlyFb); g.dlyFb.connect(dR);
+    dR.connect(g.dlyFb2); g.dlyFb2.connect(dL);
+    g.dlyNodes=[dL,dR];
+    g._dlyKill=[dL,dR,pL,pR,g.dlyFb,g.dlyFb2,g.dlyFilt];
+  }else{
+    const d=ctx.createDelay(2); d.delayTime.value=dt;
+    g.dlyIn.connect(d); d.connect(g.dlyFilt);
+    if(mode==='tape'){ // saturated feedback + slow wow
+      const sat=ctx.createWaveShaper(); sat.curve=makeDriveCurve(0.22);
+      g.dlyFilt.connect(sat); sat.connect(g.dlyFb); g.dlyFb.connect(d);
+      const lfo=ctx.createOscillator(); lfo.frequency.value=0.5;
+      const lg=ctx.createGain(); lg.gain.value=0.0035;
+      lfo.connect(lg); lg.connect(d.delayTime); lfo.start();
+      g._dlyKill=[d,sat,lfo,lg,g.dlyFb,g.dlyFilt];
+    }else{
+      g.dlyFilt.connect(g.dlyFb); g.dlyFb.connect(d);
+      g._dlyKill=[d,g.dlyFb,g.dlyFilt];
+    }
+    g.dlyNodes=[d];
+  }
+  g.dlyFilt.connect(g.master);
+}
+function liveDelaySync(){ if(!LIVE) return; (LIVE.dlyNodes||[]).forEach(d=>d.delayTime.setTargetAtTime(delayTime(),AC.currentTime,0.05)); }
 function compThresh(){ return -6 - S.compAmt*26; }
 
 function makeDriveCurve(amt){
@@ -666,17 +761,11 @@ function buildGraph(ctx){
   // reverb
   g.revIn = ctx.createGain();
   g.conv = ctx.createConvolver();
-  g.conv.buffer = makeIR(ctx, S.revSize);
+  g.conv.buffer = makeIR(ctx, S.revSize, S.revType);
   g.revRet = ctx.createGain(); g.revRet.gain.value=S.revLvl;
   g.revIn.connect(g.conv); g.conv.connect(g.revRet); g.revRet.connect(g.master);
-  // delay
-  g.dlyIn = ctx.createGain();
-  g.dlyNode = ctx.createDelay(2.0);
-  g.dlyNode.delayTime.value = delayTime();
-  g.dlyFb = ctx.createGain(); g.dlyFb.gain.value = S.delayFb;
-  g.dlyFilt = ctx.createBiquadFilter(); g.dlyFilt.type='lowpass'; g.dlyFilt.frequency.value=S.dlyTone;
-  g.dlyIn.connect(g.dlyNode); g.dlyNode.connect(g.dlyFilt);
-  g.dlyFilt.connect(g.master); g.dlyFilt.connect(g.dlyFb); g.dlyFb.connect(g.dlyNode);
+  // delay (mode-dependent network)
+  buildDelayNet(ctx,g);
   // tape-track return — joins at the compressor, after the master tap
   // point, so BUS overdubs never re-record existing tracks
   g.trackBus=ctx.createGain();
@@ -993,12 +1082,19 @@ const pct=x=>Math.round(x*100)+'%';
 bindMix('mxVol',()=>S.masterVol,v=>{ S.masterVol=v; if(LIVE) LIVE.master.gain.setTargetAtTime(v,AC.currentTime,0.02); },pct);
 bindMix('mxComp',()=>S.compAmt,v=>{ S.compAmt=v; if(LIVE) LIVE.comp.threshold.setTargetAtTime(compThresh(),AC.currentTime,0.05); },pct);
 bindMix('mxRevLvl',()=>S.revLvl,v=>{ S.revLvl=v; if(LIVE) LIVE.revRet.gain.setTargetAtTime(v,AC.currentTime,0.02); },pct);
-bindMix('mxRevSize',()=>S.revSize,v=>{ S.revSize=v; if(LIVE) LIVE.conv.buffer=makeIR(AC,S.revSize); },v=>v.toFixed(1)+'s');
-bindMix('mxDlyFb',()=>S.delayFb,v=>{ S.delayFb=v; if(LIVE) LIVE.dlyFb.gain.setTargetAtTime(v,AC.currentTime,0.02); },pct);
+bindMix('mxRevSize',()=>S.revSize,v=>{ S.revSize=v; if(LIVE) LIVE.conv.buffer=makeIR(AC,S.revSize,S.revType); },v=>v.toFixed(1)+'s');
+bindMix('mxDlyFb',()=>S.delayFb,v=>{ S.delayFb=v; if(LIVE){ LIVE.dlyFb.gain.setTargetAtTime(v,AC.currentTime,0.02); if(LIVE.dlyFb2) LIVE.dlyFb2.gain.setTargetAtTime(v,AC.currentTime,0.02); } },pct);
 bindMix('mxDlyTone',()=>S.dlyTone,v=>{ S.dlyTone=v; if(LIVE) LIVE.dlyFilt.frequency.setTargetAtTime(v,AC.currentTime,0.03); },v=>Math.round(v/100)/10+'k');
 $('mxDlyDiv').value=String(S.delayDiv);
-$('mxDlyDiv').addEventListener('change',e=>{ S.delayDiv=parseFloat(e.target.value); dirty();
-  if(LIVE) LIVE.dlyNode.delayTime.setTargetAtTime(delayTime(),AC.currentTime,0.05); });
+$('mxDlyDiv').addEventListener('change',e=>{ S.delayDiv=parseFloat(e.target.value); dirty(); liveDelaySync(); });
+$('mxRevType').value=S.revType;
+$('mxRevType').addEventListener('change',e=>{ S.revType=e.target.value;
+  if(LIVE) LIVE.conv.buffer=makeIR(AC,S.revSize,S.revType);
+  dirty(); lcd('REVERB: '+e.target.selectedOptions[0].textContent); });
+$('mxDlyMode').value=S.dlyMode;
+$('mxDlyMode').addEventListener('change',e=>{ S.dlyMode=e.target.value;
+  if(LIVE) buildDelayNet(AC,LIVE);
+  dirty(); lcd('DELAY: '+e.target.selectedOptions[0].textContent); });
 $('mxPadRev').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.rev=parseFloat(e.target.value); dirty();
   $('mxPadRevV').textContent=p.rev.toFixed(2);
   if(LIVE) LIVE.pads[S.editPad].rev.gain.setTargetAtTime(p.rev,AC.currentTime,0.01); });
@@ -1734,7 +1830,7 @@ function setBpm(b){ S.bpm=clamp(b,40,240);
   if(S.ptnBpm && !S.extClk && !vinylOn) S.patterns[S.pattern].bpm=S.bpm;
   $('bpmval').value=S.bpm.toFixed(1);
   $('djBpm').value=S.bpm; $('djBpmV').textContent=S.bpm.toFixed(1);
-  if(LIVE) LIVE.dlyNode.delayTime.setTargetAtTime(delayTime(),AC.currentTime,0.05);
+  liveDelaySync();
   dirty(); }
 $('bpmUp').addEventListener('click',()=>setBpm(S.bpm+1));
 $('bpmDown').addEventListener('click',()=>setBpm(S.bpm-1));
@@ -1878,7 +1974,7 @@ $('btnJamPad').addEventListener('click',()=>{
 
 /* ---------------- TRAX — cakewalk-style tape lanes ---------------- */
 const NTRAX=8, TRAX_MAX_S=180;
-function newTrack(){ return {bufId:-1,name:'',gain:0.9,pan:0,mute:false}; }
+function newTrack(){ return {bufId:-1,name:'',gain:0.9,pan:0,mute:false,loop:false,ftype:'off',fcut:1,rev:0,dly:0}; }
 S.trax=Array.from({length:NTRAX},()=>newTrack());
 let traxArm=-1, traxSolo=-1, traxVoices=[], traxCap=null, traxStream=null;
 
@@ -1901,18 +1997,53 @@ function drawTrax(){
     const vol=document.createElement('input'); vol.type='range'; vol.min='0'; vol.max='1.2'; vol.step='0.01';
     vol.value=tr.gain; vol.style.flex='1'; vol.style.minWidth='60px';
     vol.addEventListener('input',e=>{ tr.gain=parseFloat(e.target.value); applyTraxMix(); dirty(); });
-    const pad=document.createElement('button'); pad.textContent='PAD';
-    pad.addEventListener('click',()=>{
-      if(tr.bufId<0){ lcd('TRACK '+(i+1)+' IS EMPTY.'); return; }
-      const p=S.pads[S.editPad]; p.bufId=tr.bufId; p.start=0; p.end=1; p.name=(tr.name||'take').slice(0,14);
-      drawPads(); drawEdit(); dirty(); lcd('TRACK '+(i+1)+' → '+padName(S.editPad));
+    const lp=document.createElement('button'); lp.innerHTML='&#8734;';
+    lp.classList.toggle('on',tr.loop);
+    lp.addEventListener('click',()=>{ tr.loop=!tr.loop; drawTrax(); dirty();
+      lcd('TRACK '+(i+1)+(tr.loop?' LOOPS at the nearest bar':' plays once')); });
+    const fx=document.createElement('button'); fx.textContent='FX';
+    fx.classList.toggle('on',traxFxSel===i && $('traxfx').style.display!=='none');
+    fx.addEventListener('click',()=>{
+      if(traxFxSel===i && $('traxfx').style.display!=='none'){ $('traxfx').style.display='none'; }
+      else{ traxFxSel=i; drawTraxFx(); $('traxfx').style.display='block'; }
+      drawTrax();
     });
-    const clr=document.createElement('button'); clr.textContent='\u00d7';
-    clr.addEventListener('click',()=>{ S.trax[i]=newTrack(); if(traxArm===i) disarmTrax(); applyTraxMix(); drawTrax(); dirty(); });
-    row.append(num,rec,mu,so,nm,vol,pad,clr);
+    row.append(num,rec,mu,so,lp,nm,vol,fx);
     el.appendChild(row);
   });
+  if($('traxfx').style.display!=='none') drawTraxFx();
 }
+let traxFxSel=0;
+function drawTraxFx(){
+  const i=traxFxSel, tr=S.trax[i];
+  $('tfxTitle').textContent='T'+(i+1)+(tr.name?' \u00b7 '+tr.name:'');
+  $('tfxType').value=tr.ftype||'off';
+  $('tfxCut').value=tr.fcut; $('tfxCutV').textContent=Math.round(cutHz(tr.fcut))+'Hz';
+  $('tfxPan').value=tr.pan||0; $('tfxPanV').textContent=(tr.pan||0).toFixed(2);
+  $('tfxRev').value=tr.rev||0; $('tfxRevV').textContent=(tr.rev||0).toFixed(2);
+  $('tfxDly').value=tr.dly||0; $('tfxDlyV').textContent=(tr.dly||0).toFixed(2);
+}
+$('tfxType').addEventListener('change',e=>{ S.trax[traxFxSel].ftype=e.target.value; applyTraxFx(traxFxSel); dirty();
+  lcd('TRACK FILTER '+e.target.value.toUpperCase()+' — on/off takes effect on next PLAY.'); });
+$('tfxCut').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.fcut=parseFloat(e.target.value);
+  $('tfxCutV').textContent=Math.round(cutHz(tr.fcut))+'Hz'; applyTraxFx(traxFxSel); dirty(); });
+$('tfxPan').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.pan=parseFloat(e.target.value);
+  $('tfxPanV').textContent=tr.pan.toFixed(2); applyTraxFx(traxFxSel); dirty(); });
+$('tfxRev').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.rev=parseFloat(e.target.value);
+  $('tfxRevV').textContent=tr.rev.toFixed(2); applyTraxFx(traxFxSel); dirty(); });
+$('tfxDly').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.dly=parseFloat(e.target.value);
+  $('tfxDlyV').textContent=tr.dly.toFixed(2); applyTraxFx(traxFxSel); dirty(); });
+$('tfxPad').addEventListener('click',()=>{
+  const tr=S.trax[traxFxSel];
+  if(tr.bufId<0){ lcd('TRACK '+(traxFxSel+1)+' IS EMPTY.'); return; }
+  const p=S.pads[S.editPad]; p.bufId=tr.bufId; p.start=0; p.end=1; p.name=(tr.name||'take').slice(0,14);
+  drawPads(); drawEdit(); dirty(); lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad));
+});
+$('tfxClr').addEventListener('click',()=>{
+  S.trax[traxFxSel]=newTrack();
+  if(traxArm===traxFxSel) disarmTrax();
+  applyTraxMix(); drawTrax(); drawTraxFx(); dirty();
+});
 async function armTrack(i){
   if(traxCap){ lcd('ALREADY ROLLING — press STOP first.'); return; }
   if(traxArm===i){ disarmTrax(); drawTrax(); lcd('TRACK '+(i+1)+' DISARMED.'); return; }
@@ -1932,20 +2063,58 @@ function disarmTrax(){
   traxArm=-1;
   if(traxStream){ try{ traxStream.getTracks().forEach(t=>t.stop()); }catch(e){} traxStream=null; micBusy=false; resumeSession(); }
 }
+function trackLoopEnd(b){ // loop the take at the nearest whole bar so it stays in step
+  const bar=60/S.bpm/4*NSTEPS;
+  let end=Math.round(b.duration/bar)*bar;
+  if(end<bar*0.99 || end>b.duration+0.001) end=Math.floor(b.duration/bar)*bar;
+  if(end<bar*0.99) end=b.duration;   // shorter than a bar: loop the whole take
+  return end;
+}
+function wireTrack(ctx,g,tr,b,when,gainVal){ // shared by live transport and bounce
+  const src=ctx.createBufferSource(); src.buffer=b;
+  if(tr.loop){ src.loop=true; src.loopStart=0; src.loopEnd=trackLoopEnd(b); }
+  let head=src, flt=null;
+  if(tr.ftype && tr.ftype!=='off'){
+    flt=ctx.createBiquadFilter(); flt.type=tr.ftype; flt.frequency.value=cutHz(tr.fcut); flt.Q.value=1.2;
+    head.connect(flt); head=flt;
+  }
+  const gn=ctx.createGain(); gn.gain.value=gainVal;
+  head.connect(gn);
+  const pn=ctx.createStereoPanner?ctx.createStereoPanner():null;
+  let tail=gn;
+  if(pn){ pn.pan.value=tr.pan||0; gn.connect(pn); tail=pn; }
+  tail.connect(g.trackBus);
+  const rv=ctx.createGain(); rv.gain.value=tr.rev||0;
+  const dl=ctx.createGain(); dl.gain.value=tr.dly||0;
+  tail.connect(rv); tail.connect(dl);
+  rv.connect(g.revIn); dl.connect(g.dlyIn);
+  src.start(when);
+  return {src,gn,flt,pn,rv,dl};
+}
 function startTrax(when){
   stopTraxVoices();
   S.trax.forEach((tr,i)=>{
     if(tr.bufId<0) return;
     const b=S.buffers[tr.bufId]; if(!b) return;
-    const src=AC.createBufferSource(); src.buffer=b;
-    const gn=AC.createGain();
-    gn.gain.value=(!tr.mute && (traxSolo<0||traxSolo===i))?tr.gain:0;
-    src.connect(gn); gn.connect(LIVE.trackBus);
-    src.start(when);
-    src.onended=()=>{ try{src.disconnect();gn.disconnect();}catch(e){} };
-    traxVoices.push({i,src,gn});
+    const aud=!tr.mute && (traxSolo<0||traxSolo===i);
+    const v=wireTrack(AC,LIVE,tr,b,when,aud?tr.gain:0);
+    v.i=i;
+    v.src.onended=()=>{ try{v.src.disconnect();v.gn.disconnect();}catch(e){} };
+    traxVoices.push(v);
   });
   if(traxArm>=0) traxBeginCapture(when);
+}
+function applyTraxFx(i){ // live-adjust a playing lane's fx (filter on/off needs next PLAY)
+  const tr=S.trax[i];
+  traxVoices.forEach(v=>{
+    if(v.i!==i) return;
+    try{
+      if(v.flt && tr.ftype!=='off'){ v.flt.type=tr.ftype; v.flt.frequency.setTargetAtTime(cutHz(tr.fcut),AC.currentTime,0.02); }
+      if(v.pn) v.pn.pan.setTargetAtTime(tr.pan||0,AC.currentTime,0.02);
+      v.rv.gain.setTargetAtTime(tr.rev||0,AC.currentTime,0.02);
+      v.dl.gain.setTargetAtTime(tr.dly||0,AC.currentTime,0.02);
+    }catch(e){}
+  });
 }
 function applyTraxMix(){
   traxVoices.forEach(v=>{
@@ -2591,7 +2760,7 @@ function selectPattern(i){
     S.bpm=clamp(pb,40,240);
     $('bpmval').value=S.bpm.toFixed(1);
     $('djBpm').value=S.bpm; $('djBpmV').textContent=S.bpm.toFixed(1);
-    if(LIVE) LIVE.dlyNode.delayTime.setTargetAtTime(delayTime(),AC.currentTime,0.05);
+    liveDelaySync();
   }
 }
 function drawSeq(){
@@ -2746,7 +2915,7 @@ function applyCc(cc,val){
   if(t==='m:vol'){ S.masterVol=x*1.2; if(LIVE) LIVE.master.gain.setTargetAtTime(S.masterVol,AC.currentTime,0.02); }
   else if(t==='m:bpm'){ setBpm(40+x*200); }
   else if(t==='m:swing'){ S.swing=x*0.6; $('swing').value=S.swing; $('swingV').textContent=Math.round(S.swing*100)+'%'; }
-  else if(t==='m:dfb'){ S.delayFb=x*0.85; if(LIVE) LIVE.dlyFb.gain.setTargetAtTime(S.delayFb,AC.currentTime,0.02); }
+  else if(t==='m:dfb'){ S.delayFb=x*0.85; if(LIVE){ LIVE.dlyFb.gain.setTargetAtTime(S.delayFb,AC.currentTime,0.02); if(LIVE.dlyFb2) LIVE.dlyFb2.gain.setTargetAtTime(S.delayFb,AC.currentTime,0.02); } }
   else{
     const p=S.pads[S.editPad], n=LIVE?LIVE.pads[S.editPad]:null;
     if(t==='p:gain'){ p.gain=x*1.2; if(n) n.ch.gain.setTargetAtTime(p.gain,AC.currentTime,0.02); }
@@ -2803,7 +2972,7 @@ $('btnSave').addEventListener('click',()=>{
   });
   const doc={ fmt:'mvx880-project', build:BUILD, name:$('projName').value,
     bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
-    revLvl:S.revLvl, revSize:S.revSize, delayDiv:S.delayDiv, dlyTone:S.dlyTone, compAmt:S.compAmt,
+    revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
@@ -2829,6 +2998,7 @@ function applySessionDoc(doc, bufs){
   S.delayDiv=(doc.delayDiv!=null)?doc.delayDiv:0.375;
   S.dlyTone=(doc.dlyTone!=null)?doc.dlyTone:5200;
   S.compAmt=(doc.compAmt!=null)?doc.compAmt:0.4;
+  S.revType=doc.revType||'hall'; S.dlyMode=doc.dlyMode||'digital';
   S.vcurve=doc.vcurve; S.midiCh=doc.midiCh; S.pcPat=doc.pcPat; S.ccMaps=doc.ccMaps||{};
   S.chain=doc.chain||[]; S.pads=doc.pads; S.patterns=doc.patterns;
   // playback position — without these a restore lands on PTN 1 / BANK A with chain off
@@ -2840,7 +3010,8 @@ function applySessionDoc(doc, bufs){
   S.seqPad=clamp(doc.seqPad|0,0,NPADS-1);
   S.trax=(Array.isArray(doc.trax)&&doc.trax.length)?doc.trax:Array.from({length:NTRAX},()=>newTrack());
   while(S.trax.length<NTRAX) S.trax.push(newTrack());
-  S.trax.forEach(tr=>{ if(tr.gain==null)tr.gain=0.9; if(tr.pan==null)tr.pan=0; tr.mute=!!tr.mute; if(tr.bufId==null)tr.bufId=-1; });
+  S.trax.forEach(tr=>{ if(tr.gain==null)tr.gain=0.9; if(tr.pan==null)tr.pan=0; tr.mute=!!tr.mute; if(tr.bufId==null)tr.bufId=-1;
+    tr.loop=!!tr.loop; if(tr.ftype==null)tr.ftype='off'; if(tr.fcut==null)tr.fcut=1; if(tr.rev==null)tr.rev=0; if(tr.dly==null)tr.dly=0; });
   traxArm=-1; traxSolo=-1;
   S.inst=Object.assign({},INSTDEF,doc.inst||{});
   if(LIVE && LIVE._inst){
@@ -2864,10 +3035,10 @@ function applySessionDoc(doc, bufs){
   if(AC){ // re-apply pad channel params to live graph
     for(let i=0;i<NPADS;i++){ const p=S.pads[i], n=LIVE.pads[i];
       hardSet(n.ch.gain,p.gain); if(n.pan)hardSet(n.pan.pan,p.pan); hardSet(n.rev.gain,p.rev); hardSet(n.dly.gain,p.dly); applyPadFx(n,p,AC); }
-    hardSet(LIVE.master.gain,S.masterVol); hardSet(LIVE.dlyFb.gain,S.delayFb);
-    hardSet(LIVE.revRet.gain,S.revLvl); LIVE.conv.buffer=makeIR(AC,S.revSize);
-    hardSet(LIVE.dlyFilt.frequency,S.dlyTone); hardSet(LIVE.comp.threshold,compThresh());
-    hardSet(LIVE.dlyNode.delayTime,delayTime());
+    hardSet(LIVE.master.gain,S.masterVol);
+    hardSet(LIVE.revRet.gain,S.revLvl); LIVE.conv.buffer=makeIR(AC,S.revSize,S.revType);
+    hardSet(LIVE.comp.threshold,compThresh());
+    buildDelayNet(AC,LIVE);   // rebuilds mode/feedback/tone/time from restored state
   }
   $('mxVol').value=S.masterVol; $('mxVolV').textContent=Math.round(S.masterVol*100)+'%';
   $('mxComp').value=S.compAmt; $('mxCompV').textContent=Math.round(S.compAmt*100)+'%';
@@ -2876,6 +3047,7 @@ function applySessionDoc(doc, bufs){
   $('mxDlyFb').value=S.delayFb; $('mxDlyFbV').textContent=Math.round(S.delayFb*100)+'%';
   $('mxDlyTone').value=S.dlyTone; $('mxDlyToneV').textContent=Math.round(S.dlyTone/100)/10+'k';
   $('mxDlyDiv').value=String(S.delayDiv);
+  $('mxRevType').value=S.revType; $('mxDlyMode').value=S.dlyMode;
   document.querySelectorAll('#bankrow [data-b]').forEach(x=>x.classList.toggle('on',parseInt(x.dataset.b,10)===S.bank));
   drawPads(); drawEdit(); drawSeq(); drawCcMaps(); drawWave(); drawTrax(); drawLive();
 }
@@ -2943,7 +3115,7 @@ function snapshotSession(){
   });
   return { fmt:'mvx880-project', t:Date.now(), name:$('projName').value,
     bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
-    revLvl:S.revLvl, revSize:S.revSize, delayDiv:S.delayDiv, dlyTone:S.dlyTone, compAmt:S.compAmt,
+    revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
@@ -3049,15 +3221,14 @@ $('btnBounce').addEventListener('click',async ()=>{
     const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
     const g=buildGraph(oc);
     // tempo-synced delay follows each pattern's tempo, like live playback
-    tempoSeg.forEach(seg=>{ g.dlyNode.delayTime.setValueAtTime(clamp(60/seg.bpm*S.delayDiv,0.02,1.9), seg.t); });
+    tempoSeg.forEach(seg=>{ const dt=clamp(60/seg.bpm*S.delayDiv,0.02,1.9);
+      (g.dlyNodes||[]).forEach(d=>d.delayTime.setValueAtTime(dt,seg.t)); });
     const chokeOff={};
     events.sort((a,b)=>a.when-b.when);
     for(const ev of events) triggerPad(oc, g, ev.p, ev.v, ev.when, chokeOff);
     for(const x of trax){ // tape lanes, aligned to bar 1 like the live transport
-      const src=oc.createBufferSource(); src.buffer=x.b;
-      const gn=oc.createGain(); gn.gain.value=x.tr.gain;
-      src.connect(gn); gn.connect(g.trackBus);
-      src.start(0.05);
+      const w=wireTrack(oc,g,x.tr,x.b,0.05,x.tr.gain);
+      if(x.tr.loop) w.src.stop(t);   // looped lanes run to the end of the pattern content
     }
     const rendered=await oc.startRendering();
     const wav=encodeWav(rendered);
