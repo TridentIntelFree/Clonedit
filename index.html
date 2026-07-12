@@ -318,6 +318,9 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <option value="chord">CHORD PADS</option>
       <option value="harp">STRUM HARP</option>
       <option value="keys">SCALE KEYS</option>
+      <option value="ribbon">RIBBON BASS</option>
+      <option value="flute">BREATH FLUTE</option>
+      <option value="perc">SHAKE PERC</option>
     </select>
     <select id="instVoiceSel">
       <option value="glass">GLASS</option>
@@ -348,6 +351,20 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="instStrum" class="on">STRUM</button>
     <button id="instArp">ARP 1/8</button>
   </div>
+  <div class="row" id="percopts" style="display:none">
+    <select id="percKind">
+      <option value="shaker">SHAKER</option>
+      <option value="tamb">TAMBOURINE</option>
+      <option value="cabasa">CABASA</option>
+      <option value="bells">SLEIGH BELLS</option>
+    </select>
+    <button id="instShake">SHAKE ON</button>
+    <button id="percTapA" class="grow">TAP</button>
+    <button id="percTapG">soft</button>
+  </div>
+  <div class="row" id="fluteopts" style="display:none">
+    <button id="instBreath" class="grow">BREATH CONTROL (MIC) — blow to play</button>
+  </div>
   <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="instVol" min="0" max="1.2" step="0.01"><span class="val" id="instVolV"></span></div>
   <div class="pslider"><span class="lbl">REV</span><input type="range" id="instRev" min="0" max="1" step="0.01"><span class="val" id="instRevV"></span></div>
   <div class="pslider"><span class="lbl">DLY</span><input type="range" id="instDly" min="0" max="1" step="0.01"><span class="val" id="instDlyV"></span></div>
@@ -363,6 +380,11 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnJam" class="rec grow">&#9679; REC OUT</button>
     <button id="btnJamSave" style="display:none">SAVE</button>
     <button id="btnJamPad" style="display:none">TO PAD</button>
+  </div>
+  <div class="row">
+    <button id="btnTilt">TILT WAH</button>
+    <button id="btnTape" class="grow">TAPE STOP (hold)</button>
+    <button id="btnStut" class="grow">STUTTER (hold)</button>
   </div>
   <div id="djdeck">
     <div id="fadercol">
@@ -554,8 +576,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      with snap, diatonic chord pads (7th/strum/BPM-synced arp),
      Karplus-Strong strum harp, and scale keys; four synth voices
      with level + rev/dly sends.
+   - R23: sensors + performance FX. SHAKE PERC (devicemotion jerk →
+     shaker/tambourine/cabasa/bells, tap fallback), BREATH FLUTE (mic
+     RMS as a wind controller), RIBBON BASS (X pitch, Y wah). DJ deck
+     gains a performance insert on the whole mix: TILT WAH
+     (deviceorientation), TAPE STOP, tempo-synced STUTTER — all ahead
+     of the TRAX bus tap so performances record with their FX.
    ================================================================ */
-const BUILD = 'MVX-880 · R22 · 2026-07-12 · LIVE instruments';
+const BUILD = 'MVX-880 · R23 · 2026-07-12 · sensors + perf FX';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -629,7 +657,12 @@ function buildGraph(ctx){
   g.comp = ctx.createDynamicsCompressor();
   g.comp.threshold.value=compThresh(); g.comp.ratio.value=3;
   g.comp.attack.value=0.003; g.comp.release.value=0.25;
-  g.master.connect(g.comp); g.comp.connect(ctx.destination);
+  // performance insert — tilt-wah filter + stutter gate act on the whole mix
+  g.perfFilt=ctx.createBiquadFilter(); g.perfFilt.type='lowpass';
+  g.perfFilt.frequency.value=18500; g.perfFilt.Q.value=0.7;
+  g.perfGain=ctx.createGain();
+  g.master.connect(g.perfFilt); g.perfFilt.connect(g.perfGain); g.perfGain.connect(g.comp);
+  g.comp.connect(ctx.destination);
   // reverb
   g.revIn = ctx.createGain();
   g.conv = ctx.createConvolver();
@@ -1946,7 +1979,7 @@ function traxBeginCapture(when){
       if(cap.len>=ctx.sampleRate*TRAX_MAX_S) traxCommit();
     };
     const sink=ctx.createGain(); sink.gain.value=0;
-    if(useMic) srcNode.connect(tap); else LIVE.master.connect(tap);
+    if(useMic) srcNode.connect(tap); else (LIVE.perfGain||LIVE.master).connect(tap);
     tap.connect(sink); sink.connect(ctx.destination);
     cap.tap=tap; cap.sink=sink;
     // sync marker: a ±4.0 impulse pair fired into the TAP ONLY (never audible)
@@ -1969,7 +2002,7 @@ function traxBeginCapture(when){
 function traxCommit(){
   const cap=traxCap; if(!cap) return;
   traxCap=null;
-  try{ if(cap.srcNode) cap.srcNode.disconnect(); else LIVE.master.disconnect(cap.tap); }catch(e){}
+  try{ if(cap.srcNode) cap.srcNode.disconnect(); else (LIVE.perfGain||LIVE.master).disconnect(cap.tap); }catch(e){}
   try{ cap.tap.disconnect(); cap.sink.disconnect(); }catch(e){}
   const i=traxArm;
   disarmTrax();
@@ -2007,7 +2040,7 @@ function traxCommit(){
 /* ---------------- LIVE — playable instruments ---------------- */
 const SCALES={major:[0,2,4,5,7,9,11],minor:[0,2,3,5,7,8,10],dorian:[0,2,3,5,7,9,10],
   mixo:[0,2,4,5,7,9,10],pmaj:[0,2,4,7,9],pmin:[0,3,5,7,10],blues:[0,3,5,6,7,10]};
-const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true};
+const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker'};
 S.inst=Object.assign({},INSTDEF);
 const instVoices=new Set();
 let ther=null, arpTimer=0, arpNotes=null, arpIdx=0, arpNext=0;
@@ -2084,6 +2117,9 @@ function instPanic(){
   instVoices.forEach(v=>{ try{ v.stop(); }catch(e){} });
   instVoices.clear();
   arpStop(); therEnd();
+  try{ fluteVoices.forEach(v=>v.stop()); fluteVoices.clear(); }catch(e){}
+  try{ ribbonEnd(); }catch(e){}
+  try{ tapeEnd(); stutterEnd(); }catch(e){}
 }
 /* theremin — continuous voice with vibrato; X pitch (2 oct), Y volume */
 function therStart(){
@@ -2185,7 +2221,7 @@ function drawKeysGrid(){
   scaleMidis(16).forEach(m=>{
     const b=document.createElement('button'); b.textContent=midiName(m);
     let v=null;
-    const press=()=>{ ensureAudio(); v=instVoice(noteHz(m)); b.classList.add('on'); };
+    const press=()=>{ ensureAudio(); v=(S.inst.mode==='flute')?fluteVoiceStart(noteHz(m)):instVoice(noteHz(m)); b.classList.add('on'); };
     const rel=()=>{ if(v){ v.stop(); v=null; } b.classList.remove('on'); };
     b.addEventListener('touchstart',e=>{ e.preventDefault(); press(); },{passive:false});
     b.addEventListener('touchend',e=>{ e.preventDefault(); rel(); },{passive:false});
@@ -2219,7 +2255,9 @@ function drawSurf(px,py){
       });
     }
     cx.fillStyle='#8a6530'; cx.font='18px ui-monospace';
-    cx.fillText('X: PITCH \u00b7 Y: VOLUME'+(S.inst.snap?' \u00b7 SNAPPED':''),20,H-18);
+    cx.fillText(S.inst.mode==='ribbon'
+      ? 'X: BASS PITCH \u00b7 Y: WAH'+(S.inst.snap?' \u00b7 SNAPPED':'')
+      : 'X: PITCH \u00b7 Y: VOLUME'+(S.inst.snap?' \u00b7 SNAPPED':''),20,H-18);
     if(px>=0){
       cx.fillStyle='#ff8c2e';
       cx.beginPath(); cx.arc(px*W,py*H,14,0,Math.PI*2); cx.fill();
@@ -2234,14 +2272,16 @@ function surfXY(e,touch){
 }
 function surfDown(nx,ny){
   if(S.inst.mode==='harp'){ harpPluck(nx); }
+  else if(S.inst.mode==='ribbon'){ if(!ribbon) ribbonStart(); ribbonMove(nx,ny); drawSurf(nx,ny); }
   else{ if(!ther) therStart(); therMove(nx,ny); drawSurf(nx,ny); }
 }
 function surfMove(nx,ny){
   if(S.inst.mode==='harp'){ harpPluck(nx); }
+  else if(S.inst.mode==='ribbon'){ if(ribbon){ ribbonMove(nx,ny); drawSurf(nx,ny); } }
   else if(ther){ therMove(nx,ny); drawSurf(nx,ny); }
 }
 function surfUp(){
-  if(S.inst.mode!=='harp') therEnd();
+  therEnd(); ribbonEnd();
   harpLast=-1;
 }
 function harpPluck(nx){
@@ -2265,16 +2305,233 @@ function harpPluck(nx){
   window.addEventListener('mousemove',e=>{ if(down){ const [x,y]=surfXY(e); surfMove(x,y); } });
   window.addEventListener('mouseup',()=>{ if(down){ down=false; surfUp(); } });
 })();
+/* ribbon bass — mono slide bass; X pitch (2 low octaves), Y opens the filter */
+let ribbon=null;
+function nearestIn(set,m){ return set.reduce((a,b)=>Math.abs(b-m)<Math.abs(a-m)?b:a,set[0]); }
+function ribbonStart(){
+  ensureAudio(); const bus=instBus();
+  const o=pLive('sawtooth',55), sub=pLive('sine',27.5), sg=AC.createGain(); sg.gain.value=0.6;
+  const lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=600; lp.Q.value=5;
+  const g=AC.createGain(); g.gain.value=0;
+  o.connect(lp); sub.connect(sg); sg.connect(lp); lp.connect(g); g.connect(bus.g);
+  o.start(); sub.start();
+  g.gain.setTargetAtTime(0.5,AC.currentTime,0.02);
+  ribbon={o,sub,lp,g};
+}
+function ribbonMove(nx,ny){
+  if(!ribbon) return;
+  const lo=24+S.inst.key; let m=lo+nx*24;
+  if(S.inst.snap) m=nearestIn(scaleMidis(15).map(x=>x-24),m);
+  const f=noteHz(m), t=AC.currentTime;
+  ribbon.o.frequency.setTargetAtTime(f,t,0.04);
+  ribbon.sub.frequency.setTargetAtTime(f/2,t,0.04);
+  ribbon.lp.frequency.setTargetAtTime(120*Math.pow(60,1-ny),t,0.03);   // Y = wah
+}
+function ribbonEnd(){
+  if(!ribbon) return;
+  const r=ribbon; ribbon=null;
+  try{
+    r.g.gain.setTargetAtTime(0,AC.currentTime,0.05);
+    r.o.stop(AC.currentTime+0.35); r.sub.stop(AC.currentTime+0.35);
+  }catch(e){}
+  setTimeout(()=>{ try{r.g.disconnect();}catch(e){} },500);
+  drawSurf(-1,-1);
+}
+/* breath flute — mic RMS drives the voice like a wind controller */
+const fluteVoices=new Set();
+let breathOn=false, breathStream=null, breathCtx=null, breathAn=null, breathData=null, breathLvl=0, breathRAF=0;
+function fluteVoiceStart(f){
+  ensureAudio(); const bus=instBus(), t=AC.currentTime;
+  const o=pLive('triangle',f), o2=pLive('sine',f*2.001), g2=AC.createGain(); g2.gain.value=0.15;
+  const lfo=pLive('sine',5), vd=AC.createGain(); vd.gain.value=f*0.004;
+  lfo.connect(vd); vd.connect(o.frequency);
+  const nz=pNoise(AC,2,321); nz.loop=true;
+  const nf=AC.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=Math.min(12000,f*2); nf.Q.value=8;
+  const ng=AC.createGain(); ng.gain.value=0;
+  const g=AC.createGain(); g.gain.value=0;
+  o.connect(g); o2.connect(g2); g2.connect(g); nz.connect(nf); nf.connect(ng); ng.connect(g); g.connect(bus.g);
+  if(!breathOn){ g.gain.linearRampToValueAtTime(0.45,t+0.07); ng.gain.setValueAtTime(0.08,t); }
+  o.start(); o2.start(); lfo.start(); nz.start();
+  const fv={g,ng,stop:()=>{
+    fluteVoices.delete(fv);
+    try{
+      g.gain.setTargetAtTime(0,AC.currentTime,0.06);
+      [o,o2,lfo,nz].forEach(x=>{ try{x.stop(AC.currentTime+0.4);}catch(e){} });
+    }catch(e){}
+    setTimeout(()=>{ try{g.disconnect();}catch(e){} },600);
+  }};
+  fluteVoices.add(fv); return fv;
+}
+async function breathToggle(){
+  if(breathOn){ breathStop(); lcd('BREATH OFF.'); return; }
+  ensureAudio();
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ lcd('BREATH: mic unavailable.'); return; }
+  micBusy=true;
+  try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
+  try{ breathStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}}); }
+  catch(err){ micBusy=false; lcd('BREATH: mic denied ('+((err&&err.name)||'error')+').'); return; }
+  let src, ctx=AC;
+  try{ src=AC.createMediaStreamSource(breathStream); }
+  catch(e){
+    try{ const Ctor=window.AudioContext||window.webkitAudioContext; breathCtx=new Ctor(); ctx=breathCtx; src=ctx.createMediaStreamSource(breathStream); }
+    catch(e2){ breathStop(); lcd('BREATH: no analyser path.'); return; }
+  }
+  breathAn=ctx.createAnalyser(); breathAn.fftSize=512; src.connect(breathAn);
+  breathData=new Uint8Array(breathAn.fftSize);
+  breathOn=true; $('instBreath').classList.add('on');
+  (function loop(){
+    if(!breathOn) return;
+    breathAn.getByteTimeDomainData(breathData);
+    let sm=0; for(let i=0;i<breathData.length;i++){ const d=(breathData[i]-128)/128; sm+=d*d; }
+    const rms=Math.sqrt(sm/breathData.length), tgt=clamp(rms*6,0,1);
+    breathLvl+=(tgt-breathLvl)*(tgt>breathLvl?0.5:0.12);   // fast attack, slow release
+    fluteVoices.forEach(fv=>{ try{
+      fv.g.gain.setTargetAtTime(0.6*breathLvl,AC.currentTime,0.03);
+      fv.ng.gain.setTargetAtTime(0.13*breathLvl,AC.currentTime,0.03);
+    }catch(e){} });
+    breathRAF=requestAnimationFrame(loop);
+  })();
+  lcd('BREATH ON — hold a key and blow into the mic.');
+}
+function breathStop(){
+  breathOn=false; cancelAnimationFrame(breathRAF);
+  if(breathStream){ try{ breathStream.getTracks().forEach(t=>t.stop()); }catch(e){} breathStream=null; }
+  if(breathCtx){ try{ breathCtx.close(); }catch(e){} breathCtx=null; }
+  breathAn=null; breathLvl=0; micBusy=false; resumeSession();
+  $('instBreath').classList.remove('on');
+}
+/* shake percussion — devicemotion jerk triggers synthesized shaker family */
+let motionHooked=false, shakeArmed=false, tiltOn=false, shakeLast=0, lastAcc=null;
+async function enableMotion(){
+  try{
+    if(window.DeviceMotionEvent && DeviceMotionEvent.requestPermission){
+      const r=await DeviceMotionEvent.requestPermission();
+      if(r!=='granted'){ lcd('MOTION DENIED — allow motion access in Safari.'); return false; }
+    }
+    if(window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission){
+      try{ await DeviceOrientationEvent.requestPermission(); }catch(e){}
+    }
+  }catch(e){}
+  if(!motionHooked){
+    window.addEventListener('devicemotion',onMotion);
+    window.addEventListener('deviceorientation',onTilt);
+    motionHooked=true;
+  }
+  return true;
+}
+function onMotion(e){
+  if(!shakeArmed) return;
+  const a=e.accelerationIncludingGravity; if(!a || a.x==null) return;
+  const now=performance.now();
+  if(lastAcc){
+    const j=Math.abs(a.x-lastAcc.x)+Math.abs(a.y-lastAcc.y)+Math.abs(a.z-lastAcc.z);
+    if(j>13 && now-shakeLast>110){ shakeLast=now; hitPerc(clamp((j-13)/24,0.3,1)); }
+  }
+  lastAcc={x:a.x,y:a.y,z:a.z};
+}
+function hitPerc(v){
+  ensureAudio();
+  const bus=instBus(), t=AC.currentTime, kind=S.inst.perc||'shaker';
+  function burst(dur,f,q,g0,at){
+    const n=pNoise(AC,dur+0.02,Math.floor(f)), bp=AC.createBiquadFilter();
+    bp.type='bandpass'; bp.frequency.value=f; bp.Q.value=q;
+    const g=AC.createGain();
+    g.gain.setValueAtTime(g0*v,(at||t));
+    g.gain.exponentialRampToValueAtTime(0.001,(at||t)+dur);
+    n.connect(bp); bp.connect(g); g.connect(bus.g); n.start(at||t);
+    n.onended=()=>{ try{n.disconnect();g.disconnect();}catch(e){} };
+  }
+  function jingles(n,base,spread,dec,g0){
+    for(let i=0;i<n;i++){
+      const f=base+((i*997)%spread), o=pLive('sine',f), g=AC.createGain();
+      const t0=t+0.004*i;
+      g.gain.setValueAtTime(g0*v,t0);
+      g.gain.exponentialRampToValueAtTime(0.001,t0+dec+0.04*i);
+      o.connect(g); g.connect(bus.g); o.start(t0); o.stop(t0+dec+0.3);
+      o.onended=()=>{ try{o.disconnect();g.disconnect();}catch(e){} };
+    }
+  }
+  if(kind==='shaker'){ burst(0.075,5200,1.5,0.8); burst(0.05,3400,1.2,0.25,t+0.012); }
+  else if(kind==='cabasa'){ burst(0.045,7400,2.4,0.75); }
+  else if(kind==='tamb'){ burst(0.05,6000,1.1,0.4); jingles(5,5400,2800,0.22,0.14); }
+  else{ jingles(8,4800,4200,0.45,0.12); burst(0.04,6500,1,0.2); }
+}
+/* DJ performance FX — tape stop, stutter, tilt wah */
+let tapeOn=false, tapeWasPlaying=false, stutTimer=0, stutNext=0;
+function tapeStart(){
+  ensureAudio(); if(tapeOn) return; tapeOn=true;
+  $('btnTape').classList.add('on');
+  tapeWasPlaying=playing;
+  if(playing) clearInterval(seqTimer);     // freeze the transport while the platter dies
+  const t=AC.currentTime;
+  liveVoices.forEach(src=>{ try{
+    src.playbackRate.cancelScheduledValues(t);
+    src.playbackRate.setValueAtTime(Math.max(0.01,src.playbackRate.value),t);
+    src.playbackRate.exponentialRampToValueAtTime(0.012,t+0.55);
+  }catch(e){} });
+  if(LIVE) LIVE.perfGain.gain.setTargetAtTime(0,t+0.45,0.15);
+}
+function tapeEnd(){
+  if(!tapeOn) return; tapeOn=false;
+  $('btnTape').classList.remove('on');
+  const t=AC.currentTime;
+  if(LIVE){ LIVE.perfGain.gain.cancelScheduledValues(t); LIVE.perfGain.gain.setTargetAtTime(1,t,0.02); }
+  liveVoices.forEach(src=>{ try{
+    src.playbackRate.cancelScheduledValues(t);
+    src.playbackRate.setTargetAtTime(src._base*perfFactor(),t,0.08);   // spin back up
+  }catch(e){} });
+  if(tapeWasPlaying && playing && !S.extClk){
+    nextStepTime=AC.currentTime+0.1;
+    clearInterval(seqTimer); seqTimer=setInterval(seqTick,25);
+  }
+}
+function stutterStart(){
+  ensureAudio(); if(stutTimer) return;
+  $('btnStut').classList.add('on');
+  const g=LIVE.perfGain.gain;
+  g.cancelScheduledValues(AC.currentTime);
+  stutNext=AC.currentTime+0.02;
+  const sched=()=>{
+    const cyc=60/S.bpm/4;                  // 1/16 gate synced to tempo
+    while(stutNext<AC.currentTime+0.15){
+      g.setValueAtTime(1,stutNext);
+      g.setValueAtTime(0,stutNext+cyc*0.55);
+      stutNext+=cyc;
+    }
+  };
+  sched(); stutTimer=setInterval(sched,40);
+}
+function stutterEnd(){
+  if(!stutTimer) return;
+  clearInterval(stutTimer); stutTimer=0;
+  $('btnStut').classList.remove('on');
+  if(LIVE){ const g=LIVE.perfGain.gain; g.cancelScheduledValues(AC.currentTime); g.setTargetAtTime(1,AC.currentTime,0.01); }
+}
+function onTilt(e){
+  if(!tiltOn || !LIVE) return;
+  const nx=clamp(((e.gamma||0)+45)/90,0,1), q=1+clamp(Math.abs(e.beta||0)/90,0,1)*8;
+  LIVE.perfFilt.frequency.setTargetAtTime(180*Math.pow(80,nx),AC.currentTime,0.05);
+  LIVE.perfFilt.Q.setTargetAtTime(q,AC.currentTime,0.05);
+}
+function tiltReset(){
+  if(!LIVE) return;
+  LIVE.perfFilt.frequency.setTargetAtTime(18500,AC.currentTime,0.05);
+  LIVE.perfFilt.Q.setTargetAtTime(0.7,AC.currentTime,0.05);
+}
 function drawLive(){
   const m=S.inst.mode;
   $('instSel').value=m; $('instVoiceSel').value=S.inst.voice;
   $('instKey').value=String(S.inst.key); $('instScale').value=S.inst.scale;
   $('instSnap').classList.toggle('on',S.inst.snap);
-  $('instSnap').style.display=(m==='ther')?'':'none';
-  $('liveSurf').style.display=(m==='ther'||m==='harp')?'block':'none';
+  $('instSnap').style.display=(m==='ther'||m==='ribbon')?'':'none';
+  $('liveSurf').style.display=(m==='ther'||m==='harp'||m==='ribbon')?'block':'none';
   $('chordgrid').style.display=(m==='chord')?'grid':'none';
-  $('keysgrid').style.display=(m==='keys')?'grid':'none';
+  $('keysgrid').style.display=(m==='keys'||m==='flute')?'grid':'none';
   $('chordopts').style.display=(m==='chord')?'flex':'none';
+  $('percopts').style.display=(m==='perc')?'flex':'none';
+  $('fluteopts').style.display=(m==='flute')?'flex':'none';
+  $('percKind').value=S.inst.perc||'shaker';
+  $('instShake').classList.toggle('on',shakeArmed);
   $('inst7').classList.toggle('on',S.inst.sev);
   $('instStrum').classList.toggle('on',S.inst.strum);
   $('instArp').classList.toggle('on',S.inst.arp);
@@ -2282,8 +2539,8 @@ function drawLive(){
   $('instRev').value=S.inst.rev; $('instRevV').textContent=Math.round(S.inst.rev*100)+'%';
   $('instDly').value=S.inst.dly; $('instDlyV').textContent=Math.round(S.inst.dly*100)+'%';
   if(m==='chord') drawChordGrid();
-  if(m==='keys') drawKeysGrid();
-  if(m==='ther'||m==='harp') drawSurf(-1,-1);
+  if(m==='keys'||m==='flute') drawKeysGrid();
+  if(m==='ther'||m==='harp'||m==='ribbon') drawSurf(-1,-1);
 }
 (function(){
   const names=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -2297,6 +2554,31 @@ $('instSnap').addEventListener('click',()=>{ S.inst.snap=!S.inst.snap; drawLive(
 $('inst7').addEventListener('click',()=>{ S.inst.sev=!S.inst.sev; drawLive(); dirty(); });
 $('instStrum').addEventListener('click',()=>{ S.inst.strum=!S.inst.strum; drawLive(); dirty(); });
 $('instArp').addEventListener('click',()=>{ S.inst.arp=!S.inst.arp; drawLive(); dirty(); });
+$('percKind').addEventListener('change',e=>{ S.inst.perc=e.target.value; dirty(); });
+$('instShake').addEventListener('click',async ()=>{
+  if(shakeArmed){ shakeArmed=false; drawLive(); lcd('SHAKE OFF.'); return; }
+  ensureAudio();
+  if(await enableMotion()){ shakeArmed=true; drawLive(); lcd('SHAKE ON — shake the phone to play '+(S.inst.perc||'shaker')+'.'); }
+});
+$('percTapA').addEventListener('click',()=>hitPerc(0.9));
+$('percTapG').addEventListener('click',()=>hitPerc(0.45));
+$('instBreath').addEventListener('click',breathToggle);
+$('btnTilt').addEventListener('click',async ()=>{
+  if(tiltOn){ tiltOn=false; $('btnTilt').classList.remove('on'); tiltReset(); lcd('TILT WAH OFF.'); return; }
+  ensureAudio();
+  if(await enableMotion()){ tiltOn=true; $('btnTilt').classList.add('on'); lcd('TILT WAH — tilt left/right sweeps the filter, forward/back adds resonance.'); }
+});
+(function(){
+  const hold=(id,on,off)=>{ const b=$(id);
+    b.addEventListener('touchstart',e=>{ e.preventDefault(); on(); },{passive:false});
+    b.addEventListener('touchend',e=>{ e.preventDefault(); off(); },{passive:false});
+    b.addEventListener('mousedown',on);
+    b.addEventListener('mouseup',off);
+    b.addEventListener('mouseleave',off);
+  };
+  hold('btnTape',tapeStart,tapeEnd);
+  hold('btnStut',stutterStart,stutterEnd);
+})();
 $('instVol').addEventListener('input',e=>{ S.inst.vol=parseFloat(e.target.value); $('instVolV').textContent=Math.round(S.inst.vol*100)+'%'; if(LIVE&&LIVE._inst) LIVE._inst.g.gain.setTargetAtTime(S.inst.vol,AC.currentTime,0.02); dirty(); });
 $('instRev').addEventListener('input',e=>{ S.inst.rev=parseFloat(e.target.value); $('instRevV').textContent=Math.round(S.inst.rev*100)+'%'; if(LIVE&&LIVE._inst) LIVE._inst.rv.gain.setTargetAtTime(S.inst.rev,AC.currentTime,0.02); dirty(); });
 $('instDly').addEventListener('input',e=>{ S.inst.dly=parseFloat(e.target.value); $('instDlyV').textContent=Math.round(S.inst.dly*100)+'%'; if(LIVE&&LIVE._inst) LIVE._inst.dl.gain.setTargetAtTime(S.inst.dly,AC.currentTime,0.02); dirty(); });
@@ -2861,6 +3143,7 @@ document.addEventListener('visibilitychange',()=>{
   if(document.hidden){
     if(playing) stopSeq();
     try{ instPanic(); }catch(e){}
+    try{ if(breathOn) breathStop(); }catch(e){}
     if(jamOn) stopJam();
     if(mediaRec && mediaRec.state==='recording') mediaRec.stop();
     autosave();
