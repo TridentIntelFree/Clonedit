@@ -37,8 +37,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 #hdr{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
 #logo{font-weight:800;font-size:15px;letter-spacing:2px;color:var(--amber)}
 #build{font-size:9px;color:var(--txt-dim);line-height:1.2}
-#transport{display:flex;gap:6px;margin-left:auto}
+#transport{display:flex;gap:5px;margin-left:auto}
 #transport button{width:44px;height:38px;font-size:15px;padding:0}
+#btnUndo,#btnRedo{width:34px;font-size:17px}
+#btnUndo:disabled,#btnRedo:disabled{opacity:0.35}
 #lcdstrip{display:flex;gap:8px;align-items:center;padding:6px 10px;background:var(--lcd-bg);
   border-bottom:1px solid var(--line);color:var(--lcd);font-size:11px;min-height:32px}
 #lcdmsg{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -144,6 +146,8 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <div id="build"></div>
   </div>
   <div id="transport">
+    <button id="btnUndo" title="undo">&#8630;</button>
+    <button id="btnRedo" title="redo">&#8631;</button>
     <button id="btnPlay">&#9654;</button>
     <button id="btnStop">&#9632;</button>
     <button id="btnRec" class="rec">&#9679;</button>
@@ -783,8 +787,13 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      pad and per tape track (isolated, through their own FX/sends),
      then lists per-stem SAVE buttons (iOS-safe) plus SAVE ALL. Master
      bounce unchanged.
+   - R35: UNDO / REDO — transport buttons + Cmd/Ctrl-Z (Shift = redo).
+     Snapshots the editable state (pads/patterns/locks/automation/chain/
+     mix/sidechain/instruments/track meta) minus buffers; restores via
+     applySessionDoc with current buffers. Edits coalesced ~600ms into
+     one step; 40-deep stack.
    ================================================================ */
-const BUILD = 'MVX-880 · R34 · 2026-07-14 · stem export';
+const BUILD = 'MVX-880 · R35 · 2026-07-14 · undo / redo';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -3841,7 +3850,63 @@ async function autosave(){
    finish, so lifecycle saves alone lose the last minute of work. Save
    shortly after every edit instead — the vault is never more than ~2s stale. */
 let dirtyT=0;
-function dirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(autosave,1500); }
+function dirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(autosave,1500); scheduleUndo(); }
+
+/* ---------------- undo / redo (snapshot of the editable state, no buffers) ---------------- */
+let undoStack=[], redoStack=[], _committed=null, undoTimer=0;
+function undoSnap(){
+  return { name:$('projName').value,
+    bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
+    revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
+    vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
+    chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
+    pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
+    trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
+    pads:S.pads, patterns:S.patterns };
+}
+function cloneSnap(x){ return JSON.parse(JSON.stringify(x)); }
+function undoInit(){ _committed=cloneSnap(undoSnap()); updateUndoUI(); }
+function scheduleUndo(){ clearTimeout(undoTimer); undoTimer=setTimeout(commitUndo,600); }
+function commitUndo(){
+  if(!_committed){ _committed=cloneSnap(undoSnap()); return; }
+  const cur=undoSnap();
+  if(JSON.stringify(cur)===JSON.stringify(_committed)) return;
+  undoStack.push(_committed); if(undoStack.length>40) undoStack.shift();
+  _committed=cloneSnap(cur); redoStack.length=0;
+  updateUndoUI();
+}
+function restoreSnap(snap){
+  applySessionDoc(cloneSnap(snap), S.buffers);
+  S.autoTarget=snap.autoTarget||'mfilt'; drawAuto();
+}
+function undo(){
+  commitUndo();
+  if(!undoStack.length){ lcd('NOTHING TO UNDO'); return; }
+  redoStack.push(cloneSnap(undoSnap()));
+  const snap=undoStack.pop();
+  restoreSnap(snap); _committed=cloneSnap(undoSnap());
+  updateUndoUI(); lcd('UNDO · '+undoStack.length+' left');
+}
+function redo(){
+  if(!redoStack.length){ lcd('NOTHING TO REDO'); return; }
+  undoStack.push(cloneSnap(undoSnap()));
+  const snap=redoStack.pop();
+  restoreSnap(snap); _committed=cloneSnap(undoSnap());
+  updateUndoUI(); lcd('REDO');
+}
+function updateUndoUI(){
+  const u=$('btnUndo'), r=$('btnRedo'); if(!u) return;
+  u.disabled=!undoStack.length; r.disabled=!redoStack.length;
+}
+$('btnUndo').addEventListener('click',undo);
+$('btnRedo').addEventListener('click',redo);
+window.addEventListener('keydown',e=>{
+  const tag=(document.activeElement&&document.activeElement.tagName)||'';
+  if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA') return;
+  const mod=e.metaKey||e.ctrlKey;
+  if(mod && (e.key==='z'||e.key==='Z')){ e.preventDefault(); if(e.shiftKey) redo(); else undo(); }
+  else if(mod && (e.key==='y'||e.key==='Y')){ e.preventDefault(); redo(); }
+});
 function ageText(ms){
   const m=Math.round(ms/60000);
   if(m<1) return 'moments ago';
@@ -4095,6 +4160,7 @@ if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
   navigator.serviceWorker.register('./sw.js').catch(()=>{});   // offline shell — network-first, so updates land when online
 }
 document.body.addEventListener('touchstart',function once(){ ensureAudio(); document.body.removeEventListener('touchstart',once); },{passive:true});
+undoInit();
 lcd('READY · load a sample into a pad (SMPL tab).');
 offerRestore();
 
