@@ -516,6 +516,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <h3>MASTER</h3>
   <div class="pslider"><span class="lbl">VOLUME</span><input type="range" id="mxVol" min="0" max="1.2" step="0.01"><span class="val" id="mxVolV"></span></div>
   <div class="pslider"><span class="lbl">COMP</span><input type="range" id="mxComp" min="0" max="1" step="0.01"><span class="val" id="mxCompV"></span></div>
+  <h3>SIDECHAIN <span style="color:var(--txt-dim);letter-spacing:0">— trigger pad ducks pads &amp; live instruments (the pump)</span></h3>
+  <div class="row">
+    <button id="mxScOn">SIDECHAIN</button>
+    <span class="lbl">KICK</span>
+    <select id="mxScTrig" class="grow"></select>
+  </div>
+  <div class="pslider"><span class="lbl">DEPTH</span><input type="range" id="mxScDepth" min="0" max="0.95" step="0.01"><span class="val" id="mxScDepthV"></span></div>
+  <div class="pslider"><span class="lbl">RECOVER</span><input type="range" id="mxScRel" min="0.05" max="0.6" step="0.01"><span class="val" id="mxScRelV"></span></div>
   <h3>REVERB</h3>
   <div class="row">
     <span class="lbl">TYPE</span>
@@ -748,8 +756,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      distortion). Live output, REC OUT capture, and the WAV bounce
      all pass through it. Default pack renamed 'Full Kit' and now
      includes the CC0 drums + perc so a complete kit shows on load.
+   - R32: SIDECHAIN (MIX tab) — pick a trigger pad (the kick); every
+     time it fires it ducks a duck bus carrying all other pads and the
+     live instruments, then recovers, for the classic pump. Trigger
+     pad takes a direct (unducked) path so it punches through. Depth +
+     recovery controls; scheduled inside triggerPad so it works live,
+     from MIDI, and in the WAV bounce identically. Persisted.
    ================================================================ */
-const BUILD = 'MVX-880 · R31 · 2026-07-13 · master limiter + drums in default';
+const BUILD = 'MVX-880 · R32 · 2026-07-13 · sidechain pump';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -779,7 +793,8 @@ const S = {
   chain: [], chainOn: false, chainPos: 0,
   vcurve: 'linear', midiCh: -1, extClk: false, pcPat: true,
   ccMaps: {},             // ccNum -> target string
-  edit:false, liveRec:false, ptnBpm:false
+  edit:false, liveRec:false, ptnBpm:false,
+  scOn:false, scTrig:0, scDepth:0.6, scRel:0.25
 };
 const revCache = {};      // bufId -> reversed AudioBuffer
 
@@ -919,6 +934,9 @@ function buildGraph(ctx){
   // point, so BUS overdubs never re-record existing tracks
   g.trackBus=ctx.createGain();
   g.trackBus.connect(g.comp);
+  // sidechain duck bus — everything routed here dips when the trigger pad fires;
+  // the trigger pad itself takes the direct path to master (punches through)
+  g.duckBus=ctx.createGain(); g.duckBus.connect(g.master);
   // pad channels — built ONCE, connected ONCE (fan-out fix)
   // per-hit env → [drv → crush → flt] insert chain → ch gain → pan → dry + sends
   g.pads=[];
@@ -934,9 +952,13 @@ function buildGraph(ctx){
     drv.connect(crush); crush.connect(flt); flt.connect(ch);
     let tail=ch;
     if(pan){ pan.pan.value=p.pan; ch.connect(pan); tail=pan; }
-    tail.connect(g.master); tail.connect(rev); tail.connect(dly);
+    const dryDuck=ctx.createGain(); dryDuck.gain.value=1;   // ducked path (default)
+    const dryDir=ctx.createGain(); dryDir.gain.value=0;     // direct path (trigger pad only)
+    tail.connect(dryDuck); dryDuck.connect(g.duckBus);
+    tail.connect(dryDir); dryDir.connect(g.master);
+    tail.connect(rev); tail.connect(dly);
     rev.connect(g.revIn); dly.connect(g.dlyIn);
-    const node={in:drv,drv,crush,flt,ch,pan,rev,dly};
+    const node={in:drv,drv,crush,flt,ch,pan,rev,dly,dryDuck,dryDir};
     applyPadFx(node,p,ctx);
     g.pads.push(node);
   }
@@ -944,6 +966,16 @@ function buildGraph(ctx){
 }
 
 function delayTime(){ return clamp(60/S.bpm*S.delayDiv, 0.02, 1.9); }
+function scApplyRoutingG(g,ctx){ // trigger pad → direct (unducked); others → duck bus
+  if(!g||!g.pads) return; const t=ctx?ctx.currentTime:0;
+  for(let i=0;i<NPADS;i++){ const n=g.pads[i]; if(!n||!n.dryDuck) continue;
+    const isTrig = S.scOn && i===S.scTrig;
+    n.dryDuck.gain.setValueAtTime(isTrig?0:1,t);
+    n.dryDir.gain.setValueAtTime(isTrig?1:0,t);
+  }
+  if(!S.scOn && g.duckBus){ try{ g.duckBus.gain.cancelScheduledValues(t); g.duckBus.gain.setValueAtTime(1,t); }catch(e){} }
+}
+function scApplyRouting(){ if(LIVE) scApplyRoutingG(LIVE,AC); }
 
 function getReversed(bid){
   if(revCache[bid]) return revCache[bid];
@@ -1008,6 +1040,10 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff){
     if(prev){ try{ prev.gain.cancelScheduledValues(when); prev.gain.setTargetAtTime(0,when,0.012); }catch(e){} }
     chokeReg[p.choke]=env;
   }
+  if(S.scOn && idx===S.scTrig && g.duckBus){   // sidechain: this hit ducks the duck bus
+    const dg=g.duckBus.gain, dep=clamp(S.scDepth,0,0.95), rel=clamp(S.scRel,0.03,1);
+    try{ dg.cancelScheduledValues(when); dg.linearRampToValueAtTime(1-dep, when+0.012); dg.linearRampToValueAtTime(1, when+0.012+rel); }catch(e){}
+  }
   src.start(when,off,sliceDur);
   src.stop(when+outDur+p.rel+0.25);
   src.onended=()=>{
@@ -1036,6 +1072,7 @@ function ensureAudio(){
   const Ctor = window.AudioContext || window.webkitAudioContext;
   AC = new Ctor();
   LIVE = buildGraph(AC);      // graph fully built before anything reads it (ordering fix)
+  scApplyRoutingG(LIVE,AC);   // apply sidechain routing to the fresh graph
   // --- iOS output routing (SAMSARA pattern) ---
   // comp -> MediaStreamDestination -> hidden <audio>. Playback category
   // ignores the ring/silent switch; direct ctx.destination does not.
@@ -1251,6 +1288,21 @@ $('mxPadDly').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.dly=par
   $('mxPadDlyV').textContent=p.dly.toFixed(2);
   if(LIVE) LIVE.pads[S.editPad].dly.gain.setTargetAtTime(p.dly,AC.currentTime,0.01); });
 $('epClear').addEventListener('click',()=>{ const i=S.editPad; S.pads[i]=newPad(i); drawPads(); drawEdit(); dirty(); lcd('PAD '+padName(i)+' CLEARED'); });
+/* ---- sidechain UI ---- */
+function drawSidechain(){
+  const sel=$('mxScTrig');
+  if(sel.options.length!==NPADS){ sel.innerHTML=''; for(let i=0;i<NPADS;i++){ const o=document.createElement('option'); o.value=i; o.textContent=padName(i); sel.appendChild(o); } }
+  sel.value=String(S.scTrig);
+  $('mxScOn').classList.toggle('on',S.scOn);
+  $('mxScDepth').value=S.scDepth; $('mxScDepthV').textContent=Math.round(S.scDepth*100)+'%';
+  $('mxScRel').value=S.scRel; $('mxScRelV').textContent=Math.round(S.scRel*1000)+'ms';
+}
+$('mxScOn').addEventListener('click',()=>{ S.scOn=!S.scOn; scApplyRouting(); drawSidechain(); dirty();
+  lcd(S.scOn?'SIDECHAIN ON · '+padName(S.scTrig)+' ducks the mix':'SIDECHAIN OFF'); });
+$('mxScTrig').addEventListener('change',e=>{ S.scTrig=parseInt(e.target.value,10); scApplyRouting(); dirty();
+  lcd('SIDECHAIN TRIGGER → '+padName(S.scTrig)); });
+$('mxScDepth').addEventListener('input',e=>{ S.scDepth=parseFloat(e.target.value); $('mxScDepthV').textContent=Math.round(S.scDepth*100)+'%'; dirty(); });
+$('mxScRel').addEventListener('input',e=>{ S.scRel=parseFloat(e.target.value); $('mxScRelV').textContent=Math.round(S.scRel*1000)+'ms'; dirty(); });
 $('epLearn').addEventListener('click',()=>{ noteLearnPad=S.editPad; lcd('NOTE LEARN: play a MIDI note for '+padName(S.editPad)); });
 
 $('btnEdit').addEventListener('click',()=>{ S.edit=!S.edit; $('btnEdit').classList.toggle('on',S.edit); $('editpanel').style.display=S.edit?'block':'none'; drawPads(); drawEdit(); });
@@ -1272,7 +1324,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
     drawWave(); drawEdit();
     refreshHaveKeys().then(()=>{ drawPackList(); updateStoreMeter(); });   // always reflect current on-device library
   }
-  if(b.dataset.v==='mix'){ drawEdit(); }
+  if(b.dataset.v==='mix'){ drawEdit(); drawSidechain(); }
   if(b.dataset.v==='proj'){ $('bSrc').value=(S.chainOn&&S.chain.length)?'chain':'pat'; }
   if(b.dataset.v==='trax'){ drawTrax(); }
   if(b.dataset.v==='live'){ drawLive(); }
@@ -2505,7 +2557,7 @@ function instBus(){ // lazy per-graph: level + rev/dly sends into the master mix
     const g=AC.createGain(); g.gain.value=S.inst.vol;
     const rv=AC.createGain(); rv.gain.value=S.inst.rev;
     const dl=AC.createGain(); dl.gain.value=S.inst.dly;
-    g.connect(LIVE.master); g.connect(rv); g.connect(dl);
+    g.connect(LIVE.duckBus||LIVE.master); g.connect(rv); g.connect(dl);   // live instruments duck too
     rv.connect(LIVE.revIn); dl.connect(LIVE.dlyIn);
     LIVE._inst={g,rv,dl};
   }
@@ -3501,7 +3553,8 @@ $('btnSave').addEventListener('click',()=>{
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
-    trax:S.trax, inst:S.inst, pads:S.pads, patterns:S.patterns, buffers:bufs };
+    trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
+    pads:S.pads, patterns:S.patterns, buffers:bufs };
   const blob=new Blob([JSON.stringify(doc)],{type:'application/json'});
   download(blob, ($('projName').value||'mvx-session')+'.json');
   plog('Saved project JSON ('+Math.round(blob.size/1024)+' KB).');
@@ -3539,6 +3592,8 @@ function applySessionDoc(doc, bufs){
     tr.loop=!!tr.loop; if(tr.ftype==null)tr.ftype='off'; if(tr.fcut==null)tr.fcut=1; if(tr.rev==null)tr.rev=0; if(tr.dly==null)tr.dly=0; });
   traxArm=-1; traxSolo=-1;
   S.inst=Object.assign({},INSTDEF,doc.inst||{});
+  S.scOn=!!doc.scOn; S.scTrig=clamp(doc.scTrig|0,0,NPADS-1);
+  S.scDepth=(doc.scDepth!=null)?doc.scDepth:0.6; S.scRel=(doc.scRel!=null)?doc.scRel:0.25;
   if(LIVE && LIVE._inst){
     hardSet(LIVE._inst.g.gain,S.inst.vol); hardSet(LIVE._inst.rv.gain,S.inst.rev); hardSet(LIVE._inst.dl.gain,S.inst.dly);
   }
@@ -3564,6 +3619,7 @@ function applySessionDoc(doc, bufs){
     hardSet(LIVE.revRet.gain,S.revLvl); LIVE.conv.buffer=makeIR(AC,S.revSize,S.revType);
     hardSet(LIVE.comp.threshold,compThresh());
     buildDelayNet(AC,LIVE);   // rebuilds mode/feedback/tone/time from restored state
+    scApplyRoutingG(LIVE,AC);
   }
   $('mxVol').value=S.masterVol; $('mxVolV').textContent=Math.round(S.masterVol*100)+'%';
   $('mxComp').value=S.compAmt; $('mxCompV').textContent=Math.round(S.compAmt*100)+'%';
@@ -3574,7 +3630,7 @@ function applySessionDoc(doc, bufs){
   $('mxDlyDiv').value=String(S.delayDiv);
   $('mxRevType').value=S.revType; $('mxDlyMode').value=S.dlyMode;
   document.querySelectorAll('#bankrow [data-b]').forEach(x=>x.classList.toggle('on',parseInt(x.dataset.b,10)===S.bank));
-  drawPads(); drawEdit(); drawSeq(); drawCcMaps(); drawWave(); drawTrax(); drawLive();
+  drawPads(); drawEdit(); drawSeq(); drawCcMaps(); drawWave(); drawTrax(); drawLive(); drawSidechain();
 }
 $('jsonIn').addEventListener('change',async e=>{
   const f=e.target.files && e.target.files[0]; if(!f) return;
@@ -3661,7 +3717,8 @@ function snapshotSession(){
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
-    trax:S.trax, inst:S.inst, pads:S.pads, patterns:S.patterns, buffers:bufs };
+    trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
+    pads:S.pads, patterns:S.patterns, buffers:bufs };
 }
 let autosaving=false;
 async function autosave(){
@@ -3771,6 +3828,7 @@ $('btnBounce').addEventListener('click',async ()=>{
   try{
     const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
     const g=buildGraph(oc);
+    scApplyRoutingG(g,oc);            // sidechain routing in the render
     // tempo-synced delay follows each pattern's tempo, like live playback
     tempoSeg.forEach(seg=>{ const dt=clamp(60/seg.bpm*S.delayDiv,0.02,1.9);
       (g.dlyNodes||[]).forEach(d=>d.delayTime.setValueAtTime(dt,seg.t)); });
@@ -3882,7 +3940,7 @@ window.addEventListener('focus',resumeSession);
 document.body.addEventListener('touchstart',()=>{ if(AC) resumeSession(); },{passive:true});
 
 /* ---------------- boot ---------------- */
-buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader(); drawTrax(); drawLive();
+buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader(); drawTrax(); drawLive(); drawSidechain();
 if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
   navigator.serviceWorker.register('./sw.js').catch(()=>{});   // offline shell — network-first, so updates land when online
 }
