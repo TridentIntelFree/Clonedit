@@ -239,8 +239,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">— download online, stored on-device, used offline</span></h3>
   <div class="row">
-    <input type="text" id="packUrl" class="grow" value="samples/manifest.json" spellcheck="false" autocapitalize="off">
+    <select id="packPick" class="grow">
+      <option value="samples/real-cc0.json">Real Instruments (CC0)</option>
+      <option value="samples/manifest.json">MVX Studio (synth)</option>
+      <option value="custom">Custom URL…</option>
+    </select>
     <button id="btnPackLoad">LOAD PACK</button>
+  </div>
+  <div class="row" id="packUrlRow" style="display:none">
+    <input type="text" id="packUrl" class="grow" value="samples/real-cc0.json" spellcheck="false" autocapitalize="off" placeholder="https://…/manifest.json">
   </div>
   <div class="row">
     <span class="lbl">ON DEVICE</span>
@@ -650,8 +657,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      iOS won't evict; cached manifest makes the list and downloaded
      samples work fully offline. Ships a synthesized (public-domain)
      starter drum kit under /samples.
+   - R27: REAL INSTRUMENTS pack — 37 actual recorded orchestral
+     one-shots (piano, violin, contrabass, flute, bassoon, horns,
+     trumpet, trombone, tuba, organ, harp, xylophone) sourced from
+     VSCO-2 Community Edition, which is verified CC0 1.0 (public
+     domain, no attribution). Only VSCO-2-origin instruments included;
+     Freesound/Karoryfer/Iowa-sourced ones excluded as license-
+     uncertain. Built-in pack picker chooses Real (CC0) / Studio
+     (synth) / custom URL.
    ================================================================ */
-const BUILD = 'MVX-880 · R26 · 2026-07-13 · sample packs (offline lib)';
+const BUILD = 'MVX-880 · R27 · 2026-07-13 · real CC0 instruments';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1894,6 +1909,11 @@ async function libToPad(sm){
     hitLive(S.editPad,0.9);
   }catch(err){ lcd('LOAD FAILED: '+(err.message||'decode error')); }
 }
+$('packPick').addEventListener('change',e=>{
+  const v=e.target.value;
+  if(v==='custom'){ $('packUrlRow').style.display='flex'; $('packUrl').focus(); }
+  else{ $('packUrlRow').style.display='none'; $('packUrl').value=v; }
+});
 $('btnPackLoad').addEventListener('click',loadPack);
 $('btnPackPersist').addEventListener('click',async ()=>{
   if(navigator.storage && navigator.storage.persist){

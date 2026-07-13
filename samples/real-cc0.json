@@ -1,0 +1,227 @@
+{
+"name": "Real Instruments (CC0 \u00b7 VSCO-2 Community Edition)",
+"samples": [
+{
+"id": "cc0:bassoon-C3",
+"name": "Bassoon C3",
+"cat": "WOODWIND",
+"file": "real/bassoon/C3.mp3"
+},
+{
+"id": "cc0:bassoon-C4",
+"name": "Bassoon C4",
+"cat": "WOODWIND",
+"file": "real/bassoon/C4.mp3"
+},
+{
+"id": "cc0:bassoon-C5",
+"name": "Bassoon C5",
+"cat": "WOODWIND",
+"file": "real/bassoon/C5.mp3"
+},
+{
+"id": "cc0:contrabass-A2",
+"name": "Contrabass A2",
+"cat": "STRINGS",
+"file": "real/contrabass/A2.mp3"
+},
+{
+"id": "cc0:contrabass-E2",
+"name": "Contrabass E2",
+"cat": "STRINGS",
+"file": "real/contrabass/E2.mp3"
+},
+{
+"id": "cc0:contrabass-E3",
+"name": "Contrabass E3",
+"cat": "STRINGS",
+"file": "real/contrabass/E3.mp3"
+},
+{
+"id": "cc0:flute-C4",
+"name": "Flute C4",
+"cat": "WOODWIND",
+"file": "real/flute/C4.mp3"
+},
+{
+"id": "cc0:flute-C5",
+"name": "Flute C5",
+"cat": "WOODWIND",
+"file": "real/flute/C5.mp3"
+},
+{
+"id": "cc0:flute-C6",
+"name": "Flute C6",
+"cat": "WOODWIND",
+"file": "real/flute/C6.mp3"
+},
+{
+"id": "cc0:french-horn-F3",
+"name": "French Horn F3",
+"cat": "BRASS",
+"file": "real/french-horn/F3.mp3"
+},
+{
+"id": "cc0:french-horn-C4",
+"name": "French Horn C4",
+"cat": "BRASS",
+"file": "real/french-horn/C4.mp3"
+},
+{
+"id": "cc0:french-horn-D5",
+"name": "French Horn D5",
+"cat": "BRASS",
+"file": "real/french-horn/D5.mp3"
+},
+{
+"id": "cc0:harp-G3",
+"name": "Harp G3",
+"cat": "PLUCK",
+"file": "real/harp/G3.mp3"
+},
+{
+"id": "cc0:harp-C5",
+"name": "Harp C5",
+"cat": "PLUCK",
+"file": "real/harp/C5.mp3"
+},
+{
+"id": "cc0:harp-A6",
+"name": "Harp A6",
+"cat": "PLUCK",
+"file": "real/harp/A6.mp3"
+},
+{
+"id": "cc0:organ-C3",
+"name": "Organ C3",
+"cat": "KEYS",
+"file": "real/organ/C3.mp3"
+},
+{
+"id": "cc0:organ-C4",
+"name": "Organ C4",
+"cat": "KEYS",
+"file": "real/organ/C4.mp3"
+},
+{
+"id": "cc0:organ-C5",
+"name": "Organ C5",
+"cat": "KEYS",
+"file": "real/organ/C5.mp3"
+},
+{
+"id": "cc0:piano-A2",
+"name": "Piano A2",
+"cat": "KEYS",
+"file": "real/piano/A2.mp3"
+},
+{
+"id": "cc0:piano-C4",
+"name": "Piano C4",
+"cat": "KEYS",
+"file": "real/piano/C4.mp3"
+},
+{
+"id": "cc0:piano-A5",
+"name": "Piano A5",
+"cat": "KEYS",
+"file": "real/piano/A5.mp3"
+},
+{
+"id": "cc0:piano-C6",
+"name": "Piano C6",
+"cat": "KEYS",
+"file": "real/piano/C6.mp3"
+},
+{
+"id": "cc0:trombone-F2",
+"name": "Trombone F2",
+"cat": "BRASS",
+"file": "real/trombone/F2.mp3"
+},
+{
+"id": "cc0:trombone-C3",
+"name": "Trombone C3",
+"cat": "BRASS",
+"file": "real/trombone/C3.mp3"
+},
+{
+"id": "cc0:trombone-C4",
+"name": "Trombone C4",
+"cat": "BRASS",
+"file": "real/trombone/C4.mp3"
+},
+{
+"id": "cc0:trumpet-F3",
+"name": "Trumpet F3",
+"cat": "BRASS",
+"file": "real/trumpet/F3.mp3"
+},
+{
+"id": "cc0:trumpet-C4",
+"name": "Trumpet C4",
+"cat": "BRASS",
+"file": "real/trumpet/C4.mp3"
+},
+{
+"id": "cc0:trumpet-A5",
+"name": "Trumpet A5",
+"cat": "BRASS",
+"file": "real/trumpet/A5.mp3"
+},
+{
+"id": "cc0:tuba-F1",
+"name": "Tuba F1",
+"cat": "BRASS",
+"file": "real/tuba/F1.mp3"
+},
+{
+"id": "cc0:tuba-D3",
+"name": "Tuba D3",
+"cat": "BRASS",
+"file": "real/tuba/D3.mp3"
+},
+{
+"id": "cc0:tuba-F3",
+"name": "Tuba F3",
+"cat": "BRASS",
+"file": "real/tuba/F3.mp3"
+},
+{
+"id": "cc0:violin-A3",
+"name": "Violin A3",
+"cat": "STRINGS",
+"file": "real/violin/A3.mp3"
+},
+{
+"id": "cc0:violin-A5",
+"name": "Violin A5",
+"cat": "STRINGS",
+"file": "real/violin/A5.mp3"
+},
+{
+"id": "cc0:violin-C5",
+"name": "Violin C5",
+"cat": "STRINGS",
+"file": "real/violin/C5.mp3"
+},
+{
+"id": "cc0:xylophone-C5",
+"name": "Xylophone C5",
+"cat": "MALLET",
+"file": "real/xylophone/C5.mp3"
+},
+{
+"id": "cc0:xylophone-C6",
+"name": "Xylophone C6",
+"cat": "MALLET",
+"file": "real/xylophone/C6.mp3"
+},
+{
+"id": "cc0:xylophone-C7",
+"name": "Xylophone C7",
+"cat": "MALLET",
+"file": "real/xylophone/C7.mp3"
+}
+]
+}
