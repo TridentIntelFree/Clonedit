@@ -94,6 +94,8 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
 .step.q2{border-left:2px solid #4a5262}
 .step.on{background:var(--amber-soft);border-color:var(--amber)}
 .step.cur{outline:2px solid var(--lcd);outline-offset:-2px}
+.step.lockmark::after{content:'';position:absolute;top:3px;right:3px;width:5px;height:5px;border-radius:50%;background:var(--lcd);box-shadow:0 0 3px var(--lcd)}
+.step.selstep{box-shadow:inset 0 0 0 2px var(--amber)}
 #seqpadstrip{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin:6px 0}
 #seqpadstrip button{padding:8px 0;font-size:10px}
 #seqpadstrip button.hit{background:var(--amber-soft);border-color:var(--amber);color:#120d04}
@@ -308,7 +310,20 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <h3>TRACK <span id="seqPadName" style="color:var(--amber)"></span></h3>
   <div id="seqpadstrip"></div>
+  <div class="row">
+    <span class="lbl">LEN</span>
+    <button id="btnLenDn">&#8722;</button><span id="seqLenV" style="min-width:30px;text-align:center;color:var(--lcd);font-size:12px">16</span><button id="btnLenUp">+</button>
+    <button id="btnStepLock">LOCK</button>
+    <span id="lockHint" style="font-size:10px;color:var(--txt-dim)">tap step to toggle</span>
+  </div>
   <div id="stepgrid"></div>
+  <div id="steplock" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
+    <div class="row"><span class="lbl">STEP</span><span id="slTitle" style="color:var(--amber);font-size:12px">—</span><span class="grow"></span><button id="slClr">CLEAR LOCKS</button></div>
+    <div class="pslider"><span class="lbl">PITCH</span><input type="range" id="slPitch" min="-24" max="24" step="1" value="0"><span class="val" id="slPitchV">off</span></div>
+    <div class="pslider"><span class="lbl">PROB</span><input type="range" id="slProb" min="0.05" max="1" step="0.05" value="1"><span class="val" id="slProbV">100%</span></div>
+    <div class="pslider"><span class="lbl">RATCH</span><input type="range" id="slRat" min="1" max="6" step="1" value="1"><span class="val" id="slRatV">1</span></div>
+    <div class="pslider"><span class="lbl">NUDGE</span><input type="range" id="slNudge" min="-0.5" max="0.5" step="0.05" value="0"><span class="val" id="slNudgeV">0</span></div>
+  </div>
   <div class="row">
     <span class="lbl">VEL</span>
     <input type="range" id="stepVel" min="0.2" max="1" step="0.05" value="0.85" class="grow">
@@ -671,8 +686,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      so the whole library is available with ZERO added repo/app bytes;
      GitHub serves them CORS-open, the phone downloads only what you
      GET and keeps it offline. Picker: Full / Core / Studio / custom.
+   - R29: STEP LOCKS + polymeter — per-step parameter locks (pitch,
+     probability, ratchet/roll, micro-timing nudge) via a LOCK mode
+     and per-step editor, plus per-track LENGTH (1–16) for polymeter.
+     Absolute step counter drives per-track modulo; live playback,
+     ext-clock, live-rec quantize, and the WAV bounce all honor locks
+     and track length identically. Backward-compatible: old patterns
+     migrate to len 16 / no locks.
    ================================================================ */
-const BUILD = 'MVX-880 · R28 · 2026-07-13 · full CC0 library (162)';
+const BUILD = 'MVX-880 · R29 · 2026-07-13 · step locks + polymeter';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -687,7 +709,10 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   gain:0.9, pitch:0, fine:0, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
   choke:0, note:36+i, reverse:false, mode:'one',
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16 }; }
-function newPattern(){ const s=[]; for(let p=0;p<NPADS;p++) s.push(new Array(NSTEPS).fill(0)); return { steps:s, bpm:null }; }
+function newPattern(){ const s=[]; for(let p=0;p<NPADS;p++) s.push(new Array(NSTEPS).fill(0)); return { steps:s, bpm:null, len:new Array(NPADS).fill(NSTEPS), locks:{} }; }
+function trackLen(pat,p){ return (pat.len&&pat.len[p])||NSTEPS; }
+function stepLock(pat,p,st){ return pat.locks&&pat.locks[p+':'+st]; }
+function stepHasLock(lk){ return !!(lk && (lk.pitch||(lk.prob!=null)||lk.rat>1||lk.nudge)); }
 
 const S = {
   pads: Array.from({length:NPADS},(_,i)=>newPad(i)),
@@ -872,12 +897,12 @@ function updatePerf(){
   const t=AC.currentTime, f=perfFactor();
   liveVoices.forEach(src=>{ try{ src.playbackRate.setTargetAtTime(src._base*f,t,0.02); }catch(e){} });
 }
-function triggerPad(ctx, g, idx, vel, when, chokeReg){
+function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff){
   const p=S.pads[idx]; if(p.bufId<0) return null;
   let buf=S.buffers[p.bufId]; if(!buf) return null;
   let s0=p.start, e0=p.end;
   if(p.reverse){ buf=getReversed(p.bufId); s0=1-p.end; e0=1-p.start; }
-  const baseRate=Math.pow(2,(p.pitch+p.fine/100)/12);
+  const baseRate=Math.pow(2,(p.pitch+(pitchOff||0)+p.fine/100)/12);
   const live=(ctx===AC);
   const rate=live? baseRate*perfFactor() : baseRate;
   const off=s0*buf.duration;
@@ -999,10 +1024,10 @@ function hitLive(idx, vel){
   if(a) activeEnv[idx]=a;
   flashPad(idx);
   if(S.liveRec && playing){
-    const sd=stepDur();
-    const pos=(curStep + (AC.currentTime-lastStepTime)/sd) % NSTEPS;
-    const st=Math.round(pos)%NSTEPS;
-    S.patterns[S.pattern].steps[idx][st]=vel;
+    const sd=stepDur(), pat=S.patterns[S.pattern], L=trackLen(pat,idx);
+    const pos=((curAbsStep%L) + (AC.currentTime-lastStepTime)/sd) % L;
+    const st=Math.round(pos)%L;
+    pat.steps[idx][st]=vel;
     if(idx===S.seqPad) drawSteps();
     dirty();
   }
@@ -1938,20 +1963,26 @@ $('btnPackPersist').addEventListener('click',async ()=>{
 let playing=false, curStep=0, nextStepTime=0, lastStepTime=0, seqTimer=0, seqSolo=false;
 function stepDur(){ return 60/S.bpm/4; }
 
-function schedStep(step, t){
-  const sd=stepDur();
-  const when = t + (step%2===1 ? S.swing*sd : 0);
-  const pat=S.patterns[S.pattern], fired=[];
+function schedStep(barStep, absStep, t){
+  const sd=stepDur(), pat=S.patterns[S.pattern], fired=[];
+  const swing = (barStep%2===1) ? S.swing*sd : 0;
   for(let p=0;p<NPADS;p++){
-    const v=pat.steps[p][step];
-    if(v>0){
-      if(seqSolo && p!==S.seqPad) continue;
-      triggerPad(AC, LIVE, p, v, when, chokeLive);
-      fired.push(p);
-    }
+    if(seqSolo && p!==S.seqPad) continue;
+    const L=trackLen(pat,p), idx=absStep%L;
+    const v=pat.steps[p][idx];
+    if(!(v>0)) continue;
+    const lk=pat.locks && pat.locks[p+':'+idx];
+    if(lk && lk.prob!=null && Math.random()>lk.prob) continue;   // probability
+    let when=t+swing;
+    if(lk && lk.nudge) when+=lk.nudge*sd;                        // micro-timing
+    const pitchOff=(lk&&lk.pitch)||0;
+    const rat=(lk&&lk.rat>1)?lk.rat:1;                           // ratchet / roll
+    if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, v, when+r*rd, chokeLive, pitchOff); }
+    else triggerPad(AC, LIVE, p, v, when, chokeLive, pitchOff);
+    fired.push(p);
   }
   const delay=Math.max(0,(t-AC.currentTime)*1000);
-  setTimeout(()=>{ markStep(step); flashFired(fired); },delay);
+  setTimeout(()=>{ markStep(absStep); flashFired(fired); },delay);
 }
 function flashFired(fired){ // visual proof a row actually triggered
   const btns=document.querySelectorAll('#seqpadstrip button');
@@ -1962,15 +1993,17 @@ function flashFired(fired){ // visual proof a row actually triggered
     b.classList.add('hit'); setTimeout(()=>b.classList.remove('hit'),80);
   });
 }
-function markStep(step){
-  curStep=step; lastStepTime=AC?AC.currentTime:0;
-  document.querySelectorAll('#stepgrid .step').forEach((el,i)=>el.classList.toggle('cur',i===step));
+function markStep(absStep){
+  curAbsStep=absStep;
+  const cur=absStep % trackLen(S.patterns[S.pattern],S.seqPad);
+  curStep=cur; lastStepTime=AC?AC.currentTime:0;
+  document.querySelectorAll('#stepgrid .step').forEach((el,i)=>el.classList.toggle('cur',i===cur));
 }
 function seqTick(){
   while(nextStepTime < AC.currentTime + 0.12){
-    schedStep(curStepSched, nextStepTime);
+    schedStep(curStepSched, absStepSched, nextStepTime);
     nextStepTime += stepDur();
-    curStepSched=(curStepSched+1)%NSTEPS;
+    curStepSched=(curStepSched+1)%NSTEPS; absStepSched++;
     if(curStepSched===0 && S.chainOn && S.chain.length){
       S.chainPos=(S.chainPos+1)%S.chain.length;
       selectPattern(S.chain[S.chainPos]);
@@ -1978,14 +2011,14 @@ function seqTick(){
     }
   }
 }
-let curStepSched=0;
+let curStepSched=0, absStepSched=0, curAbsStep=0;
 function startSeq(){
   ensureAudio();
   if(playing) return;
   playing=true;
   if(S.chainOn && S.chain.length){ S.chainPos=0; selectPattern(S.chain[0]); drawSeq(); }
   else selectPattern(S.pattern);   // re-apply this pattern's own tempo before the clock is read
-  curStepSched=0; curStep=0;
+  curStepSched=0; curStep=0; absStepSched=0;
   nextStepTime=AC.currentTime+0.08;   // offsets set BEFORE the loop reads them (ordering fix)
   startTrax(nextStepTime);            // tape lanes roll (and record) from bar 1
   if(!S.extClk) seqTimer=setInterval(seqTick,25);
@@ -2974,26 +3007,69 @@ function drawSeq(){
     const idx=padIndex(s);
     const b=document.createElement('button'); b.textContent=padName(idx).slice(1);
     if(idx===S.seqPad) b.classList.add('on');
-    b.addEventListener('click',()=>{ S.seqPad=idx; drawSeq(); });
+    b.addEventListener('click',()=>{ S.seqPad=idx; seqSelStep=-1; drawSeq(); drawStepLock(); });
     st.appendChild(b);
   }
   $('seqPadName').textContent=padName(S.seqPad)+(S.pads[S.seqPad].name?' · '+S.pads[S.seqPad].name:'');
   drawSteps();
 }
+let seqLockMode=false, seqSelStep=-1;
 function drawSteps(){
   const gr=$('stepgrid'); gr.innerHTML='';
-  const row=S.patterns[S.pattern].steps[S.seqPad];
-  for(let i=0;i<NSTEPS;i++){
+  const pat=S.patterns[S.pattern], row=pat.steps[S.seqPad], L=trackLen(pat,S.seqPad);
+  $('seqLenV').textContent=L;
+  for(let i=0;i<L;i++){
     const el=document.createElement('button'); el.className='step'+(i%4===0?' q2':'');
     const v=row[i];
     if(v>0){ el.classList.add('on'); el.style.opacity=String(0.45+v*0.55); }
+    if(pat.locks && stepHasLock(pat.locks[S.seqPad+':'+i])) el.classList.add('lockmark');
+    if(seqLockMode && i===seqSelStep) el.classList.add('selstep');
     el.addEventListener('click',()=>{
-      row[i]=row[i]>0?0:parseFloat($('stepVel').value);
-      drawSteps(); dirty();
+      if(seqLockMode){ seqSelStep=i; drawSteps(); drawStepLock(); }
+      else { row[i]=row[i]>0?0:parseFloat($('stepVel').value); drawSteps(); dirty(); }
     });
     gr.appendChild(el);
   }
 }
+function setTrackLen(d){
+  const pat=S.patterns[S.pattern];
+  if(!Array.isArray(pat.len)) pat.len=new Array(NPADS).fill(NSTEPS);
+  pat.len[S.seqPad]=clamp((pat.len[S.seqPad]||NSTEPS)+d,1,NSTEPS);
+  if(seqSelStep>=pat.len[S.seqPad]) seqSelStep=-1;
+  drawSteps(); drawStepLock(); dirty();
+  lcd('TRACK '+padName(S.seqPad)+' LEN '+pat.len[S.seqPad]+(pat.len[S.seqPad]!==NSTEPS?' · polymeter':''));
+}
+$('btnLenDn').addEventListener('click',()=>setTrackLen(-1));
+$('btnLenUp').addEventListener('click',()=>setTrackLen(1));
+$('btnStepLock').addEventListener('click',()=>{
+  seqLockMode=!seqLockMode; $('btnStepLock').classList.toggle('on',seqLockMode);
+  if(!seqLockMode) seqSelStep=-1;
+  $('lockHint').textContent=seqLockMode?'tap a step to edit its locks':'tap step to toggle';
+  drawSteps(); drawStepLock();
+});
+function drawStepLock(){
+  const panel=$('steplock');
+  if(!seqLockMode || seqSelStep<0){ panel.style.display='none'; return; }
+  panel.style.display='block';
+  const lk=S.patterns[S.pattern].locks[S.seqPad+':'+seqSelStep]||{};
+  $('slTitle').textContent=padName(S.seqPad)+' · step '+(seqSelStep+1);
+  $('slPitch').value=lk.pitch||0; $('slPitchV').textContent=lk.pitch?((lk.pitch>0?'+':'')+lk.pitch+' st'):'off';
+  $('slProb').value=lk.prob!=null?lk.prob:1; $('slProbV').textContent=Math.round((lk.prob!=null?lk.prob:1)*100)+'%';
+  $('slRat').value=lk.rat||1; $('slRatV').textContent=String(lk.rat||1);
+  $('slNudge').value=lk.nudge||0; $('slNudgeV').textContent=(lk.nudge?(lk.nudge>0?'+':'')+Math.round(lk.nudge*100)+'%':'0');
+}
+function setLock(field,val,def){
+  if(seqSelStep<0) return;
+  const pat=S.patterns[S.pattern], k=S.seqPad+':'+seqSelStep, lk=pat.locks[k]||{};
+  if(val===def) delete lk[field]; else lk[field]=val;
+  if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
+  drawSteps(); drawStepLock(); dirty();
+}
+$('slPitch').addEventListener('input',e=>setLock('pitch',parseInt(e.target.value,10),0));
+$('slProb').addEventListener('input',e=>setLock('prob',parseFloat(e.target.value),1));
+$('slRat').addEventListener('input',e=>setLock('rat',parseInt(e.target.value,10),1));
+$('slNudge').addEventListener('input',e=>setLock('nudge',parseFloat(e.target.value),0));
+$('slClr').addEventListener('click',()=>{ delete S.patterns[S.pattern].locks[S.seqPad+':'+seqSelStep]; drawSteps(); drawStepLock(); dirty(); });
 $('btnChainAdd').addEventListener('click',()=>{ S.chain.push(S.pattern); drawSeq(); dirty(); });
 $('btnChainClr').addEventListener('click',()=>{ S.chain=[]; S.chainPos=0; drawSeq(); dirty(); });
 $('btnChainOn').addEventListener('click',()=>{ S.chainOn=!S.chainOn; drawSeq(); dirty(); });
@@ -3001,7 +3077,7 @@ $('btnSolo').addEventListener('click',()=>{
   seqSolo=!seqSolo; $('btnSolo').classList.toggle('on',seqSolo);
   lcd(seqSolo?'SOLO: only '+padName(S.seqPad)+' plays — tap SOLO again to unmute all':'SOLO OFF — all tracks play');
 });
-$('btnRowClr').addEventListener('click',()=>{ S.patterns[S.pattern].steps[S.seqPad].fill(0); drawSteps(); dirty(); });
+$('btnRowClr').addEventListener('click',()=>{ const pat=S.patterns[S.pattern]; pat.steps[S.seqPad].fill(0); for(let i=0;i<NSTEPS;i++) delete pat.locks[S.seqPad+':'+i]; drawSteps(); drawStepLock(); dirty(); });
 $('btnPtnBpm').addEventListener('click',()=>{
   S.ptnBpm=!S.ptnBpm; dirty();
   $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
@@ -3064,7 +3140,7 @@ function onMidi(ev){
   const d=ev.data, st=d[0]&0xF0, ch=d[0]&0x0F;
   // realtime first — never channel-filtered
   if(d[0]===0xF8){ onClockTick(); return; }
-  if(d[0]===0xFA){ if(S.extClk){ startSeq(); curStepSched=0; } return; }
+  if(d[0]===0xFA){ if(S.extClk){ startSeq(); curStepSched=0; absStepSched=0; } return; }
   if(d[0]===0xFC){ if(S.extClk) stopSeq(); return; }
   if(d[0]===0xFB){ if(S.extClk && !playing) startSeq(); return; }
   if(S.midiCh>=0 && ch!==S.midiCh) return;
@@ -3095,8 +3171,8 @@ function onClockTick(){
     clkTicks=(clkTicks+1)%6;         // 6 ticks per 16th at 24 PPQN
     if(clkTicks===0){
       ensureAudio();
-      schedStep(curStepSched, AC.currentTime+0.005);
-      curStepSched=(curStepSched+1)%NSTEPS;
+      schedStep(curStepSched, absStepSched, AC.currentTime+0.005);
+      curStepSched=(curStepSched+1)%NSTEPS; absStepSched++;
       if(curStepSched===0 && S.chainOn && S.chain.length){
         S.chainPos=(S.chainPos+1)%S.chain.length; selectPattern(S.chain[S.chainPos]); drawSeq();
       }
@@ -3212,7 +3288,7 @@ function applySessionDoc(doc, bufs){
     hardSet(LIVE._inst.g.gain,S.inst.vol); hardSet(LIVE._inst.rv.gain,S.inst.rev); hardSet(LIVE._inst.dl.gain,S.inst.dly);
   }
   S.ptnBpm=!!doc.ptnBpm; $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
-  S.patterns.forEach(pt=>{ if(pt.bpm===undefined) pt.bpm=null; });
+  S.patterns.forEach(pt=>{ if(pt.bpm===undefined) pt.bpm=null; if(!Array.isArray(pt.len)) pt.len=new Array(NPADS).fill(NSTEPS); if(!pt.locks||typeof pt.locks!=='object') pt.locks={}; });
   S.pads.forEach(p=>{ if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16; });
   Object.keys(revCache).forEach(k=>delete revCache[k]);
   Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
@@ -3402,7 +3478,7 @@ $('btnBounce').addEventListener('click',async ()=>{
   const seq=useChain? S.chain : [S.pattern];
   // event list, time-ordered by construction — each pattern renders at its
   // own tempo when PTN TEMPO is on, exactly like live playback
-  const events=[], tempoSeg=[]; let t=0.05;
+  const events=[], tempoSeg=[]; let t=0.05, absB=0;
   for(let l=0;l<loops;l++){
     for(const pi of seq){
       const pat=S.patterns[pi];
@@ -3410,10 +3486,19 @@ $('btnBounce').addEventListener('click',async ()=>{
       const sd=60/bpm/4;
       tempoSeg.push({t,bpm});
       for(let st=0;st<NSTEPS;st++){
-        const when=t+st*sd+(st%2===1?S.swing*sd:0);
-        for(let p=0;p<NPADS;p++){ const v=pat.steps[p][st]; if(v>0) events.push({when,p,v}); }
+        const swing=(st%2===1?S.swing*sd:0);
+        for(let p=0;p<NPADS;p++){
+          const L=(pat.len&&pat.len[p])||NSTEPS, idx=(absB+st)%L;
+          const v=pat.steps[p][idx]; if(!(v>0)) continue;
+          const lk=pat.locks&&pat.locks[p+':'+idx];
+          if(lk && lk.prob!=null && Math.random()>lk.prob) continue;
+          let when=t+st*sd+swing; if(lk&&lk.nudge) when+=lk.nudge*sd;
+          const pitch=(lk&&lk.pitch)||0, rat=(lk&&lk.rat>1)?lk.rat:1;
+          if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) events.push({when:when+r*rd,p,v,pitch}); }
+          else events.push({when,p,v,pitch});
+        }
       }
-      t+=sd*NSTEPS;
+      absB+=NSTEPS; t+=sd*NSTEPS;
     }
   }
   const trax=[];
@@ -3436,7 +3521,7 @@ $('btnBounce').addEventListener('click',async ()=>{
       (g.dlyNodes||[]).forEach(d=>d.delayTime.setValueAtTime(dt,seg.t)); });
     const chokeOff={};
     events.sort((a,b)=>a.when-b.when);
-    for(const ev of events) triggerPad(oc, g, ev.p, ev.v, ev.when, chokeOff);
+    for(const ev of events) triggerPad(oc, g, ev.p, ev.v, ev.when, chokeOff, ev.pitch);
     for(const x of trax){ // tape lanes, aligned to bar 1 like the live transport
       const w=wireTrack(oc,g,x.tr,x.b,0.05,x.tr.gain);
       if(x.tr.loop) w.src.stop(t);   // looped lanes run to the end of the pattern content
