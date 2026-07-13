@@ -328,6 +328,9 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 <!-- LIVE -->
 <div class="view" id="v-live">
   <div class="row">
+    <button id="btnPerfRec" class="rec grow">&#9679; REC PERFORMANCE &#8594; TRACK</button>
+  </div>
+  <div class="row">
     <select id="instSel" class="grow">
       <option value="ther">THEREMIN</option>
       <option value="chord">CHORD PADS</option>
@@ -619,8 +622,12 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      identical in the bounce. Each TRAX lane gets FX (filter/pan/
      rev/dly sends, live-adjustable) and an \u221e loop toggle that
      loops the take at the nearest whole bar.
+   - R25: one-tap \u25cf REC PERFORMANCE on the LIVE tab — arms the
+     first empty tape lane (BUS) and rolls the transport in one tap;
+     tapping again or STOP commits. Transport \u25cf message now says
+     it records steps, not audio.
    ================================================================ */
-const BUILD = 'MVX-880 · R24 · 2026-07-12 · fx-rack + looper';
+const BUILD = 'MVX-880 · R25 · 2026-07-12 · one-tap perf rec';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1823,7 +1830,7 @@ function stopSeq(){
 }
 $('btnPlay').addEventListener('click',startSeq);
 $('btnStop').addEventListener('click',stopSeq);
-$('btnRec').addEventListener('click',()=>{ S.liveRec=!S.liveRec; $('btnRec').classList.toggle('on',S.liveRec); $('btnLiveRec').classList.toggle('on',S.liveRec); lcd(S.liveRec?'LIVE REC ARMED — pad hits quantize to grid':'LIVE REC OFF'); });
+$('btnRec').addEventListener('click',()=>{ S.liveRec=!S.liveRec; $('btnRec').classList.toggle('on',S.liveRec); $('btnLiveRec').classList.toggle('on',S.liveRec); lcd(S.liveRec?'STEP REC ARMED — pad hits write steps, not audio. For audio: LIVE \u25cf REC or TRAX.':'STEP REC OFF'); });
 $('btnLiveRec').addEventListener('click',()=>$('btnRec').click());
 
 function setBpm(b){ S.bpm=clamp(b,40,240);
@@ -2203,7 +2210,8 @@ function traxCommit(){
   S.trax[i].bufId=S.buffers.length-1;
   S.trax[i].name='take'+(i+1);
   drawTrax(); dirty();
-  lcd('TAKE \u2192 TRACK '+(i+1)+' \u00b7 '+buf.duration.toFixed(1)+'s');
+  $('btnPerfRec').classList.remove('on');
+  lcd('TAKE \u2192 TRACK '+(i+1)+' \u00b7 '+buf.duration.toFixed(1)+'s — it plays with the transport; find it in TRAX.');
 }
 
 /* ---------------- LIVE — playable instruments ---------------- */
@@ -2715,6 +2723,20 @@ function drawLive(){
   const names=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
   names.forEach((n,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=n; $('instKey').appendChild(o); });
 })();
+$('btnPerfRec').addEventListener('click',()=>{
+  if(traxCap){ stopSeq(); return; }            // rolling — stop commits the take
+  ensureAudio();
+  let i=traxArm;
+  if(i<0) i=S.trax.findIndex(t=>t.bufId<0);
+  if(i<0){ lcd('ALL 8 TRACKS FULL — clear one in TRAX first.'); return; }
+  $('traxSrc').value='bus';
+  if(traxStream) disarmTrax();                 // a pending mic arm would hijack the capture source
+  traxArm=i; drawTrax();
+  if(playing) stopSeq();
+  startSeq();                                  // transport rolls; capture starts on the armed lane
+  $('btnPerfRec').classList.add('on');
+  lcd('RECORDING \u2192 TRACK '+(i+1)+' — play! Tap again (or STOP) to commit.');
+});
 $('instSel').addEventListener('change',e=>{ instPanic(); S.inst.mode=e.target.value; drawLive(); dirty(); });
 $('instVoiceSel').addEventListener('change',e=>{ S.inst.voice=e.target.value; dirty(); });
 $('instKey').addEventListener('change',e=>{ instPanic(); S.inst.key=parseInt(e.target.value,10); drawLive(); dirty(); });
