@@ -173,6 +173,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <button data-v="seq">SEQ</button>
   <button data-v="trax">TRAX</button>
   <button data-v="live">LIVE</button>
+  <button data-v="amp">AMP</button>
   <button data-v="dj">DJ</button>
   <button data-v="mix">MIX</button>
   <button data-v="midi">MIDI</button>
@@ -429,6 +430,49 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
     Everything here plays through the master — jam over the sequencer, record with
     TRAX (BUS) or REC OUT, then chop the take onto pads.
+  </div>
+</div>
+
+<!-- AMP -->
+<div class="view" id="v-amp">
+  <div class="row">
+    <button id="btnAmpOn" class="rec grow">&#9673; ENABLE INPUT (guitar / line / mic)</button>
+  </div>
+  <div class="row"><span class="lbl">INPUT</span><select id="ampIn" class="grow"><option value="default">Default input</option></select></div>
+  <div class="row" style="align-items:baseline">
+    <span class="lbl">TUNER</span>
+    <span id="ampTuner" style="color:var(--lcd);font-size:20px;font-weight:700;min-width:52px">&mdash;</span>
+    <span id="ampTunerCents" style="font-size:11px;color:var(--txt-dim);flex:1"></span>
+  </div>
+  <div class="row">
+    <span class="lbl">AMP</span>
+    <select id="ampModel"><option value="clean">CLEAN</option><option value="crunch">CRUNCH</option><option value="lead">LEAD</option><option value="fuzz">FUZZ</option></select>
+    <select id="ampPreset" class="grow">
+      <option value="">— PRESET —</option>
+      <option value="clean">Clean Combo</option>
+      <option value="blues">Blues Crunch</option>
+      <option value="rock">Rock Lead</option>
+      <option value="fuzz">Fuzz Face</option>
+      <option value="ambient">Ambient Wash</option>
+    </select>
+  </div>
+  <div class="pslider"><span class="lbl">GAIN</span><input type="range" id="ampGain" min="0" max="1" step="0.01" value="0.4"><span class="val" id="ampGainV">40%</span></div>
+  <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="ampLevel" min="0" max="1.5" step="0.01" value="0.9"><span class="val" id="ampLevelV">90%</span></div>
+  <div class="pslider"><span class="lbl">GATE</span><input type="range" id="ampGate" min="0" max="1" step="0.01" value="0"><span class="val" id="ampGateV">off</span></div>
+  <h3>TONE</h3>
+  <div class="pslider"><span class="lbl">BASS</span><input type="range" id="ampBass" min="-12" max="12" step="1" value="2"><span class="val" id="ampBassV">+2</span></div>
+  <div class="pslider"><span class="lbl">MID</span><input type="range" id="ampMid" min="-12" max="12" step="1" value="0"><span class="val" id="ampMidV">0</span></div>
+  <div class="pslider"><span class="lbl">TREBLE</span><input type="range" id="ampTreb" min="-12" max="12" step="1" value="3"><span class="val" id="ampTrebV">+3</span></div>
+  <div class="row"><span class="lbl">CAB</span><button id="ampCab" class="on">CABINET SIM</button></div>
+  <h3>FX</h3>
+  <div class="row"><span class="lbl">CHORUS</span><button id="ampChorus">CHORUS</button>
+    <input type="range" id="ampChDepth" min="0" max="0.01" step="0.0002" value="0.003" class="grow"></div>
+  <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="ampDly" min="0" max="1" step="0.01" value="0"><span class="val" id="ampDlyV">0%</span></div>
+  <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="ampRev" min="0" max="1" step="0.01" value="0"><span class="val" id="ampRevV">0%</span></div>
+  <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
+    Plug a guitar in via an audio interface / adapter (or use the mic). <b>Use headphones</b> —
+    mic + speaker will feed back. DELAY/REVERB use the MIX engine (6 verbs, 3 delay modes).
+    The processed signal feeds the master, so record it with TRAX (BUS) or DJ REC OUT.
   </div>
 </div>
 
@@ -693,8 +737,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      ext-clock, live-rec quantize, and the WAV bounce all honor locks
      and track length identically. Backward-compatible: old patterns
      migrate to len 16 / no locks.
+   - R30: AMP tab — live guitar/line/mic input processor. Chain: input
+     → noise gate → drive (clean/crunch/lead/fuzz) → cabinet sim →
+     3-band EQ → chorus → delay/reverb sends (shared MIX engine) →
+     master, so it's recordable via TRAX/REC OUT. Autocorrelation
+     tuner, amp presets, device select. Reuses the play-and-record
+     session dance; input released on backgrounding.
    ================================================================ */
-const BUILD = 'MVX-880 · R29 · 2026-07-13 · step locks + polymeter';
+const BUILD = 'MVX-880 · R30 · 2026-07-13 · live guitar amp';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1204,6 +1254,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
   if(b.dataset.v==='proj'){ $('bSrc').value=(S.chainOn&&S.chain.length)?'chain':'pat'; }
   if(b.dataset.v==='trax'){ drawTrax(); }
   if(b.dataset.v==='live'){ drawLive(); }
+  if(b.dataset.v==='amp'){ ampListDevices(); }
 }));
 
 /* ---------------- sampler ---------------- */
@@ -3088,6 +3139,188 @@ $('btnPtnBpm').addEventListener('click',()=>{
 });
 $('btnPatClr').addEventListener('click',()=>{ S.patterns[S.pattern]=newPattern(); drawSteps(); dirty(); lcd('PTN '+(S.pattern+1)+' CLEARED'); });
 
+/* ---------------- AMP — live guitar/line input processor ----------------
+   Guitar audio enters as a media input (interface/adapter/mic), not MIDI.
+   Chain: in → gate → drive(model) → cab → 3-band EQ → chorus → out → master
+   (+ delay/reverb sends into the shared MIX engine). Processed signal feeds
+   LIVE.master so TRAX/REC OUT can capture it. Includes an autocorrelation
+   tuner. */
+let ampOn=false, ampStream=null, ampNodes=null, ampRAF=0, ampBuf=null, ampTick=0;
+function makeFuzzCurve(){ const n=1024,c=new Float32Array(n); for(let i=0;i<n;i++){ const x=i/(n-1)*2-1; c[i]=Math.max(-0.72,Math.min(0.72,x*6))/0.72; } return c; }
+function ampBuild(){
+  const A={};
+  A.src=AC.createMediaStreamSource(ampStream);
+  A.in=AC.createGain();
+  A.an=AC.createAnalyser(); A.an.fftSize=2048;
+  A.gate=AC.createGain(); A.gate.gain.value=1;
+  A.pre=AC.createGain();
+  A.drive=AC.createWaveShaper(); A.drive.oversample='2x';
+  A.hp=AC.createBiquadFilter(); A.hp.type='highpass'; A.hp.frequency.value=85;      // cab low cut
+  A.lp=AC.createBiquadFilter(); A.lp.type='lowpass'; A.lp.frequency.value=5200;      // cab high cut
+  A.pres=AC.createBiquadFilter(); A.pres.type='peaking'; A.pres.frequency.value=2200; A.pres.Q.value=1; A.pres.gain.value=3;
+  A.bass=AC.createBiquadFilter(); A.bass.type='lowshelf'; A.bass.frequency.value=120;
+  A.mid=AC.createBiquadFilter(); A.mid.type='peaking'; A.mid.frequency.value=800; A.mid.Q.value=0.9;
+  A.treb=AC.createBiquadFilter(); A.treb.type='highshelf'; A.treb.frequency.value=3200;
+  A.chDelay=AC.createDelay(0.05); A.chDelay.delayTime.value=0.025;
+  A.chLfo=AC.createOscillator(); A.chLfo.frequency.value=1.2;
+  A.chDepth=AC.createGain(); A.chDepth.gain.value=0;
+  A.chWet=AC.createGain(); A.chWet.gain.value=0;
+  A.out=AC.createGain();
+  A.dsend=AC.createGain(); A.dsend.gain.value=0;
+  A.rsend=AC.createGain(); A.rsend.gain.value=0;
+  A.chLfo.connect(A.chDepth); A.chDepth.connect(A.chDelay.delayTime); A.chLfo.start();
+  A.src.connect(A.in);
+  A.in.connect(A.an);                                  // tap clean input for gate + tuner
+  A.in.connect(A.gate);
+  A.gate.connect(A.pre); A.pre.connect(A.drive); A.drive.connect(A.hp); A.hp.connect(A.lp); A.lp.connect(A.pres);
+  A.pres.connect(A.bass); A.bass.connect(A.mid); A.mid.connect(A.treb);
+  A.treb.connect(A.out);                               // dry
+  A.treb.connect(A.chDelay); A.chDelay.connect(A.chWet); A.chWet.connect(A.out);   // chorus wet
+  A.out.connect(LIVE.master);
+  A.out.connect(A.dsend); A.dsend.connect(LIVE.dlyIn);
+  A.out.connect(A.rsend); A.rsend.connect(LIVE.revIn);
+  return A;
+}
+function ampApplyModel(){
+  const A=ampNodes; if(!A) return;
+  const m=$('ampModel').value, g=parseFloat($('ampGain').value); let curve,pre;
+  if(m==='clean'){ curve=makeDriveCurve(0.03+g*0.15); pre=1+g*1.5; }
+  else if(m==='crunch'){ curve=makeDriveCurve(0.2+g*0.5); pre=1.5+g*4; }
+  else if(m==='lead'){ curve=makeDriveCurve(0.4+g*0.6); pre=2+g*7; }
+  else { curve=makeFuzzCurve(); pre=3+g*12; }
+  A.drive.curve=curve||makeDriveCurve(0.02);
+  A.pre.gain.setTargetAtTime(pre,AC.currentTime,0.02);
+}
+function ampApplyTone(){
+  const A=ampNodes; if(!A) return; const t=AC.currentTime;
+  A.bass.gain.setTargetAtTime(parseFloat($('ampBass').value),t,0.02);
+  A.mid.gain.setTargetAtTime(parseFloat($('ampMid').value),t,0.02);
+  A.treb.gain.setTargetAtTime(parseFloat($('ampTreb').value),t,0.02);
+  const cab=$('ampCab').classList.contains('on');
+  A.lp.frequency.setTargetAtTime(cab?5200:18000,t,0.02);
+  A.pres.gain.setTargetAtTime(cab?3:0,t,0.02);
+  A.out.gain.setTargetAtTime(parseFloat($('ampLevel').value),t,0.02);
+}
+function ampApplyFx(){
+  const A=ampNodes; if(!A) return; const t=AC.currentTime;
+  const ch=$('ampChorus').classList.contains('on');
+  A.chDepth.gain.setTargetAtTime(ch?parseFloat($('ampChDepth').value):0,t,0.05);
+  A.chWet.gain.setTargetAtTime(ch?0.5:0,t,0.05);
+  A.dsend.gain.setTargetAtTime(parseFloat($('ampDly').value),t,0.02);
+  A.rsend.gain.setTargetAtTime(parseFloat($('ampRev').value),t,0.02);
+}
+function ampAutoCorr(buf,sr){
+  let SIZE=buf.length,rms=0;
+  for(let i=0;i<SIZE;i++) rms+=buf[i]*buf[i];
+  rms=Math.sqrt(rms/SIZE); if(rms<0.008) return -1;
+  let r1=0,r2=SIZE-1; const thr=0.2;
+  for(let i=0;i<SIZE/2;i++){ if(Math.abs(buf[i])<thr){ r1=i; break; } }
+  for(let i=1;i<SIZE/2;i++){ if(Math.abs(buf[SIZE-i])<thr){ r2=SIZE-i; break; } }
+  const b=buf.subarray(r1,r2), nn=b.length; if(nn<8) return -1;
+  const c=new Float32Array(nn);
+  for(let i=0;i<nn;i++){ let s=0; for(let j=0;j<nn-i;j++) s+=b[j]*b[j+i]; c[i]=s; }
+  let d=0; while(d<nn-1 && c[d]>c[d+1]) d++;
+  let maxv=-1,maxp=-1;
+  for(let i=d;i<nn;i++){ if(c[i]>maxv){ maxv=c[i]; maxp=i; } }
+  let T0=maxp; if(T0<=0) return -1;
+  const x1=c[T0-1]||0,x2=c[T0],x3=c[T0+1]||0, a=(x1+x3-2*x2)/2, bb=(x3-x1)/2;
+  if(a) T0=T0-bb/(2*a);
+  return sr/T0;
+}
+const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function ampShowTuner(f){
+  if(!(f>50&&f<1200)){ $('ampTuner').textContent='—'; $('ampTunerCents').textContent=''; return; }
+  const nn=12*Math.log2(f/440)+69, rd=Math.round(nn);
+  const name=NOTE_NAMES[((rd%12)+12)%12]+(Math.floor(rd/12)-1);
+  const cents=Math.round((nn-rd)*100);
+  $('ampTuner').textContent=name;
+  $('ampTunerCents').textContent=(cents>0?'+':'')+cents+'¢ '+(Math.abs(cents)<5?'✓ IN TUNE':(cents>0?'♯ sharp':'♭ flat'));
+}
+function ampLoop(){
+  if(!ampOn||!ampNodes) return;
+  ampNodes.an.getFloatTimeDomainData(ampBuf);
+  let sum=0; for(let i=0;i<ampBuf.length;i++) sum+=ampBuf[i]*ampBuf[i];
+  const rms=Math.sqrt(sum/ampBuf.length);
+  const gv=parseFloat($('ampGate').value);
+  const open = gv<=0 || rms>Math.pow(10,(-62+gv*42)/20);
+  ampNodes.gate.gain.setTargetAtTime(open?1:0.0001,AC.currentTime,open?0.004:0.03);
+  if((++ampTick%6)===0) ampShowTuner(ampAutoCorr(ampBuf,AC.sampleRate));
+  ampRAF=requestAnimationFrame(ampLoop);
+}
+async function ampListDevices(){
+  try{
+    const devs=await navigator.mediaDevices.enumerateDevices();
+    const sel=$('ampIn'), cur=sel.value; sel.innerHTML='';
+    const d0=document.createElement('option'); d0.value='default'; d0.textContent='Default input'; sel.appendChild(d0);
+    devs.filter(d=>d.kind==='audioinput').forEach((d,i)=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||('Input '+(i+1)); sel.appendChild(o); });
+    if(cur){ try{ sel.value=cur; }catch(e){} }
+  }catch(e){}
+}
+async function ampEnable(){
+  ensureAudio();
+  if(ampOn){ ampDisable(); return; }
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ lcd('INPUT: getUserMedia unavailable on this browser.'); return; }
+  micBusy=true;
+  try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
+  const dev=$('ampIn').value;
+  const con={audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}};
+  if(dev&&dev!=='default') con.audio.deviceId={exact:dev};
+  try{ ampStream=await navigator.mediaDevices.getUserMedia(con); }
+  catch(err){ micBusy=false; lcd('INPUT DENIED/UNAVAILABLE ('+((err&&err.name)||'error')+').'); return; }
+  try{ ampNodes=ampBuild(); }
+  catch(e){ micBusy=false; try{ampStream.getTracks().forEach(t=>t.stop());}catch(e2){} ampStream=null; lcd('AMP BUILD FAILED: '+(e.message||'graph error')); return; }
+  ampBuf=new Float32Array(ampNodes.an.fftSize);
+  ampApplyModel(); ampApplyTone(); ampApplyFx();
+  ampOn=true; $('btnAmpOn').classList.add('on'); $('btnAmpOn').innerHTML='&#9673; INPUT LIVE — tap to stop';
+  ampRAF=requestAnimationFrame(ampLoop);
+  lcd('GUITAR INPUT LIVE · use headphones · feeds the master (record via TRAX/REC OUT).');
+  ampListDevices();
+}
+function ampDisable(){
+  ampOn=false; cancelAnimationFrame(ampRAF);
+  if(ampNodes){ try{ ampNodes.src.disconnect(); ampNodes.out.disconnect(); ampNodes.chLfo.stop(); ampNodes.chLfo.disconnect(); }catch(e){} }
+  if(ampStream){ try{ ampStream.getTracks().forEach(t=>t.stop()); }catch(e){} ampStream=null; }
+  ampNodes=null; micBusy=false; resumeSession();
+  $('btnAmpOn').classList.remove('on'); $('btnAmpOn').innerHTML='&#9673; ENABLE INPUT (guitar / line / mic)';
+  $('ampTuner').textContent='—'; $('ampTunerCents').textContent='';
+}
+const AMP_PRESETS={
+  clean:{model:'clean',gain:0.25,bass:2,mid:0,treb:3,cab:1,chorus:0,dly:0.12,rev:0.25},
+  blues:{model:'crunch',gain:0.45,bass:1,mid:3,treb:2,cab:1,chorus:0,dly:0.1,rev:0.18},
+  rock:{model:'lead',gain:0.7,bass:2,mid:4,treb:3,cab:1,chorus:0,dly:0.2,rev:0.2},
+  fuzz:{model:'fuzz',gain:0.6,bass:3,mid:-2,treb:1,cab:1,chorus:0,dly:0.05,rev:0.15},
+  ambient:{model:'clean',gain:0.2,bass:0,mid:-1,treb:4,cab:1,chorus:1,dly:0.45,rev:0.6}
+};
+function ampApplyPreset(id){
+  const p=AMP_PRESETS[id]; if(!p) return;
+  $('ampModel').value=p.model;
+  $('ampGain').value=p.gain; $('ampGainV').textContent=Math.round(p.gain*100)+'%';
+  $('ampBass').value=p.bass; $('ampBassV').textContent=(p.bass>0?'+':'')+p.bass;
+  $('ampMid').value=p.mid; $('ampMidV').textContent=(p.mid>0?'+':'')+p.mid;
+  $('ampTreb').value=p.treb; $('ampTrebV').textContent=(p.treb>0?'+':'')+p.treb;
+  $('ampCab').classList.toggle('on',!!p.cab);
+  $('ampChorus').classList.toggle('on',!!p.chorus);
+  $('ampDly').value=p.dly; $('ampDlyV').textContent=Math.round(p.dly*100)+'%';
+  $('ampRev').value=p.rev; $('ampRevV').textContent=Math.round(p.rev*100)+'%';
+  ampApplyModel(); ampApplyTone(); ampApplyFx();
+  lcd('AMP PRESET: '+id.toUpperCase());
+}
+$('btnAmpOn').addEventListener('click',ampEnable);
+$('ampIn').addEventListener('change',()=>{ if(ampOn){ ampDisable(); ampEnable(); } });
+$('ampModel').addEventListener('change',ampApplyModel);
+$('ampPreset').addEventListener('change',e=>{ if(e.target.value) ampApplyPreset(e.target.value); });
+$('ampGain').addEventListener('input',e=>{ $('ampGainV').textContent=Math.round(parseFloat(e.target.value)*100)+'%'; ampApplyModel(); });
+$('ampLevel').addEventListener('input',e=>{ $('ampLevelV').textContent=Math.round(parseFloat(e.target.value)*100)+'%'; ampApplyTone(); });
+$('ampGate').addEventListener('input',e=>{ const v=parseFloat(e.target.value); $('ampGateV').textContent=v<=0?'off':Math.round(v*100)+'%'; });
+$('ampBass').addEventListener('input',e=>{ $('ampBassV').textContent=(e.target.value>0?'+':'')+e.target.value; ampApplyTone(); });
+$('ampMid').addEventListener('input',e=>{ $('ampMidV').textContent=(e.target.value>0?'+':'')+e.target.value; ampApplyTone(); });
+$('ampTreb').addEventListener('input',e=>{ $('ampTrebV').textContent=(e.target.value>0?'+':'')+e.target.value; ampApplyTone(); });
+$('ampCab').addEventListener('click',()=>{ $('ampCab').classList.toggle('on'); ampApplyTone(); });
+$('ampChorus').addEventListener('click',()=>{ $('ampChorus').classList.toggle('on'); ampApplyFx(); });
+$('ampChDepth').addEventListener('input',ampApplyFx);
+$('ampDly').addEventListener('input',e=>{ $('ampDlyV').textContent=Math.round(parseFloat(e.target.value)*100)+'%'; ampApplyFx(); });
+$('ampRev').addEventListener('input',e=>{ $('ampRevV').textContent=Math.round(parseFloat(e.target.value)*100)+'%'; ampApplyFx(); });
+
 /* ---------------- MIDI ---------------- */
 let midiAccess=null, midiInput=null, noteLearnPad=null, ccLearnArm=false;
 let clkLast=0, clkAvg=0, clkTicks=0;
@@ -3575,6 +3808,7 @@ function rebuildAudio(){ // last resort: wedged context — new context, new gra
   try{ if(jamOn) stopJam(); }catch(e){}   // finalize the capture on the old context before it dies
   try{ stopTraxVoices(); if(traxCap) traxCommit(); }catch(e){}
   try{ instPanic(); }catch(e){}
+  try{ if(ampOn) ampDisable(); }catch(e){}
   try{ if(LIVE && LIVE.ael){ LIVE.ael.srcObject=null; LIVE.ael.remove(); } }catch(e){}
   try{ if(AC) AC.close(); }catch(e){}
   AC=null; LIVE=null;
@@ -3586,7 +3820,7 @@ function rebuildAudio(){ // last resort: wedged context — new context, new gra
 }
 function resumeSession(){
   if(!AC) return;
-  if(micBusy || (mediaRec && mediaRec.state==='recording')) return;   // mic owns the session — forcing 'playback' here kills the capture
+  if(micBusy || ampOn || (mediaRec && mediaRec.state==='recording')) return;   // mic/amp owns the session — forcing 'playback' here kills the capture
   // re-assert playback session category (DRUKBOX lesson — iOS can revert it)
   try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
   if(AC.state!=='running'){
@@ -3611,6 +3845,7 @@ document.addEventListener('visibilitychange',()=>{
     if(playing) stopSeq();
     try{ instPanic(); }catch(e){}
     try{ if(breathOn) breathStop(); }catch(e){}
+    try{ if(ampOn) ampDisable(); }catch(e){}
     if(jamOn) stopJam();
     if(mediaRec && mediaRec.state==='recording') mediaRec.stop();
     autosave();
