@@ -243,7 +243,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">— download online, stored on-device, used offline</span></h3>
   <div class="row">
     <select id="packPick" class="grow">
-      <option value="samples/real-cc0-full.json">Real Instruments · Full (CC0)</option>
+      <option value="samples/real-cc0-full.json">Full Kit — Drums + Real (CC0)</option>
       <option value="samples/real-cc0.json">Real Instruments · Core (CC0)</option>
       <option value="samples/manifest.json">MVX Studio (synth)</option>
       <option value="custom">Custom URL…</option>
@@ -743,8 +743,13 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      master, so it's recordable via TRAX/REC OUT. Autocorrelation
      tuner, amp presets, device select. Reuses the play-and-record
      session dance; input released on backgrounding.
+   - R31: master brickwall limiter (post-compressor) so dense/fast
+     playing no longer clips into the destination (the clicking/
+     distortion). Live output, REC OUT capture, and the WAV bounce
+     all pass through it. Default pack renamed 'Full Kit' and now
+     includes the CC0 drums + perc so a complete kit shows on load.
    ================================================================ */
-const BUILD = 'MVX-880 · R30 · 2026-07-13 · live guitar amp';
+const BUILD = 'MVX-880 · R31 · 2026-07-13 · master limiter + drums in default';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -865,6 +870,14 @@ function makeCrushCurve(bits){
   return c;
 }
 function cutHz(x){ return 60*Math.pow(16000/60, clamp(x,0,1)); } // log map 60Hz–16kHz
+function makeSoftClip(){ // identity below 0.7, smooth knee to ~0.93, clamps peaks
+  const n=2048, c=new Float32Array(n), t=0.7;
+  for(let i=0;i<n;i++){ const x=i/(n-1)*2-1, ax=Math.abs(x);
+    const y = ax<=t ? ax : t+(1-t)*Math.tanh((ax-t)/(1-t));
+    c[i]=(x<0?-1:1)*y;
+  }
+  return c;
+}
 
 function applyPadFx(n, p, ctx){
   n.drv.curve = makeDriveCurve(p.drv);
@@ -883,8 +896,17 @@ function buildGraph(ctx){
   g.perfFilt=ctx.createBiquadFilter(); g.perfFilt.type='lowpass';
   g.perfFilt.frequency.value=18500; g.perfFilt.Q.value=0.7;
   g.perfGain=ctx.createGain();
+  // brickwall limiter — catches summed-voice peaks so dense/fast playing
+  // doesn't clip into the destination (hard-clip = the clicking/distortion)
+  g.limiter=ctx.createDynamicsCompressor();
+  g.limiter.threshold.value=-1.5; g.limiter.knee.value=0; g.limiter.ratio.value=20;
+  g.limiter.attack.value=0.001; g.limiter.release.value=0.05;
+  // final soft-clip safety: preserves levels <0.7, saturates smoothly toward
+  // ~0.93 and clamps anything above — output can never hard-clip the destination
+  g.softclip=ctx.createWaveShaper(); g.softclip.curve=makeSoftClip(); g.softclip.oversample='2x';
   g.master.connect(g.perfFilt); g.perfFilt.connect(g.perfGain); g.perfGain.connect(g.comp);
-  g.comp.connect(ctx.destination);
+  g.comp.connect(g.limiter); g.limiter.connect(g.softclip);
+  g.softclip.connect(ctx.destination);
   // reverb
   g.revIn = ctx.createGain();
   g.conv = ctx.createConvolver();
@@ -1018,9 +1040,9 @@ function ensureAudio(){
   // comp -> MediaStreamDestination -> hidden <audio>. Playback category
   // ignores the ring/silent switch; direct ctx.destination does not.
   try{
-    LIVE.comp.disconnect();
+    LIVE.softclip.disconnect();
     LIVE.msd=AC.createMediaStreamDestination();
-    LIVE.comp.connect(LIVE.msd);
+    LIVE.softclip.connect(LIVE.msd);
     const ael=document.createElement('audio');
     ael.setAttribute('playsinline',''); ael.style.display='none';
     ael.srcObject=LIVE.msd.stream;
@@ -1028,11 +1050,11 @@ function ensureAudio(){
     LIVE.ael=ael;
     const pr=ael.play();
     if(pr && pr.catch) pr.catch(()=>{ // element playback refused — add direct out, keep msd for recording
-      LIVE.comp.connect(AC.destination);
+      LIVE.softclip.connect(AC.destination);
       lcd('OUT: direct (element path refused)');
     });
   }catch(e){
-    try{ LIVE.comp.connect(AC.destination); }catch(e2){}
+    try{ LIVE.softclip.connect(AC.destination); }catch(e2){}
   }
   // performance warble LFO — connects into each live voice's playbackRate
   try{
@@ -2201,7 +2223,7 @@ $('btnJam').addEventListener('click',()=>{
       if(jamLen>=AC.sampleRate*JAM_MAX_S) stopJam();
     };
     const sink=AC.createGain(); sink.gain.value=0; // SP needs a route to destination to run; keep it silent
-    LIVE.comp.connect(jamTap); jamTap.connect(sink); sink.connect(AC.destination);
+    LIVE.softclip.connect(jamTap); jamTap.connect(sink); sink.connect(AC.destination);
     jamTap._sink=sink;
   }catch(e){ jamTap=null; lcd('REC OUT unavailable: '+(e.message||'no tap')); return; }
   jamOn=true;
@@ -2211,7 +2233,7 @@ $('btnJam').addEventListener('click',()=>{
 function stopJam(){
   if(!jamOn) return;
   jamOn=false;
-  try{ LIVE.comp.disconnect(jamTap); }catch(e){}
+  try{ LIVE.softclip.disconnect(jamTap); }catch(e){}
   try{ jamTap._sink.disconnect(); jamTap.disconnect(); }catch(e){}
   jamTap=null;
   $('btnJam').classList.remove('on'); $('btnJam').innerHTML='&#9679; REC OUT';
@@ -3787,10 +3809,10 @@ function outIsDead(){
 }
 function rebuildOut(){
   if(!AC || !LIVE) return;
-  try{ LIVE.comp.disconnect(); }catch(e){}   // clears msd AND any direct fallback — no doubling
+  try{ LIVE.softclip.disconnect(); }catch(e){}   // clears msd AND any direct fallback — no doubling
   try{
     LIVE.msd=AC.createMediaStreamDestination();
-    LIVE.comp.connect(LIVE.msd);
+    LIVE.softclip.connect(LIVE.msd);
     if(!LIVE.ael){
       const ael=document.createElement('audio');
       ael.setAttribute('playsinline',''); ael.style.display='none';
@@ -3798,10 +3820,10 @@ function rebuildOut(){
     }
     LIVE.ael.srcObject=LIVE.msd.stream;
     const p=LIVE.ael.play();
-    if(p && p.catch) p.catch(()=>{ try{ LIVE.comp.connect(AC.destination); }catch(e){} });
+    if(p && p.catch) p.catch(()=>{ try{ LIVE.softclip.connect(AC.destination); }catch(e){} });
     lcd('OUT REVIVED · '+AC.state);
   }catch(e){
-    try{ LIVE.comp.connect(AC.destination); }catch(e2){}
+    try{ LIVE.softclip.connect(AC.destination); }catch(e2){}
   }
 }
 function rebuildAudio(){ // last resort: wedged context — new context, new graph, same session
