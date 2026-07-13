@@ -335,6 +335,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div class="row">
     <button id="btnLiveRec" class="rec grow">LIVE REC (quantized pad input)</button>
   </div>
+  <h3>AUTOMATION <span style="color:var(--txt-dim);letter-spacing:0">— macro moves recorded into the pattern, replay every loop</span></h3>
+  <div class="row">
+    <button id="btnAutoRec" class="rec">REC</button>
+    <span class="lbl">TARGET</span>
+    <select id="autoTarget" class="grow"></select>
+    <button id="btnAutoClr">CLR</button>
+  </div>
+  <div class="pslider"><span class="lbl">MACRO</span><input type="range" id="autoMacro" min="0" max="1" step="0.001" value="1"><span class="val" id="autoMacroV">—</span></div>
 </div>
 
 <!-- TRAX -->
@@ -762,8 +770,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      pad takes a direct (unducked) path so it punches through. Depth +
      recovery controls; scheduled inside triggerPad so it works live,
      from MIDI, and in the WAV bounce identically. Persisted.
+   - R33: AUTOMATION recording (SEQ tab) — arm AUTO REC, move the MACRO
+     while playing, and the moves record into the pattern as a looping
+     automation lane (master filter, volume, delay fb, reverb, sidechain
+     depth, warble). Lanes replay every loop, drive the macro visually,
+     overwrite locally on re-record, persist with the session, and bake
+     into the WAV bounce (master FX lanes).
    ================================================================ */
-const BUILD = 'MVX-880 · R32 · 2026-07-13 · sidechain pump';
+const BUILD = 'MVX-880 · R33 · 2026-07-13 · automation recording';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -794,7 +808,8 @@ const S = {
   vcurve: 'linear', midiCh: -1, extClk: false, pcPat: true,
   ccMaps: {},             // ccNum -> target string
   edit:false, liveRec:false, ptnBpm:false,
-  scOn:false, scTrig:0, scDepth:0.6, scRel:0.25
+  scOn:false, scTrig:0, scDepth:0.6, scRel:0.25,
+  autoTarget:'mfilt'
 };
 const revCache = {};      // bufId -> reversed AudioBuffer
 
@@ -2147,6 +2162,7 @@ function startSeq(){
   nextStepTime=AC.currentTime+0.08;   // offsets set BEFORE the loop reads them (ordering fix)
   startTrax(nextStepTime);            // tape lanes roll (and record) from bar 1
   if(!S.extClk) seqTimer=setInterval(seqTick,25);
+  autoStart();
   $('btnPlay').classList.add('on');
   lcd('PLAY · PTN '+(S.pattern+1)+(S.extClk?' · EXT CLK':''));
 }
@@ -3136,7 +3152,7 @@ function drawSeq(){
     st.appendChild(b);
   }
   $('seqPadName').textContent=padName(S.seqPad)+(S.pads[S.seqPad].name?' · '+S.pads[S.seqPad].name:'');
-  drawSteps();
+  drawSteps(); drawAuto();
 }
 let seqLockMode=false, seqSelStep=-1;
 function drawSteps(){
@@ -3212,6 +3228,93 @@ $('btnPtnBpm').addEventListener('click',()=>{
   }else lcd('PTN TEMPO OFF · global BPM');
 });
 $('btnPatClr').addEventListener('click',()=>{ S.patterns[S.pattern]=newPattern(); drawSteps(); dirty(); lcd('PTN '+(S.pattern+1)+' CLEARED'); });
+
+/* ---------------- AUTOMATION — record macro moves into the pattern ---------------- */
+let autoArmed=false, autoRAF=0; const autoTouch={};
+const autoTargets={
+  mfilt:{name:'MASTER FILTER',fromNorm:x=>120*Math.pow(150,x),toNorm:v=>Math.log(clamp(v,120,18500)/120)/Math.log(150),
+    get:()=>LIVE?LIVE.perfFilt.frequency.value:18000, fmt:v=>Math.round(v)+'Hz',
+    apply:v=>{ if(LIVE) LIVE.perfFilt.frequency.setTargetAtTime(clamp(v,120,18500),AC.currentTime,0.02); },
+    applyG:(g,v,t)=>{ try{ g.perfFilt.frequency.setValueAtTime(clamp(v,120,18500),t); }catch(e){} }},
+  mvol:{name:'MASTER VOLUME',fromNorm:x=>x*1.2,toNorm:v=>clamp(v,0,1.2)/1.2,
+    get:()=>S.masterVol, fmt:v=>Math.round(v/1.2*100)+'%',
+    apply:v=>{ S.masterVol=v; if(LIVE) LIVE.master.gain.setTargetAtTime(v,AC.currentTime,0.02); },
+    applyG:(g,v,t)=>{ try{ g.master.gain.setValueAtTime(v,t); }catch(e){} }},
+  dfb:{name:'DELAY FEEDBACK',fromNorm:x=>x*0.85,toNorm:v=>clamp(v,0,0.85)/0.85,
+    get:()=>S.delayFb, fmt:v=>Math.round(v/0.85*100)+'%',
+    apply:v=>{ S.delayFb=v; if(LIVE){ LIVE.dlyFb.gain.setTargetAtTime(v,AC.currentTime,0.02); if(LIVE.dlyFb2) LIVE.dlyFb2.gain.setTargetAtTime(v,AC.currentTime,0.02); } },
+    applyG:(g,v,t)=>{ try{ g.dlyFb.gain.setValueAtTime(v,t); if(g.dlyFb2) g.dlyFb2.gain.setValueAtTime(v,t); }catch(e){} }},
+  rev:{name:'REVERB LEVEL',fromNorm:x=>x*1.2,toNorm:v=>clamp(v,0,1.2)/1.2,
+    get:()=>S.revLvl, fmt:v=>Math.round(v/1.2*100)+'%',
+    apply:v=>{ S.revLvl=v; if(LIVE) LIVE.revRet.gain.setTargetAtTime(v,AC.currentTime,0.02); },
+    applyG:(g,v,t)=>{ try{ g.revRet.gain.setValueAtTime(v,t); }catch(e){} }},
+  scd:{name:'SIDECHAIN DEPTH',fromNorm:x=>x*0.95,toNorm:v=>clamp(v,0,0.95)/0.95,
+    get:()=>S.scDepth, fmt:v=>Math.round(v/0.95*100)+'%',
+    apply:v=>{ S.scDepth=v; }},   // read live at trigger time; live-only (not baked)
+  warb:{name:'WARBLE DEPTH',fromNorm:x=>x*0.12,toNorm:v=>clamp(v,0,0.12)/0.12,
+    get:()=>(LIVE&&LIVE.warbGain)?LIVE.warbGain.gain.value:0, fmt:v=>Math.round(v/0.12*100)+'%',
+    apply:v=>{ if(LIVE&&LIVE.warbGain) LIVE.warbGain.gain.setTargetAtTime(v,AC.currentTime,0.05); }}
+};
+function autoPos(){ // bar-relative position 0..NSTEPS
+  if(!AC) return 0;
+  const sd=stepDur();
+  let p=(curAbsStep%NSTEPS)+(AC.currentTime-lastStepTime)/sd;
+  p%=NSTEPS; if(p<0) p+=NSTEPS; return p;
+}
+function autoValueAt(lane,p){
+  const n=lane.length; if(!n) return null; if(n===1) return lane[0].v;
+  let i0=-1; for(let i=0;i<n;i++){ if(lane[i].p<=p) i0=i; else break; }
+  let a,b,seg,dt;
+  if(i0<0){ a=lane[n-1]; b=lane[0]; seg=(NSTEPS-a.p)+b.p; dt=(NSTEPS-a.p)+p; }
+  else if(i0===n-1){ a=lane[n-1]; b=lane[0]; seg=(NSTEPS-a.p)+b.p; dt=p-a.p; }
+  else { a=lane[i0]; b=lane[i0+1]; seg=b.p-a.p; dt=p-a.p; }
+  return a.v+(b.v-a.v)*(seg>0?clamp(dt/seg,0,1):0);
+}
+function autoRecord(id,p,v){
+  const pat=S.patterns[S.pattern]; if(!pat.autom) pat.autom={};
+  let lane=(pat.autom[id]||[]).filter(pt=>Math.abs(pt.p-p)>0.3);   // overwrite near new point
+  lane.push({p,v}); lane.sort((a,b)=>a.p-b.p); pat.autom[id]=lane;
+}
+function autoLoop(){
+  if(!playing){ autoRAF=0; return; }
+  const pat=S.patterns[S.pattern];
+  if(pat.autom){
+    const p=autoPos(), t=AC.currentTime;
+    for(const id in pat.autom){
+      if(autoTouch[id] && (t-autoTouch[id])<0.2) continue;   // don't fight a hand actively recording this lane
+      const lane=pat.autom[id]; if(!lane||!lane.length) continue;
+      const v=autoValueAt(lane,p); if(v==null) continue;
+      autoTargets[id].apply(v);
+      if(id===S.autoTarget){ $('autoMacro').value=autoTargets[id].toNorm(v); $('autoMacroV').textContent=autoTargets[id].fmt(v); }
+    }
+  }
+  autoRAF=requestAnimationFrame(autoLoop);
+}
+function autoStart(){ if(!autoRAF) autoRAF=requestAnimationFrame(autoLoop); }
+function drawAuto(){
+  const sel=$('autoTarget');
+  if(sel.options.length!==Object.keys(autoTargets).length){ sel.innerHTML='';
+    for(const id in autoTargets){ const o=document.createElement('option'); o.value=id; o.textContent=autoTargets[id].name; sel.appendChild(o); } }
+  sel.value=S.autoTarget;
+  $('btnAutoRec').classList.toggle('on',autoArmed);
+  const pat=S.patterns[S.pattern], has=pat.autom&&pat.autom[S.autoTarget]&&pat.autom[S.autoTarget].length;
+  const t=autoTargets[S.autoTarget];
+  $('autoMacro').value=t.toNorm(t.get()); $('autoMacroV').textContent=(has?'●':'')+t.fmt(t.get());
+}
+$('btnAutoRec').addEventListener('click',()=>{
+  autoArmed=!autoArmed; $('btnAutoRec').classList.toggle('on',autoArmed);
+  lcd(autoArmed?'AUTO REC ARMED — move the MACRO while playing to record '+autoTargets[S.autoTarget].name:'AUTO REC OFF');
+});
+$('autoTarget').addEventListener('change',e=>{ S.autoTarget=e.target.value; drawAuto(); });
+$('autoMacro').addEventListener('input',e=>{
+  const t=autoTargets[S.autoTarget], v=t.fromNorm(parseFloat(e.target.value));
+  t.apply(v); $('autoMacroV').textContent=t.fmt(v);
+  if(autoArmed && playing){ autoTouch[S.autoTarget]=AC.currentTime; autoRecord(S.autoTarget,autoPos(),v); dirty(); }
+});
+$('btnAutoClr').addEventListener('click',()=>{
+  const pat=S.patterns[S.pattern]; if(pat.autom) delete pat.autom[S.autoTarget];
+  drawAuto(); dirty(); lcd('AUTO CLEARED · '+autoTargets[S.autoTarget].name);
+});
 
 /* ---------------- AMP — live guitar/line input processor ----------------
    Guitar audio enters as a media input (interface/adapter/mic), not MIDI.
@@ -3790,7 +3893,7 @@ $('btnBounce').addEventListener('click',async ()=>{
   const seq=useChain? S.chain : [S.pattern];
   // event list, time-ordered by construction — each pattern renders at its
   // own tempo when PTN TEMPO is on, exactly like live playback
-  const events=[], tempoSeg=[]; let t=0.05, absB=0;
+  const events=[], tempoSeg=[], autoEvents=[]; let t=0.05, absB=0;
   for(let l=0;l<loops;l++){
     for(const pi of seq){
       const pat=S.patterns[pi];
@@ -3810,6 +3913,12 @@ $('btnBounce').addEventListener('click',async ()=>{
           else events.push({when,p,v,pitch});
         }
       }
+      // collect automation bake points for this bar (graph built later)
+      if(pat.autom){ const barDur=sd*NSTEPS;
+        for(const id in pat.autom){ if(!autoTargets[id]||!autoTargets[id].applyG) continue;
+          const lane=pat.autom[id]; if(!lane||!lane.length) continue;
+          for(let k=0;k<=32;k++){ const pos=k/32*NSTEPS, v=autoValueAt(lane,pos);
+            if(v!=null) autoEvents.push({id, v, when:t+(pos/NSTEPS)*barDur}); } } }
       absB+=NSTEPS; t+=sd*NSTEPS;
     }
   }
@@ -3829,6 +3938,7 @@ $('btnBounce').addEventListener('click',async ()=>{
     const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
     const g=buildGraph(oc);
     scApplyRoutingG(g,oc);            // sidechain routing in the render
+    for(const a of autoEvents){ try{ autoTargets[a.id].applyG(g,a.v,a.when); }catch(e){} }   // bake automation
     // tempo-synced delay follows each pattern's tempo, like live playback
     tempoSeg.forEach(seg=>{ const dt=clamp(60/seg.bpm*S.delayDiv,0.02,1.9);
       (g.dlyNodes||[]).forEach(d=>d.delayTime.setValueAtTime(dt,seg.t)); });
