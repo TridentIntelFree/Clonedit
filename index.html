@@ -628,6 +628,8 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <select id="bLoops"><option>1</option><option selected>2</option><option>4</option><option>8</option></select>
   </div>
   <div class="row"><button id="btnBounce" class="grow">BOUNCE &#8594; 44.1k / 16-BIT STEREO WAV (+3s tail)</button></div>
+  <div class="row"><button id="btnStems" class="grow">BOUNCE STEMS &#8594; PER-PAD / PER-TRACK WAV</button></div>
+  <div id="stemlist"></div>
   <div id="projlog"></div>
   <footer>
     JSON is the session disk — pads, patterns, samples, maps.<br>
@@ -776,8 +778,13 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      depth, warble). Lanes replay every loop, drive the macro visually,
      overwrite locally on re-record, persist with the session, and bake
      into the WAV bounce (master FX lanes).
+   - R34: STEM EXPORT (PROJ) — the bounce is refactored into a shared
+     renderMix(padSet,traxSet); BOUNCE STEMS renders one WAV per used
+     pad and per tape track (isolated, through their own FX/sends),
+     then lists per-stem SAVE buttons (iOS-safe) plus SAVE ALL. Master
+     bounce unchanged.
    ================================================================ */
-const BUILD = 'MVX-880 · R33 · 2026-07-13 · automation recording';
+const BUILD = 'MVX-880 · R34 · 2026-07-14 · stem export';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -3887,12 +3894,12 @@ function encodeWav(buf){
   }
   return new Blob([ab],{type:'audio/wav'});
 }
-$('btnBounce').addEventListener('click',async ()=>{
+/* shared offline render — padSet/traxSet null = all; a Set restricts to those
+   indices (Set() = none). Used by the master bounce and per-stem export. */
+async function renderMix(padSet, traxSet){
   const loops=parseInt($('bLoops').value,10);
   const useChain=$('bSrc').value==='chain' && S.chain.length>0;
   const seq=useChain? S.chain : [S.pattern];
-  // event list, time-ordered by construction — each pattern renders at its
-  // own tempo when PTN TEMPO is on, exactly like live playback
   const events=[], tempoSeg=[], autoEvents=[]; let t=0.05, absB=0;
   for(let l=0;l<loops;l++){
     for(const pi of seq){
@@ -3903,6 +3910,7 @@ $('btnBounce').addEventListener('click',async ()=>{
       for(let st=0;st<NSTEPS;st++){
         const swing=(st%2===1?S.swing*sd:0);
         for(let p=0;p<NPADS;p++){
+          if(padSet && !padSet.has(p)) continue;
           const L=(pat.len&&pat.len[p])||NSTEPS, idx=(absB+st)%L;
           const v=pat.steps[p][idx]; if(!(v>0)) continue;
           const lk=pat.locks&&pat.locks[p+':'+idx];
@@ -3913,7 +3921,6 @@ $('btnBounce').addEventListener('click',async ()=>{
           else events.push({when,p,v,pitch});
         }
       }
-      // collect automation bake points for this bar (graph built later)
       if(pat.autom){ const barDur=sd*NSTEPS;
         for(const id in pat.autom){ if(!autoTargets[id]||!autoTargets[id].applyG) continue;
           const lane=pat.autom[id]; if(!lane||!lane.length) continue;
@@ -3926,35 +3933,68 @@ $('btnBounce').addEventListener('click',async ()=>{
   S.trax.forEach((tr,i)=>{
     if(tr.bufId<0 || tr.mute) return;
     if(traxSolo>=0 && i!==traxSolo) return;
+    if(traxSet && !traxSet.has(i)) return;
     const b=S.buffers[tr.bufId]; if(b) trax.push({tr,b});
   });
-  if(!events.length && !trax.length){ plog('Nothing to bounce — pattern and tracks are empty.'); return; }
+  if(!events.length && !trax.length) return null;
+  let dur=t; trax.forEach(x=>{ dur=Math.max(dur,0.05+x.b.duration); });
+  const SR=44100, total=dur+Math.max(3.0,S.revSize+0.5);
+  const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
+  const g=buildGraph(oc);
+  scApplyRoutingG(g,oc);
+  for(const a of autoEvents){ try{ autoTargets[a.id].applyG(g,a.v,a.when); }catch(e){} }
+  tempoSeg.forEach(seg=>{ const dt=clamp(60/seg.bpm*S.delayDiv,0.02,1.9);
+    (g.dlyNodes||[]).forEach(d=>d.delayTime.setValueAtTime(dt,seg.t)); });
+  const chokeOff={};
+  events.sort((a,b)=>a.when-b.when);
+  for(const ev of events) triggerPad(oc, g, ev.p, ev.v, ev.when, chokeOff, ev.pitch);
+  for(const x of trax){ const w=wireTrack(oc,g,x.tr,x.b,0.05,x.tr.gain); if(x.tr.loop) w.src.stop(t); }
+  return await oc.startRendering();
+}
+$('btnBounce').addEventListener('click',async ()=>{
   if(seqSolo) plog('Note: SOLO is armed in the SEQ view — the bounce still renders ALL pattern tracks.');
-  let dur=t;
-  trax.forEach(x=>{ dur=Math.max(dur,0.05+x.b.duration); });
-  const SR=44100, total=dur+Math.max(3.0,S.revSize+0.5);   // tail covers reverb size
-  lcd('RENDERING '+total.toFixed(1)+'s …'); plog('Bounce: '+events.length+' events, '+total.toFixed(1)+'s, '+loops+' loop(s)'+(useChain?' of chain':'')+'.');
+  lcd('RENDERING MASTER …');
   try{
-    const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
-    const g=buildGraph(oc);
-    scApplyRoutingG(g,oc);            // sidechain routing in the render
-    for(const a of autoEvents){ try{ autoTargets[a.id].applyG(g,a.v,a.when); }catch(e){} }   // bake automation
-    // tempo-synced delay follows each pattern's tempo, like live playback
-    tempoSeg.forEach(seg=>{ const dt=clamp(60/seg.bpm*S.delayDiv,0.02,1.9);
-      (g.dlyNodes||[]).forEach(d=>d.delayTime.setValueAtTime(dt,seg.t)); });
-    const chokeOff={};
-    events.sort((a,b)=>a.when-b.when);
-    for(const ev of events) triggerPad(oc, g, ev.p, ev.v, ev.when, chokeOff, ev.pitch);
-    for(const x of trax){ // tape lanes, aligned to bar 1 like the live transport
-      const w=wireTrack(oc,g,x.tr,x.b,0.05,x.tr.gain);
-      if(x.tr.loop) w.src.stop(t);   // looped lanes run to the end of the pattern content
-    }
-    const rendered=await oc.startRendering();
+    const rendered=await renderMix(null,null);
+    if(!rendered){ plog('Nothing to bounce — pattern and tracks are empty.'); lcd('NOTHING TO BOUNCE.'); return; }
     const wav=encodeWav(rendered);
     download(wav, ($('projName').value||'mvx-session')+'.wav');
     plog('WAV done: '+Math.round(wav.size/1024)+' KB · 44.1k/16-bit stereo.');
     lcd('BOUNCE COMPLETE.');
   }catch(err){ plog('Bounce failed: '+err.message); lcd('BOUNCE FAILED.'); }
+});
+$('btnStems').addEventListener('click',async ()=>{
+  const useChain=$('bSrc').value==='chain' && S.chain.length>0;
+  const seq=useChain? S.chain : [S.pattern];
+  const usedPads=new Set();
+  seq.forEach(pi=>{ const pat=S.patterns[pi]; for(let p=0;p<NPADS;p++){ if(pat.steps[p].some(v=>v>0)) usedPads.add(p); } });
+  const jobs=[...usedPads].sort((a,b)=>a-b).map(p=>({type:'pad',id:p,label:padName(p)+(S.pads[p].name?' '+S.pads[p].name:'')}));
+  S.trax.forEach((tr,i)=>{ if(tr.bufId>=0 && !tr.mute) jobs.push({type:'trax',id:i,label:'T'+(i+1)+(tr.name?' '+tr.name:'')}); });
+  if(!jobs.length){ plog('No stems — nothing playing in the bounce source.'); lcd('NO STEMS.'); return; }
+  $('stemlist').innerHTML=''; lcd('RENDERING '+jobs.length+' STEMS …');
+  const base=$('projName').value||'mvx-session', done=[];
+  for(const j of jobs){
+    let rendered;
+    try{ rendered = j.type==='pad'? await renderMix(new Set([j.id]), new Set()) : await renderMix(new Set(), new Set([j.id])); }
+    catch(e){ plog('Stem '+j.label+' failed: '+e.message); continue; }
+    if(!rendered) continue;
+    const wav=encodeWav(rendered), fname=base+'-'+j.label.replace(/[^A-Za-z0-9]+/g,'_')+'.wav';
+    done.push({fname,wav});
+    const row=document.createElement('div'); row.className='row';
+    const nm=document.createElement('span'); nm.style.cssText='font-size:11px;flex:1;color:var(--lcd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    nm.textContent=j.label+' · '+Math.round(wav.size/1024)+'KB';
+    const b=document.createElement('button'); b.textContent='SAVE'; b.addEventListener('click',()=>download(wav,fname));
+    row.append(nm,b); $('stemlist').appendChild(row);
+    lcd('STEM '+done.length+'/'+jobs.length+' · '+j.label);
+  }
+  if(done.length){
+    const row=document.createElement('div'); row.className='row';
+    const all=document.createElement('button'); all.textContent='SAVE ALL ('+done.length+')'; all.className='on grow';
+    all.addEventListener('click',async ()=>{ for(const d of done){ download(d.wav,d.fname); await new Promise(r=>setTimeout(r,700)); } lcd('SAVED ALL STEMS'); });
+    row.appendChild(all); $('stemlist').insertBefore(row,$('stemlist').firstChild);
+  }
+  plog('Stems ready: '+done.length+'. Tap SAVE per stem (iOS-safe) or SAVE ALL (desktop).');
+  lcd('STEMS READY · '+done.length+' files');
 });
 
 /* ---------------- session lifecycle (iOS backgrounding) ----------------
