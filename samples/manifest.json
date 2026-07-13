@@ -1,0 +1,71 @@
+{
+"name": "MVX Starter Kit",
+"samples": [
+{
+"id": "mvxkit:kick01",
+"name": "Kick",
+"cat": "DRUMS",
+"file": "kick01.wav"
+},
+{
+"id": "mvxkit:snare01",
+"name": "Snare",
+"cat": "DRUMS",
+"file": "snare01.wav"
+},
+{
+"id": "mvxkit:hatclosed01",
+"name": "Closed Hat",
+"cat": "DRUMS",
+"file": "hatclosed01.wav"
+},
+{
+"id": "mvxkit:hatopen01",
+"name": "Open Hat",
+"cat": "DRUMS",
+"file": "hatopen01.wav"
+},
+{
+"id": "mvxkit:clap01",
+"name": "Clap",
+"cat": "DRUMS",
+"file": "clap01.wav"
+},
+{
+"id": "mvxkit:rim01",
+"name": "Rimshot",
+"cat": "DRUMS",
+"file": "rim01.wav"
+},
+{
+"id": "mvxkit:tomhi01",
+"name": "Tom Hi",
+"cat": "DRUMS",
+"file": "tomhi01.wav"
+},
+{
+"id": "mvxkit:tommid01",
+"name": "Tom Mid",
+"cat": "DRUMS",
+"file": "tommid01.wav"
+},
+{
+"id": "mvxkit:tomlo01",
+"name": "Tom Lo",
+"cat": "DRUMS",
+"file": "tomlo01.wav"
+},
+{
+"id": "mvxkit:cowbell01",
+"name": "Cowbell",
+"cat": "PERC",
+"file": "cowbell01.wav"
+},
+{
+"id": "mvxkit:perc01",
+"name": "Perc Hit",
+"cat": "PERC",
+"file": "perc01.wav"
+}
+]
+}

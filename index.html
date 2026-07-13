@@ -78,6 +78,12 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
 
 /* sampler */
 #wavewrap{background:var(--lcd-bg);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:8px}
+.packrow{display:flex;align-items:center;gap:6px;padding:5px 6px;border-bottom:1px solid var(--line);font-size:11px}
+.packrow .pcat{font-size:8px;color:var(--txt-dim);min-width:36px}
+.packrow .pnm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.packrow button{padding:5px 8px;font-size:10px}
+.packrow.have .pnm{color:var(--lcd)}
+.packhdr{font-size:9px;letter-spacing:1px;color:var(--txt-dim);padding:6px 6px 2px}
 #wave{width:100%;height:130px;display:block;touch-action:none}
 #miclvl{height:6px;background:var(--line);border-radius:3px;overflow:hidden;flex:1}
 #miclvl>div{height:100%;width:0%;background:var(--green)}
@@ -231,6 +237,17 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <select id="presetNote"></select>
     <button id="btnPresetLoad">RENDER &#8594; PAD</button>
   </div>
+  <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">— download online, stored on-device, used offline</span></h3>
+  <div class="row">
+    <input type="text" id="packUrl" class="grow" value="samples/manifest.json" spellcheck="false" autocapitalize="off">
+    <button id="btnPackLoad">LOAD PACK</button>
+  </div>
+  <div class="row">
+    <span class="lbl">ON DEVICE</span>
+    <span id="packStore" style="font-size:10px;color:var(--lcd);flex:1">—</span>
+    <button id="btnPackPersist">KEEP OFFLINE</button>
+  </div>
+  <div id="packList" style="max-height:210px;overflow-y:auto;margin:6px 0"></div>
   <div id="wavewrap"><canvas id="wave" width="800" height="260"></canvas></div>
   <div class="row">
     <button id="btnPrev">&#9654; PREVIEW</button>
@@ -626,8 +643,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      first empty tape lane (BUS) and rolls the transport in one tap;
      tapping again or STOP commits. Transport \u25cf message now says
      it records steps, not audio.
+   - R26: SAMPLE PACKS (SMPL tab). Download samples from a manifest
+     URL; encoded bytes stored on disk in a new IndexedDB store (v2)
+     — far larger quota than RAM, never inlined into the session —
+     decoded to a pad only on demand. Persistent storage requested so
+     iOS won't evict; cached manifest makes the list and downloaded
+     samples work fully offline. Ships a synthesized (public-domain)
+     starter drum kit under /samples.
    ================================================================ */
-const BUILD = 'MVX-880 · R25 · 2026-07-12 · one-tap perf rec';
+const BUILD = 'MVX-880 · R26 · 2026-07-13 · sample packs (offline lib)';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1128,6 +1152,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
     if(!workBuf){ const p=S.pads[S.editPad];   // empty workspace: adopt the target pad's sample
       if(p.bufId>=0 && S.buffers[p.bufId]){ workBuf=S.buffers[p.bufId]; slices=[]; selSlice=-1; } }
     drawWave(); drawEdit();
+    refreshHaveKeys().then(()=>{ drawPackList(); updateStoreMeter(); });   // always reflect current on-device library
   }
   if(b.dataset.v==='mix'){ drawEdit(); }
   if(b.dataset.v==='proj'){ $('bSrc').value=(S.chainOn&&S.chain.length)?'chain':'pat'; }
@@ -1761,6 +1786,127 @@ $('btnPresetLoad').addEventListener('click',async ()=>{
     hitLive(S.editPad,0.9);
   }catch(err){ lcd('PRESET FAILED: '+(err&&err.message?err.message:'render error')); }
 });
+
+/* ---------------- sample packs (download online → IndexedDB → offline) ----------------
+   Encoded file bytes live on disk in IndexedDB (large quota, unlike RAM), so a big
+   library survives offline and never inflates the session save. Bytes decode to an
+   AudioBuffer only when you load one onto a pad. Persistent-storage is requested so
+   iOS won't evict the library under pressure. */
+let packManifest=null, packHaveKeys=new Set();
+const LIBKEY=id=>'s:'+id;
+async function refreshHaveKeys(){
+  try{ const keys=await idbKeysS(IDB_LIB); packHaveKeys=new Set(keys.filter(k=>typeof k==='string'&&k.indexOf('s:')===0)); }
+  catch(e){ packHaveKeys=new Set(); }
+}
+async function updateStoreMeter(){
+  let txt='';
+  try{
+    if(navigator.storage && navigator.storage.estimate){
+      const est=await navigator.storage.estimate();
+      const mb=x=>(x/1048576).toFixed(1)+'MB';
+      txt=packHaveKeys.size+' samples · '+mb(est.usage||0)+' used';
+      if(est.quota) txt+=' / '+mb(est.quota)+' free-quota';
+    }else txt=packHaveKeys.size+' samples on device';
+    let persisted=false;
+    if(navigator.storage && navigator.storage.persisted) persisted=await navigator.storage.persisted();
+    txt+=persisted?' · KEPT':'';
+  }catch(e){ txt=packHaveKeys.size+' samples on device'; }
+  $('packStore').textContent=txt;
+}
+function drawPackList(){
+  const el=$('packList'); el.innerHTML='';
+  if(!packManifest || !packManifest.samples || !packManifest.samples.length){
+    el.innerHTML='<div class="packhdr">No pack loaded. Enter a manifest URL and tap LOAD PACK (online), or reopen to see downloaded samples.</div>';
+    return;
+  }
+  const hd=document.createElement('div'); hd.className='packhdr';
+  hd.textContent=(packManifest.name||'PACK')+' — '+packManifest.samples.length+' samples';
+  el.appendChild(hd);
+  packManifest.samples.forEach(sm=>{
+    const have=packHaveKeys.has(LIBKEY(sm.id));
+    const row=document.createElement('div'); row.className='packrow'+(have?' have':'');
+    const cat=document.createElement('span'); cat.className='pcat'; cat.textContent=sm.cat||'';
+    const nm=document.createElement('span'); nm.className='pnm'; nm.textContent=sm.name||sm.id;
+    row.append(cat,nm);
+    if(have){
+      const pad=document.createElement('button'); pad.textContent='→ PAD'; pad.classList.add('on');
+      pad.addEventListener('click',()=>libToPad(sm));
+      const del=document.createElement('button'); del.innerHTML='&#215;';
+      del.addEventListener('click',async ()=>{ await idbDelS(IDB_LIB,LIBKEY(sm.id)); await refreshHaveKeys(); drawPackList(); updateStoreMeter(); });
+      row.append(pad,del);
+    }else{
+      const get=document.createElement('button'); get.textContent='GET';
+      get.addEventListener('click',()=>libDownload(sm,get));
+      row.append(get);
+    }
+    el.appendChild(row);
+  });
+}
+function packBase(){ try{ return new URL($('packUrl').value, location.href).href; }catch(e){ return $('packUrl').value; } }
+async function loadPack(){
+  const url=packBase();
+  lcd('LOADING PACK …');
+  try{
+    const res=await fetch(url,{cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const man=await res.json();
+    if(!man || !Array.isArray(man.samples)) throw new Error('bad manifest');
+    man._url=url;
+    packManifest=man;
+    await idbPutS(IDB_LIB,'__manifest',man);   // cache so the list survives offline
+    await refreshHaveKeys(); drawPackList(); updateStoreMeter();
+    lcd('PACK: '+(man.name||'loaded')+' · '+man.samples.length+' samples — tap GET to store.');
+  }catch(err){
+    // offline / failed fetch — fall back to the last cached manifest
+    try{ const cached=await idbGetS(IDB_LIB,'__manifest');
+      if(cached){ packManifest=cached; await refreshHaveKeys(); drawPackList(); updateStoreMeter();
+        lcd('OFFLINE — showing cached pack. Downloaded samples are usable; GET needs a connection.'); return; }
+    }catch(e){}
+    lcd('PACK LOAD FAILED: '+(err.message||'no connection & no cached pack'));
+  }
+}
+async function libDownload(sm,btn){
+  const base=packManifest && packManifest._url ? packManifest._url : packBase();
+  let fileUrl; try{ fileUrl=new URL(sm.file, base).href; }catch(e){ fileUrl=sm.file; }
+  if(btn){ btn.textContent='…'; btn.disabled=true; }
+  lcd('DOWNLOADING '+sm.name+' …');
+  try{
+    const res=await fetch(fileUrl);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const bytes=await res.arrayBuffer();
+    await idbPutS(IDB_LIB,LIBKEY(sm.id),{id:sm.id,name:sm.name,cat:sm.cat,type:res.headers.get('content-type')||'audio/wav',bytes});
+    if(navigator.storage && navigator.storage.persist){ try{ await navigator.storage.persist(); }catch(e){} }
+    await refreshHaveKeys(); drawPackList(); updateStoreMeter();
+    lcd('STORED '+sm.name+' — now available offline. Tap → PAD to use.');
+  }catch(err){
+    if(btn){ btn.textContent='GET'; btn.disabled=false; }
+    lcd('DOWNLOAD FAILED: '+(err.message||'no connection'));
+  }
+}
+async function libToPad(sm){
+  ensureAudio();
+  lcd('LOADING '+sm.name+' → '+padName(S.editPad)+' …');
+  try{
+    const rec=await idbGetS(IDB_LIB,LIBKEY(sm.id));
+    if(!rec || !rec.bytes) throw new Error('not on device — GET it first');
+    const buf=await decode(rec.bytes.slice(0));   // slice: decodeAudioData detaches the buffer
+    loadIntoTarget(buf,sm.name);
+    hitLive(S.editPad,0.9);
+  }catch(err){ lcd('LOAD FAILED: '+(err.message||'decode error')); }
+}
+$('btnPackLoad').addEventListener('click',loadPack);
+$('btnPackPersist').addEventListener('click',async ()=>{
+  if(navigator.storage && navigator.storage.persist){
+    const ok=await navigator.storage.persist();
+    lcd(ok?'STORAGE KEPT — iOS will not evict your library.':'Persistent storage not granted (library still works; may be evicted under pressure).');
+    updateStoreMeter();
+  }else lcd('Persistent storage API unavailable on this browser.');
+});
+(async function initPacks(){
+  await refreshHaveKeys();
+  try{ const cached=await idbGetS(IDB_LIB,'__manifest'); if(cached) packManifest=cached; }catch(e){}
+  drawPackList(); updateStoreMeter();
+})();
 
 /* ---------------- sequencer ---------------- */
 let playing=false, curStep=0, nextStepTime=0, lastStepTime=0, seqTimer=0, seqSolo=false;
@@ -3090,25 +3236,42 @@ $('jsonIn').addEventListener('change',async e=>{
 });
 
 /* ---------------- IndexedDB session vault (survives page kill) ---------------- */
-const IDB_NAME='mvx880', IDB_STORE='session';
+const IDB_NAME='mvx880', IDB_STORE='session', IDB_LIB='library';
 function idbOpen(){ return new Promise((res,rej)=>{
-  const rq=indexedDB.open(IDB_NAME,1);
-  rq.onupgradeneeded=()=>{ rq.result.createObjectStore(IDB_STORE); };
+  const rq=indexedDB.open(IDB_NAME,2);       // v2 adds the sample-library store; upgrade keeps existing sessions
+  rq.onupgradeneeded=()=>{ const db=rq.result;
+    if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+    if(!db.objectStoreNames.contains(IDB_LIB)) db.createObjectStore(IDB_LIB);
+  };
   rq.onsuccess=()=>res(rq.result);
   rq.onerror=()=>rej(rq.error);
 });}
-function idbPut(key,val){ return idbOpen().then(db=>new Promise((res,rej)=>{
-  const tx=db.transaction(IDB_STORE,'readwrite');
-  tx.objectStore(IDB_STORE).put(val,key);
+function idbPutS(store,key,val){ return idbOpen().then(db=>new Promise((res,rej)=>{
+  const tx=db.transaction(store,'readwrite');
+  tx.objectStore(store).put(val,key);
   tx.oncomplete=()=>{ db.close(); res(); };
   tx.onerror=()=>{ db.close(); rej(tx.error); };
 }));}
-function idbGet(key){ return idbOpen().then(db=>new Promise((res,rej)=>{
-  const tx=db.transaction(IDB_STORE,'readonly');
-  const rq=tx.objectStore(IDB_STORE).get(key);
+function idbGetS(store,key){ return idbOpen().then(db=>new Promise((res,rej)=>{
+  const tx=db.transaction(store,'readonly');
+  const rq=tx.objectStore(store).get(key);
   rq.onsuccess=()=>{ db.close(); res(rq.result); };
   rq.onerror=()=>{ db.close(); rej(rq.error); };
 }));}
+function idbDelS(store,key){ return idbOpen().then(db=>new Promise((res,rej)=>{
+  const tx=db.transaction(store,'readwrite');
+  tx.objectStore(store).delete(key);
+  tx.oncomplete=()=>{ db.close(); res(); };
+  tx.onerror=()=>{ db.close(); rej(tx.error); };
+}));}
+function idbKeysS(store){ return idbOpen().then(db=>new Promise((res,rej)=>{
+  const tx=db.transaction(store,'readonly');
+  const rq=tx.objectStore(store).getAllKeys();
+  rq.onsuccess=()=>{ db.close(); res(rq.result||[]); };
+  rq.onerror=()=>{ db.close(); rej(rq.error); };
+}));}
+function idbPut(key,val){ return idbPutS(IDB_STORE,key,val); }
+function idbGet(key){ return idbGetS(IDB_STORE,key); }
 
 function gcBuffers(){ // drop orphaned samples (every re-render leaves one) so the vault doesn't bloat past iOS IDB limits
   const used=new Set();
