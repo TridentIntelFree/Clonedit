@@ -642,6 +642,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <div class="row"><button id="btnBounce" class="grow">BOUNCE &#8594; 44.1k / 16-BIT STEREO WAV (+3s tail)</button></div>
   <div class="row"><button id="btnStems" class="grow">BOUNCE STEMS &#8594; PER-PAD / PER-TRACK WAV</button></div>
+  <div class="row"><button id="btnMidi" class="grow">EXPORT MIDI &#8594; .MID (SOURCE, per-pad tracks)</button></div>
   <div id="stemlist"></div>
   <div id="projlog"></div>
   <footer>
@@ -806,8 +807,12 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      once. PLAY runs the arrangement bar-by-bar; current section
      highlights. Bounce SOURCE gains SONG (expands sections); stem
      export follows it. Persisted; undoable.
+   - R37: MIDI EXPORT (PROJ) — writes a Standard MIDI File (format 1)
+     of the bounce SOURCE (pattern/chain/song): one track per used pad
+     using its mapped note, step velocities, per-pattern tempo events,
+     swing, and step-lock pitch/nudge/ratchet. Take patterns into any DAW.
    ================================================================ */
-const BUILD = 'MVX-880 · R36 · 2026-07-14 · song mode';
+const BUILD = 'MVX-880 · R37 · 2026-07-14 · MIDI export';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -4026,6 +4031,68 @@ function encodeWav(buf){
   }
   return new Blob([ab],{type:'audio/wav'});
 }
+/* ---------------- MIDI export (Standard MIDI File, format 1) ---------------- */
+function midiVlq(n){ const b=[n&0x7f]; n=Math.floor(n/128); while(n>0){ b.unshift((n&0x7f)|0x80); n=Math.floor(n/128); } return b; }
+function midiStr(s){ const o=[]; for(let i=0;i<s.length;i++) o.push(s.charCodeAt(i)&0x7f); return o; }
+function midiTrack(evs){ // evs: [{tick, msg:[...]}], sorted; returns full MTrk bytes
+  evs.sort((a,b)=>a.tick-b.tick || (a.ord||0)-(b.ord||0));
+  const data=[]; let last=0;
+  for(const e of evs){ const dt=Math.max(0,Math.round(e.tick)-last); last=Math.round(e.tick); data.push(...midiVlq(dt),...e.msg); }
+  data.push(...midiVlq(0),0xFF,0x2F,0x00);   // end of track
+  const len=data.length, hdr=[0x4D,0x54,0x72,0x6B, (len>>>24)&255,(len>>>16)&255,(len>>>8)&255,len&255];
+  return hdr.concat(data);
+}
+function exportMidi(){
+  const src=$('bSrc').value, PPQ=480, TPS=PPQ/4;   // ticks per 16th step
+  let seq;
+  if(src==='song' && S.song.length) seq=S.song.reduce((a,x)=>{ for(let r=0;r<Math.max(1,x.reps||1);r++) a.push(x.pat); return a; },[]);
+  else if(src==='chain' && S.chain.length>0) seq=S.chain;
+  else seq=[S.pattern];
+  const perPad={}, tempoEvs=[]; let absStepExp=0, lastBpm=-1;
+  seq.forEach((pi,bar)=>{
+    const pat=S.patterns[pi];
+    const bpm=(S.ptnBpm && pat.bpm)? clamp(pat.bpm,40,240) : S.bpm;
+    const barTick=bar*NSTEPS*TPS;
+    if(bpm!==lastBpm){ const upq=Math.round(60000000/bpm);
+      tempoEvs.push({tick:barTick,ord:0,msg:[0xFF,0x51,0x03,(upq>>>16)&255,(upq>>>8)&255,upq&255]}); lastBpm=bpm; }
+    for(let st=0;st<NSTEPS;st++){
+      const stTick=barTick+st*TPS+(st%2===1?Math.round(S.swing*TPS):0);
+      for(let p=0;p<NPADS;p++){
+        const L=(pat.len&&pat.len[p])||NSTEPS, idx=(absStepExp+st)%L;
+        const v=pat.steps[p][idx]; if(!(v>0)) continue;
+        const lk=pat.locks&&pat.locks[p+':'+idx];
+        const base=(S.pads[p].note>=0?S.pads[p].note:36)+((lk&&lk.pitch)||0);
+        const note=clamp(base,0,127), vel=clamp(Math.round(v*127),1,127);
+        let tick=stTick+((lk&&lk.nudge)?Math.round(lk.nudge*TPS):0); if(tick<0) tick=0;
+        const rat=(lk&&lk.rat>1)?lk.rat:1, gate=Math.max(20,Math.round((rat>1?TPS/rat:TPS)*0.85));
+        (perPad[p]=perPad[p]||[]);
+        for(let r=0;r<rat;r++){ const on=tick+Math.round(r*(TPS/rat));
+          perPad[p].push({tick:on,ord:1,msg:[0x90,note,vel]});
+          perPad[p].push({tick:on+gate,ord:0,msg:[0x80,note,0]}); }
+      }
+    }
+    absStepExp+=NSTEPS;
+  });
+  const usedPads=Object.keys(perPad).map(Number).sort((a,b)=>a-b);
+  if(!usedPads.length){ plog('MIDI: nothing to export — source is empty.'); lcd('NO MIDI TO EXPORT.'); return; }
+  // track 0: tempo map + time signature
+  const t0=[{tick:0,ord:0,msg:[0xFF,0x58,0x04,0x04,0x02,0x24,0x08]},
+            {tick:0,ord:0,msg:[0xFF,0x03,midiStr('MVX tempo').length,...midiStr('MVX tempo')]}].concat(tempoEvs);
+  const ntrks=1+usedPads.length;
+  const head=[0x4D,0x54,0x68,0x64,0,0,0,6, 0,1, (ntrks>>>8)&255,ntrks&255, (PPQ>>>8)&255,PPQ&255];
+  let bytes=head.concat(midiTrack(t0));
+  for(const p of usedPads){
+    const nm=padName(p)+(S.pads[p].name?' '+S.pads[p].name:'');
+    const evs=[{tick:0,ord:0,msg:[0xFF,0x03,midiStr(nm).length,...midiStr(nm)]}].concat(perPad[p]);
+    bytes=bytes.concat(midiTrack(evs));
+  }
+  const blob=new Blob([new Uint8Array(bytes)],{type:'audio/midi'});
+  download(blob,($('projName').value||'mvx-session')+'.mid');
+  plog('MIDI exported: '+usedPads.length+' tracks, '+seq.length+' bar(s), '+Math.round(blob.size/1024*10)/10+'KB.');
+  lcd('MIDI EXPORTED · '+usedPads.length+' tracks');
+}
+$('btnMidi').addEventListener('click',exportMidi);
+
 /* shared offline render — padSet/traxSet null = all; a Set restricts to those
    indices (Set() = none). Used by the master bounce and per-stem export. */
 async function renderMix(padSet, traxSet){
