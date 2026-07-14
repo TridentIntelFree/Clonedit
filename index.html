@@ -53,6 +53,26 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
   transition:width .04s linear,background .1s linear}
 #mClip{font-size:7px;letter-spacing:1px;color:#3a3a3a;font-weight:700;flex:none}
 #mClip.on{color:var(--red);text-shadow:0 0 6px var(--red)}
+/* mixer channel strips */
+#mixStrips{display:flex;gap:6px;overflow-x:auto;padding:4px 2px 8px;-webkit-overflow-scrolling:touch}
+#mixStrips:empty::after{content:'No channels yet — load a sample or a KIT.';font-size:11px;color:var(--txt-dim)}
+.mstrip{flex:0 0 auto;width:62px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:6px 5px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.mstrip.master{background:var(--panel2);border-color:var(--amber-soft)}
+.mstrip .mnm{font-size:9px;color:var(--txt);width:100%;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.mstrip .msub{font-size:8px;color:var(--txt-dim);height:9px;width:100%;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mstrip .mfarea{display:flex;gap:4px;align-items:stretch;height:120px}
+.mstrip .mmtr{width:6px;background:#000;border-radius:3px;position:relative;overflow:hidden}
+.mstrip .mmtr>div{position:absolute;left:0;right:0;bottom:0;height:0%;background:var(--green)}
+.mstrip input[type=range].vf{-webkit-appearance:slider-vertical;writing-mode:vertical-lr;direction:rtl;width:22px;height:120px;background:transparent}
+.mstrip .mpan{width:100%}
+.mstrip .mpan input[type=range]{height:18px}
+.mstrip .mbtns{display:flex;gap:3px;width:100%}
+.mstrip .mbtns button{flex:1;padding:4px 0;font-size:9px;border-radius:4px}
+.mstrip .msend{display:flex;align-items:center;gap:3px;width:100%}
+.mstrip .msend span{font-size:8px;color:var(--txt-dim);width:8px}
+.mstrip .msend input[type=range]{height:14px}
+.mstrip .mval{font-size:8px;color:var(--lcd)}
 #bpmbox{display:flex;align-items:center;gap:4px}
 #bpmbox button{width:30px;height:26px;padding:0;font-size:14px;background:transparent;border-color:var(--lcd-dim);color:var(--lcd)}
 #bpmval{min-width:52px;text-align:center;font-size:14px;font-weight:700}
@@ -588,7 +608,9 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 
 <!-- MIX -->
 <div class="view" id="v-mix">
-  <div class="hint"><b>MASTER + FX</b> — volume, limiter, 6 reverbs, 3 delays, and <b>SIDECHAIN</b> (pick a KICK pad to duck the mix = the pump). Everything here bakes into the bounce.</div>
+  <div class="hint"><b>MIXER</b> — one strip per in-use pad: live meter, fader, pan, <b>M</b>ute / <b>S</b>olo, and REV/DLY sends. Tap a strip's name to edit that pad. Master + global FX below. Everything bakes into the bounce.</div>
+  <h3>CHANNELS <span id="mixCount" style="color:var(--txt-dim);letter-spacing:0"></span></h3>
+  <div id="mixStrips"></div>
   <h3>MASTER</h3>
   <div class="pslider"><span class="lbl">VOLUME</span><input type="range" id="mxVol" min="0" max="1.2" step="0.01"><span class="val" id="mxVolV"></span></div>
   <div class="pslider"><span class="lbl">COMP</span><input type="range" id="mxComp" min="0" max="1" step="0.01"><span class="val" id="mxCompV"></span></div>
@@ -924,8 +946,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
        stretch that fits a sample to N beats at the current tempo, so
        loops lock to the grid. RESET restores the pristine original
        (kept in memory to avoid compounding). Both live in PADS → EDIT.
+   - R44: real MIXER (MIX tab). One channel strip per in-use pad, each
+     with a live post-fader meter, a vertical fader, pan, MUTE / SOLO,
+     and REV/DLY sends — plus a MASTER strip. Dedicated mute/solo gate
+     node per channel (downstream of fader + vol-LFO) so a muted channel
+     is truly silent; per-channel analysers drive the meters only while
+     the MIX tab is open. Mute/solo bake into the master bounce (stems
+     stay isolated). Tap a strip name to jump to that pad's EDIT. State
+     persists.
    ================================================================ */
-const BUILD = 'MVX-880 · R43 · 2026-07-14 · sounds pro — per-pad LFO + warp';
+const BUILD = 'MVX-880 · R44 · 2026-07-14 · real mixer — per-channel strips';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -941,7 +971,7 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   choke:0, note:36+i, reverse:false, mode:'one',
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
-  warpBeats:4 }; }
+  warpBeats:4, mute:false, solo:false }; }
 function newPattern(){ const s=[]; for(let p=0;p<NPADS;p++) s.push(new Array(NSTEPS).fill(0)); return { steps:s, bpm:null, len:new Array(NPADS).fill(NSTEPS), locks:{} }; }
 function trackLen(pat,p){ return (pat.len&&pat.len[p])||NSTEPS; }
 function stepLock(pat,p,st){ return pat.locks&&pat.locks[p+':'+st]; }
@@ -1148,16 +1178,20 @@ function buildGraph(ctx){
     drv.connect(crush); crush.connect(flt); flt.connect(ch);
     let tail=ch;
     if(pan){ pan.pan.value=p.pan; ch.connect(pan); tail=pan; }
+    // mixer mute/solo gate — downstream of the fader (ch.gain) and its vol-LFO,
+    // so a muted channel is truly silent; also the per-channel meter tap point
+    const mute=ctx.createGain(); mute.gain.value=1; tail.connect(mute);
+    const meterAn=ctx.createAnalyser(); meterAn.fftSize=256; mute.connect(meterAn);
     const dryDuck=ctx.createGain(); dryDuck.gain.value=1;   // ducked path (default)
     const dryDir=ctx.createGain(); dryDir.gain.value=0;     // direct path (trigger pad only)
-    tail.connect(dryDuck); dryDuck.connect(g.duckBus);
-    tail.connect(dryDir); dryDir.connect(g.master);
-    tail.connect(rev); tail.connect(dly);
+    mute.connect(dryDuck); dryDuck.connect(g.duckBus);
+    mute.connect(dryDir); dryDir.connect(g.master);
+    mute.connect(rev); mute.connect(dly);
     rev.connect(g.revIn); dly.connect(g.dlyIn);
     // per-pad LFO — one oscillator + depth gain, routed to the chosen param
     const lfoOsc=ctx.createOscillator(), lfoAmp=ctx.createGain(); lfoAmp.gain.value=0;
     lfoOsc.connect(lfoAmp); try{ lfoOsc.start(); }catch(e){}
-    const node={in:drv,drv,crush,flt,ch,pan,rev,dly,dryDuck,dryDir,lfoOsc,lfoAmp};
+    const node={in:drv,drv,crush,flt,ch,pan,rev,dly,dryDuck,dryDir,mute,meterAn,lfoOsc,lfoAmp};
     applyPadFx(node,p,ctx);
     applyPadLfo(node,p,ctx);
     g.pads.push(node);
@@ -1335,6 +1369,18 @@ function meterLoop(){
   const pk=Math.max(l.pk,r.pk), now=performance.now();
   if(pk>=0.895) mClipHold=now;
   $('mClip').classList.toggle('on', now-mClipHold<800);
+  // per-channel mixer meters — only when the MIX tab is visible
+  if(mixMeters.length && $('v-mix') && $('v-mix').classList.contains('on')){
+    for(const m of mixMeters){
+      let rms, ppk;
+      if(m.idx<0){ rms=Math.max(l.rms,r.rms); ppk=pk; }
+      else{ const n=LIVE.pads[m.idx]; if(!n||!n.meterAn){ continue; }
+        if(!m.buf||m.buf.length!==n.meterAn.fftSize) m.buf=new Float32Array(n.meterAn.fftSize);
+        const rr=readAn(n.meterAn,m.buf); rms=rr.rms; ppk=rr.pk; }
+      m.fill.style.height=Math.min(100,Math.pow(rms,0.6)*128).toFixed(0)+'%';
+      m.fill.style.background = ppk>=0.9?'var(--red)':ppk>=0.7?'var(--lcd)':'var(--green)';
+    }
+  }
 }
 function startMeter(){ if(!meterRAF) meterRAF=requestAnimationFrame(meterLoop); }
 
@@ -1591,7 +1637,72 @@ $('mxPadRev').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.rev=par
 $('mxPadDly').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.dly=parseFloat(e.target.value); dirty();
   $('mxPadDlyV').textContent=p.dly.toFixed(2);
   if(LIVE) LIVE.pads[S.editPad].dly.gain.setTargetAtTime(p.dly,AC.currentTime,0.01); });
-$('epClear').addEventListener('click',()=>{ const i=S.editPad; stopPadVoices(i); S.pads[i]=newPad(i); delete warpOrig[i]; drawPads(); drawEdit(); dirty(); lcd('PAD '+padName(i)+' CLEARED'); });
+$('epClear').addEventListener('click',()=>{ const i=S.editPad; stopPadVoices(i); S.pads[i]=newPad(i); delete warpOrig[i]; drawPads(); drawEdit(); drawMixer(); dirty(); lcd('PAD '+padName(i)+' CLEARED'); });
+
+/* ---------------- per-pad channel MIXER ---------------- */
+let mixMeters=[];   // [{idx, fill}] for the meter loop (idx=-1 => master)
+function padInUse(i){
+  if(S.pads[i].bufId>=0) return true;
+  for(let q=0;q<NPAT;q++){ const st=S.patterns[q].steps[i]; for(let s=0;s<NSTEPS;s++) if(st[s]>0) return true; }
+  return false;
+}
+function mixChannels(){ const out=[]; for(let i=0;i<NPADS;i++) if(padInUse(i)) out.push(i); return out; }
+function anySolo(){ for(let i=0;i<NPADS;i++) if(S.pads[i].solo) return true; return false; }
+function padAudible(i){ const p=S.pads[i]; return !p.mute && (!anySolo() || p.solo); }
+function applyMixMutes(){
+  if(!LIVE||!LIVE.pads) return; const t=AC?AC.currentTime:0;
+  for(let i=0;i<NPADS;i++){ const n=LIVE.pads[i]; if(n&&n.mute){ try{ n.mute.gain.setTargetAtTime(padAudible(i)?1:0,t,0.01); }catch(e){} } }
+}
+function mixEditPad(i){ S.editPad=i; S.seqPad=i; if(!S.edit){ S.edit=true; $('btnEdit').classList.add('on'); $('editpanel').style.display='block'; }
+  document.querySelector('#tabs button[data-v="pads"]').click(); drawPads(); drawEdit(); }
+function drawMixer(){
+  const wrap=$('mixStrips'); if(!wrap) return;
+  const chans=mixChannels();
+  $('mixCount').textContent=chans.length?('· '+chans.length+' in use'):'';
+  wrap.innerHTML=''; mixMeters=[];
+  const mkStrip=(idx)=>{
+    const p=idx>=0?S.pads[idx]:null;
+    const el=document.createElement('div'); el.className='mstrip'+(idx<0?' master':'');
+    const nm=document.createElement('div'); nm.className='mnm'; nm.textContent=idx<0?'MASTER':padName(idx);
+    const sub=document.createElement('div'); sub.className='msub'; sub.textContent=idx<0?'':(p.name||'');
+    if(idx>=0){ nm.title='edit '+padName(idx); nm.addEventListener('click',()=>mixEditPad(idx)); }
+    el.append(nm,sub);
+    const farea=document.createElement('div'); farea.className='mfarea';
+    const mtr=document.createElement('div'); mtr.className='mmtr'; const fill=document.createElement('div'); mtr.appendChild(fill);
+    const fader=document.createElement('input'); fader.type='range'; fader.className='vf';
+    fader.min=0; fader.max=1.2; fader.step=0.01; fader.value= idx<0?S.masterVol:p.gain;
+    fader.addEventListener('input',e=>{ const v=parseFloat(e.target.value);
+      if(idx<0){ S.masterVol=v; if(LIVE) LIVE.master.gain.setTargetAtTime(v,AC.currentTime,0.02); if($('mxVol')){ $('mxVol').value=v; $('mxVolV').textContent=pct(v);} }
+      else{ p.gain=v; if(LIVE) LIVE.pads[idx].ch.gain.setTargetAtTime(v,AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); }
+      dirty(); });
+    farea.append(mtr,fader); el.appendChild(farea);
+    mixMeters.push({idx,fill});
+    if(idx>=0){
+      const pan=document.createElement('div'); pan.className='mpan';
+      const pr=document.createElement('input'); pr.type='range'; pr.min=-1; pr.max=1; pr.step=0.05; pr.value=p.pan; pr.title='pan';
+      pr.addEventListener('input',e=>{ p.pan=parseFloat(e.target.value); if(LIVE&&LIVE.pads[idx].pan) LIVE.pads[idx].pan.pan.setTargetAtTime(p.pan,AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); dirty(); });
+      pan.appendChild(pr); el.appendChild(pan);
+      const btns=document.createElement('div'); btns.className='mbtns';
+      const mb=document.createElement('button'); mb.textContent='M'; mb.classList.toggle('on',p.mute);
+      mb.addEventListener('click',()=>{ p.mute=!p.mute; mb.classList.toggle('on',p.mute); applyMixMutes(); dirty(); });
+      const sb=document.createElement('button'); sb.textContent='S'; sb.classList.toggle('on',p.solo);
+      sb.addEventListener('click',()=>{ p.solo=!p.solo; drawMixer(); applyMixMutes(); dirty(); });
+      btns.append(mb,sb); el.appendChild(btns);
+      const mkSend=(lbl,key)=>{ const r=document.createElement('div'); r.className='msend';
+        const s=document.createElement('span'); s.textContent=lbl;
+        const inp=document.createElement('input'); inp.type='range'; inp.min=0; inp.max=1; inp.step=0.01; inp.value=p[key]; inp.title=(key==='rev'?'reverb':'delay')+' send';
+        inp.addEventListener('input',e=>{ p[key]=parseFloat(e.target.value); if(LIVE) LIVE.pads[idx][key].gain.setTargetAtTime(p[key],AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); dirty(); });
+        r.append(s,inp); return r; };
+      el.appendChild(mkSend('R','rev')); el.appendChild(mkSend('D','dly'));
+    }else{
+      const cl=document.createElement('div'); cl.className='mval'; cl.id='mixMasterClip'; cl.textContent='';
+      el.appendChild(cl);
+    }
+    return el;
+  };
+  wrap.appendChild(mkStrip(-1));
+  chans.forEach(i=>wrap.appendChild(mkStrip(i)));
+}
 /* ---- sidechain UI ---- */
 function drawSidechain(){
   const sel=$('mxScTrig');
@@ -1628,7 +1739,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
     drawWave(); drawEdit();
     refreshHaveKeys().then(()=>{ drawPackList(); updateStoreMeter(); });   // always reflect current on-device library
   }
-  if(b.dataset.v==='mix'){ drawEdit(); drawSidechain(); }
+  if(b.dataset.v==='mix'){ drawEdit(); drawSidechain(); drawMixer(); }
   if(b.dataset.v==='proj'){ $('bSrc').value=(S.songOn&&S.song.length)?'song':((S.chainOn&&S.chain.length)?'chain':'pat'); }
   if(b.dataset.v==='trax'){ drawTrax(); }
   if(b.dataset.v==='live'){ drawLive(); }
@@ -1669,7 +1780,7 @@ function loadIntoTarget(buf,name){
   const p=S.pads[S.editPad];
   p.bufId=bid; p.start=0; p.end=1; p.name=name.slice(0,14); p.warped=false;
   delete warpOrig[S.editPad];   // new sample → drop any stale pre-warp original
-  drawPads(); drawEdit(); drawWave(); dirty();
+  drawPads(); drawEdit(); drawWave(); drawMixer(); dirty();
   lcd('LOADED → '+padName(S.editPad)+' · '+buf.duration.toFixed(2)+'s');
 }
 
@@ -2367,7 +2478,7 @@ async function loadKit(kit, layBeat){
       if(kit.swing!=null){ S.swing=kit.swing; $('swing').value=String(kit.swing); $('swingV').textContent=Math.round(kit.swing*100)+'%'; }
     }
     S.bank=0; S.editPad=0; S.seqPad=0;
-    buildPads(); drawPads(); drawEdit(); drawSeq(); drawFader(); dirty();
+    buildPads(); drawPads(); drawEdit(); drawSeq(); drawFader(); drawMixer(); dirty();
     lcd(kit.name+' KIT READY · press PLAY');
   }catch(err){ lcd('KIT FAILED: '+(err&&err.message?err.message:'error')); }
   finally{ kitBusy=false; }
@@ -4280,6 +4391,7 @@ function applySessionDoc(doc, bufs){
   if(AC){ // re-apply pad channel params to live graph
     for(let i=0;i<NPADS;i++){ const p=S.pads[i], n=LIVE.pads[i];
       hardSet(n.ch.gain,p.gain); if(n.pan)hardSet(n.pan.pan,p.pan); hardSet(n.rev.gain,p.rev); hardSet(n.dly.gain,p.dly); applyPadFx(n,p,AC); applyPadLfo(n,p,AC); }
+    applyMixMutes();
     hardSet(LIVE.master.gain,S.masterVol);
     hardSet(LIVE.revRet.gain,S.revLvl); LIVE.conv.buffer=makeIR(AC,S.revSize,S.revType);
     hardSet(LIVE.comp.threshold,compThresh());
@@ -4627,6 +4739,7 @@ async function renderMix(padSet, traxSet){
   const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
   const g=buildGraph(oc);
   scApplyRoutingG(g,oc);
+  if(!padSet){ for(let i=0;i<NPADS;i++){ if(g.pads[i]&&g.pads[i].mute) g.pads[i].mute.gain.value = padAudible(i)?1:0; } }   // master bounce honors mixer mute/solo (stems ignore it)
   for(const a of autoEvents){ try{ autoTargets[a.id].applyG(g,a.v,a.when); }catch(e){} }
   tempoSeg.forEach(seg=>{ const dt=clamp(60/seg.bpm*S.delayDiv,0.02,1.9);
     (g.dlyNodes||[]).forEach(d=>d.delayTime.setValueAtTime(dt,seg.t)); });
