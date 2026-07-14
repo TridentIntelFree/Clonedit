@@ -249,6 +249,11 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <select id="presetNote"></select>
     <button id="btnPresetLoad">RENDER &#8594; PAD</button>
   </div>
+  <h3>KITS <span style="color:var(--txt-dim);letter-spacing:0">— one tap fills bank A with sounds + a starter beat</span></h3>
+  <div class="row" id="kitRow" style="flex-wrap:wrap;gap:5px"></div>
+  <label class="row" style="font-size:10px;color:var(--txt-dim);gap:5px;cursor:pointer">
+    <input type="checkbox" id="kitBeat" checked style="width:auto"> also lay a starter beat in the current pattern (clears it)
+  </label>
   <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">— download online, stored on-device, used offline</span></h3>
   <div class="row">
     <select id="packPick" class="grow">
@@ -835,8 +840,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      and pad CLEAR / sample-replace cut their voices too (stopPadVoices).
      Previously a long sample kept playing its full length after the
      step/pad was removed.
+   - R40: the app opens ALIVE. Seven synthesized DRUM presets (kick,
+     snare, clap, closed/open hat, rim, tom) join the preset library —
+     fully offline, no samples needed. New KITS section (SMPL tab):
+     one tap renders a curated sound set into bank A and lays a starter
+     groove (TRAP / HOUSE / BOOM-BAP / LO-FI / TECHNO / AMBIENT), setting
+     BPM + swing to match. First launch with no saved session now boots
+     straight into a playable TRAP demo instead of an empty grid.
    ================================================================ */
-const BUILD = 'MVX-880 · R39 · 2026-07-14 · STOP/clear cut sounding voices';
+const BUILD = 'MVX-880 · R40 · 2026-07-14 · opens alive — drums, KITS, demo';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1795,6 +1807,52 @@ function pianoRender(bright){ return (oc,out,f0,dur)=>{
 };}
 
 const PRESETS=[
+{id:'dkick',cat:'DRUMS',name:'Kick',note:36,dur:0.9,render:(oc,out,f0,dur)=>{
+  const o=pOsc(oc,'sine',60);
+  o.frequency.setValueAtTime(165,0);
+  o.frequency.exponentialRampToValueAtTime(48,0.10);          // pitch-drop punch
+  const sat=oc.createWaveShaper(); sat.curve=makeDriveCurve(0.22);
+  const e=pEnv(oc,[[0,0],[0.002,1],[0.10,0.72],[dur,0.0001,'x']]);
+  pChain(o,sat,e,out); o.start(0); o.stop(dur);
+  const n=pNoise(oc,0.012,5), nf=pFilt(oc,'highpass',1400,0.7), ne=pEnv(oc,[[0,0.55],[0.008,0.0001,'x']]);
+  pChain(n,nf,ne,out); n.start(0);                            // beater click
+}},
+{id:'dsnare',cat:'DRUMS',name:'Snare',note:38,dur:0.42,render:(oc,out,f0,dur)=>{
+  const o1=pOsc(oc,'triangle',186), o2=pOsc(oc,'triangle',278);
+  const te=pEnv(oc,[[0,0],[0.001,0.55],[0.09,0.0001,'x']]);
+  o1.connect(te); o2.connect(te); te.connect(out);
+  o1.start(0); o2.start(0); o1.stop(dur); o2.stop(dur);
+  const n=pNoise(oc,dur,17), hp=pFilt(oc,'highpass',1500,0.7), lp=pFilt(oc,'lowpass',8500,0.7),
+        ne=pEnv(oc,[[0,0],[0.001,0.9],[0.14,0.0001,'x']]);
+  pChain(n,hp,lp,ne,out); n.start(0);                         // snare buzz
+}},
+{id:'dclap',cat:'DRUMS',name:'Clap',note:39,dur:0.5,render:(oc,out,f0,dur)=>{
+  const bp=pFilt(oc,'bandpass',1250,1.1), e=oc.createGain(), g=e.gain;
+  g.setValueAtTime(0.0001,0);
+  [0,0.011,0.022].forEach(t=>{ g.setValueAtTime(0.9,t); g.exponentialRampToValueAtTime(0.06,t+0.009); });
+  g.setValueAtTime(0.7,0.033); g.exponentialRampToValueAtTime(0.0001,0.2);   // 3 slaps + room tail
+  const n=pNoise(oc,dur,23); pChain(n,bp,e,out); n.start(0);
+}},
+{id:'dhat',cat:'DRUMS',name:'Closed Hat',note:42,dur:0.13,render:(oc,out,f0,dur)=>{
+  const hp=pFilt(oc,'highpass',7200,0.7), e=pEnv(oc,[[0,0],[0.001,0.55],[0.05,0.0001,'x']]);
+  const n=pNoise(oc,dur,31); pChain(n,hp,e,out); n.start(0);
+}},
+{id:'dohat',cat:'DRUMS',name:'Open Hat',note:46,dur:0.65,render:(oc,out,f0,dur)=>{
+  const hp=pFilt(oc,'highpass',6800,0.7), e=pEnv(oc,[[0,0],[0.001,0.48],[0.38,0.12],[dur,0.0001,'x']]);
+  const n=pNoise(oc,dur,37); pChain(n,hp,e,out); n.start(0);
+}},
+{id:'drim',cat:'DRUMS',name:'Rimshot',note:37,dur:0.15,render:(oc,out,f0,dur)=>{
+  const o=pOsc(oc,'square',330), bp=pFilt(oc,'bandpass',1700,3), e=pEnv(oc,[[0,0],[0.0004,0.8],[0.04,0.0001,'x']]);
+  pChain(o,bp,e,out); o.start(0); o.stop(dur);
+}},
+{id:'dtom',cat:'DRUMS',name:'Tom',note:45,dur:0.5,render:(oc,out,f0,dur)=>{
+  const o=pOsc(oc,'sine',110); o.frequency.setValueAtTime(210,0);
+  o.frequency.exponentialRampToValueAtTime(88,0.22);
+  const e=pEnv(oc,[[0,0],[0.002,0.95],[dur,0.0001,'x']]);
+  pChain(o,e,out); o.start(0); o.stop(dur);
+  const n=pNoise(oc,0.02,9), ne=pEnv(oc,[[0,0.25],[0.02,0.0001,'x']]);
+  pChain(n,pFilt(oc,'bandpass',400,1),ne,out); n.start(0);
+}},
 {id:'b808',cat:'BASS',name:'808 Sub',note:31,dur:2.8,render:(oc,out,f0,dur)=>{
   const o=pOsc(oc,'sine',f0);
   o.frequency.setValueAtTime(f0*3.4,0);
@@ -2039,6 +2097,76 @@ $('btnPresetLoad').addEventListener('click',async ()=>{
     hitLive(S.editPad,0.9);
   }catch(err){ lcd('PRESET FAILED: '+(err&&err.message?err.message:'render error')); }
 });
+
+/* ---------------- KITS: one-tap instant setups (all synth, fully offline) ----------------
+   Each kit renders a curated set of presets into bank-A pads and (optionally)
+   writes a starter groove so the app is playable the instant it opens. slots
+   map pad index -> [presetId, midiNote]; beat maps pad index -> step positions. */
+const KITS=[
+  { id:'trap', name:'TRAP', bpm:140, swing:0.12,
+    slots:[['dkick',36],['dsnare',38],['dhat',42],['dohat',46],['dclap',39],['drim',37],['b808',31],['bsub',29]],
+    beat:{ 0:[0,7,10], 1:[4,12], 2:[0,2,4,6,8,10,12,14], 3:[7,15], 4:[4,12], 6:[0,10],
+           2.5:[3,11,13,14,15] } },   // note: only integer pad keys used; fractional ignored below
+  { id:'house', name:'HOUSE', bpm:124, swing:0.0,
+    slots:[['dkick',36],['dclap',39],['dhat',42],['dohat',46],['drim',37],['bsub',29],['pgrand',60],['sens',60]],
+    beat:{ 0:[0,4,8,12], 1:[4,12], 2:[2,6,10,14], 3:[2,6,10,14], 5:[0,8] } },
+  { id:'boombap', name:'BOOM-BAP', bpm:90, swing:0.16,
+    slots:[['dkick',36],['dsnare',38],['dhat',42],['dohat',46],['b808',33],['scello',48],['pgrand',60],['brs',55]],
+    beat:{ 0:[0,3,8,10], 1:[4,12], 2:[0,2,4,6,8,10,12,14], 4:[0,8] } },
+  { id:'lofi', name:'LO-FI', bpm:78, swing:0.18,
+    slots:[['dkick',36],['drim',37],['dhat',42],['dsnare',38],['pfelt',60],['scello',48],['bsub',29],['xglass',60]],
+    beat:{ 0:[0,8], 1:[4,12], 2:[0,3,4,6,8,11,12,14], 6:[0,8] } },
+  { id:'techno', name:'TECHNO', bpm:130, swing:0.0,
+    slots:[['dkick',36],['dclap',39],['dhat',42],['dohat',46],['drim',37],['dtom',45],['breese',33],['xsweep',60]],
+    beat:{ 0:[0,4,8,12], 1:[4,12], 2:[2,6,10,14], 3:[2,6,10,14], 4:[7,15], 6:[0,3,6,8,11,14] } },
+  { id:'ambient', name:'AMBIENT', bpm:70, swing:0.0,
+    slots:[['dkick',36],['dohat',46],['xbell',72],['xglass',60],['pfelt',60],['sens',60],['scello',48],['bsub',29]],
+    beat:{ 0:[0,8], 3:[0,4,8,12], 6:[0], 7:[0,8] } },
+];
+function assignBufToPad(idx,buf,name){
+  try{ stopPadVoices(idx); }catch(e){}
+  S.buffers.push(buf); const bid=S.buffers.length-1;
+  const p=S.pads[idx];
+  p.bufId=bid; p.start=0; p.end=1; p.pitch=0; p.fine=0; p.reverse=false; p.mode='one';
+  p.name=(name||'').slice(0,14);
+  return bid;
+}
+let kitBusy=false;
+async function loadKit(kit, layBeat){
+  if(kitBusy) return; kitBusy=true;
+  ensureAudio();
+  try{
+    lcd('BUILDING '+kit.name+' KIT …');
+    for(let i=0;i<kit.slots.length;i++){
+      const [pid,note]=kit.slots[i], def=PRESETS.find(p=>p.id===pid);
+      if(!def) continue;
+      const buf=await renderPreset(def, note!=null?note:def.note);
+      assignBufToPad(i, buf, def.name);
+    }
+    if(layBeat){
+      const pat=S.patterns[S.pattern];
+      for(let p=0;p<NPADS;p++){ pat.steps[p].fill(0); pat.len[p]=NSTEPS; }
+      pat.locks={};
+      for(const k in kit.beat){ const pi=parseInt(k,10);
+        if(String(pi)!==k) continue;                 // skip any non-integer decorative keys
+        kit.beat[k].forEach(st=>{ if(st>=0&&st<NSTEPS) pat.steps[pi][st]=0.9; }); }
+      if(kit.bpm) setBpm(kit.bpm);
+      if(kit.swing!=null){ S.swing=kit.swing; $('swing').value=String(kit.swing); $('swingV').textContent=Math.round(kit.swing*100)+'%'; }
+    }
+    S.bank=0; S.editPad=0; S.seqPad=0;
+    buildPads(); drawPads(); drawEdit(); drawSeq(); drawFader(); dirty();
+    lcd(kit.name+' KIT READY · press PLAY');
+  }catch(err){ lcd('KIT FAILED: '+(err&&err.message?err.message:'error')); }
+  finally{ kitBusy=false; }
+}
+(function(){
+  const row=$('kitRow');
+  KITS.forEach(kit=>{
+    const b=document.createElement('button'); b.textContent=kit.name; b.dataset.kit=kit.id;
+    b.addEventListener('click',()=>loadKit(kit, $('kitBeat').checked));
+    row.appendChild(b);
+  });
+})();
 
 /* ---------------- sample packs (download online → IndexedDB → offline) ----------------
    Encoded file bytes live on disk in IndexedDB (large quota, unlike RAM), so a big
@@ -4027,10 +4155,15 @@ function ageText(ms){
   if(h<48) return h+' hr ago';
   return Math.round(h/24)+' days ago';
 }
+function factoryDemo(){   // brand-new user: open into a playable demo instead of an empty grid
+  loadKit(KITS[0], true).then(()=>{
+    lcd('WELCOME · TRAP demo loaded — press PLAY, or pick a KIT in the SMPL tab.');
+  });
+}
 async function offerRestore(){
   let doc=null;
-  try{ doc=await idbGet('last'); }catch(e){ return; }
-  if(!doc || !doc.pads) return;
+  try{ doc=await idbGet('last'); }catch(e){ factoryDemo(); return; }
+  if(!doc || !doc.pads){ factoryDemo(); return; }
   const bar=$('restoreBar');
   $('restoreAge').textContent=(doc.name?doc.name+' · ':'')+ageText(Date.now()-doc.t);
   bar.style.display='flex';
