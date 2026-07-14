@@ -73,6 +73,14 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 .mstrip .msend span{font-size:8px;color:var(--txt-dim);width:8px}
 .mstrip .msend input[type=range]{height:14px}
 .mstrip .mval{font-size:8px;color:var(--lcd)}
+/* project library */
+.projrow{display:flex;align-items:center;gap:6px;padding:7px 8px;border:1px solid var(--line);border-radius:6px;margin-bottom:5px;background:var(--panel)}
+.projrow.cur{border-color:var(--amber);background:var(--panel2)}
+.projrow .pjmain{flex:1;min-width:0}
+.projrow .pjname{font-size:12px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.projrow.cur .pjname{color:var(--amber)}
+.projrow .pjmeta{font-size:9px;color:var(--txt-dim)}
+.projrow button{padding:6px 8px;font-size:11px}
 #bpmbox{display:flex;align-items:center;gap:4px}
 #bpmbox button{width:30px;height:26px;padding:0;font-size:14px;background:transparent;border-color:var(--lcd-dim);color:var(--lcd)}
 #bpmval{min-width:52px;text-align:center;font-size:14px;font-weight:700}
@@ -713,9 +721,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 
 <!-- PROJECT -->
 <div class="view" id="v-proj">
-  <div class="hint"><b>SAVE / LOAD</b> the whole session as JSON. <b>BOUNCE</b> = master WAV &middot; <b>STEMS</b> = one WAV per pad/track &middot; <b>MIDI</b> = the pattern/song for any DAW.</div>
-  <div class="row"><span class="lbl">NAME</span><input type="text" id="projName" class="grow" value="mvx-session"></div>
-  <h3>SESSION DISK (JSON)</h3>
+  <div class="hint"><b>PROJECT LIBRARY</b> — keep as many beats as you like on the device. <b>SAVE</b> updates the open one, <b>SAVE AS NEW</b> keeps a copy, <b>NEW</b> starts fresh. Below: bounce to WAV/stems/MIDI, or export the session as a JSON file.</div>
+  <div class="row"><span class="lbl">NAME</span><input type="text" id="projName" class="grow" value="untitled"><span id="projCur" style="font-size:9px;color:var(--txt-dim)"></span></div>
+  <h3>PROJECT LIBRARY <span id="projLibInfo" style="color:var(--txt-dim);letter-spacing:0"></span></h3>
+  <div class="row">
+    <button id="btnProjSave" class="grow">&#128190; SAVE</button>
+    <button id="btnProjSaveNew">SAVE AS NEW</button>
+    <button id="btnProjNew">NEW</button>
+  </div>
+  <div id="projList" style="max-height:230px;overflow-y:auto;margin:6px 0"></div>
+  <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>
     <button id="btnLoad" class="grow">LOAD .JSON</button>
@@ -954,8 +969,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      the MIX tab is open. Mute/solo bake into the master bounce (stems
      stay isolated). Tap a strip name to jump to that pad's EDIT. State
      persists.
+   - R45: PROJECT LIBRARY (PROJECT tab). Keep many named beats on the
+     device, not just one autosave. SAVE updates the open project, SAVE
+     AS NEW keeps a copy, NEW starts an empty session, and each library
+     row LOADs / DUPs / DELetes. Full docs live under 'proj:<id>' in the
+     session store with a small 'projIndex' for instant browsing (no
+     buffer decode to list); size + pad count + age shown per row. The
+     'last' autosave slot is untouched, so crash recovery still works,
+     and the open project is remembered across restores.
    ================================================================ */
-const BUILD = 'MVX-880 · R44 · 2026-07-14 · real mixer — per-channel strips';
+const BUILD = 'MVX-880 · R45 · 2026-07-14 · project library — save & browse';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1740,7 +1763,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
     refreshHaveKeys().then(()=>{ drawPackList(); updateStoreMeter(); });   // always reflect current on-device library
   }
   if(b.dataset.v==='mix'){ drawEdit(); drawSidechain(); drawMixer(); }
-  if(b.dataset.v==='proj'){ $('bSrc').value=(S.songOn&&S.song.length)?'song':((S.chainOn&&S.chain.length)?'chain':'pat'); }
+  if(b.dataset.v==='proj'){ $('bSrc').value=(S.songOn&&S.song.length)?'song':((S.chainOn&&S.chain.length)?'chain':'pat'); drawProjects(); }
   if(b.dataset.v==='trax'){ drawTrax(); }
   if(b.dataset.v==='live'){ drawLive(); }
   if(b.dataset.v==='amp'){ ampListDevices(); }
@@ -4341,6 +4364,13 @@ function hardSet(param,v){ // plain .value writes lose to earlier setTargetAtTim
   try{ param.cancelScheduledValues(t); }catch(e){}
   param.setValueAtTime(v,t);
 }
+function reapplyLivePads(){   // push S.pads channel state onto the live graph (restore + NEW)
+  if(!AC||!LIVE||!LIVE.pads) return;
+  for(let i=0;i<NPADS;i++){ const p=S.pads[i], n=LIVE.pads[i]; if(!n) continue;
+    hardSet(n.ch.gain,p.gain); if(n.pan)hardSet(n.pan.pan,p.pan); hardSet(n.rev.gain,p.rev); hardSet(n.dly.gain,p.dly);
+    applyPadFx(n,p,AC); applyPadLfo(n,p,AC); }
+  applyMixMutes();
+}
 function applySessionDoc(doc, bufs){
   S.bpm=doc.bpm; S.swing=doc.swing; S.masterVol=doc.masterVol; S.delayFb=doc.delayFb;
   S.revLvl=(doc.revLvl!=null)?doc.revLvl:0.9;
@@ -4389,9 +4419,7 @@ function applySessionDoc(doc, bufs){
   $('vcurve').value=S.vcurve; $('midiCh').value=String(S.midiCh);
   $('midiRoot').value=String(S.midiRoot); $('btnChrom').classList.toggle('on',S.midiChrom);
   if(AC){ // re-apply pad channel params to live graph
-    for(let i=0;i<NPADS;i++){ const p=S.pads[i], n=LIVE.pads[i];
-      hardSet(n.ch.gain,p.gain); if(n.pan)hardSet(n.pan.pan,p.pan); hardSet(n.rev.gain,p.rev); hardSet(n.dly.gain,p.dly); applyPadFx(n,p,AC); applyPadLfo(n,p,AC); }
-    applyMixMutes();
+    reapplyLivePads();
     hardSet(LIVE.master.gain,S.masterVol);
     hardSet(LIVE.revRet.gain,S.revLvl); LIVE.conv.buffer=makeIR(AC,S.revSize,S.revType);
     hardSet(LIVE.comp.threshold,compThresh());
@@ -4420,8 +4448,9 @@ $('jsonIn').addEventListener('change',async e=>{
       return ab;
     });
     applySessionDoc(doc,bufs);
+    curProjId=null; drawProjects();   // an imported file isn't a library entry yet — SAVE adds it
     plog('Loaded project: '+f.name);
-    lcd('PROJECT LOADED.');
+    lcd('PROJECT LOADED · tap SAVE AS NEW to keep it in the library.');
   }catch(err){ plog('Load failed: '+err.message); lcd('LOAD FAILED.'); }
 });
 
@@ -4488,7 +4517,7 @@ function snapshotSession(){
     }
     return {sr:b.sampleRate,len:b.length,ch};
   });
-  return { fmt:'mvx880-project', t:Date.now(), name:$('projName').value,
+  return { fmt:'mvx880-project', t:Date.now(), name:$('projName').value, projId:curProjId,
     bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
@@ -4582,6 +4611,17 @@ function factoryDemo(){   // brand-new user: open into a playable demo instead o
     lcd('WELCOME · TRAP demo loaded — press PLAY, or pick a KIT in the SMPL tab.');
   });
 }
+function docToBuffers(doc){   // PCM (Int16) back to AudioBuffers
+  return (doc.buffers||[]).map(b=>{
+    const ab=mkAudioBuf(b.len,b.sr,b.ch.length);
+    b.ch.forEach((raw,i)=>{
+      const i16=new Int16Array(raw), f=new Float32Array(i16.length);
+      for(let j=0;j<i16.length;j++) f[j]=i16[j]/32767;
+      ab.copyToChannel(f,i);
+    });
+    return ab;
+  });
+}
 async function offerRestore(){
   let doc=null;
   try{ doc=await idbGet('last'); }catch(e){ factoryDemo(); return; }
@@ -4591,22 +4631,109 @@ async function offerRestore(){
   bar.style.display='flex';
   $('btnRestore').onclick=()=>{
     try{
-      const bufs=doc.buffers.map(b=>{
-        const ab=mkAudioBuf(b.len,b.sr,b.ch.length);
-        b.ch.forEach((raw,i)=>{
-          const i16=new Int16Array(raw), f=new Float32Array(i16.length);
-          for(let j=0;j<i16.length;j++) f[j]=i16[j]/32767;
-          ab.copyToChannel(f,i);
-        });
-        return ab;
-      });
-      applySessionDoc(doc,bufs);
+      applySessionDoc(doc,docToBuffers(doc));
+      curProjId=doc.projId||null; drawProjects();
       bar.style.display='none';
       lcd('SESSION RESTORED · '+ageText(Date.now()-doc.t));
     }catch(err){ lcd('RESTORE FAILED: '+err.message); }
   };
   $('btnRestoreX').onclick=()=>{ bar.style.display='none'; };
 }
+/* ---------------- PROJECT LIBRARY (many named projects on-device) ----------------
+   Full docs live under 'proj:<id>' in the session store; a small 'projIndex'
+   array holds browse metadata so the list never has to decode buffers. The
+   'last' autosave slot is untouched — it remains the crash-recovery session. */
+let curProjId=null;
+function docKB(doc){ let n=0; (doc.buffers||[]).forEach(b=>b.ch.forEach(a=>n+=a.byteLength)); return Math.round(n/1024); }
+function projMeta(id,doc){ return { id, name:doc.name||'untitled', t:doc.t||Date.now(),
+  pads:S.pads.filter(p=>p.bufId>=0).length, kb:docKB(doc) }; }
+async function projIndexGet(){ try{ return (await idbGet('projIndex'))||[]; }catch(e){ return []; } }
+async function projIndexUpsert(meta){ let idx=await projIndexGet(); idx=idx.filter(x=>x.id!==meta.id); idx.unshift(meta); await idbPut('projIndex',idx); }
+async function projIndexRemove(id){ let idx=await projIndexGet(); idx=idx.filter(x=>x.id!==id); await idbPut('projIndex',idx); }
+async function projSaveNew(){
+  const id='p'+Date.now().toString(36)+Math.floor(Math.random()*1e3).toString(36);
+  const doc=snapshotSession(); doc.projId=id;
+  try{ await idbPut('proj:'+id,doc); await projIndexUpsert(projMeta(id,doc)); }
+  catch(e){ lcd('SAVE FAILED: '+(e&&e.message||'storage')); return; }
+  curProjId=id; await drawProjects(); lcd('SAVED “'+doc.name+'” to library'); plog('Project saved: '+doc.name);
+}
+async function projSave(){
+  if(!curProjId){ return projSaveNew(); }
+  const doc=snapshotSession(); doc.projId=curProjId;
+  try{ await idbPut('proj:'+curProjId,doc); await projIndexUpsert(projMeta(curProjId,doc)); }
+  catch(e){ lcd('SAVE FAILED: '+(e&&e.message||'storage')); return; }
+  await drawProjects(); lcd('UPDATED “'+doc.name+'”'); plog('Project updated: '+doc.name);
+}
+async function projLoad(id){
+  let doc=null; try{ doc=await idbGet('proj:'+id); }catch(e){}
+  if(!doc||!doc.pads){ lcd('PROJECT NOT FOUND.'); await projIndexRemove(id); await drawProjects(); return; }
+  try{
+    if(playing) stopSeq();
+    applySessionDoc(doc,docToBuffers(doc));
+    curProjId=id; $('projName').value=doc.name||'untitled';
+    await idbPut('last',snapshotSession());   // make the loaded project the active/crash-recovery session
+    await drawProjects();
+    lcd('LOADED “'+(doc.name||'untitled')+'”');
+  }catch(err){ lcd('LOAD FAILED: '+err.message); }
+}
+async function projDelete(id,name){
+  try{ await idbDelS(IDB_STORE,'proj:'+id); }catch(e){}
+  await projIndexRemove(id);
+  if(curProjId===id) curProjId=null;
+  await drawProjects(); lcd('DELETED “'+(name||'project')+'”');
+}
+async function projDuplicate(id){
+  let doc=null; try{ doc=await idbGet('proj:'+id); }catch(e){}
+  if(!doc) return;
+  const nid='p'+Date.now().toString(36)+Math.floor(Math.random()*1e3).toString(36);
+  doc.projId=nid; doc.name=((doc.name||'untitled')+' copy').slice(0,40); doc.t=Date.now();
+  try{ await idbPut('proj:'+nid,doc);
+    let idx=await projIndexGet(); idx=idx.filter(x=>x.id!==nid);
+    idx.unshift({id:nid,name:doc.name,t:doc.t,pads:(doc.pads||[]).filter(p=>p.bufId>=0).length,kb:docKB(doc)});
+    await idbPut('projIndex',idx);
+  }catch(e){ lcd('DUPLICATE FAILED: '+(e&&e.message||'storage')); return; }
+  await drawProjects(); lcd('DUPLICATED → “'+doc.name+'”');
+}
+function projNew(){
+  if(playing) stopSeq();
+  try{ panicVoices(); }catch(e){}
+  S.pads=Array.from({length:NPADS},(_,i)=>newPad(i));
+  S.patterns=Array.from({length:NPAT},()=>newPattern());
+  S.buffers=[]; S.trax=Array.from({length:NTRAX},()=>newTrack());
+  S.song=[]; S.songOn=false; S.chain=[]; S.chainOn=false; S.chainPos=0;
+  S.pattern=0; S.bank=0; S.editPad=0; S.seqPad=0;
+  S.scOn=false; workBuf=null; slices=[]; selSlice=-1;
+  Object.keys(warpOrig).forEach(k=>delete warpOrig[k]);
+  curProjId=null; $('projName').value='untitled';
+  reapplyLivePads(); scApplyRouting();
+  buildPads(); drawPads(); drawEdit(); drawSeq(); drawTrax(); drawSong(); drawMixer(); drawFader(); drawSidechain();
+  dirty(); lcd('NEW PROJECT · empty session');
+}
+async function drawProjects(){
+  const el=$('projList'); if(!el) return;
+  const idx=await projIndexGet();
+  idx.sort((a,b)=>b.t-a.t);
+  const totKb=idx.reduce((a,x)=>a+(x.kb||0),0);
+  $('projLibInfo').textContent = idx.length? ('· '+idx.length+' saved · '+(totKb>1024?(totKb/1024).toFixed(1)+'MB':totKb+'KB')) : '· none yet';
+  $('projCur').textContent = curProjId? '● in library' : '○ unsaved';
+  el.innerHTML='';
+  if(!idx.length){ el.innerHTML='<div style="font-size:11px;color:var(--txt-dim);padding:4px">No saved projects yet. Make a beat and tap SAVE AS NEW.</div>'; return; }
+  idx.forEach(m=>{
+    const row=document.createElement('div'); row.className='projrow'+(m.id===curProjId?' cur':'');
+    const main=document.createElement('div'); main.className='pjmain';
+    const nm=document.createElement('div'); nm.className='pjname'; nm.textContent=m.name||'untitled';
+    const meta=document.createElement('div'); meta.className='pjmeta';
+    meta.textContent=ageText(Date.now()-m.t)+' · '+(m.pads||0)+' pads · '+(m.kb>1024?(m.kb/1024).toFixed(1)+'MB':(m.kb||0)+'KB');
+    main.append(nm,meta);
+    const load=document.createElement('button'); load.textContent='LOAD'; load.className='on'; load.addEventListener('click',()=>projLoad(m.id));
+    const dup=document.createElement('button'); dup.textContent='DUP'; dup.addEventListener('click',()=>projDuplicate(m.id));
+    const del=document.createElement('button'); del.textContent='DEL'; del.addEventListener('click',()=>{ if(confirm('Delete “'+(m.name||'project')+'”? This cannot be undone.')) projDelete(m.id,m.name); });
+    row.append(main,load,dup,del); el.appendChild(row);
+  });
+}
+$('btnProjSave').addEventListener('click',projSave);
+$('btnProjSaveNew').addEventListener('click',projSaveNew);
+$('btnProjNew').addEventListener('click',()=>{ if(confirm('Start a new empty project? Save first if you want to keep the current one.')) projNew(); });
 function plog(s){ $('projlog').textContent=(new Date().toTimeString().slice(0,8))+'  '+s+'\n'+$('projlog').textContent; }
 
 /* ---------------- WAV bounce (OfflineAudioContext) ---------------- */
@@ -4896,7 +5023,7 @@ if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
   navigator.serviceWorker.register('./sw.js').catch(()=>{});   // offline shell — network-first, so updates land when online
 }
 document.body.addEventListener('touchstart',function once(){ ensureAudio(); document.body.removeEventListener('touchstart',once); },{passive:true});
-drawSong(); undoInit();
+drawSong(); undoInit(); drawProjects();
 lcd('READY · load a sample into a pad (SMPL tab).');
 offerRestore();
 
