@@ -45,6 +45,14 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 #lcdstrip{display:flex;gap:8px;align-items:center;padding:6px 10px;background:var(--lcd-bg);
   border-bottom:1px solid var(--line);color:var(--lcd);font-size:11px;min-height:32px}
 #lcdmsg{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#masterMeter{display:flex;align-items:center;gap:7px;padding:3px 10px 4px;background:var(--lcd-bg);border-bottom:1px solid var(--line)}
+#masterMeter .mlbl{font-size:8px;letter-spacing:2px;color:var(--lcd-dim)}
+#masterMeter .mcol{flex:1;display:flex;flex-direction:column;gap:2px}
+#masterMeter .mbar{position:relative;height:4px;background:#000;border-radius:2px;overflow:hidden}
+#masterMeter .mbar>div{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--green);
+  transition:width .04s linear,background .1s linear}
+#mClip{font-size:7px;letter-spacing:1px;color:#3a3a3a;font-weight:700;flex:none}
+#mClip.on{color:var(--red);text-shadow:0 0 6px var(--red)}
 #bpmbox{display:flex;align-items:center;gap:4px}
 #bpmbox button{width:30px;height:26px;padding:0;font-size:14px;background:transparent;border-color:var(--lcd-dim);color:var(--lcd)}
 #bpmval{min-width:52px;text-align:center;font-size:14px;font-weight:700}
@@ -165,6 +173,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       style="width:62px;text-align:center;font-size:14px;font-weight:700;background:transparent;border:none;color:var(--lcd)">
     <button id="bpmUp">+</button>
   </div>
+</div>
+
+<div id="masterMeter">
+  <span class="mlbl">OUT</span>
+  <div class="mcol">
+    <div class="mbar"><div id="mL"></div></div>
+    <div class="mbar"><div id="mR"></div></div>
+  </div>
+  <span id="mClip" title="output near ceiling — limiter working">CLIP</span>
 </div>
 
 <div id="restoreBar" style="display:none;align-items:center;gap:8px;padding:7px 10px;background:var(--panel2);border-bottom:1px solid var(--amber);font-size:11px">
@@ -869,8 +886,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      * Live status line + activity dot (flashes on every message);
        honest, actionable guidance on iOS/insecure-context instead of a
        dead-end "unavailable". Settings persist across sessions.
+   - R42: FEELS SOLID — always-on stereo master meter under the LCD
+     (L/R bars, green→amber→red by peak, CLIP indicator that lights when
+     the output nears the ceiling / the limiter is working). Meter taps
+     the limiter stage via channel-splitter + analysers and survives the
+     softclip re-routing. Pad hits are now velocity-reactive: harder hits
+     glow brighter/wider, live and under sequencer playback, so the grid
+     visibly breathes with the beat.
    ================================================================ */
-const BUILD = 'MVX-880 · R41 · 2026-07-14 · solid MIDI — hot-plug, BLE, chromatic';
+const BUILD = 'MVX-880 · R42 · 2026-07-14 · feels solid — master meter, live pads';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1032,6 +1056,13 @@ function buildGraph(ctx){
   g.master.connect(g.perfFilt); g.perfFilt.connect(g.perfGain); g.perfGain.connect(g.comp);
   g.comp.connect(g.limiter); g.limiter.connect(g.softclip);
   g.softclip.connect(ctx.destination);
+  // stereo master meter taps — from the limiter (the final-stage level, and a
+  // node that survives the softclip re-routing in ensureAudio/rebuildOut)
+  g.meterSplit=ctx.createChannelSplitter(2);
+  g.meterL=ctx.createAnalyser(); g.meterL.fftSize=1024;
+  g.meterR=ctx.createAnalyser(); g.meterR.fftSize=1024;
+  g.limiter.connect(g.meterSplit);
+  g.meterSplit.connect(g.meterL,0); g.meterSplit.connect(g.meterR,1);
   // reverb
   g.revIn = ctx.createGain();
   g.conv = ctx.createConvolver();
@@ -1221,8 +1252,32 @@ function ensureAudio(){
     const s=AC.createBufferSource(); s.buffer=b; s.connect(AC.destination); s.start(0);
   }catch(e){}
   if(AC.state!=='running') AC.resume();
+  startMeter();
   lcd('AUDIO ONLINE · '+Math.round(AC.sampleRate)+' Hz · state:'+AC.state);
 }
+
+/* ---------------- master level meter (feels-solid feedback) ---------------- */
+let meterRAF=0, mClipHold=0, _mbufL=null, _mbufR=null;
+function paintBar(el,rms,pk){
+  el.style.width=Math.min(100,Math.pow(rms,0.6)*128).toFixed(0)+'%';
+  el.style.background = pk>=0.9?'var(--red)':pk>=0.7?'var(--lcd)':'var(--green)';
+}
+function readAn(an,buf){
+  an.getFloatTimeDomainData(buf);
+  let pk=0,sum=0; for(let i=0;i<buf.length;i++){ const a=Math.abs(buf[i]); if(a>pk)pk=a; sum+=buf[i]*buf[i]; }
+  return {rms:Math.sqrt(sum/buf.length),pk};
+}
+function meterLoop(){
+  meterRAF=requestAnimationFrame(meterLoop);
+  if(!LIVE||!LIVE.meterL||document.hidden) return;
+  if(!_mbufL||_mbufL.length!==LIVE.meterL.fftSize){ _mbufL=new Float32Array(LIVE.meterL.fftSize); _mbufR=new Float32Array(LIVE.meterR.fftSize); }
+  const l=readAn(LIVE.meterL,_mbufL), r=readAn(LIVE.meterR,_mbufR);
+  paintBar($('mL'),l.rms,l.pk); paintBar($('mR'),r.rms,r.pk);
+  const pk=Math.max(l.pk,r.pk), now=performance.now();
+  if(pk>=0.895) mClipHold=now;
+  $('mClip').classList.toggle('on', now-mClipHold<800);
+}
+function startMeter(){ if(!meterRAF) meterRAF=requestAnimationFrame(meterLoop); }
 
 /* surface runtime errors on-device — no console on iPhone */
 window.onerror=function(msg,src,line){ lcd('ERR: '+msg+' @'+line); try{plog('ERR: '+msg+' line '+line);}catch(e){} };
@@ -1247,7 +1302,7 @@ function hitLive(idx, vel, pitchOff){
   ensureAudio();
   const a=triggerPad(AC, LIVE, idx, vel, AC.currentTime, chokeLive, pitchOff||0);
   if(a) activeEnv[idx]=a;
-  flashPad(idx);
+  flashPad(idx,vel);
   if(S.liveRec && playing){
     const sd=stepDur(), pat=S.patterns[S.pattern], L=trackLen(pat,idx);
     const pos=((curAbsStep%L) + (AC.currentTime-lastStepTime)/sd) % L;
@@ -1300,10 +1355,13 @@ function drawPads(){
     el.querySelector('.pname').textContent=p.name||'';
   }
 }
-function flashPad(idx){
+function flashPad(idx,vel){
   if(Math.floor(idx/16)!==S.bank) return;
   const el=padEls[idx%16]; el.classList.add('hit');
-  setTimeout(()=>el.classList.remove('hit'),90);
+  const v=vel==null?0.9:clamp(vel,0.1,1);
+  el.style.boxShadow='0 0 '+(3+v*15).toFixed(0)+'px rgba(255,140,46,'+(0.35+v*0.55).toFixed(2)+')';
+  clearTimeout(el._hitT);
+  el._hitT=setTimeout(()=>{ el.classList.remove('hit'); el.style.boxShadow=''; },100);
 }
 
 /* edit panel */
@@ -2337,15 +2395,16 @@ function schedStep(barStep, absStep, t){
     const rat=(lk&&lk.rat>1)?lk.rat:1;                           // ratchet / roll
     if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, v, when+r*rd, chokeLive, pitchOff); }
     else triggerPad(AC, LIVE, p, v, when, chokeLive, pitchOff);
-    fired.push(p);
+    fired.push({p,v});
   }
   const delay=Math.max(0,(t-AC.currentTime)*1000);
   setTimeout(()=>{ markStep(absStep); flashFired(fired); },delay);
 }
 function flashFired(fired){ // visual proof a row actually triggered
   const btns=document.querySelectorAll('#seqpadstrip button');
-  fired.forEach(p=>{
-    flashPad(p);
+  fired.forEach(f=>{
+    const p=f.p, v=f.v;
+    flashPad(p,v);
     if(Math.floor(p/16)!==S.bank) return;
     const b=btns[p%16]; if(!b) return;
     b.classList.add('hit'); setTimeout(()=>b.classList.remove('hit'),80);
