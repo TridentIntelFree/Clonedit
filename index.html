@@ -245,6 +245,28 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <div class="pslider"><span class="lbl">RESO</span><input type="range" id="epFRes" min="0.5" max="18" step="0.1"><span class="val" id="epFResV"></span></div>
     <div class="pslider"><span class="lbl">DRIVE</span><input type="range" id="epDrv" min="0" max="1" step="0.01"><span class="val" id="epDrvV"></span></div>
     <div class="pslider"><span class="lbl">CRUSH</span><input type="range" id="epCrush" min="4" max="16" step="1"><span class="val" id="epCrushV"></span></div>
+    <h3>LFO <span style="color:var(--txt-dim);letter-spacing:0">— continuous modulation (bakes into bounce)</span></h3>
+    <div class="row">
+      <button id="epLfoOn">LFO OFF</button>
+      <span class="lbl">TARGET</span>
+      <select id="epLfoTgt"><option value="cutoff">CUTOFF</option><option value="pan">PAN</option><option value="vol">VOLUME</option></select>
+      <select id="epLfoShape"><option value="sine">SINE</option><option value="triangle">TRI</option><option value="sawtooth">SAW</option><option value="square">SQR</option></select>
+    </div>
+    <div class="row">
+      <span class="lbl">RATE</span>
+      <select id="epLfoSync"><option value="free">FREE</option><option value="1/1">1 BAR</option><option value="1/2">1/2</option><option value="1/4">1/4</option><option value="1/8">1/8</option><option value="1/16">1/16</option></select>
+      <input type="range" id="epLfoRate" min="0.05" max="12" step="0.05" style="flex:1"><span class="val" id="epLfoRateV"></span>
+    </div>
+    <div class="pslider"><span class="lbl">DEPTH</span><input type="range" id="epLfoDepth" min="0" max="1" step="0.01"><span class="val" id="epLfoDepthV"></span></div>
+    <div style="font-size:10px;color:var(--txt-dim);margin-top:2px">CUTOFF LFO needs the FILTER set (not OFF).</div>
+    <h3>WARP <span style="color:var(--txt-dim);letter-spacing:0">— pitch-preserving time-stretch to the grid</span></h3>
+    <div class="row">
+      <span class="lbl">BEATS</span>
+      <select id="epWarpBeats"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>6</option><option>8</option><option>16</option></select>
+      <button id="epWarp" class="grow">WARP &#8594; FIT TEMPO</button>
+      <button id="epWarpReset">RESET</button>
+    </div>
+    <div id="epWarpInfo" style="font-size:10px;color:var(--lcd);margin-top:2px">—</div>
   </div>
 </div>
 
@@ -893,8 +915,17 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      softclip re-routing. Pad hits are now velocity-reactive: harder hits
      glow brighter/wider, live and under sequencer playback, so the grid
      visibly breathes with the beat.
+   - R43: SOUNDS PRO — deeper per-pad engine.
+     * Per-pad LFO: one oscillator per pad channel routed to CUTOFF (via
+       filter detune, musical log sweep), PAN, or VOLUME (tremolo).
+       Sine/tri/saw/square, free-Hz or tempo-synced (1 bar…1/16) rate that
+       follows BPM, depth control. Bakes into the bounce.
+     * WARP: pitch-preserving granular (Hann-windowed overlap-add) time-
+       stretch that fits a sample to N beats at the current tempo, so
+       loops lock to the grid. RESET restores the pristine original
+       (kept in memory to avoid compounding). Both live in PADS → EDIT.
    ================================================================ */
-const BUILD = 'MVX-880 · R42 · 2026-07-14 · feels solid — master meter, live pads';
+const BUILD = 'MVX-880 · R43 · 2026-07-14 · sounds pro — per-pad LFO + warp';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -908,7 +939,9 @@ const NPADS = 64, NSTEPS = 16, NPAT = 8;
 function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   gain:0.9, pitch:0, fine:0, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
   choke:0, note:36+i, reverse:false, mode:'one',
-  ftype:'off', fcut:1, fres:0.9, drv:0, crush:16 }; }
+  ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
+  lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
+  warpBeats:4 }; }
 function newPattern(){ const s=[]; for(let p=0;p<NPADS;p++) s.push(new Array(NSTEPS).fill(0)); return { steps:s, bpm:null, len:new Array(NPADS).fill(NSTEPS), locks:{} }; }
 function trackLen(pat,p){ return (pat.len&&pat.len[p])||NSTEPS; }
 function stepLock(pat,p,st){ return pat.locks&&pat.locks[p+':'+st]; }
@@ -1034,6 +1067,28 @@ function applyPadFx(n, p, ctx){
   if(p.ftype==='off'){ n.flt.type='peaking'; n.flt.gain.value=0; n.flt.frequency.value=1000; n.flt.Q.value=0.5; }
   else{ n.flt.type=p.ftype; n.flt.gain.value=0; n.flt.frequency.value=cutHz(p.fcut); n.flt.Q.value=p.fres; }
 }
+const LFO_BEATS={'1/1':4,'1/2':2,'1/4':1,'1/8':0.5,'1/16':0.25};
+function lfoHz(p){
+  if(p.lfoSync && p.lfoSync!=='free'){ const beats=LFO_BEATS[p.lfoSync]||1; return 1/(beats*(60/S.bpm)); }
+  return clamp(p.lfoRate||2,0.02,40);
+}
+function applyPadLfo(n, p, ctx){
+  if(!n||!n.lfoAmp) return;
+  const t=ctx?ctx.currentTime:0;
+  try{ n.lfoAmp.disconnect(); }catch(e){}
+  if(!p.lfoOn){ try{ n.lfoAmp.gain.setValueAtTime(0,t); }catch(e){} return; }
+  try{ n.lfoOsc.type=p.lfoShape||'sine'; }catch(e){}
+  try{ n.lfoOsc.frequency.value=lfoHz(p); }catch(e){}   // direct set — control-rate LFO, no click, getter stays truthful
+  const d=clamp(p.lfoDepth||0,0,1);
+  if(p.lfoTgt==='pan' && n.pan){ n.lfoAmp.gain.value=d; n.lfoAmp.connect(n.pan.pan); }
+  else if(p.lfoTgt==='vol'){ n.lfoAmp.gain.value=d*0.6; n.lfoAmp.connect(n.ch.gain); }
+  else { n.lfoAmp.gain.value=d*2400; n.lfoAmp.connect(n.flt.detune); }   // cutoff via detune (cents) — musical, log sweep
+}
+function refreshLfoRates(){   // synced LFOs follow tempo changes
+  if(!LIVE||!LIVE.pads) return;
+  for(let i=0;i<NPADS;i++){ const p=S.pads[i], n=LIVE.pads[i];
+    if(p.lfoOn && p.lfoSync!=='free' && n&&n.lfoOsc){ try{ n.lfoOsc.frequency.value=lfoHz(p); }catch(e){} } }
+}
 
 function buildGraph(ctx){
   const g={};
@@ -1099,8 +1154,12 @@ function buildGraph(ctx){
     tail.connect(dryDir); dryDir.connect(g.master);
     tail.connect(rev); tail.connect(dly);
     rev.connect(g.revIn); dly.connect(g.dlyIn);
-    const node={in:drv,drv,crush,flt,ch,pan,rev,dly,dryDuck,dryDir};
+    // per-pad LFO — one oscillator + depth gain, routed to the chosen param
+    const lfoOsc=ctx.createOscillator(), lfoAmp=ctx.createGain(); lfoAmp.gain.value=0;
+    lfoOsc.connect(lfoAmp); try{ lfoOsc.start(); }catch(e){}
+    const node={in:drv,drv,crush,flt,ch,pan,rev,dly,dryDuck,dryDir,lfoOsc,lfoAmp};
     applyPadFx(node,p,ctx);
+    applyPadLfo(node,p,ctx);
     g.pads.push(node);
   }
   return g;
@@ -1387,6 +1446,13 @@ function drawEdit(){
   $('epFRes').value=p.fres; $('epFResV').textContent='Q '+p.fres.toFixed(1);
   $('epDrv').value=p.drv; $('epDrvV').textContent=Math.round(p.drv*100)+'%';
   $('epCrush').value=p.crush; $('epCrushV').textContent=p.crush>=16?'OFF':p.crush+' bit';
+  $('epLfoOn').textContent=p.lfoOn?'LFO ON':'LFO OFF'; $('epLfoOn').classList.toggle('on',!!p.lfoOn);
+  $('epLfoTgt').value=p.lfoTgt||'cutoff'; $('epLfoShape').value=p.lfoShape||'sine'; $('epLfoSync').value=p.lfoSync||'free';
+  $('epLfoRate').value=p.lfoRate||2; $('epLfoRateV').textContent=(p.lfoSync&&p.lfoSync!=='free')?p.lfoSync:(p.lfoRate||2).toFixed(2)+'Hz';
+  $('epLfoRate').disabled=(p.lfoSync&&p.lfoSync!=='free');
+  $('epLfoDepth').value=p.lfoDepth||0; $('epLfoDepthV').textContent=Math.round((p.lfoDepth||0)*100)+'%';
+  $('epWarpBeats').value=String(p.warpBeats||4);
+  $('epWarpInfo').textContent = p.bufId>=0 ? (S.buffers[p.bufId].duration.toFixed(2)+'s'+(p.warped?(' · WARPED to '+p.warpBeats+' beats @ '+S.bpm.toFixed(1)):'')) : 'load a sample first';
   $('smTarget').textContent=padName(S.editPad);
   $('seqPadName').textContent=padName(S.seqPad);
   $('mxPad').textContent=padName(S.editPad);
@@ -1431,6 +1497,70 @@ $('epDrv').addEventListener('change',trigSel);
 $('epCrush').addEventListener('input',e=>{ S.pads[S.editPad].crush=parseInt(e.target.value,10); liveFx(); });
 $('epCrush').addEventListener('change',trigSel);
 
+/* ---- per-pad LFO ---- */
+function liveLfo(){ const p=S.pads[S.editPad]; if(LIVE) applyPadLfo(LIVE.pads[S.editPad],p,AC); drawEdit(); dirty(); }
+$('epLfoOn').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.lfoOn=!p.lfoOn; liveLfo(); lcd(p.lfoOn?'LFO ON · '+(p.lfoTgt).toUpperCase():'LFO OFF'); });
+$('epLfoTgt').addEventListener('change',e=>{ S.pads[S.editPad].lfoTgt=e.target.value; liveLfo(); });
+$('epLfoShape').addEventListener('change',e=>{ S.pads[S.editPad].lfoShape=e.target.value; liveLfo(); });
+$('epLfoSync').addEventListener('change',e=>{ S.pads[S.editPad].lfoSync=e.target.value; liveLfo(); });
+$('epLfoRate').addEventListener('input',e=>{ S.pads[S.editPad].lfoRate=parseFloat(e.target.value); liveLfo(); });
+$('epLfoDepth').addEventListener('input',e=>{ S.pads[S.editPad].lfoDepth=parseFloat(e.target.value); liveLfo(); });
+
+/* ---- WARP: pitch-preserving granular time-stretch to fit N beats @ tempo ---- */
+function timeStretch(buf, ratio){   // ratio = outDur/inDur (>1 slower/longer, pitch preserved)
+  const sr=buf.sampleRate, nCh=buf.numberOfChannels;
+  const inLen=buf.length, outLen=Math.max(1,Math.round(inLen*ratio));
+  const grain=Math.max(256,Math.round(sr*0.08));      // ~80ms grains
+  const hopOut=Math.floor(grain/2), hopIn=Math.max(1,Math.round(hopOut/ratio));
+  const win=new Float32Array(grain);
+  for(let i=0;i<grain;i++) win[i]=0.5-0.5*Math.cos(2*Math.PI*i/(grain-1));   // Hann
+  const out=mkAudioBuf(outLen,sr,nCh);
+  for(let c=0;c<nCh;c++){
+    const din=buf.getChannelData(c), dout=out.getChannelData(c);
+    const norm=new Float32Array(outLen);
+    let inPos=0, outPos=0;
+    while(outPos<outLen){
+      const i0=Math.floor(inPos);
+      for(let k=0;k<grain;k++){
+        const si=i0+k; if(si>=inLen) break;
+        const oi=outPos+k; if(oi>=outLen) break;
+        dout[oi]+=din[si]*win[k]; norm[oi]+=win[k];
+      }
+      inPos+=hopIn; outPos+=hopOut;
+    }
+    for(let i=0;i<outLen;i++) if(norm[i]>1e-4) dout[i]/=norm[i];
+  }
+  return out;
+}
+const warpOrig={};   // padIdx -> pristine pre-warp AudioBuffer (session-only, avoids compounding)
+$('epWarpBeats').addEventListener('change',e=>{ S.pads[S.editPad].warpBeats=parseInt(e.target.value,10); dirty(); });
+$('epWarp').addEventListener('click',()=>{
+  const i=S.editPad, p=S.pads[i];
+  if(p.bufId<0){ lcd('WARP: load a sample onto this pad first.'); return; }
+  ensureAudio();
+  const src = warpOrig[i] || S.buffers[p.bufId];
+  if(!warpOrig[i]) warpOrig[i]=src;
+  const beats=p.warpBeats||4, targetDur=beats*(60/S.bpm), ratio=targetDur/src.duration;
+  if(!isFinite(ratio)||ratio<=0){ lcd('WARP: bad ratio.'); return; }
+  try{ stopPadVoices(i); }catch(e){}
+  lcd('WARPING '+src.duration.toFixed(2)+'s → '+targetDur.toFixed(2)+'s ('+beats+' beats @ '+S.bpm.toFixed(1)+') …');
+  const out=timeStretch(src,ratio);
+  S.buffers.push(out); p.bufId=S.buffers.length-1; p.start=0; p.end=1; p.pitch=0; p.fine=0; p.warped=true;
+  workBuf=out; slices=[]; selSlice=-1;
+  drawPads(); drawEdit(); drawWave(); dirty();
+  hitLive(i,0.9);
+  lcd('WARPED · '+targetDur.toFixed(2)+'s locks to '+beats+' beats @ '+S.bpm.toFixed(1));
+});
+$('epWarpReset').addEventListener('click',()=>{
+  const i=S.editPad, p=S.pads[i];
+  if(!warpOrig[i]){ lcd('WARP: nothing to reset.'); return; }
+  try{ stopPadVoices(i); }catch(e){}
+  S.buffers.push(warpOrig[i]); p.bufId=S.buffers.length-1; p.start=0; p.end=1; p.warped=false;
+  workBuf=warpOrig[i]; slices=[]; selSlice=-1;
+  delete warpOrig[i];
+  drawPads(); drawEdit(); drawWave(); dirty(); lcd('WARP RESET · original restored');
+});
+
 /* ---------------- MIX view ---------------- */
 function bindMix(id, get, set, fmt){
   const el=$(id), vel=$(id+'V');
@@ -1461,7 +1591,7 @@ $('mxPadRev').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.rev=par
 $('mxPadDly').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.dly=parseFloat(e.target.value); dirty();
   $('mxPadDlyV').textContent=p.dly.toFixed(2);
   if(LIVE) LIVE.pads[S.editPad].dly.gain.setTargetAtTime(p.dly,AC.currentTime,0.01); });
-$('epClear').addEventListener('click',()=>{ const i=S.editPad; stopPadVoices(i); S.pads[i]=newPad(i); drawPads(); drawEdit(); dirty(); lcd('PAD '+padName(i)+' CLEARED'); });
+$('epClear').addEventListener('click',()=>{ const i=S.editPad; stopPadVoices(i); S.pads[i]=newPad(i); delete warpOrig[i]; drawPads(); drawEdit(); dirty(); lcd('PAD '+padName(i)+' CLEARED'); });
 /* ---- sidechain UI ---- */
 function drawSidechain(){
   const sel=$('mxScTrig');
@@ -1537,7 +1667,8 @@ function loadIntoTarget(buf,name){
   S.buffers.push(buf);
   const bid=S.buffers.length-1;
   const p=S.pads[S.editPad];
-  p.bufId=bid; p.start=0; p.end=1; p.name=name.slice(0,14);
+  p.bufId=bid; p.start=0; p.end=1; p.name=name.slice(0,14); p.warped=false;
+  delete warpOrig[S.editPad];   // new sample → drop any stale pre-warp original
   drawPads(); drawEdit(); drawWave(); dirty();
   lcd('LOADED → '+padName(S.editPad)+' · '+buf.duration.toFixed(2)+'s');
 }
@@ -2208,7 +2339,8 @@ function assignBufToPad(idx,buf,name){
   try{ stopPadVoices(idx); }catch(e){}
   S.buffers.push(buf); const bid=S.buffers.length-1;
   const p=S.pads[idx];
-  p.bufId=bid; p.start=0; p.end=1; p.pitch=0; p.fine=0; p.reverse=false; p.mode='one';
+  p.bufId=bid; p.start=0; p.end=1; p.pitch=0; p.fine=0; p.reverse=false; p.mode='one'; p.warped=false;
+  delete warpOrig[idx];
   p.name=(name||'').slice(0,14);
   return bid;
 }
@@ -2471,6 +2603,7 @@ function setBpm(b){ S.bpm=clamp(b,40,240);
   $('bpmval').value=S.bpm.toFixed(1);
   $('djBpm').value=S.bpm; $('djBpmV').textContent=S.bpm.toFixed(1);
   liveDelaySync();
+  refreshLfoRates();
   dirty(); }
 $('bpmUp').addEventListener('click',()=>setBpm(S.bpm+1));
 $('bpmDown').addEventListener('click',()=>setBpm(S.bpm-1));
@@ -2676,7 +2809,7 @@ $('tfxDly').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.dly=par
 $('tfxPad').addEventListener('click',()=>{
   const tr=S.trax[traxFxSel];
   if(tr.bufId<0){ lcd('TRACK '+(traxFxSel+1)+' IS EMPTY.'); return; }
-  const p=S.pads[S.editPad]; p.bufId=tr.bufId; p.start=0; p.end=1; p.name=(tr.name||'take').slice(0,14);
+  const p=S.pads[S.editPad]; p.bufId=tr.bufId; p.start=0; p.end=1; p.name=(tr.name||'take').slice(0,14); p.warped=false; delete warpOrig[S.editPad];
   drawPads(); drawEdit(); dirty(); lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad));
 });
 $('tfxClr').addEventListener('click',()=>{
@@ -4146,7 +4279,7 @@ function applySessionDoc(doc, bufs){
   $('midiRoot').value=String(S.midiRoot); $('btnChrom').classList.toggle('on',S.midiChrom);
   if(AC){ // re-apply pad channel params to live graph
     for(let i=0;i<NPADS;i++){ const p=S.pads[i], n=LIVE.pads[i];
-      hardSet(n.ch.gain,p.gain); if(n.pan)hardSet(n.pan.pan,p.pan); hardSet(n.rev.gain,p.rev); hardSet(n.dly.gain,p.dly); applyPadFx(n,p,AC); }
+      hardSet(n.ch.gain,p.gain); if(n.pan)hardSet(n.pan.pan,p.pan); hardSet(n.rev.gain,p.rev); hardSet(n.dly.gain,p.dly); applyPadFx(n,p,AC); applyPadLfo(n,p,AC); }
     hardSet(LIVE.master.gain,S.masterVol);
     hardSet(LIVE.revRet.gain,S.revLvl); LIVE.conv.buffer=makeIR(AC,S.revSize,S.revType);
     hardSet(LIVE.comp.threshold,compThresh());
