@@ -829,8 +829,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      FX → TO PAD, the previously-buried flow). Added a favicon link to
      stop the /favicon.ico 404. Full smoke test across all tabs/flows
      passes with zero JS errors.
+   - R39: sounding samples now stop when you'd expect. STOP silences
+     every sounding pad voice (panicVoices) so a long one-shot no longer
+     rings out after you stop; CLR ROW cuts that track's voices, CLR PTN
+     and pad CLEAR / sample-replace cut their voices too (stopPadVoices).
+     Previously a long sample kept playing its full length after the
+     step/pad was removed.
    ================================================================ */
-const BUILD = 'MVX-880 · R38 · 2026-07-14 · per-tab help + cleanup';
+const BUILD = 'MVX-880 · R39 · 2026-07-14 · STOP/clear cut sounding voices';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1135,6 +1141,12 @@ function padRelease(idx){ // gate mode: note-off on touch release (live only)
   }catch(e){}
   delete activeEnv[idx];
 }
+function stopPadVoices(idx){ // cut every sounding voice on a pad NOW (clear / replace = instant silence)
+  if(!AC || !LIVE || !LIVE.pads[idx]) return;
+  const t=AC.currentTime, act=LIVE.pads[idx].act;
+  if(act){ act.forEach(v=>{ try{ v.env.gain.cancelScheduledValues(t); v.env.gain.setTargetAtTime(0,t,0.008); v.src.stop(t+0.04); }catch(e){} }); act.length=0; }
+  if(activeEnv[idx]) delete activeEnv[idx];
+}
 
 function ensureAudio(){
   if(AC) { resumeSession(); return; }
@@ -1356,7 +1368,7 @@ $('mxPadRev').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.rev=par
 $('mxPadDly').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.dly=parseFloat(e.target.value); dirty();
   $('mxPadDlyV').textContent=p.dly.toFixed(2);
   if(LIVE) LIVE.pads[S.editPad].dly.gain.setTargetAtTime(p.dly,AC.currentTime,0.01); });
-$('epClear').addEventListener('click',()=>{ const i=S.editPad; S.pads[i]=newPad(i); drawPads(); drawEdit(); dirty(); lcd('PAD '+padName(i)+' CLEARED'); });
+$('epClear').addEventListener('click',()=>{ const i=S.editPad; stopPadVoices(i); S.pads[i]=newPad(i); drawPads(); drawEdit(); dirty(); lcd('PAD '+padName(i)+' CLEARED'); });
 /* ---- sidechain UI ---- */
 function drawSidechain(){
   const sel=$('mxScTrig');
@@ -1427,6 +1439,7 @@ $('fileIn').addEventListener('change',async e=>{
 });
 
 function loadIntoTarget(buf,name){
+  try{ stopPadVoices(S.editPad); }catch(e){}
   workBuf=buf; slices=[]; selSlice=-1;
   S.buffers.push(buf);
   const bid=S.buffers.length-1;
@@ -2221,10 +2234,19 @@ function startSeq(){
   $('btnPlay').classList.add('on');
   lcd('PLAY · PTN '+(S.pattern+1)+(S.extClk?' · EXT CLK':''));
 }
+function panicVoices(){ // silence every sounding pad voice immediately (short click-free fade)
+  if(!AC||!LIVE) return;
+  const t=AC.currentTime;
+  for(let i=0;i<NPADS;i++){ const act=LIVE.pads[i]&&LIVE.pads[i].act;
+    if(act){ act.forEach(v=>{ try{ v.env.gain.cancelScheduledValues(t); v.env.gain.setTargetAtTime(0,t,0.012); v.src.stop(t+0.06); }catch(e){} }); act.length=0; } }
+  Object.keys(activeEnv).forEach(k=>delete activeEnv[k]);
+  Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
+}
 function stopSeq(){
   playing=false; clearInterval(seqTimer);
   stopTraxVoices();
   if(traxCap) traxCommit();
+  panicVoices();                 // STOP silences sounding samples (long one-shots don't ring on)
   $('btnPlay').classList.remove('on');
   document.querySelectorAll('#stepgrid .step').forEach(el=>el.classList.remove('cur'));
   lcd('STOP.');
@@ -3273,7 +3295,7 @@ $('btnSolo').addEventListener('click',()=>{
   seqSolo=!seqSolo; $('btnSolo').classList.toggle('on',seqSolo);
   lcd(seqSolo?'SOLO: only '+padName(S.seqPad)+' plays — tap SOLO again to unmute all':'SOLO OFF — all tracks play');
 });
-$('btnRowClr').addEventListener('click',()=>{ const pat=S.patterns[S.pattern]; pat.steps[S.seqPad].fill(0); for(let i=0;i<NSTEPS;i++) delete pat.locks[S.seqPad+':'+i]; drawSteps(); drawStepLock(); dirty(); });
+$('btnRowClr').addEventListener('click',()=>{ const pat=S.patterns[S.pattern]; stopPadVoices(S.seqPad); pat.steps[S.seqPad].fill(0); for(let i=0;i<NSTEPS;i++) delete pat.locks[S.seqPad+':'+i]; drawSteps(); drawStepLock(); dirty(); });
 $('btnPtnBpm').addEventListener('click',()=>{
   S.ptnBpm=!S.ptnBpm; dirty();
   $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
@@ -3282,7 +3304,7 @@ $('btnPtnBpm').addEventListener('click',()=>{
     lcd('PTN TEMPO ON · PTN '+(S.pattern+1)+' @ '+S.bpm.toFixed(1)+' BPM');
   }else lcd('PTN TEMPO OFF · global BPM');
 });
-$('btnPatClr').addEventListener('click',()=>{ S.patterns[S.pattern]=newPattern(); drawSteps(); dirty(); lcd('PTN '+(S.pattern+1)+' CLEARED'); });
+$('btnPatClr').addEventListener('click',()=>{ panicVoices(); S.patterns[S.pattern]=newPattern(); drawSteps(); dirty(); lcd('PTN '+(S.pattern+1)+' CLEARED'); });
 
 /* ---------------- AUTOMATION — record macro moves into the pattern ---------------- */
 let autoArmed=false, autoRAF=0; const autoTouch={};
