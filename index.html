@@ -989,8 +989,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      and whether storage is KEPT (persisted). Bar goes green→amber→red as
      the quota fills; KEEP OFFLINE requests persistent storage so iOS
      won’t evict your beats. Refreshes on every save/load/delete.
+   - R47: GHOST-PAD fixes. (1) Toggling a step OFF while playing now cuts
+     that pad's still-ringing voice — a long sample no longer keeps
+     sounding after you remove its step. (2) CLEAR-ing a pad now also
+     removes its steps + locks from EVERY pattern, so a cleared sound
+     leaves nothing behind on the sequencer that could re-trigger. Both
+     are undoable.
    ================================================================ */
-const BUILD = 'MVX-880 · R46 · 2026-07-14 · project storage meter';
+const BUILD = 'MVX-880 · R47 · 2026-07-14 · ghost-pad fixes (step-off + clear)';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1672,7 +1678,10 @@ $('mxPadRev').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.rev=par
 $('mxPadDly').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.dly=parseFloat(e.target.value); dirty();
   $('mxPadDlyV').textContent=p.dly.toFixed(2);
   if(LIVE) LIVE.pads[S.editPad].dly.gain.setTargetAtTime(p.dly,AC.currentTime,0.01); });
-$('epClear').addEventListener('click',()=>{ const i=S.editPad; stopPadVoices(i); S.pads[i]=newPad(i); delete warpOrig[i]; drawPads(); drawEdit(); drawMixer(); dirty(); lcd('PAD '+padName(i)+' CLEARED'); });
+$('epClear').addEventListener('click',()=>{ const i=S.editPad; stopPadVoices(i); S.pads[i]=newPad(i); delete warpOrig[i];
+  // remove the pad from the sequencer entirely — clearing a sound must leave no ghost steps/locks that keep triggering
+  S.patterns.forEach(pt=>{ if(pt.steps[i]) pt.steps[i].fill(0); if(pt.locks) for(let s=0;s<NSTEPS;s++) delete pt.locks[i+':'+s]; });
+  drawPads(); drawEdit(); drawMixer(); drawSeq(); drawSteps(); dirty(); lcd('PAD '+padName(i)+' CLEARED · removed from all patterns'); });
 
 /* ---------------- per-pad channel MIXER ---------------- */
 let mixMeters=[];   // [{idx, fill}] for the meter loop (idx=-1 => master)
@@ -3733,7 +3742,12 @@ function drawSteps(){
     if(seqLockMode && i===seqSelStep) el.classList.add('selstep');
     el.addEventListener('click',()=>{
       if(seqLockMode){ seqSelStep=i; drawSteps(); drawStepLock(); }
-      else { row[i]=row[i]>0?0:parseFloat($('stepVel').value); drawSteps(); dirty(); }
+      else {
+        const wasOn=row[i]>0;
+        row[i]=wasOn?0:parseFloat($('stepVel').value);
+        if(wasOn && playing) stopPadVoices(S.seqPad);   // removing a step cuts its still-ringing voice — no ghost
+        drawSteps(); dirty();
+      }
     });
     gr.appendChild(el);
   }
