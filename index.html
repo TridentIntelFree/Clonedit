@@ -603,14 +603,23 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 
 <!-- MIDI -->
 <div class="view" id="v-midi">
-  <div class="hint"><b>ENABLE MIDI</b>, pick an <b>INPUT</b>. Notes trigger pads &mdash; map them with <b>LEARN</b> (PADS &#8594; EDIT &#8594; LEARN) or MAP 36&#8594;99. <b>CC LEARN</b> assigns a controller knob to a target.</div>
-  <div class="row"><button id="btnMidiOn" class="grow">ENABLE MIDI</button></div>
-  <div class="row"><span class="lbl">INPUT</span><select id="midiIn" class="grow"><option>—</option></select></div>
+  <div class="hint"><b>Turn an old phone into a MIDI sound module.</b> Tap <b>ENABLE MIDI</b>, plug a controller in (USB-OTG or Bluetooth), and play. Notes trigger mapped pads; turn on <b>CHROMATIC</b> to play the selected pad melodically across the keyboard with zero setup.</div>
+  <div class="row" style="align-items:center;gap:8px">
+    <span id="midiDot" style="width:12px;height:12px;border-radius:50%;background:#444;flex:none;box-shadow:0 0 0 1px #000 inset"></span>
+    <span id="midiStat" style="font-size:11px;color:var(--lcd);flex:1">MIDI OFF — tap ENABLE MIDI</span>
+  </div>
+  <div class="row"><button id="btnMidiOn" class="grow">ENABLE MIDI</button><button id="btnMidiBle">+ BLUETOOTH</button></div>
+  <div class="row"><span class="lbl">INPUT</span><select id="midiIn" class="grow"><option value="*">ALL INPUTS</option></select></div>
   <div class="row">
     <span class="lbl">CHAN</span>
     <select id="midiCh"><option value="-1">OMNI</option></select>
     <span class="lbl">VCURVE</span>
     <select id="vcurve"><option value="linear">LINEAR</option><option value="soft">SOFT</option><option value="hard">HARD</option><option value="fixed">FIXED</option></select>
+  </div>
+  <div class="row">
+    <button id="btnChrom">CHROMATIC PLAY</button>
+    <span class="lbl">ROOT</span>
+    <select id="midiRoot"></select>
   </div>
   <div class="row">
     <button id="btnExtClk">EXT CLOCK (24 PPQN)</button>
@@ -847,8 +856,21 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      groove (TRAP / HOUSE / BOOM-BAP / LO-FI / TECHNO / AMBIENT), setting
      BPM + swing to match. First launch with no saved session now boots
      straight into a playable TRAP demo instead of an empty grid.
+   - R41: SOLID MIDI — turn an old phone into a MIDI sound module.
+     * Hot-plug: onstatechange rebuilds the input list live; ALL INPUTS
+       mode (default) listens to every controller so plugging in "just
+       works" — no re-enable, no picking.
+     * Bluetooth MIDI (Web Bluetooth, Android/desktop): + BLUETOOTH pairs
+       a BLE-MIDI controller; a running-status BLE-MIDI parser feeds the
+       same note/CC/clock path. A real route on phones with no USB-OTG.
+     * CHROMATIC PLAY: the whole keyboard plays the SELECTED pad,
+       transposed from a ROOT note — any loaded sample becomes a playable
+       instrument with zero mapping.
+     * Live status line + activity dot (flashes on every message);
+       honest, actionable guidance on iOS/insecure-context instead of a
+       dead-end "unavailable". Settings persist across sessions.
    ================================================================ */
-const BUILD = 'MVX-880 · R40 · 2026-07-14 · opens alive — drums, KITS, demo';
+const BUILD = 'MVX-880 · R41 · 2026-07-14 · solid MIDI — hot-plug, BLE, chromatic';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -877,6 +899,7 @@ const S = {
   revLvl: 0.9, revSize: 3.0, revType: 'hall', delayDiv: 0.375, dlyTone: 5200, dlyMode: 'digital', compAmt: 0.4,
   chain: [], chainOn: false, chainPos: 0,
   vcurve: 'linear', midiCh: -1, extClk: false, pcPat: true,
+  midiChrom: false, midiRoot: 60, midiIn: '*',
   ccMaps: {},             // ccNum -> target string
   edit:false, liveRec:false, ptnBpm:false,
   scOn:false, scTrig:0, scDepth:0.6, scRel:0.25,
@@ -1220,9 +1243,9 @@ document.getElementById('logo').addEventListener('click',()=>{
   lcd('TEST TONE · state:'+AC.state);
 });
 
-function hitLive(idx, vel){
+function hitLive(idx, vel, pitchOff){
   ensureAudio();
-  const a=triggerPad(AC, LIVE, idx, vel, AC.currentTime, chokeLive);
+  const a=triggerPad(AC, LIVE, idx, vel, AC.currentTime, chokeLive, pitchOff||0);
   if(a) activeEnv[idx]=a;
   flashPad(idx);
   if(S.liveRec && playing){
@@ -3748,13 +3771,24 @@ $('ampChDepth').addEventListener('input',ampApplyFx);
 $('ampDly').addEventListener('input',e=>{ $('ampDlyV').textContent=Math.round(parseFloat(e.target.value)*100)+'%'; ampApplyFx(); });
 $('ampRev').addEventListener('input',e=>{ $('ampRevV').textContent=Math.round(parseFloat(e.target.value)*100)+'%'; ampApplyFx(); });
 
-/* ---------------- MIDI ---------------- */
-let midiAccess=null, midiInput=null, noteLearnPad=null, ccLearnArm=false;
+/* ---------------- MIDI ----------------
+   Goal: turn an old phone into a MIDI sound module. Web MIDI (USB-OTG) works
+   on Android Chrome & desktop; iOS Safari lacks it, so we also offer a
+   Bluetooth-MIDI path (Web Bluetooth) and give honest, actionable guidance
+   instead of a dead end. Hot-plug is handled via statechange, and by default
+   we listen to ALL inputs so plugging a controller in "just works". */
+let midiAccess=null, noteLearnPad=null, ccLearnArm=false;
 let clkLast=0, clkAvg=0, clkTicks=0;
+let bleMidiDevs=[];   // {name, char, dev}
+const bleInputs=new Map();   // synthetic input id -> {name}
 
 for(let c=1;c<=16;c++){ const o=document.createElement('option'); o.value=c-1; o.textContent='CH '+c; $('midiCh').appendChild(o); }
+(function(){ const r=$('midiRoot'); for(let m=36;m<=84;m++){ const o=document.createElement('option'); o.value=m; o.textContent=midiName(m); r.appendChild(o); } r.value='60'; })();
 $('midiCh').addEventListener('change',e=>{ S.midiCh=parseInt(e.target.value,10); });
 $('vcurve').addEventListener('change',e=>{ S.vcurve=e.target.value; });
+$('midiRoot').addEventListener('change',e=>{ S.midiRoot=parseInt(e.target.value,10); });
+$('btnChrom').addEventListener('click',()=>{ S.midiChrom=!S.midiChrom; $('btnChrom').classList.toggle('on',S.midiChrom);
+  lcd(S.midiChrom?'CHROMATIC: keyboard plays the SELECTED pad, ROOT = its natural pitch':'CHROMATIC OFF — notes trigger mapped pads'); });
 $('btnExtClk').addEventListener('click',()=>{ S.extClk=!S.extClk; $('btnExtClk').classList.toggle('on',S.extClk); lcd(S.extClk?'EXT CLOCK: sequencer follows MIDI clock':'INTERNAL CLOCK'); });
 $('btnPcPat').addEventListener('click',()=>{ S.pcPat=!S.pcPat; $('btnPcPat').classList.toggle('on',S.pcPat); });
 $('btnMapGM').addEventListener('click',()=>{
@@ -3766,29 +3800,103 @@ $('btnMapClear').addEventListener('click',()=>{
   drawEdit(); lcd('NOTE MAP CLEARED — use LEARN per pad');
 });
 
+const isIOS=/iP(hone|ad|od)/.test(navigator.platform)||(/Mac/.test(navigator.platform)&&navigator.maxTouchPoints>1);
+function midiStat(txt, live){
+  $('midiStat').textContent=txt;
+  $('midiDot').style.background = live ? 'var(--lcd)' : '#444';
+}
+let _actT=0;
+function midiActivity(){ const d=$('midiDot'); d.style.background='var(--amber)'; clearTimeout(_actT); _actT=setTimeout(()=>{ d.style.background='var(--lcd)'; },90); }
+
 $('btnMidiOn').addEventListener('click',async ()=>{
+  if(!window.isSecureContext){
+    midiStat('MIDI needs a secure page (HTTPS). Open the app over https:// or localhost.',false);
+    mlog('Blocked: not a secure context.'); return;
+  }
   if(!navigator.requestMIDIAccess){
-    lcd('WEB MIDI unavailable in this browser (iOS Safari lacks it — use a Web-MIDI-capable shell).');
-    mlog('Web MIDI API not present.');
+    if(isIOS){
+      midiStat('iOS Safari has no Web MIDI. Use the + BLUETOOTH button, or open in a Web-MIDI browser (e.g. “Web MIDI Browser”). USB-MIDI works on Android Chrome.',false);
+      mlog('Web MIDI absent (iOS). Try Bluetooth or an Android phone.');
+    }else{
+      midiStat('This browser has no Web MIDI. Try Chrome/Edge, or the + BLUETOOTH button.',false);
+      mlog('Web MIDI API not present.');
+    }
     return;
   }
   try{
     midiAccess=await navigator.requestMIDIAccess({sysex:false});
-    const sel=$('midiIn'); sel.innerHTML='';
-    let n=0;
-    midiAccess.inputs.forEach(inp=>{ const o=document.createElement('option'); o.value=inp.id; o.textContent=inp.name; sel.appendChild(o); n++; });
-    if(!n){ sel.innerHTML='<option>— no inputs —</option>'; lcd('MIDI READY · no inputs found'); return; }
-    bindMidiInput(sel.value);
-    sel.addEventListener('change',e=>bindMidiInput(e.target.value));
+    midiAccess.onstatechange=refreshMidiInputs;
+    $('midiIn').addEventListener('change',e=>{ S.midiIn=e.target.value; rebindInputs(); });
     $('btnMidiOn').classList.add('on');
-    lcd('MIDI ONLINE · '+n+' input(s)');
-  }catch(e){ lcd('MIDI ACCESS DENIED.'); }
+    refreshMidiInputs();
+    lcd('MIDI ONLINE');
+  }catch(e){ midiStat('MIDI access denied. Reload and allow MIDI when prompted.',false); mlog('requestMIDIAccess rejected: '+(e&&e.name)); }
 });
-function bindMidiInput(id){
-  if(midiInput) midiInput.onmidimessage=null;
-  midiAccess.inputs.forEach(inp=>{ if(inp.id===id) midiInput=inp; });
-  if(midiInput) midiInput.onmidimessage=onMidi;
+function usbInputs(){ const a=[]; if(midiAccess) midiAccess.inputs.forEach(inp=>a.push(inp)); return a; }
+function refreshMidiInputs(){
+  const sel=$('midiIn'), prev=S.midiIn||'*'; sel.innerHTML='';
+  const add=(v,t)=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); };
+  add('*','ALL INPUTS');
+  const us=usbInputs(); us.forEach(inp=>add(inp.id, inp.name||('USB '+inp.id)));
+  bleInputs.forEach((v,id)=>add(id,'BLE · '+v.name));
+  const values=[...sel.options].map(o=>o.value);
+  sel.value = values.includes(prev)? prev : '*';
+  S.midiIn=sel.value;
+  rebindInputs();
+  const total=us.length+bleInputs.size;
+  midiStat(total? ('MIDI ON · '+total+' device'+(total>1?'s':'')+': '+us.map(i=>i.name).concat([...bleInputs.values()].map(v=>v.name)).join(', ')) : 'MIDI ON · plug a controller in (USB-OTG or + BLUETOOTH)', true);
 }
+function rebindInputs(){   // wire onmidimessage on exactly the chosen source(s)
+  usbInputs().forEach(inp=>{ inp.onmidimessage = (S.midiIn==='*'||S.midiIn===inp.id)? onMidi : null; });
+  // BLE inputs are dispatched from their notification handler, filtered there
+}
+
+/* ---- Bluetooth MIDI (Web Bluetooth; Android/desktop Chrome) ---- */
+const BLE_MIDI_SVC='03b80e5a-ede8-4b33-a751-6ce34ec4c700';
+const BLE_MIDI_CHR='7772e5db-3868-4112-a1a9-f2669d106bf3';
+$('btnMidiBle').addEventListener('click',async ()=>{
+  if(!navigator.bluetooth){
+    midiStat(isIOS? 'iOS Safari has no Web Bluetooth either. A dedicated Web-MIDI browser app is the only in-browser route on iOS.' : 'This browser has no Web Bluetooth. Use Chrome/Edge on Android or desktop.',false);
+    mlog('navigator.bluetooth absent.'); return;
+  }
+  try{
+    lcd('BLUETOOTH: pick your MIDI controller…');
+    const dev=await navigator.bluetooth.requestDevice({ filters:[{services:[BLE_MIDI_SVC]}], optionalServices:[BLE_MIDI_SVC] });
+    const server=await dev.gatt.connect();
+    const svc=await server.getPrimaryService(BLE_MIDI_SVC);
+    const chr=await svc.getCharacteristic(BLE_MIDI_CHR);
+    await chr.startNotifications();
+    const id='ble:'+dev.id;
+    chr.addEventListener('characteristicvaluechanged',ev=>parseBleMidi(ev.target.value));
+    dev.addEventListener('gattserverdisconnected',()=>{ bleInputs.delete(id); refreshMidiInputs(); mlog('BLE disconnected: '+dev.name); });
+    bleInputs.set(id,{name:dev.name||'BLE MIDI'});
+    bleMidiDevs.push({name:dev.name,dev,char:chr});
+    $('btnMidiOn').classList.add('on'); $('btnMidiBle').classList.add('on');
+    refreshMidiInputs();
+    mlog('BLE connected: '+(dev.name||dev.id));
+  }catch(e){ if(e && e.name==='NotFoundError') lcd('BLUETOOTH: no device chosen.'); else { midiStat('Bluetooth pairing failed: '+(e&&e.message||e),false); mlog('BLE error: '+(e&&e.message)); } }
+});
+/* BLE-MIDI packet → note/CC/realtime events. Format: header byte, then
+   [timestamp-low, status?, data…] runs; we ignore precise timing and just
+   extract MIDI status+data bytes, honoring running status. */
+function parseBleMidi(dataView){
+  if(S.midiIn!=='*' && String(S.midiIn).indexOf('ble:')!==0) return;   // a specific USB input is selected
+  const b=[]; for(let i=0;i<dataView.byteLength;i++) b.push(dataView.getUint8(i));
+  if(b.length<3) return;
+  let i=1, running=0;   // skip header
+  while(i<b.length){
+    if(b[i]&0x80){ i++; if(i>=b.length) break; }   // timestamp byte, skip
+    let status;
+    if(b[i]&0x80){ status=b[i]; running=status; i++; } else status=running;
+    if(!status) break;
+    if(status>=0xF8){ dispatchMidi([status]); continue; }   // realtime, no data
+    const need=((status&0xF0)===0xC0||(status&0xF0)===0xD0)?1:2;
+    const d=[status];
+    for(let k=0;k<need && i<b.length;k++){ if(b[i]&0x80) break; d.push(b[i]); i++; }
+    if(d.length===need+1) dispatchMidi(d);
+  }
+}
+function dispatchMidi(bytes){ onMidi({data:bytes}); }
 function velCurve(v){
   const x=v/127;
   if(S.vcurve==='soft') return Math.sqrt(x);
@@ -3804,9 +3912,14 @@ function onMidi(ev){
   if(d[0]===0xFC){ if(S.extClk) stopSeq(); return; }
   if(d[0]===0xFB){ if(S.extClk && !playing) startSeq(); return; }
   if(S.midiCh>=0 && ch!==S.midiCh) return;
+  if((st===0x90 && d[2]>0)||st===0xB0||st===0xC0) midiActivity();
   if(st===0x90 && d[2]>0){
     mlog('NOTE ON  ch'+(ch+1)+' n'+d[1]+' v'+d[2]);
     if(noteLearnPad!==null){ S.pads[noteLearnPad].note=d[1]; lcd('NOTE '+d[1]+' → '+padName(noteLearnPad)); noteLearnPad=null; drawEdit(); return; }
+    if(S.midiChrom){   // instrument mode: whole keyboard plays the selected pad, transposed
+      if(S.pads[S.editPad].bufId>=0) hitLive(S.editPad, velCurve(d[2]), d[1]-S.midiRoot);
+      return;
+    }
     const idx=S.pads.findIndex(p=>p.note===d[1] && p.note>=0);
     if(idx>=0) hitLive(idx, velCurve(d[2]));
   }else if(st===0xB0){
@@ -3905,6 +4018,7 @@ $('btnSave').addEventListener('click',()=>{
     bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
+    midiChrom:S.midiChrom, midiRoot:S.midiRoot,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
@@ -3933,6 +4047,7 @@ function applySessionDoc(doc, bufs){
   S.compAmt=(doc.compAmt!=null)?doc.compAmt:0.4;
   S.revType=doc.revType||'hall'; S.dlyMode=doc.dlyMode||'digital';
   S.vcurve=doc.vcurve; S.midiCh=doc.midiCh; S.pcPat=doc.pcPat; S.ccMaps=doc.ccMaps||{};
+  S.midiChrom=!!doc.midiChrom; S.midiRoot=doc.midiRoot!=null?doc.midiRoot:60;
   S.chain=doc.chain||[]; S.pads=doc.pads; S.patterns=doc.patterns;
   // playback position — without these a restore lands on PTN 1 / BANK A with chain off
   S.chainOn=!!doc.chainOn;
@@ -3969,6 +4084,7 @@ function applySessionDoc(doc, bufs){
   { const keep=S.ptnBpm; S.ptnBpm=false; setBpm(S.bpm); S.ptnBpm=keep; }  // don't clobber the restored pattern's own BPM
   $('swing').value=S.swing; $('swingV').textContent=Math.round(S.swing*100)+'%';
   $('vcurve').value=S.vcurve; $('midiCh').value=String(S.midiCh);
+  $('midiRoot').value=String(S.midiRoot); $('btnChrom').classList.toggle('on',S.midiChrom);
   if(AC){ // re-apply pad channel params to live graph
     for(let i=0;i<NPADS;i++){ const p=S.pads[i], n=LIVE.pads[i];
       hardSet(n.ch.gain,p.gain); if(n.pan)hardSet(n.pan.pan,p.pan); hardSet(n.rev.gain,p.rev); hardSet(n.dly.gain,p.dly); applyPadFx(n,p,AC); }
@@ -4072,6 +4188,7 @@ function snapshotSession(){
     bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
+    midiChrom:S.midiChrom, midiRoot:S.midiRoot,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
@@ -4098,6 +4215,7 @@ function undoSnap(){
     bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
+    midiChrom:S.midiChrom, midiRoot:S.midiRoot,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
