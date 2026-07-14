@@ -81,6 +81,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 .projrow.cur .pjname{color:var(--amber)}
 .projrow .pjmeta{font-size:9px;color:var(--txt-dim)}
 .projrow button{padding:6px 8px;font-size:11px}
+#projStoreBar{flex:1;height:9px;background:#000;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+#projStoreFill{height:100%;width:0%;background:var(--green);transition:width .25s,background .25s}
 #bpmbox{display:flex;align-items:center;gap:4px}
 #bpmbox button{width:30px;height:26px;padding:0;font-size:14px;background:transparent;border-color:var(--lcd-dim);color:var(--lcd)}
 #bpmval{min-width:52px;text-align:center;font-size:14px;font-weight:700}
@@ -730,6 +732,11 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnProjNew">NEW</button>
   </div>
   <div id="projList" style="max-height:230px;overflow-y:auto;margin:6px 0"></div>
+  <div class="row" style="gap:8px">
+    <div id="projStoreBar"><div id="projStoreFill"></div></div>
+    <button id="btnProjPersist">KEEP OFFLINE</button>
+  </div>
+  <div id="projStoreTxt" style="font-size:10px;color:var(--lcd);margin-bottom:4px">—</div>
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>
@@ -977,8 +984,13 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      buffer decode to list); size + pad count + age shown per row. The
      'last' autosave slot is untouched, so crash recovery still works,
      and the open project is remembered across restores.
+   - R46: STORAGE METER in the project library — a bar + readout of how
+     much the projects use, the device usage vs the browser quota (%),
+     and whether storage is KEPT (persisted). Bar goes green→amber→red as
+     the quota fills; KEEP OFFLINE requests persistent storage so iOS
+     won’t evict your beats. Refreshes on every save/load/delete.
    ================================================================ */
-const BUILD = 'MVX-880 · R45 · 2026-07-14 · project library — save & browse';
+const BUILD = 'MVX-880 · R46 · 2026-07-14 · project storage meter';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -4709,12 +4721,38 @@ function projNew(){
   buildPads(); drawPads(); drawEdit(); drawSeq(); drawTrax(); drawSong(); drawMixer(); drawFader(); drawSidechain();
   dirty(); lcd('NEW PROJECT · empty session');
 }
+function fmtBytes(x){ return x>=1048576?(x/1048576).toFixed(1)+'MB':Math.round(x/1024)+'KB'; }
+async function updateProjStore(){
+  const idx=await projIndexGet();
+  const projBytes=idx.reduce((a,x)=>a+(x.kb||0),0)*1024;
+  let usage=0, quota=0, persisted=false;
+  try{
+    if(navigator.storage && navigator.storage.estimate){ const e=await navigator.storage.estimate(); usage=e.usage||0; quota=e.quota||0; }
+    if(navigator.storage && navigator.storage.persisted) persisted=await navigator.storage.persisted();
+  }catch(e){}
+  const pctUsed=quota?clamp(usage/quota,0,1):0;
+  const fill=$('projStoreFill'); if(fill){ fill.style.width=(pctUsed*100).toFixed(1)+'%';
+    fill.style.background=pctUsed>=0.9?'var(--red)':pctUsed>=0.7?'var(--lcd)':'var(--green)'; }
+  const btn=$('btnProjPersist'); if(btn){ btn.classList.toggle('on',persisted); btn.textContent=persisted?'KEPT ✓':'KEEP OFFLINE'; }
+  let t=idx.length+' project'+(idx.length===1?'':'s')+' use '+fmtBytes(projBytes);
+  if(quota) t+=' · device '+fmtBytes(usage)+' / '+fmtBytes(quota)+' ('+Math.round(pctUsed*100)+'%)';
+  t+=persisted?' · KEPT, won’t be evicted':' · tap KEEP OFFLINE so iOS won’t evict them';
+  const txt=$('projStoreTxt'); if(txt){ txt.textContent=t; txt.style.color=pctUsed>=0.9?'var(--red)':'var(--lcd)'; }
+}
+$('btnProjPersist').addEventListener('click',async ()=>{
+  if(navigator.storage && navigator.storage.persist){
+    let ok=false; try{ ok=await navigator.storage.persist(); }catch(e){}
+    lcd(ok?'STORAGE KEPT — your projects won’t be auto-evicted.':'Browser declined persistent storage (projects are still saved).');
+  }else lcd('Persistent-storage API not available in this browser.');
+  updateProjStore();
+});
 async function drawProjects(){
   const el=$('projList'); if(!el) return;
   const idx=await projIndexGet();
   idx.sort((a,b)=>b.t-a.t);
   const totKb=idx.reduce((a,x)=>a+(x.kb||0),0);
   $('projLibInfo').textContent = idx.length? ('· '+idx.length+' saved · '+(totKb>1024?(totKb/1024).toFixed(1)+'MB':totKb+'KB')) : '· none yet';
+  updateProjStore();
   $('projCur').textContent = curProjId? '● in library' : '○ unsaved';
   el.innerHTML='';
   if(!idx.length){ el.innerHTML='<div style="font-size:11px;color:var(--txt-dim);padding:4px">No saved projects yet. Make a beat and tap SAVE AS NEW.</div>'; return; }
