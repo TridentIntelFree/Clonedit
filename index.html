@@ -1074,8 +1074,17 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
        so drum machines and arps follow this tempo. Suppressed while
        EXT CLOCK is on (never a follower and a leader at once).
      * Settings persist with the session.
+   - R52: CLAUDE'S SONG — "Amber Signal", a full composition by Claude
+     shipped as the factory demo (and a one-tap button in SMPL → KITS).
+     A-minor, 92 BPM lo-fi cinematic hip-hop across all 8 patterns and a
+     12-section SONG arrangement (intro → build → verse → chorus →
+     verse → chorus → breakdown → outro): e-piano arpeggio over
+     Am–F–C–G, sub-bass with octave jumps, a pluck hook, a cello answer
+     in the breakdown, bells/glass/riser for air, ghost-note probability,
+     hat ratchets, sidechain pump off the kick, 30% humanize, hall
+     reverb + ping-pong delay. 16 pads, every one an in-house synth.
    ================================================================ */
-const BUILD = 'MVX-880 · R51 · 2026-07-15 · MIDI OUT — notes + clock to hardware';
+const BUILD = "MVX-880 · R52 · 2026-07-15 · Claude's Song — factory demo arrangement";
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2741,12 +2750,140 @@ async function loadKit(kit, layBeat){
 }
 (function(){
   const row=$('kitRow');
+  const cs=document.createElement('button'); cs.textContent="CLAUDE'S SONG ♪"; cs.dataset.kit='claude';
+  cs.style.cssText='background:var(--lcd-bg);color:var(--lcd);border-color:var(--amber)';
+  cs.addEventListener('click',()=>loadClaudeSong());
+  row.appendChild(cs);
   KITS.forEach(kit=>{
     const b=document.createElement('button'); b.textContent=kit.name; b.dataset.kit=kit.id;
     b.addEventListener('click',()=>loadKit(kit, $('kitBeat').checked));
     row.appendChild(b);
   });
 })();
+
+/* ================= CLAUDE'S SONG — "Amber Signal" =================
+   A composition by Claude, written as the factory demo. A-minor, 92 BPM,
+   lo-fi cinematic hip-hop: Am | F | C | G under an e-piano arpeggio,
+   with a pluck hook in the chorus and a cello answer in the breakdown.
+   Built entirely from the in-house synth presets and sequenced with the
+   app's own tools — pitch locks (melody), ratchets, probability ghost
+   notes, sidechain pump, humanize, ping-pong delay, SONG arrangement:
+   intro ×2 → build ×2 → verse ×4 → chorus ×4 → verse ×2 → chorus ×4 →
+   breakdown ×2 → outro ×2. */
+async function loadClaudeSong(){
+  if(kitBusy) return; kitBusy=true;
+  ensureAudio();
+  try{
+    lcd("BUILDING CLAUDE'S SONG …");
+    const PADS=[ // [presetId, renderNote, tweaks] — pads A01–A16
+      ['dkick',36,{gain:.95}],
+      ['dsnare',38,{gain:.85,rev:.15}],
+      ['dhat',42,{gain:.6,pan:.15,choke:1}],
+      ['dohat',46,{gain:.5,pan:.15,rev:.12,choke:1}],
+      ['dshk',70,{gain:.45,pan:.35}],
+      ['drim',37,{gain:.55,pan:-.3,rev:.15}],
+      ['bsub',33,{gain:.95}],                            // A1 — the root of the piece
+      ['kep',57,{gain:.7,pan:.15,rev:.25,dly:.12}],      // A3 e-piano
+      ['pwarm',45,{gain:.55,rev:.35}],                   // A2 pad
+      ['scello',45,{gain:.65,pan:-.25,rev:.3}],          // A2 cello
+      ['lpluck',69,{gain:.7,pan:-.2,rev:.3,dly:.25}],    // A4 pluck hook
+      ['xbell',69,{gain:.5,pan:.3,rev:.5,dly:.2}],       // A4 bell accents
+      ['dclap',39,{gain:.7,rev:.2}],
+      ['xglass',57,{gain:.5,rev:.5}],                    // atmosphere
+      ['xsweep',60,{gain:.55,rev:.3}],                   // riser into the chorus
+      ['dcong',63,{gain:.55,pan:-.35}],
+    ];
+    for(let i=0;i<PADS.length;i++){
+      const [pid,note,tw]=PADS[i], def=PRESETS.find(p=>p.id===pid);
+      const buf=await renderPreset(def,note);
+      assignBufToPad(i,buf,def.name);
+      Object.assign(S.pads[i],tw);
+    }
+    // ---- patterns. Harmony offsets from A: Am=0, F=-4, C=+3, G=-2 ----
+    const P=Array.from({length:NPAT},()=>newPattern());
+    const N=(pi,pad,st,vel,pitch,x)=>{ P[pi].steps[pad][st]=vel;
+      const lk={}; if(pitch) lk.pitch=pitch; if(x) Object.assign(lk,x);
+      if(Object.keys(lk).length) P[pi].locks[pad+':'+st]=lk; };
+    const arpAmF=[[0,0],[2,3],[4,7],[6,12],[8,-4],[10,0],[12,3],[14,8]];     // Am then F, broken
+    const arpCG =[[0,3],[2,7],[4,10],[6,15],[8,-2],[10,2],[12,5],[14,10]];   // C then G
+    const ep=(pi,arp,vel)=>arp.forEach(a=>N(pi,7,a[0],vel,a[1]));
+    const verseDrums=pi=>{
+      N(pi,0,0,.95); N(pi,0,7,.8); N(pi,0,10,.9);
+      N(pi,1,4,.9); N(pi,1,12,.92);
+      [0,2,4,6,8,10,12].forEach(s=>N(pi,2,s,.5)); N(pi,2,14,.5,0,{rat:2}); N(pi,2,7,.35,0,{prob:.6});
+      [2,6,10,14].forEach(s=>N(pi,4,s,.4));
+      N(pi,5,11,.4,0,{prob:.5});
+    };
+    const chorusDrums=pi=>{
+      N(pi,0,0,.95); N(pi,0,6,.85); N(pi,0,10,.9);
+      N(pi,1,4,.9); N(pi,1,12,.92); N(pi,12,4,.6); N(pi,12,12,.6);
+      N(pi,3,2,.5); N(pi,3,10,.5);
+      [0,4,6,8,12].forEach(s=>N(pi,2,s,.45)); N(pi,2,15,.45,0,{rat:2});
+      [0,2,4,6,8,10,12,14].forEach(s=>N(pi,4,s,.3));
+    };
+    // P0 INTRO — e-piano alone with the pad breathing under it
+    ep(0,arpAmF,.7); N(0,8,0,.55); N(0,8,8,.5,-4); N(0,13,0,.4,0,{prob:.7}); N(0,11,12,.35,12,{prob:.5});
+    // P1 BUILD — heartbeat kick, shaker, rim ticks, riser at the turn
+    ep(1,arpAmF,.7); N(1,8,0,.55); N(1,8,8,.5,-4); N(1,13,0,.35,0,{prob:.7});
+    N(1,0,0,.6); N(1,0,8,.6); [2,6,10,14].forEach(s=>N(1,4,s,.45)); N(1,5,4,.45); N(1,5,12,.45);
+    N(1,14,8,.5);
+    // P2 VERSE Am|F
+    verseDrums(2); ep(2,arpAmF,.6);
+    N(2,6,0,.9); N(2,6,5,.85,0,{prob:.7}); N(2,6,8,.9,-4); N(2,6,13,.85,-4,{prob:.7});
+    N(2,8,0,.5); N(2,8,8,.5,-4);
+    // P3 VERSE C|G — cello slips in
+    verseDrums(3); ep(3,arpCG,.6);
+    N(3,6,0,.9,3); N(3,6,5,.85,3,{prob:.7}); N(3,6,8,.9,-2); N(3,6,13,.85,-2,{prob:.7});
+    N(3,8,0,.5,3); N(3,8,8,.5,-2);
+    N(3,9,0,.5,12); N(3,9,8,.5,10);
+    // P4 CHORUS Am|F — the pluck hook, bass jumps the octave
+    chorusDrums(4); ep(4,arpAmF,.5);
+    N(4,6,0,.95); N(4,6,3,.7,12); N(4,6,5,.85); N(4,6,8,.95,-4); N(4,6,11,.7,8); N(4,6,13,.85,-4);
+    N(4,10,0,.8,12); N(4,10,3,.75,7); N(4,10,6,.7,3); N(4,10,8,.8,8); N(4,10,11,.75,7); N(4,10,14,.7);
+    N(4,8,0,.5); N(4,8,8,.5,-4); N(4,11,0,.3,12);
+    // P5 CHORUS C|G — hook answers, congas talk
+    chorusDrums(5); ep(5,arpCG,.5);
+    N(5,15,3,.5); N(5,15,11,.5); N(5,15,14,.45,-3);
+    N(5,6,0,.95,3); N(5,6,3,.7,15); N(5,6,5,.85,3); N(5,6,8,.95,-2); N(5,6,11,.7,10); N(5,6,13,.85,-2);
+    N(5,10,0,.8,15); N(5,10,3,.75,10); N(5,10,6,.7,7); N(5,10,8,.8,10); N(5,10,10,.7,5); N(5,10,12,.7,2); N(5,10,14,.75,5);
+    N(5,8,0,.5,3); N(5,8,8,.5,-2);
+    // P6 BREAKDOWN — the floor drops out, cello sings the answer
+    N(6,0,0,.7); N(6,0,10,.6); [2,6,10,14].forEach(s=>N(6,4,s,.35));
+    N(6,8,0,.6); N(6,13,0,.35);
+    N(6,9,0,.65,12); N(6,9,4,.6,15); N(6,9,8,.6,10); N(6,9,12,.65,7);
+    N(6,7,6,.4,7,{prob:.6}); N(6,7,14,.4,3,{prob:.6});
+    N(6,6,0,.8); N(6,6,8,.7,-2);
+    // P7 OUTRO — back to the opening, bells say goodnight
+    ep(7,arpAmF,.5); N(7,8,0,.5); N(7,13,0,.4); N(7,0,0,.5); N(7,0,8,.5);
+    N(7,11,4,.35,12); N(7,11,12,.3,7); N(7,6,0,.6);
+    S.patterns=P; S.pattern=0;
+    // ---- arrangement ----
+    S.song=[{pat:0,reps:2},{pat:1,reps:2},{pat:2,reps:2},{pat:3,reps:2},{pat:4,reps:2},{pat:5,reps:2},
+            {pat:2,reps:1},{pat:3,reps:1},{pat:4,reps:2},{pat:5,reps:2},{pat:6,reps:2},{pat:7,reps:2}];
+    S.songOn=true; S.songLoop=true; songPos=0; songRep=0;
+    S.chain=[0,1,2,3,4,5,6,7]; S.chainOn=false; S.chainPos=0;
+    // ---- the mix ----
+    setBpm(92);
+    S.swing=.09; $('swing').value='0.09'; $('swingV').textContent='9%';
+    S.human=.3; $('human').value='0.3'; $('humanV').textContent='30%';
+    S.revType='hall'; S.revSize=3.2; $('mxRevType').value='hall'; $('mxRevSize').value=3.2; $('mxRevSizeV').textContent='3.2s';
+    S.dlyMode='pingpong'; S.delayDiv=.375; S.delayFb=.3; S.dlyTone=4800;
+    $('mxDlyMode').value='pingpong'; $('mxDlyDiv').value='0.375'; $('mxDlyFb').value=.3; $('mxDlyFbV').textContent='30%';
+    $('mxDlyTone').value=4800; $('mxDlyToneV').textContent='4.8k';
+    S.scOn=true; S.scTrig=0; S.scDepth=.35; S.scRel=.28;
+    if(AC&&LIVE){
+      LIVE.conv.buffer=makeIR(AC,S.revSize,S.revType);
+      buildDelayNet(AC,LIVE);
+      reapplyLivePads();
+    }
+    scApplyRouting(); drawSidechain();
+    S.bank=0; S.editPad=7; S.seqPad=7;   // land on the e-piano so NOTES shows the melody
+    $('projName').value="Claude's Song";
+    buildPads(); drawPads(); drawEdit(); drawSeq(); drawFader(); drawMixer(); drawSong(); dirty();
+    lcd("CLAUDE'S SONG · “Amber Signal” — press PLAY for the full arrangement ♪");
+  }catch(err){ lcd('SONG FAILED: '+(err&&err.message?err.message:'error')); }
+  finally{ kitBusy=false; }
+}
 
 /* ---------------- sample packs (download online → IndexedDB → offline) ----------------
    Encoded file bytes live on disk in IndexedDB (large quota, unlike RAM), so a big
@@ -4990,9 +5127,9 @@ function ageText(ms){
   if(h<48) return h+' hr ago';
   return Math.round(h/24)+' days ago';
 }
-function factoryDemo(){   // brand-new user: open into a playable demo instead of an empty grid
-  loadKit(KITS[0], true).then(()=>{
-    lcd('WELCOME · TRAP demo loaded — press PLAY, or pick a KIT in the SMPL tab.');
+function factoryDemo(){   // brand-new user: open into a full song, not an empty grid
+  loadClaudeSong().then(()=>{
+    lcd("WELCOME · “Amber Signal” by Claude loaded — press PLAY. Kits + sounds live in SMPL.");
   });
 }
 function docToBuffers(doc){   // PCM (Int16) back to AudioBuffers
