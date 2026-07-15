@@ -83,6 +83,14 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 .projrow button{padding:6px 8px;font-size:11px}
 #projStoreBar{flex:1;height:9px;background:#000;border:1px solid var(--line);border-radius:5px;overflow:hidden}
 #projStoreFill{height:100%;width:0%;background:var(--green);transition:width .25s,background .25s}
+/* melodic notes lane */
+#notegrid{display:grid;gap:2px}
+#notegrid .ncell{aspect-ratio:auto;height:22px;background:var(--pad);border:1px solid var(--line);border-radius:3px;padding:0;font-size:0}
+#notegrid .ncell.root{background:#252b38}
+#notegrid .ncell.q2{border-left-color:#4a5262}
+#notegrid .ncell.non{background:var(--amber-soft);border-color:var(--amber)}
+#notegrid .ncell.curcol{box-shadow:0 0 0 1px var(--lcd) inset}
+#notegrid .nlbl{height:22px;font-size:8px;color:var(--txt-dim);display:flex;align-items:center;justify-content:flex-end;padding-right:3px}
 #bpmbox{display:flex;align-items:center;gap:4px}
 #bpmbox button{width:30px;height:26px;padding:0;font-size:14px;background:transparent;border-color:var(--lcd-dim);color:var(--lcd)}
 #bpmval{min-width:52px;text-align:center;font-size:14px;font-weight:700}
@@ -242,6 +250,11 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button data-b="2">C</button><button data-b="3">D</button>
     <button id="btnEdit">EDIT</button>
   </div>
+  <div class="row">
+    <button id="btnRepeat">REPEAT</button>
+    <select id="repRate"><option value="1">1/4</option><option value="2">1/8</option><option value="4" selected>1/16</option><option value="6">1/16T</option><option value="8">1/32</option></select>
+    <span style="font-size:10px;color:var(--txt-dim)">hold a pad &#8594; BPM-synced roll (writes steps when &#9679; REC is on)</span>
+  </div>
   <div id="padgrid"></div>
   <div id="editpanel" style="display:none">
     <div class="row"><span class="lbl">PAD</span><span id="epTitle" style="color:var(--amber);font-size:12px">—</span>
@@ -379,7 +392,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 
 <!-- SEQ -->
 <div class="view" id="v-seq">
-  <div class="hint"><b>PROGRAM</b> — tap steps for the shown TRACK. <b>LIVE REC</b> records pad taps quantized to the grid. <b>AUTO REC</b> records MACRO moves. Tap <b>LOCK</b> then a step to set its pitch / probability / ratchet / nudge.</div>
+  <div class="hint"><b>PROGRAM</b> — tap steps for the shown TRACK. <b>NOTES</b> opens a scale grid to write melodies on this pad. <b>LIVE REC</b> records pad taps quantized to the grid. <b>LOCK</b> + a step sets pitch / probability / ratchet / nudge. <b>HUMAN</b> adds timing + velocity drift.</div>
   <div class="row" id="patrow"><span class="lbl">PTN</span></div>
   <div class="row" id="chainrow">
     <span class="lbl">CHAIN</span>
@@ -398,6 +411,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <div id="songlist"></div>
   <div class="pslider"><span class="lbl">SWING</span><input type="range" id="swing" min="0" max="0.6" step="0.01" value="0"><span class="val" id="swingV">0%</span></div>
+  <div class="pslider"><span class="lbl">HUMAN</span><input type="range" id="human" min="0" max="1" step="0.01" value="0"><span class="val" id="humanV">0%</span></div>
   <div class="row">
     <button id="btnPtnBpm">PTN TEMPO</button>
     <span id="ptnBpmInfo" style="font-size:10px;color:var(--txt-dim)">each pattern keeps its own BPM</span>
@@ -408,9 +422,20 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <span class="lbl">LEN</span>
     <button id="btnLenDn">&#8722;</button><span id="seqLenV" style="min-width:30px;text-align:center;color:var(--lcd);font-size:12px">16</span><button id="btnLenUp">+</button>
     <button id="btnStepLock">LOCK</button>
+    <button id="btnNotes">NOTES</button>
     <span id="lockHint" style="font-size:10px;color:var(--txt-dim)">tap step to toggle</span>
   </div>
   <div id="stepgrid"></div>
+  <div id="notesPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
+    <div class="row" style="margin-bottom:6px">
+      <span class="lbl">SCALE</span>
+      <select id="noteScale"><option value="major">MAJOR</option><option value="minor">MINOR</option><option value="dorian">DORIAN</option><option value="mixo">MIXOLYD</option><option value="pmaj">PENT MAJ</option><option value="pmin">PENT MIN</option><option value="blues">BLUES</option></select>
+      <span class="lbl">OCT</span>
+      <button id="noteOctDn">&#8722;</button><span id="noteOctV" style="min-width:24px;text-align:center;color:var(--lcd);font-size:12px">0</span><button id="noteOctUp">+</button>
+    </div>
+    <div id="notegrid"></div>
+    <div style="font-size:10px;color:var(--txt-dim);margin-top:4px">Rows are scale notes for THIS pad (root = the sample's own pitch). Tap to place, tap again to remove — one note per step, written as pitch locks so they bounce + export to MIDI.</div>
+  </div>
   <div id="steplock" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
     <div class="row"><span class="lbl">STEP</span><span id="slTitle" style="color:var(--amber);font-size:12px">—</span><span class="grow"></span><button id="slClr">CLEAR LOCKS</button></div>
     <div class="pslider"><span class="lbl">PITCH</span><input type="range" id="slPitch" min="-24" max="24" step="1" value="0"><span class="val" id="slPitchV">off</span></div>
@@ -1016,8 +1041,21 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      Pluck), PAD (Warm Pad with breathing filter + slow drift). HOUSE,
      LO-FI and AMBIENT kits refreshed with the new voices. All synthesized
      — zero added bytes of samples.
+   - R50: SEQUENCING DEPTH.
+     * NOTES lane (SEQ): a scale-aware melodic grid for the shown pad —
+       rows are scale notes relative to the sample's own root, tap to
+       place / re-pitch / remove, OCT shifts the window, scale picker
+       shared with LIVE. Writes ordinary step + pitch-lock data, so
+       melodies play live, bake into the bounce, and export to MIDI with
+       zero extra plumbing. Playhead column tracks in the lane.
+     * NOTE REPEAT (PADS): hold a pad for a BPM-synced roll (1/4–1/32,
+       incl. triplet), driven by a lookahead scheduler for sample-
+       accurate spacing; writes steps when LIVE REC is armed; rolls end
+       on release / STOP / bank switch.
+     * HUMANIZE (SEQ): ±12ms timing drift + velocity breathing, applied
+       identically in live playback and the offline bounce. Persisted.
    ================================================================ */
-const BUILD = 'MVX-880 · R49 · 2026-07-15 · synth upgrade — metal hats, keys, leads, pads';
+const BUILD = 'MVX-880 · R50 · 2026-07-15 · sequencing depth — notes, repeat, humanize';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1044,7 +1082,7 @@ const S = {
   buffers: [],            // AudioBuffers, referenced by pads via bufId
   patterns: Array.from({length:NPAT},()=>newPattern()),
   pattern: 0, bank: 0, editPad: 0, seqPad: 0,
-  bpm: 100, swing: 0, masterVol: 0.9, delayFb: 0.35,
+  bpm: 100, swing: 0, human: 0, masterVol: 0.9, delayFb: 0.35,
   revLvl: 0.9, revSize: 3.0, revType: 'hall', delayDiv: 0.375, dlyTone: 5200, dlyMode: 'digital', compAmt: 0.4,
   chain: [], chainOn: false, chainPos: 0,
   vcurve: 'linear', midiCh: -1, extClk: false, pcPat: true,
@@ -1352,6 +1390,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff){
 }
 
 function padRelease(idx){ // gate mode: note-off on touch release (live only)
+  repStop(idx);                            // end a NOTE REPEAT roll on release
   const p=S.pads[idx]; if(p.mode!=='gate') return;
   const a=activeEnv[idx]; if(!a || !AC) return;
   const t=AC.currentTime;
@@ -1465,19 +1504,21 @@ document.getElementById('logo').addEventListener('click',()=>{
   lcd('TEST TONE · state:'+AC.state);
 });
 
+function writeLiveStep(idx, vel, when){ // quantize a live hit onto the grid (LIVE REC)
+  if(!(S.liveRec && playing)) return;
+  const sd=stepDur(), pat=S.patterns[S.pattern], L=trackLen(pat,idx);
+  const pos=((curAbsStep%L) + ((when!=null?when:AC.currentTime)-lastStepTime)/sd) % L;
+  const st=Math.round(pos)%L;
+  pat.steps[idx][st]=vel;
+  if(idx===S.seqPad) drawSteps();
+  dirty();
+}
 function hitLive(idx, vel, pitchOff){
   ensureAudio();
   const a=triggerPad(AC, LIVE, idx, vel, AC.currentTime, chokeLive, pitchOff||0);
   if(a) activeEnv[idx]=a;
   flashPad(idx,vel);
-  if(S.liveRec && playing){
-    const sd=stepDur(), pat=S.patterns[S.pattern], L=trackLen(pat,idx);
-    const pos=((curAbsStep%L) + (AC.currentTime-lastStepTime)/sd) % L;
-    const st=Math.round(pos)%L;
-    pat.steps[idx][st]=vel;
-    if(idx===S.seqPad) drawSteps();
-    dirty();
-  }
+  writeLiveStep(idx,vel,null);
 }
 
 /* ---------------- pads UI ---------------- */
@@ -1506,10 +1547,33 @@ function buildPads(){
 }
 function padIndex(slot){ return S.bank*16+slot; }
 function padName(i){ return 'ABCD'[Math.floor(i/16)] + String(i%16+1).padStart(2,'0'); }
+/* ---- NOTE REPEAT: BPM-synced roll while a pad is held ---- */
+let repOn=false; const repHold={};   // idx -> {timer, nextT, vel}
+$('btnRepeat').addEventListener('click',()=>{ repOn=!repOn; $('btnRepeat').classList.toggle('on',repOn);
+  lcd(repOn?'NOTE REPEAT · hold a pad for a '+$('repRate').selectedOptions[0].textContent+' roll':'NOTE REPEAT OFF'); });
+function repStart(idx,vel){
+  if(repHold[idx]) return;
+  ensureAudio();
+  const h={nextT:AC.currentTime, vel};
+  h.timer=setInterval(()=>{               // mini lookahead scheduler — sample-accurate rolls
+    const iv=60/S.bpm/parseInt($('repRate').value,10);
+    while(h.nextT<AC.currentTime+0.1){
+      triggerPad(AC,LIVE,idx,h.vel,h.nextT,chokeLive);
+      writeLiveStep(idx,h.vel,h.nextT);
+      const dt=Math.max(0,(h.nextT-AC.currentTime)*1000);
+      setTimeout(()=>flashPad(idx,h.vel),dt);
+      h.nextT+=iv;
+    }
+  },25);
+  repHold[idx]=h;
+}
+function repStop(idx){ const h=repHold[idx]; if(h){ clearInterval(h.timer); delete repHold[idx]; } }
+function repStopAll(){ Object.keys(repHold).forEach(k=>repStop(k)); }
 function padPress(slot,vel){
   const idx=padIndex(slot);
   S.editPad=idx;
   if(S.edit){ S.seqPad=idx; hitLive(idx,vel); drawPads(); drawEdit(); return; }
+  if(repOn && S.pads[idx].bufId>=0){ repStart(idx,vel); drawEditTitleOnly(); return; }
   hitLive(idx,vel); drawEditTitleOnly();
 }
 function drawPads(){
@@ -1787,6 +1851,7 @@ $('epLearn').addEventListener('click',()=>{ noteLearnPad=S.editPad; lcd('NOTE LE
 
 $('btnEdit').addEventListener('click',()=>{ S.edit=!S.edit; $('btnEdit').classList.toggle('on',S.edit); $('editpanel').style.display=S.edit?'block':'none'; drawPads(); drawEdit(); });
 document.querySelectorAll('#bankrow [data-b]').forEach(b=>b.addEventListener('click',()=>{
+  repStopAll();   // a roll can't survive its pad scrolling off-screen
   S.bank=parseInt(b.dataset.b,10);
   document.querySelectorAll('#bankrow [data-b]').forEach(x=>x.classList.toggle('on',x===b));
   drawPads();
@@ -2802,11 +2867,15 @@ function schedStep(barStep, absStep, t){
     if(lk && lk.prob!=null && Math.random()>lk.prob) continue;   // probability
     let when=t+swing;
     if(lk && lk.nudge) when+=lk.nudge*sd;                        // micro-timing
+    let hv=v;
+    if(S.human>0){ when+=(Math.random()*2-1)*S.human*0.012;      // humanize: ±12ms drift + velocity breathing
+      hv=clamp(v*(1-Math.random()*S.human*0.22),0.05,1);
+      if(when<AC.currentTime) when=AC.currentTime; }
     const pitchOff=(lk&&lk.pitch)||0;
     const rat=(lk&&lk.rat>1)?lk.rat:1;                           // ratchet / roll
-    if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, v, when+r*rd, chokeLive, pitchOff); }
-    else triggerPad(AC, LIVE, p, v, when, chokeLive, pitchOff);
-    fired.push({p,v});
+    if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, hv, when+r*rd, chokeLive, pitchOff); }
+    else triggerPad(AC, LIVE, p, hv, when, chokeLive, pitchOff);
+    fired.push({p,v:hv});
   }
   const delay=Math.max(0,(t-AC.currentTime)*1000);
   setTimeout(()=>{ markStep(absStep); flashFired(fired); },delay);
@@ -2826,6 +2895,7 @@ function markStep(absStep){
   const cur=absStep % trackLen(S.patterns[S.pattern],S.seqPad);
   curStep=cur; lastStepTime=AC?AC.currentTime:0;
   document.querySelectorAll('#stepgrid .step').forEach((el,i)=>el.classList.toggle('cur',i===cur));
+  if(notesMode) document.querySelectorAll('#notegrid .ncell').forEach(el=>el.classList.toggle('curcol',+el.dataset.col===cur));
 }
 function seqTick(){
   while(nextStepTime < AC.currentTime + 0.12){
@@ -2856,6 +2926,7 @@ function startSeq(){
   lcd('PLAY · PTN '+(S.pattern+1)+(S.extClk?' · EXT CLK':''));
 }
 function panicVoices(){ // silence every sounding pad voice immediately (short click-free fade)
+  try{ repStopAll(); }catch(e){}
   if(!AC||!LIVE) return;
   const t=AC.currentTime;
   for(let i=0;i<NPADS;i++){ const act=LIVE.pads[i]&&LIVE.pads[i].act;
@@ -2889,6 +2960,7 @@ $('bpmDown').addEventListener('click',()=>setBpm(S.bpm-1));
 $('bpmval').addEventListener('change',e=>{ const v=parseFloat(e.target.value); if(isFinite(v)) setBpm(v); else setBpm(S.bpm); });
 $('djBpm').addEventListener('input',e=>setBpm(parseFloat(e.target.value)));
 $('swing').addEventListener('input',e=>{ S.swing=parseFloat(e.target.value); $('swingV').textContent=Math.round(S.swing*100)+'%'; dirty(); });
+$('human').addEventListener('input',e=>{ S.human=parseFloat(e.target.value); $('humanV').textContent=Math.round(S.human*100)+'%'; dirty(); });
 
 /* ---------------- DJ deck ---------------- */
 let vinylOn=false, vinylBaseBpm=100;
@@ -3875,6 +3947,7 @@ function drawSteps(){
     });
     gr.appendChild(el);
   }
+  drawNotes();   // keep the melodic lane in step with the velocity grid
 }
 function setTrackLen(d){
   const pat=S.patterns[S.pattern];
@@ -3915,6 +3988,72 @@ $('slProb').addEventListener('input',e=>setLock('prob',parseFloat(e.target.value
 $('slRat').addEventListener('input',e=>setLock('rat',parseInt(e.target.value,10),1));
 $('slNudge').addEventListener('input',e=>setLock('nudge',parseFloat(e.target.value),0));
 $('slClr').addEventListener('click',()=>{ delete S.patterns[S.pattern].locks[S.seqPad+':'+seqSelStep]; drawSteps(); drawStepLock(); dirty(); });
+
+/* ---- melodic NOTES lane: a scale grid that writes per-step pitch locks.
+   Rows are scale notes relative to the pad's own root (a sample plays at
+   pitch 0 = how it was recorded), so any sound becomes a melody instrument.
+   One note per step — the engine, bounce and MIDI export already honor
+   lock pitch, so this is pure UI over existing data. */
+let notesMode=false, noteOct=0;
+const NOTE_ROWS=8;
+function noteOffsets(){ // semitone offset per row, TOP row first
+  const sc=SCALES[S.inst.scale]||SCALES.minor, n=sc.length, out=[];
+  for(let r=0;r<NOTE_ROWS;r++){
+    const deg=NOTE_ROWS-1-r;
+    out.push(sc[deg%n]+12*Math.floor(deg/n)+noteOct*12);
+  }
+  return out;
+}
+function drawNotes(){
+  const panel=$('notesPanel'); if(!panel || panel.style.display==='none') return;
+  const gr=$('notegrid'); gr.innerHTML='';
+  const pat=S.patterns[S.pattern], row=pat.steps[S.seqPad], L=trackLen(pat,S.seqPad);
+  gr.style.gridTemplateColumns='30px repeat('+L+',1fr)';
+  $('noteScale').value=S.inst.scale in SCALES ? S.inst.scale : 'minor';
+  $('noteOctV').textContent=(noteOct>0?'+':'')+noteOct;
+  const offs=noteOffsets();
+  offs.forEach((off,r)=>{
+    const lbl=document.createElement('div'); lbl.className='nlbl';
+    lbl.textContent=off===0?'root':(off>0?'+':'')+off;
+    gr.appendChild(lbl);
+    for(let i=0;i<L;i++){
+      const c=document.createElement('button'); c.className='ncell'+(off===0?' root':'')+(i%4===0?' q2':'');
+      c.dataset.col=i;
+      if(row[i]>0){
+        const lk=pat.locks && pat.locks[S.seqPad+':'+i];
+        if((((lk&&lk.pitch)||0))===off) c.classList.add('non');
+      }
+      c.addEventListener('click',()=>toggleNote(i,off));
+      gr.appendChild(c);
+    }
+  });
+}
+function toggleNote(i,off){
+  const pat=S.patterns[S.pattern], k=S.seqPad+':'+i, row=pat.steps[S.seqPad];
+  const cur=(pat.locks[k]&&pat.locks[k].pitch)||0;
+  if(row[i]>0 && cur===off){                       // tap the lit cell: remove the note
+    row[i]=0;
+    const lk=pat.locks[k];
+    if(lk){ delete lk.pitch; if(!Object.keys(lk).length) delete pat.locks[k]; }
+    if(playing) stopPadVoices(S.seqPad);
+  }else{                                           // place (or re-pitch) the note
+    row[i]=parseFloat($('stepVel').value);
+    const lk=pat.locks[k]||{};
+    if(off===0) delete lk.pitch; else lk.pitch=off;
+    if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
+    if(!playing) hitLive(S.seqPad,row[i],off);     // audition while stopped
+  }
+  drawSteps(); dirty();
+}
+$('btnNotes').addEventListener('click',()=>{
+  notesMode=!notesMode; $('btnNotes').classList.toggle('on',notesMode);
+  $('notesPanel').style.display=notesMode?'block':'none';
+  if(notesMode) drawNotes();
+  lcd(notesMode?'NOTES: tap the grid to write a melody on '+padName(S.seqPad):'NOTES closed');
+});
+$('noteScale').addEventListener('change',e=>{ S.inst.scale=e.target.value; drawNotes(); dirty(); });
+$('noteOctDn').addEventListener('click',()=>{ noteOct=clamp(noteOct-1,-3,3); drawNotes(); });
+$('noteOctUp').addEventListener('click',()=>{ noteOct=clamp(noteOct+1,-3,3); drawNotes(); });
 $('btnChainAdd').addEventListener('click',()=>{ S.chain.push(S.pattern); drawSeq(); dirty(); });
 $('btnChainClr').addEventListener('click',()=>{ S.chain=[]; S.chainPos=0; drawSeq(); dirty(); });
 $('btnChainOn').addEventListener('click',()=>{ S.chainOn=!S.chainOn; drawSeq(); dirty(); });
@@ -4491,7 +4630,7 @@ $('btnSave').addEventListener('click',()=>{
     return {sr:b.sampleRate,len:b.length,ch:chans};
   });
   const doc={ fmt:'mvx880-project', build:BUILD, name:$('projName').value,
-    bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot,
@@ -4522,7 +4661,7 @@ function reapplyLivePads(){   // push S.pads channel state onto the live graph (
   applyMixMutes();
 }
 function applySessionDoc(doc, bufs){
-  S.bpm=doc.bpm; S.swing=doc.swing; S.masterVol=doc.masterVol; S.delayFb=doc.delayFb;
+  S.bpm=doc.bpm; S.swing=doc.swing; S.human=doc.human||0; S.masterVol=doc.masterVol; S.delayFb=doc.delayFb;
   S.revLvl=(doc.revLvl!=null)?doc.revLvl:0.9;
   S.revSize=(doc.revSize!=null)?doc.revSize:3.0;
   S.delayDiv=(doc.delayDiv!=null)?doc.delayDiv:0.375;
@@ -4571,6 +4710,7 @@ function applySessionDoc(doc, bufs){
   if(doc.name) $('projName').value=doc.name;
   { const keep=S.ptnBpm; S.ptnBpm=false; setBpm(S.bpm); S.ptnBpm=keep; }  // don't clobber the restored pattern's own BPM
   $('swing').value=S.swing; $('swingV').textContent=Math.round(S.swing*100)+'%';
+  $('human').value=S.human; $('humanV').textContent=Math.round(S.human*100)+'%';
   $('vcurve').value=S.vcurve; $('midiCh').value=String(S.midiCh);
   $('midiRoot').value=String(S.midiRoot); $('btnChrom').classList.toggle('on',S.midiChrom);
   if(AC){ // re-apply pad channel params to live graph
@@ -4682,7 +4822,7 @@ function snapshotSession(){
     return {sr:b.sampleRate,len:b.length,ch};
   });
   return { fmt:'mvx880-project', t:Date.now(), name:$('projName').value, projId:curProjId,
-    bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot,
@@ -4709,7 +4849,7 @@ function dirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(autosave,1500); schedu
 let undoStack=[], redoStack=[], _committed=null, undoTimer=0;
 function undoSnap(){
   return { name:$('projName').value,
-    bpm:S.bpm, swing:S.swing, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot,
@@ -5037,9 +5177,12 @@ async function renderMix(padSet, traxSet){
           const lk=pat.locks&&pat.locks[p+':'+idx];
           if(lk && lk.prob!=null && Math.random()>lk.prob) continue;
           let when=t+st*sd+swing; if(lk&&lk.nudge) when+=lk.nudge*sd;
+          let hv=v;
+          if(S.human>0){ when=Math.max(0.01,when+(Math.random()*2-1)*S.human*0.012);   // same humanize as live playback
+            hv=clamp(v*(1-Math.random()*S.human*0.22),0.05,1); }
           const pitch=(lk&&lk.pitch)||0, rat=(lk&&lk.rat>1)?lk.rat:1;
-          if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) events.push({when:when+r*rd,p,v,pitch}); }
-          else events.push({when,p,v,pitch});
+          if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) events.push({when:when+r*rd,p,v:hv,pitch}); }
+          else events.push({when,p,v:hv,pitch});
         }
       }
       if(pat.autom){ const barDur=sd*NSTEPS;
