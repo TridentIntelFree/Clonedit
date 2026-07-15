@@ -995,8 +995,19 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      removes its steps + locks from EVERY pattern, so a cleared sound
      leaves nothing behind on the sequencer that could re-trigger. Both
      are undoable.
+   - R48: review pass. Fixed a real undo corruption: undo snapshots
+     stored pads/trax with bufId INDICES while autosave's gcBuffers()
+     compacts and renumbers S.buffers between snapshots — so delete →
+     (autosave) → UNDO put the WRONG sample (or silence) on pads. Every
+     undo/redo entry now carries a reference copy of the buffers array it
+     was taken against (AudioBuffer refs — pointers, not audio copies),
+     so undo is immune to GC renumbering and even undoes across project
+     loads coherently. Also: warpOrig scratch cleared when a session doc
+     is applied (stale pre-warp originals can't resurface), old projects
+     saved before R43/R44 get defaults for the lfo, mute, solo and
+     warpBeats fields, and undo/restore/load redraw the mixer strips.
    ================================================================ */
-const BUILD = 'MVX-880 · R47 · 2026-07-14 · ghost-pad fixes (step-off + clear)';
+const BUILD = 'MVX-880 · R48 · 2026-07-15 · undo/GC fix — buffers travel with snapshots';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -4430,10 +4441,15 @@ function applySessionDoc(doc, bufs){
   }
   S.ptnBpm=!!doc.ptnBpm; $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
   S.patterns.forEach(pt=>{ if(pt.bpm===undefined) pt.bpm=null; if(!Array.isArray(pt.len)) pt.len=new Array(NPADS).fill(NSTEPS); if(!pt.locks||typeof pt.locks!=='object') pt.locks={}; });
-  S.pads.forEach(p=>{ if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16; });
+  S.pads.forEach(p=>{ if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16;
+    if(p.mute==null)p.mute=false; if(p.solo==null)p.solo=false;   // pre-R43/R44 docs lack these
+    if(p.lfoOn==null)p.lfoOn=false; if(p.lfoTgt==null)p.lfoTgt='cutoff'; if(p.lfoShape==null)p.lfoShape='sine';
+    if(p.lfoSync==null)p.lfoSync='free'; if(p.lfoRate==null)p.lfoRate=2; if(p.lfoDepth==null)p.lfoDepth=0.5;
+    if(p.warpBeats==null)p.warpBeats=4; });
   Object.keys(revCache).forEach(k=>delete revCache[k]);
   Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
   Object.keys(activeEnv).forEach(k=>delete activeEnv[k]);
+  Object.keys(warpOrig).forEach(k=>delete warpOrig[k]);   // pre-warp originals belong to the outgoing session
   S.buffers=bufs;
   // re-point the chop workspace at the restored target pad's sample —
   // nulling it left CHOP/TRANSIENT dead ("NO SAMPLE") after every restore
@@ -4461,7 +4477,7 @@ function applySessionDoc(doc, bufs){
   $('mxDlyDiv').value=String(S.delayDiv);
   $('mxRevType').value=S.revType; $('mxDlyMode').value=S.dlyMode;
   document.querySelectorAll('#bankrow [data-b]').forEach(x=>x.classList.toggle('on',parseInt(x.dataset.b,10)===S.bank));
-  drawPads(); drawEdit(); drawSeq(); drawCcMaps(); drawWave(); drawTrax(); drawLive(); drawSidechain(); drawSong();
+  drawPads(); drawEdit(); drawSeq(); drawCcMaps(); drawWave(); drawTrax(); drawLive(); drawSidechain(); drawSong(); drawMixer();
 }
 $('jsonIn').addEventListener('change',async e=>{
   const f=e.target.files && e.target.files[0]; if(!f) return;
@@ -4525,12 +4541,21 @@ function gcBuffers(){ // drop orphaned samples (every re-render leaves one) so t
   const wi=workBuf?S.buffers.indexOf(workBuf):-1;
   if(wi>=0) used.add(wi);
   if(used.size>=S.buffers.length) return;
+  try{ commitUndo(); }catch(e){}   // flush pending edits so _committed matches live state before renumbering
   const map={}, nb=[];
   S.buffers.forEach((b,i)=>{ if(used.has(i)){ map[i]=nb.length; nb.push(b); } });
   S.pads.forEach(p=>{ if(p.bufId>=0) p.bufId=map[p.bufId]; });
   S.trax.forEach(tr=>{ if(tr.bufId>=0) tr.bufId=map[tr.bufId]; });
   Object.keys(revCache).forEach(k=>delete revCache[k]);   // keyed by old ids
   S.buffers=nb;
+  // keep the undo BASELINE in step with the renumbering, or the next
+  // commitUndo sees a phantom "change" and undo needs pressing twice.
+  // Stack entries stay untouched — each carries its own buffers array.
+  if(_committed){
+    const remap=arr=>{ (arr||[]).forEach(o=>{ if(o.bufId>=0) o.bufId=(map[o.bufId]!=null?map[o.bufId]:-1); }); };
+    remap(_committed.doc.pads); remap(_committed.doc.trax);
+    _committed.bufs=nb.slice();
+  }
 }
 function snapshotSession(){
   gcBuffers();
@@ -4582,33 +4607,40 @@ function undoSnap(){
     pads:S.pads, patterns:S.patterns };
 }
 function cloneSnap(x){ return JSON.parse(JSON.stringify(x)); }
-function undoInit(){ _committed=cloneSnap(undoSnap()); updateUndoUI(); }
+/* Every undo entry pairs the JSON state with a REFERENCE copy of S.buffers
+   as it was at that moment. bufIds are indices into that exact array —
+   autosave's gcBuffers() compacts/renumbers S.buffers between snapshots, so
+   applying an old doc against the CURRENT array put wrong samples on pads
+   (the delete→undo "wrong sound / silent pad" bug). AudioBuffer refs are
+   shared, not copied, so this costs pointers, not audio memory. */
+function undoCapture(){ return { doc:cloneSnap(undoSnap()), bufs:S.buffers.slice() }; }
+function undoInit(){ _committed=undoCapture(); updateUndoUI(); }
 function scheduleUndo(){ clearTimeout(undoTimer); undoTimer=setTimeout(commitUndo,600); }
 function commitUndo(){
-  if(!_committed){ _committed=cloneSnap(undoSnap()); return; }
-  const cur=undoSnap();
-  if(JSON.stringify(cur)===JSON.stringify(_committed)) return;
+  if(!_committed){ _committed=undoCapture(); return; }
+  const cur=undoCapture();
+  if(JSON.stringify(cur.doc)===JSON.stringify(_committed.doc)) return;
   undoStack.push(_committed); if(undoStack.length>40) undoStack.shift();
-  _committed=cloneSnap(cur); redoStack.length=0;
+  _committed=cur; redoStack.length=0;
   updateUndoUI();
 }
-function restoreSnap(snap){
-  applySessionDoc(cloneSnap(snap), S.buffers);
-  S.autoTarget=snap.autoTarget||'mfilt'; drawAuto();
+function restoreSnap(entry){
+  applySessionDoc(cloneSnap(entry.doc), entry.bufs.slice());
+  S.autoTarget=entry.doc.autoTarget||'mfilt'; drawAuto();
 }
 function undo(){
   commitUndo();
   if(!undoStack.length){ lcd('NOTHING TO UNDO'); return; }
-  redoStack.push(cloneSnap(undoSnap()));
-  const snap=undoStack.pop();
-  restoreSnap(snap); _committed=cloneSnap(undoSnap());
+  redoStack.push(undoCapture());
+  const entry=undoStack.pop();
+  restoreSnap(entry); _committed=undoCapture();
   updateUndoUI(); lcd('UNDO · '+undoStack.length+' left');
 }
 function redo(){
   if(!redoStack.length){ lcd('NOTHING TO REDO'); return; }
-  undoStack.push(cloneSnap(undoSnap()));
-  const snap=redoStack.pop();
-  restoreSnap(snap); _committed=cloneSnap(undoSnap());
+  undoStack.push(undoCapture());
+  const entry=redoStack.pop();
+  restoreSnap(entry); _committed=undoCapture();
   updateUndoUI(); lcd('REDO');
 }
 function updateUndoUI(){
