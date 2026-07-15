@@ -1006,8 +1006,18 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      is applied (stale pre-warp originals can't resurface), old projects
      saved before R43/R44 get defaults for the lfo, mute, solo and
      warpBeats fields, and undo/restore/load redraw the mixer strips.
+   - R49: SYNTH UPGRADE. Hats rebuilt on the classic six-square metallic
+     bank (808/909 recipe) instead of plain filtered noise — they read as
+     metal now, not static. Snare gains a three-mode drum body with pitch
+     blip + resonant wire rattle; clap gains stereo pre-slaps and a
+     darkening room tail. New DRUMS: 808 Cowbell, Shaker, tunable Conga.
+     New families: KEYS (FM E-Piano Tine, Drawbar Organ w/ percussion
+     click + leslie shimmer), LEAD (7-voice Supersaw fanned wide, Synth
+     Pluck), PAD (Warm Pad with breathing filter + slow drift). HOUSE,
+     LO-FI and AMBIENT kits refreshed with the new voices. All synthesized
+     — zero added bytes of samples.
    ================================================================ */
-const BUILD = 'MVX-880 · R48 · 2026-07-15 · undo/GC fix — buffers travel with snapshots';
+const BUILD = 'MVX-880 · R49 · 2026-07-15 · synth upgrade — metal hats, keys, leads, pads';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2196,28 +2206,68 @@ const PRESETS=[
   pChain(n,nf,ne,out); n.start(0);                            // beater click
 }},
 {id:'dsnare',cat:'DRUMS',name:'Snare',note:38,dur:0.42,render:(oc,out,f0,dur)=>{
-  const o1=pOsc(oc,'triangle',186), o2=pOsc(oc,'triangle',278);
-  const te=pEnv(oc,[[0,0],[0.001,0.55],[0.09,0.0001,'x']]);
-  o1.connect(te); o2.connect(te); te.connect(out);
-  o1.start(0); o2.start(0); o1.stop(dur); o2.stop(dur);
-  const n=pNoise(oc,dur,17), hp=pFilt(oc,'highpass',1500,0.7), lp=pFilt(oc,'lowpass',8500,0.7),
-        ne=pEnv(oc,[[0,0],[0.001,0.9],[0.14,0.0001,'x']]);
-  pChain(n,hp,lp,ne,out); n.start(0);                         // snare buzz
+  // drum-body tone: two detuned modes with independent decay + pitch blip on the hit
+  [[186,0.6,0.10],[276,0.42,0.055],[330,0.2,0.04]].forEach(m=>{
+    const o=pOsc(oc,'triangle',m[0]);
+    o.frequency.setValueAtTime(m[0]*1.35,0); o.frequency.exponentialRampToValueAtTime(m[0],0.03);
+    const e=pEnv(oc,[[0,0],[0.001,m[1]],[m[2]+0.15,0.0001,'x']]);
+    pChain(o,e,out); o.start(0); o.stop(dur);
+  });
+  // rattle: noise through a resonant band pair (wires) — brighter and snappier than plain HP noise
+  const n=pNoise(oc,dur,17), b1=pFilt(oc,'bandpass',3400,1.4), b2=pFilt(oc,'peaking',7000,1.2,6),
+        hp=pFilt(oc,'highpass',1200,0.7),
+        ne=pEnv(oc,[[0,0],[0.001,0.95],[0.05,0.5],[0.19,0.0001,'x']]);
+  pChain(n,hp,b1,b2,ne,out); n.start(0);
 }},
-{id:'dclap',cat:'DRUMS',name:'Clap',note:39,dur:0.5,render:(oc,out,f0,dur)=>{
-  const bp=pFilt(oc,'bandpass',1250,1.1), e=oc.createGain(), g=e.gain;
+{id:'dclap',cat:'DRUMS',name:'Clap',note:39,dur:0.55,render:(oc,out,f0,dur)=>{
+  // pre-slaps spread slightly across the stereo field, then a wider room burst
+  [[0,-0.25],[0.011,0.2],[0.023,-0.1]].forEach(s=>{
+    const n=pNoise(oc,0.03,23+Math.round(s[0]*1000)), bp=pFilt(oc,'bandpass',1150,1.6),
+          e=pEnv(oc,[[s[0],0],[s[0]+0.001,0.85],[s[0]+0.012,0.0001,'x']]);
+    pChain(n,bp,e,pPan(oc,s[1]),out); n.start(s[0]);
+  });
+  const body=pNoise(oc,dur,29), bp2=pFilt(oc,'bandpass',1050,0.9), pk=pFilt(oc,'peaking',2600,1,4);
+  bp2.frequency.setValueAtTime(1400,0.034); bp2.frequency.exponentialRampToValueAtTime(900,0.3);   // darkening tail reads as a room
+  const be=pEnv(oc,[[0.033,0],[0.035,0.95],[0.3,0.0001,'x']]);
+  pChain(body,bp2,pk,be,out); body.start(0.02);
+}},
+/* metallic hat bank — six detuned square oscillators (the 808/909 recipe);
+   filtered noise alone reads as static, the beating between squares reads as metal */
+{id:'dhat',cat:'DRUMS',name:'Closed Hat',note:42,dur:0.14,render:(oc,out,f0,dur)=>{
+  const hp=pFilt(oc,'highpass',7000,0.9), bp=pFilt(oc,'bandpass',10200,1.1),
+        e=pEnv(oc,[[0,0],[0.001,0.62],[0.03,0.18],[dur,0.0001,'x']]);
+  pChain(hp,bp,e,out);
+  [263.5,400,421,474,587,845].forEach(f=>{ const o=pOsc(oc,'square',f*1.45); pChain(o,pGain(oc,0.16),hp); o.start(0); o.stop(dur); });
+  const n=pNoise(oc,0.03,31); pChain(n,pGain(oc,0.25),hp); n.start(0);   // stick sizzle
+}},
+{id:'dohat',cat:'DRUMS',name:'Open Hat',note:46,dur:0.75,render:(oc,out,f0,dur)=>{
+  const hp=pFilt(oc,'highpass',6500,0.9), bp=pFilt(oc,'bandpass',9500,0.9),
+        e=pEnv(oc,[[0,0],[0.001,0.55],[0.12,0.3],[dur,0.0001,'x']]);
+  pChain(hp,bp,e,out);
+  [263.5,400,421,474,587,845].forEach(f=>{ const o=pOsc(oc,'square',f*1.45); pChain(o,pGain(oc,0.15),hp); o.start(0); o.stop(dur); });
+  const n=pNoise(oc,dur,37); pChain(n,pGain(oc,0.18),hp); n.start(0);   // wash under the metal
+}},
+{id:'dcow',cat:'DRUMS',name:'808 Cowbell',note:56,dur:0.4,render:(oc,out,f0,dur)=>{
+  const bp=pFilt(oc,'bandpass',2640,3.5), e=pEnv(oc,[[0,0],[0.001,0.9],[0.02,0.45],[dur,0.0001,'x']]);
+  pChain(bp,e,out);
+  [540,800].forEach(f=>{ const o=pOsc(oc,'square',f); pChain(o,pGain(oc,0.5),bp); o.start(0); o.stop(dur); });
+}},
+{id:'dshk',cat:'DRUMS',name:'Shaker',note:70,dur:0.22,render:(oc,out,f0,dur)=>{
+  const bp=pFilt(oc,'bandpass',4200,1.8), hp=pFilt(oc,'highpass',2500,0.7);
+  const e=oc.createGain(), g=e.gain;                    // shh-T: soft swell into the accent
   g.setValueAtTime(0.0001,0);
-  [0,0.011,0.022].forEach(t=>{ g.setValueAtTime(0.9,t); g.exponentialRampToValueAtTime(0.06,t+0.009); });
-  g.setValueAtTime(0.7,0.033); g.exponentialRampToValueAtTime(0.0001,0.2);   // 3 slaps + room tail
-  const n=pNoise(oc,dur,23); pChain(n,bp,e,out); n.start(0);
+  g.linearRampToValueAtTime(0.3,0.03); g.linearRampToValueAtTime(0.05,0.055);
+  g.setValueAtTime(0.85,0.06); g.exponentialRampToValueAtTime(0.0001,0.19);
+  const n=pNoise(oc,dur,53); pChain(n,hp,bp,e,out); n.start(0);
 }},
-{id:'dhat',cat:'DRUMS',name:'Closed Hat',note:42,dur:0.13,render:(oc,out,f0,dur)=>{
-  const hp=pFilt(oc,'highpass',7200,0.7), e=pEnv(oc,[[0,0],[0.001,0.55],[0.05,0.0001,'x']]);
-  const n=pNoise(oc,dur,31); pChain(n,hp,e,out); n.start(0);
-}},
-{id:'dohat',cat:'DRUMS',name:'Open Hat',note:46,dur:0.65,render:(oc,out,f0,dur)=>{
-  const hp=pFilt(oc,'highpass',6800,0.7), e=pEnv(oc,[[0,0],[0.001,0.48],[0.38,0.12],[dur,0.0001,'x']]);
-  const n=pNoise(oc,dur,37); pChain(n,hp,e,out); n.start(0);
+{id:'dcong',cat:'DRUMS',name:'Conga',note:63,dur:0.35,render:(oc,out,f0,dur)=>{
+  const o=pOsc(oc,'sine',f0);                            // tunable — renders at the picker note
+  o.frequency.setValueAtTime(f0*1.35,0); o.frequency.exponentialRampToValueAtTime(f0,0.025);
+  const e=pEnv(oc,[[0,0],[0.002,0.95],[dur,0.0001,'x']]);
+  pChain(o,e,out); o.start(0); o.stop(dur);
+  const n=pNoise(oc,0.015,61), nf=pFilt(oc,'bandpass',Math.min(oc.sampleRate*0.4,f0*8),1.2),
+        ne=pEnv(oc,[[0,0.4],[0.012,0.0001,'x']]);
+  pChain(n,nf,ne,out); n.start(0);                       // palm slap
 }},
 {id:'drim',cat:'DRUMS',name:'Rimshot',note:37,dur:0.15,render:(oc,out,f0,dur)=>{
   const o=pOsc(oc,'square',330), bp=pFilt(oc,'bandpass',1700,3), e=pEnv(oc,[[0,0],[0.0004,0.8],[0.04,0.0001,'x']]);
@@ -2277,6 +2327,69 @@ const PRESETS=[
 }},
 {id:'pgrand',cat:'PIANO',name:'Grand Piano',note:60,dur:5,render:pianoRender(true)},
 {id:'pfelt',cat:'PIANO',name:'Felt Piano',note:60,dur:5,render:pianoRender(false)},
+{id:'kep',cat:'KEYS',name:'E-Piano Tine',note:60,dur:4,render:(oc,out,f0,dur)=>{
+  // FM tine: carrier + fast-decaying high-ratio modulator = the bell-strike, then a warm body
+  const car=pOsc(oc,'sine',f0), mod=pOsc(oc,'sine',f0*3.53), mi=pGain(oc,0);
+  mi.gain.setValueAtTime(f0*5,0);
+  mi.gain.exponentialRampToValueAtTime(f0*0.06,0.6);          // strike brightness dies into pure tone
+  mod.connect(mi); mi.connect(car.frequency);
+  const e=pEnv(oc,[[0,0],[0.002,0.95],[0.9,0.4],[dur,0.0001,'x']]);
+  const lp=pFilt(oc,'lowpass',5200,0.5);
+  pChain(car,lp,e,out); car.start(0); mod.start(0); car.stop(dur); mod.stop(dur);
+  const sub=pOsc(oc,'sine',f0*0.5), se=pEnv(oc,[[0,0],[0.004,0.22],[0.5,0.08],[dur,0.0001,'x']]);
+  pChain(sub,se,out); sub.start(0); sub.stop(dur);            // bark/body an octave down
+  const trem=pOsc(oc,'sine',4.6), tg=pGain(oc,0);             // gentle stereo-ish tremolo
+  tg.gain.value=0.12; trem.connect(tg); tg.connect(e.gain); trem.start(0);
+}},
+{id:'korg',cat:'KEYS',name:'Drawbar Organ',note:60,dur:3.5,render:(oc,out,f0,dur)=>{
+  const e=pEnv(oc,[[0,0],[0.015,0.8],[dur-0.25,0.8],[dur,0.0001,'x']]);
+  const lp=pFilt(oc,'lowpass',6500,0.4); pChain(lp,e,out);
+  const nyq=oc.sampleRate*0.45;
+  [[0.5,0.55],[1,0.9],[1.5,0.45],[2,0.4],[3,0.22],[4,0.18],[6,0.1],[8,0.08]].forEach(d=>{   // drawbars
+    const f=f0*d[0]; if(f>nyq) return;
+    const o=pOsc(oc,'sine',f); pChain(o,pGain(oc,d[1]*0.28),lp); o.start(0); o.stop(dur);
+  });
+  const pc=pOsc(oc,'sine',f0*3), pe=pEnv(oc,[[0,0.4],[0.25,0.0001,'x']]);    // percussion click (3rd harmonic)
+  pChain(pc,pe,lp); pc.start(0); pc.stop(0.4);
+  const les=pOsc(oc,'sine',5.7), lg=pGain(oc,0); lg.gain.value=0.1;          // leslie-ish shimmer
+  les.connect(lg); lg.connect(e.gain); les.start(0);
+}},
+{id:'lsuper',cat:'LEAD',name:'Supersaw Lead',note:64,dur:2.6,render:(oc,out,f0,dur)=>{
+  const hp=pFilt(oc,'highpass',Math.max(60,f0*0.5),0.7), lp=pFilt(oc,'lowpass',9000,0.6);
+  const e=pEnv(oc,[[0,0],[0.008,0.85],[dur-0.4,0.7],[dur,0.0001,'x']]);
+  pChain(hp,lp,e,out);
+  [[-24,-0.8],[-14,-0.5],[-6,-0.2],[0,0],[6,0.2],[14,0.5],[24,0.8]].forEach(v=>{   // 7 saws fanned wide
+    const o=pOsc(oc,'sawtooth',f0); o.detune.value=v[0];
+    pChain(o,pGain(oc,0.16),pPan(oc,v[1]),hp); o.start(0); o.stop(dur);
+  });
+  const sub=pOsc(oc,'sine',f0*0.5); pChain(sub,pGain(oc,0.35),e); sub.start(0); sub.stop(dur);
+}},
+{id:'lpluck',cat:'LEAD',name:'Synth Pluck',note:69,dur:1.4,render:(oc,out,f0,dur)=>{
+  const lp=pFilt(oc,'lowpass',f0*6,2);
+  lp.frequency.setValueAtTime(Math.min(oc.sampleRate*0.4,f0*14),0);
+  lp.frequency.exponentialRampToValueAtTime(Math.max(300,f0*1.5),0.35);      // the pluck IS the filter drop
+  const e=pEnv(oc,[[0,0],[0.002,0.9],[dur,0.0001,'x']]);
+  pChain(lp,e,out);
+  const o1=pOsc(oc,'sawtooth',f0), o2=pOsc(oc,'square',f0); o2.detune.value=8;
+  pChain(o1,pGain(oc,0.5),lp); pChain(o2,pGain(oc,0.3),lp);
+  o1.start(0); o2.start(0); o1.stop(dur); o2.stop(dur);
+}},
+{id:'pwarm',cat:'PAD',name:'Warm Pad',note:57,dur:6,render:(oc,out,f0,dur)=>{
+  const lp=pFilt(oc,'lowpass',600,0.5);
+  lp.frequency.setValueAtTime(600,0);
+  lp.frequency.linearRampToValueAtTime(3200,1.4);
+  lp.frequency.linearRampToValueAtTime(1200,dur);                            // breathes open then settles
+  const e=pEnv(oc,[[0,0],[0.9,0.6],[dur-1.4,0.6],[dur,0.0001,'x']]);
+  pChain(lp,e,out);
+  [[-10,-0.6,'sawtooth'],[7,0.6,'sawtooth'],[-4,-0.25,'triangle'],[13,0.3,'triangle']].forEach(v=>{
+    const o=pOsc(oc,v[2],f0); o.detune.value=v[0];
+    pChain(o,pGain(oc,v[2]==='sawtooth'?0.22:0.3),pPan(oc,v[1]),lp);
+    o.start(0); o.stop(dur);
+  });
+  const sub=pOsc(oc,'sine',f0*0.5); pChain(sub,pGain(oc,0.3),e); sub.start(0); sub.stop(dur);
+  const sh=pOsc(oc,'sine',0.35), sg=pGain(oc,0); sg.gain.value=180;          // slow filter drift keeps it alive
+  sh.connect(sg); sg.connect(lp.frequency); sh.start(0);
+}},
 {id:'scello',cat:'STRINGS',name:'Cello',note:48,dur:4,render:(oc,out,f0,dur)=>{
   const hp=pFilt(oc,'highpass',Math.max(50,f0*0.5),0.7),
         b1=pFilt(oc,'peaking',250,1.4,7), b2=pFilt(oc,'peaking',500,2,5),   // body formants
@@ -2486,19 +2599,19 @@ const KITS=[
     beat:{ 0:[0,7,10], 1:[4,12], 2:[0,2,4,6,8,10,12,14], 3:[7,15], 4:[4,12], 6:[0,10],
            2.5:[3,11,13,14,15] } },   // note: only integer pad keys used; fractional ignored below
   { id:'house', name:'HOUSE', bpm:124, swing:0.0,
-    slots:[['dkick',36],['dclap',39],['dhat',42],['dohat',46],['drim',37],['bsub',29],['pgrand',60],['sens',60]],
-    beat:{ 0:[0,4,8,12], 1:[4,12], 2:[2,6,10,14], 3:[2,6,10,14], 5:[0,8] } },
+    slots:[['dkick',36],['dclap',39],['dhat',42],['dohat',46],['drim',37],['bsub',29],['korg',60],['lpluck',69]],
+    beat:{ 0:[0,4,8,12], 1:[4,12], 2:[2,6,10,14], 3:[2,6,10,14], 5:[0,8], 6:[0,7,11] } },
   { id:'boombap', name:'BOOM-BAP', bpm:90, swing:0.16,
     slots:[['dkick',36],['dsnare',38],['dhat',42],['dohat',46],['b808',33],['scello',48],['pgrand',60],['brs',55]],
     beat:{ 0:[0,3,8,10], 1:[4,12], 2:[0,2,4,6,8,10,12,14], 4:[0,8] } },
   { id:'lofi', name:'LO-FI', bpm:78, swing:0.18,
-    slots:[['dkick',36],['drim',37],['dhat',42],['dsnare',38],['pfelt',60],['scello',48],['bsub',29],['xglass',60]],
+    slots:[['dkick',36],['drim',37],['dhat',42],['dsnare',38],['kep',60],['scello',48],['bsub',29],['dshk',70]],
     beat:{ 0:[0,8], 1:[4,12], 2:[0,3,4,6,8,11,12,14], 6:[0,8] } },
   { id:'techno', name:'TECHNO', bpm:130, swing:0.0,
     slots:[['dkick',36],['dclap',39],['dhat',42],['dohat',46],['drim',37],['dtom',45],['breese',33],['xsweep',60]],
     beat:{ 0:[0,4,8,12], 1:[4,12], 2:[2,6,10,14], 3:[2,6,10,14], 4:[7,15], 6:[0,3,6,8,11,14] } },
   { id:'ambient', name:'AMBIENT', bpm:70, swing:0.0,
-    slots:[['dkick',36],['dohat',46],['xbell',72],['xglass',60],['pfelt',60],['sens',60],['scello',48],['bsub',29]],
+    slots:[['dkick',36],['dohat',46],['xbell',72],['xglass',60],['kep',60],['pwarm',57],['scello',48],['bsub',29]],
     beat:{ 0:[0,8], 3:[0,4,8,12], 6:[0], 7:[0,8] } },
 ];
 function assignBufToPad(idx,buf,name){
