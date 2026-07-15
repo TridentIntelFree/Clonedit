@@ -706,6 +706,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <div class="row"><button id="btnMidiOn" class="grow">ENABLE MIDI</button><button id="btnMidiBle">+ BLUETOOTH</button></div>
   <div class="row"><span class="lbl">INPUT</span><select id="midiIn" class="grow"><option value="*">ALL INPUTS</option></select></div>
+  <h3>MIDI OUT <span style="color:var(--txt-dim);letter-spacing:0">— drive hardware synths &amp; sync gear</span></h3>
+  <div class="row"><span class="lbl">OUTPUT</span><select id="midiOutSel" class="grow"><option value="">— OFF —</option></select></div>
+  <div class="row">
+    <button id="btnNotesOut">NOTES OUT</button>
+    <button id="btnClkOut">CLOCK OUT</button>
+    <span class="lbl">CH</span>
+    <select id="midiOutCh"></select>
+  </div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">NOTES OUT sends every sequencer step and pad hit (pad's NOTE + step pitch). CLOCK OUT sends 24&nbsp;PPQN clock with START/STOP so drum machines &amp; synth arps follow this tempo.</div>
   <div class="row">
     <span class="lbl">CHAN</span>
     <select id="midiCh"><option value="-1">OMNI</option></select>
@@ -1054,8 +1063,19 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
        on release / STOP / bank switch.
      * HUMANIZE (SEQ): ±12ms timing drift + velocity breathing, applied
        identically in live playback and the offline bounce. Persisted.
+   - R51: MIDI OUT — the phone drives hardware now.
+     * OUTPUT device picker (hot-plug aware, rebuilt on statechange).
+     * NOTES OUT: every sequencer step (pad NOTE + step pitch lock,
+       ratchets included) and every live pad hit goes out as note-on/off
+       on the chosen channel, scheduled with the same lookahead clock as
+       the audio (ctx-time → Web MIDI timestamps), so hardware synths
+       play in sample-tight sync with the pads.
+     * CLOCK OUT: 24 PPQN MIDI clock on the step grid plus START/STOP,
+       so drum machines and arps follow this tempo. Suppressed while
+       EXT CLOCK is on (never a follower and a leader at once).
+     * Settings persist with the session.
    ================================================================ */
-const BUILD = 'MVX-880 · R50 · 2026-07-15 · sequencing depth — notes, repeat, humanize';
+const BUILD = 'MVX-880 · R51 · 2026-07-15 · MIDI OUT — notes + clock to hardware';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1087,6 +1107,7 @@ const S = {
   chain: [], chainOn: false, chainPos: 0,
   vcurve: 'linear', midiCh: -1, extClk: false, pcPat: true,
   midiChrom: false, midiRoot: 60, midiIn: '*',
+  notesOut: false, clkOut: false, midiOutCh: 0,
   ccMaps: {},             // ccNum -> target string
   edit:false, liveRec:false, ptnBpm:false,
   scOn:false, scTrig:0, scDepth:0.6, scRel:0.25,
@@ -1518,6 +1539,8 @@ function hitLive(idx, vel, pitchOff){
   const a=triggerPad(AC, LIVE, idx, vel, AC.currentTime, chokeLive, pitchOff||0);
   if(a) activeEnv[idx]=a;
   flashPad(idx,vel);
+  if(S.notesOut && midiOutDev && S.pads[idx].bufId>=0)
+    moNote((S.pads[idx].note>=0?S.pads[idx].note:36+idx)+(pitchOff||0), vel, null, 0.12);
   writeLiveStep(idx,vel,null);
 }
 
@@ -2875,6 +2898,11 @@ function schedStep(barStep, absStep, t){
     const rat=(lk&&lk.rat>1)?lk.rat:1;                           // ratchet / roll
     if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, hv, when+r*rd, chokeLive, pitchOff); }
     else triggerPad(AC, LIVE, p, hv, when, chokeLive, pitchOff);
+    if(S.notesOut && midiOutDev){   // mirror the step to hardware: pad's NOTE + step pitch
+      const base=(S.pads[p].note>=0?S.pads[p].note:36+p)+pitchOff;
+      if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) moNote(base,hv,when+r*rd,rd*0.8); }
+      else moNote(base,hv,when,sd*0.85);
+    }
     fired.push({p,v:hv});
   }
   const delay=Math.max(0,(t-AC.currentTime)*1000);
@@ -2900,6 +2928,9 @@ function markStep(absStep){
 function seqTick(){
   while(nextStepTime < AC.currentTime + 0.12){
     schedStep(curStepSched, absStepSched, nextStepTime);
+    if(S.clkOut && midiOutDev && !S.extClk){   // 24 PPQN = 6 ticks per 16th, scheduled on the step grid
+      const sd=stepDur(); for(let k=0;k<6;k++) moSend([0xF8], nextStepTime+k*sd/6);
+    }
     nextStepTime += stepDur();
     curStepSched=(curStepSched+1)%NSTEPS; absStepSched++;
     if(curStepSched===0){
@@ -2919,6 +2950,7 @@ function startSeq(){
   else selectPattern(S.pattern);   // re-apply this pattern's own tempo before the clock is read
   curStepSched=0; curStep=0; absStepSched=0;
   nextStepTime=AC.currentTime+0.08;   // offsets set BEFORE the loop reads them (ordering fix)
+  if(S.clkOut && !S.extClk) moSend([0xFA]);   // MIDI START — followers reset to bar 1
   startTrax(nextStepTime);            // tape lanes roll (and record) from bar 1
   if(!S.extClk) seqTimer=setInterval(seqTick,25);
   autoStart();
@@ -2936,6 +2968,7 @@ function panicVoices(){ // silence every sounding pad voice immediately (short c
 }
 function stopSeq(){
   playing=false; clearInterval(seqTimer);
+  if(S.clkOut) moSend([0xFC]);        // MIDI STOP
   stopTraxVoices();
   if(traxCap) traxCommit();
   panicVoices();                 // STOP silences sounding samples (long one-shots don't ring on)
@@ -4448,6 +4481,7 @@ $('btnMidiOn').addEventListener('click',async ()=>{
   }catch(e){ midiStat('MIDI access denied. Reload and allow MIDI when prompted.',false); mlog('requestMIDIAccess rejected: '+(e&&e.name)); }
 });
 function usbInputs(){ const a=[]; if(midiAccess) midiAccess.inputs.forEach(inp=>a.push(inp)); return a; }
+function usbOutputs(){ const a=[]; if(midiAccess) midiAccess.outputs.forEach(o=>a.push(o)); return a; }
 function refreshMidiInputs(){
   const sel=$('midiIn'), prev=S.midiIn||'*'; sel.innerHTML='';
   const add=(v,t)=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); };
@@ -4458,6 +4492,7 @@ function refreshMidiInputs(){
   sel.value = values.includes(prev)? prev : '*';
   S.midiIn=sel.value;
   rebindInputs();
+  refreshMidiOutputs();
   const total=us.length+bleInputs.size;
   midiStat(total? ('MIDI ON · '+total+' device'+(total>1?'s':'')+': '+us.map(i=>i.name).concat([...bleInputs.values()].map(v=>v.name)).join(', ')) : 'MIDI ON · plug a controller in (USB-OTG or + BLUETOOTH)', true);
 }
@@ -4465,6 +4500,42 @@ function rebindInputs(){   // wire onmidimessage on exactly the chosen source(s)
   usbInputs().forEach(inp=>{ inp.onmidimessage = (S.midiIn==='*'||S.midiIn===inp.id)? onMidi : null; });
   // BLE inputs are dispatched from their notification handler, filtered there
 }
+
+/* ---- MIDI OUT: notes + 24 PPQN clock to hardware ---- */
+let midiOutDev=null, midiOutId='';
+function refreshMidiOutputs(){
+  const sel=$('midiOutSel'); if(!sel) return;
+  sel.innerHTML='<option value="">— OFF —</option>';
+  usbOutputs().forEach(o=>{ const op=document.createElement('option'); op.value=o.id; op.textContent=o.name||('OUT '+o.id); sel.appendChild(op); });
+  const values=[...sel.options].map(o=>o.value);
+  sel.value = values.includes(midiOutId)? midiOutId : '';
+  bindMidiOutput(sel.value);
+}
+function bindMidiOutput(id){
+  midiOutId=id||'';
+  midiOutDev=null;
+  if(id) usbOutputs().forEach(o=>{ if(o.id===id) midiOutDev=o; });
+}
+$('midiOutSel').addEventListener('change',e=>{ bindMidiOutput(e.target.value);
+  lcd(midiOutDev? 'MIDI OUT → '+(midiOutDev.name||'device') : 'MIDI OUT OFF'); });
+function midiNow(when){ // AudioContext seconds → Web MIDI (performance.now) milliseconds
+  return performance.now() + Math.max(0,(when-AC.currentTime))*1000;
+}
+function moSend(bytes,when){ if(!midiOutDev) return;
+  try{ midiOutDev.send(bytes, (when!=null&&AC)? midiNow(when) : undefined); }catch(e){} }
+function moNote(note,vel,when,durS){ // schedules ON at `when` (ctx-time) and its OFF after durS
+  if(!S.notesOut||!midiOutDev) return;
+  const ch=S.midiOutCh&15, n=clamp(Math.round(note),0,127);
+  moSend([0x90|ch,n,clamp(Math.round(vel*127),1,127)],when);
+  const t=(when!=null&&AC)?when:(AC?AC.currentTime:null);
+  moSend([0x80|ch,n,0], t!=null? t+Math.max(0.02,durS||0.12) : null);
+}
+$('btnNotesOut').addEventListener('click',()=>{ S.notesOut=!S.notesOut; $('btnNotesOut').classList.toggle('on',S.notesOut);
+  lcd(S.notesOut?(midiOutDev?'NOTES OUT → '+(midiOutDev.name||'device'):'NOTES OUT armed — pick an OUTPUT device'):'NOTES OUT OFF'); dirty(); });
+$('btnClkOut').addEventListener('click',()=>{ S.clkOut=!S.clkOut; $('btnClkOut').classList.toggle('on',S.clkOut);
+  lcd(S.clkOut?'CLOCK OUT: 24 PPQN + START/STOP':'CLOCK OUT OFF'); dirty(); });
+(function(){ const s=$('midiOutCh'); for(let c=1;c<=16;c++){ const o=document.createElement('option'); o.value=c-1; o.textContent='CH '+c; s.appendChild(o); } })();
+$('midiOutCh').addEventListener('change',e=>{ S.midiOutCh=parseInt(e.target.value,10); dirty(); });
 
 /* ---- Bluetooth MIDI (Web Bluetooth; Android/desktop Chrome) ---- */
 const BLE_MIDI_SVC='03b80e5a-ede8-4b33-a751-6ce34ec4c700';
@@ -4633,7 +4704,7 @@ $('btnSave').addEventListener('click',()=>{
     bpm:S.bpm, swing:S.swing, human:S.human, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
-    midiChrom:S.midiChrom, midiRoot:S.midiRoot,
+    midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
@@ -4670,6 +4741,7 @@ function applySessionDoc(doc, bufs){
   S.revType=doc.revType||'hall'; S.dlyMode=doc.dlyMode||'digital';
   S.vcurve=doc.vcurve; S.midiCh=doc.midiCh; S.pcPat=doc.pcPat; S.ccMaps=doc.ccMaps||{};
   S.midiChrom=!!doc.midiChrom; S.midiRoot=doc.midiRoot!=null?doc.midiRoot:60;
+  S.notesOut=!!doc.notesOut; S.clkOut=!!doc.clkOut; S.midiOutCh=doc.midiOutCh!=null?doc.midiOutCh:0;
   S.chain=doc.chain||[]; S.pads=doc.pads; S.patterns=doc.patterns;
   // playback position — without these a restore lands on PTN 1 / BANK A with chain off
   S.chainOn=!!doc.chainOn;
@@ -4713,6 +4785,7 @@ function applySessionDoc(doc, bufs){
   $('human').value=S.human; $('humanV').textContent=Math.round(S.human*100)+'%';
   $('vcurve').value=S.vcurve; $('midiCh').value=String(S.midiCh);
   $('midiRoot').value=String(S.midiRoot); $('btnChrom').classList.toggle('on',S.midiChrom);
+  $('btnNotesOut').classList.toggle('on',S.notesOut); $('btnClkOut').classList.toggle('on',S.clkOut); $('midiOutCh').value=String(S.midiOutCh);
   if(AC){ // re-apply pad channel params to live graph
     reapplyLivePads();
     hardSet(LIVE.master.gain,S.masterVol);
@@ -4825,7 +4898,7 @@ function snapshotSession(){
     bpm:S.bpm, swing:S.swing, human:S.human, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
-    midiChrom:S.midiChrom, midiRoot:S.midiRoot,
+    midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
@@ -4852,7 +4925,7 @@ function undoSnap(){
     bpm:S.bpm, swing:S.swing, human:S.human, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
-    midiChrom:S.midiChrom, midiRoot:S.midiRoot,
+    midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
