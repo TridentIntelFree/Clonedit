@@ -151,6 +151,9 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
 .step.q2{border-left:2px solid #4a5262}
 .step.on{background:var(--amber-soft);border-color:var(--amber)}
 .step.cur{outline:2px solid var(--lcd);outline-offset:-2px}
+#silrow{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:6px 0}
+#silrow .step{aspect-ratio:auto;height:26px}
+#silrow .step.on{background:var(--red);border-color:var(--red)}
 .step.lockmark::after{content:'';position:absolute;top:3px;right:3px;width:5px;height:5px;border-radius:50%;background:var(--lcd);box-shadow:0 0 3px var(--lcd)}
 .step.selstep{box-shadow:inset 0 0 0 2px var(--amber)}
 #seqpadstrip{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin:6px 0}
@@ -452,6 +455,10 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <div id="notegrid"></div>
     <div style="font-size:10px;color:var(--txt-dim);margin-top:4px">Rows are scale notes for THIS pad (root = the sample's own pitch). Tap to place, tap again to remove — one note per step, written as pitch locks so they bounce + export to MIDI.</div>
   </div>
+  <h3>SILENCER <span style="color:var(--txt-dim);letter-spacing:0">— place a cut; everything drops out until the next hit</span></h3>
+  <div id="silrow"></div>
+  <div class="pslider"><span class="lbl">FADE</span><input type="range" id="silFade" min="0.005" max="0.6" step="0.005" value="0.06"><span class="val" id="silFadeV">60ms</span></div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">Left = abrupt CUT, right = soft fade. Cuts pads + live instruments and chokes the reverb/delay tails; sound returns on the next programmed or played hit. Bakes into the bounce. (TRAX tape lanes keep rolling.)</div>
   <div id="steplock" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
     <div class="row"><span class="lbl">STEP</span><span id="slTitle" style="color:var(--amber);font-size:12px">—</span><span class="grow"></span><button id="slClr">CLEAR LOCKS</button></div>
     <div class="pslider"><span class="lbl">PITCH</span><input type="range" id="slPitch" min="-24" max="24" step="1" value="0"><span class="val" id="slPitchV">off</span></div>
@@ -1137,8 +1144,18 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      red while reversed). Typing 0 flips direction. Per-pattern tempos
      inherit the full range, so one pattern can run forward and the
      next backward.
+   - R56: SILENCER (SEQ). A dedicated always-available 16-step cut row
+     per pattern: place a step and at that exact moment every sounding
+     voice fades out AND the master gate closes, choking reverb/delay
+     tails — true silence until the NEXT hit (programmed or manually
+     played), which reopens the gate just before it sounds. FADE slider
+     sets abrupt CUT (5ms) vs soft fade (600ms). Works in reverse
+     playback, bakes into the WAV bounce (cuts join the sorted event
+     stream), survives save/restore, playhead tracks the row. STOP and
+     manual pad hits always reopen the gate so the app can never stick
+     silent. TRAX tape lanes intentionally keep rolling.
    ================================================================ */
-const BUILD = 'MVX-880 · R55 · 2026-07-15 · total BPM control — ±1…999, reverse play';
+const BUILD = 'MVX-880 · R56 · 2026-07-15 · SILENCER — sequenced cut with fade';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1161,7 +1178,7 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   eqLo:0, eqMid:0, eqHi:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
   warpBeats:4, warpBpm:0, mute:false, solo:false }; }
-function newPattern(){ const s=[]; for(let p=0;p<NPADS;p++) s.push(new Array(NSTEPS).fill(0)); return { steps:s, bpm:null, len:new Array(NPADS).fill(NSTEPS), locks:{} }; }
+function newPattern(){ const s=[]; for(let p=0;p<NPADS;p++) s.push(new Array(NSTEPS).fill(0)); return { steps:s, bpm:null, len:new Array(NPADS).fill(NSTEPS), locks:{}, sil:new Array(NSTEPS).fill(0) }; }
 function trackLen(pat,p){ return (pat.len&&pat.len[p])||NSTEPS; }
 function stepLock(pat,p,st){ return pat.locks&&pat.locks[p+':'+st]; }
 function stepHasLock(lk){ return !!(lk && (lk.pitch||(lk.prob!=null)||lk.rat>1||lk.nudge)); }
@@ -1171,7 +1188,7 @@ const S = {
   buffers: [],            // AudioBuffers, referenced by pads via bufId
   patterns: Array.from({length:NPAT},()=>newPattern()),
   pattern: 0, bank: 0, editPad: 0, seqPad: 0,
-  bpm: 100, swing: 0, human: 0, autoWarp: true, masterVol: 0.9, delayFb: 0.35,
+  bpm: 100, swing: 0, human: 0, autoWarp: true, silFade: 0.06, masterVol: 0.9, delayFb: 0.35,
   revLvl: 0.9, revSize: 3.0, revType: 'hall', delayDiv: 0.375, dlyTone: 5200, dlyMode: 'digital', compAmt: 0.4,
   chain: [], chainOn: false, chainPos: 0,
   vcurve: 'linear', midiCh: -1, extClk: false, pcPat: true,
@@ -1610,6 +1627,7 @@ function writeLiveStep(idx, vel, when){ // quantize a live hit onto the grid (LI
 }
 function hitLive(idx, vel, pitchOff){
   ensureAudio();
+  if(silGateDown && LIVE){ silRestore(LIVE, AC.currentTime); silGateDown=false; }
   const a=triggerPad(AC, LIVE, idx, vel, AC.currentTime, chokeLive, pitchOff||0);
   if(a) activeEnv[idx]=a;
   flashPad(idx,vel);
@@ -3126,6 +3144,7 @@ function stepDur(){ return 60/bpmAbs()/4; }
 function schedStep(barStep, absStep, t){
   const sd=stepDur(), pat=S.patterns[S.pattern], fired=[];
   const swing = (barStep%2===1) ? S.swing*sd : 0;
+  if(pat.sil && pat.sil[posMod(absStep,NSTEPS)]){ silenceAt(LIVE, t+swing, S.silFade); silGateDown=true; }
   for(let p=0;p<NPADS;p++){
     if(seqSolo && p!==S.seqPad) continue;
     const L=trackLen(pat,p), idx=posMod(absStep,L);
@@ -3150,6 +3169,7 @@ function schedStep(barStep, absStep, t){
     }
     fired.push({p,v:hv});
   }
+  if(silGateDown && fired.length){ silRestore(LIVE, t+swing); silGateDown=false; }   // sound returns on the next hit
   const delay=Math.max(0,(t-AC.currentTime)*1000);
   setTimeout(()=>{ markStep(absStep); flashFired(fired); },delay);
 }
@@ -3168,6 +3188,8 @@ function markStep(absStep){
   const cur=posMod(absStep, trackLen(S.patterns[S.pattern],S.seqPad));
   curStep=cur; lastStepTime=AC?AC.currentTime:0;
   document.querySelectorAll('#stepgrid .step').forEach((el,i)=>el.classList.toggle('cur',i===cur));
+  const cur16=posMod(absStep,NSTEPS);
+  document.querySelectorAll('#silrow .step').forEach((el,i)=>el.classList.toggle('cur',i===cur16));
   if(notesMode) document.querySelectorAll('#notegrid .ncell').forEach(el=>el.classList.toggle('curcol',+el.dataset.col===cur));
 }
 function seqTick(){
@@ -3204,6 +3226,20 @@ function startSeq(){
   $('btnPlay').classList.add('on');
   lcd('PLAY · PTN '+(S.pattern+1)+(S.extClk?' · EXT CLK':''));
 }
+/* ---- SILENCER: a sequenced cut. Fades every sounding voice and chokes the
+   FX tails at an exact step time; the master gate reopens on the next hit
+   (programmed or played). Shared by the live graph and the offline bounce. ---- */
+let silGateDown=false;
+function silenceAt(g, t, fade){
+  const f=Math.max(0.004,fade||0.06);
+  for(let i=0;i<NPADS;i++){ const act=g.pads[i]&&g.pads[i].act;
+    if(act) act.forEach(v=>{ try{ v.env.gain.cancelScheduledValues(t); v.env.gain.setTargetAtTime(0,t,f/3); v.src.stop(t+f+0.15); }catch(e){} });
+  }
+  try{ const gn=g.perfGain.gain; gn.cancelScheduledValues(t); gn.setValueAtTime(1,t); gn.linearRampToValueAtTime(0.0001,t+f); }catch(e){}
+}
+function silRestore(g, t){
+  try{ const gn=g.perfGain.gain; gn.cancelScheduledValues(t); gn.setValueAtTime(0.0001,t); gn.linearRampToValueAtTime(1,t+0.008); }catch(e){}
+}
 function panicVoices(){ // silence every sounding pad voice immediately (short click-free fade)
   try{ repStopAll(); }catch(e){}
   if(!AC||!LIVE) return;
@@ -3219,6 +3255,7 @@ function stopSeq(){
   stopTraxVoices();
   if(traxCap) traxCommit();
   panicVoices();                 // STOP silences sounding samples (long one-shots don't ring on)
+  if(silGateDown && LIVE){ silRestore(LIVE, AC.currentTime); silGateDown=false; }
   $('btnPlay').classList.remove('on');
   document.querySelectorAll('#stepgrid .step').forEach(el=>el.classList.remove('cur'));
   lcd('STOP.');
@@ -4237,6 +4274,7 @@ function drawSteps(){
   }
   drawNotes();   // keep the melodic lane in step with the velocity grid
   drawPads();    // pad LEDs mirror the current pattern's usage
+  drawSil();     // silencer row belongs to the pattern too
 }
 function setTrackLen(d){
   const pat=S.patterns[S.pattern];
@@ -4343,6 +4381,20 @@ $('btnNotes').addEventListener('click',()=>{
 $('noteScale').addEventListener('change',e=>{ S.inst.scale=e.target.value; drawNotes(); dirty(); });
 $('noteOctDn').addEventListener('click',()=>{ noteOct=clamp(noteOct-1,-3,3); drawNotes(); });
 $('noteOctUp').addEventListener('click',()=>{ noteOct=clamp(noteOct+1,-3,3); drawNotes(); });
+function drawSil(){
+  const gr=$('silrow'); if(!gr) return; gr.innerHTML='';
+  const pat=S.patterns[S.pattern];
+  if(!Array.isArray(pat.sil)) pat.sil=new Array(NSTEPS).fill(0);
+  for(let i=0;i<NSTEPS;i++){
+    const el=document.createElement('button'); el.className='step'+(i%4===0?' q2':'');
+    if(pat.sil[i]) el.classList.add('on');
+    el.addEventListener('click',()=>{ pat.sil[i]=pat.sil[i]?0:1; drawSil(); dirty();
+      lcd(pat.sil[i]?'SILENCER on step '+(i+1)+' — cut, then sound returns on the next hit':'silencer step cleared'); });
+    gr.appendChild(el);
+  }
+}
+$('silFade').addEventListener('input',e=>{ S.silFade=parseFloat(e.target.value);
+  $('silFadeV').textContent=Math.round(S.silFade*1000)+'ms'; dirty(); });
 $('btnChainAdd').addEventListener('click',()=>{ S.chain.push(S.pattern); drawSeq(); dirty(); });
 $('btnChainClr').addEventListener('click',()=>{ S.chain=[]; S.chainPos=0; drawSeq(); dirty(); });
 $('btnChainOn').addEventListener('click',()=>{ S.chainOn=!S.chainOn; drawSeq(); dirty(); });
@@ -4959,7 +5011,7 @@ $('btnSave').addEventListener('click',()=>{
     return {sr:b.sampleRate,len:b.length,ch:chans};
   });
   const doc={ fmt:'mvx880-project', build:BUILD, name:$('projName').value,
-    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
@@ -4990,7 +5042,7 @@ function reapplyLivePads(){   // push S.pads channel state onto the live graph (
   applyMixMutes();
 }
 function applySessionDoc(doc, bufs){
-  S.bpm=doc.bpm; S.swing=doc.swing; S.human=doc.human||0; S.autoWarp=doc.autoWarp!=null?!!doc.autoWarp:true; S.masterVol=doc.masterVol; S.delayFb=doc.delayFb;
+  S.bpm=doc.bpm; S.swing=doc.swing; S.human=doc.human||0; S.autoWarp=doc.autoWarp!=null?!!doc.autoWarp:true; S.silFade=doc.silFade!=null?doc.silFade:0.06; S.masterVol=doc.masterVol; S.delayFb=doc.delayFb;
   S.revLvl=(doc.revLvl!=null)?doc.revLvl:0.9;
   S.revSize=(doc.revSize!=null)?doc.revSize:3.0;
   S.delayDiv=(doc.delayDiv!=null)?doc.delayDiv:0.375;
@@ -5022,7 +5074,7 @@ function applySessionDoc(doc, bufs){
     hardSet(LIVE._inst.g.gain,S.inst.vol); hardSet(LIVE._inst.rv.gain,S.inst.rev); hardSet(LIVE._inst.dl.gain,S.inst.dly);
   }
   S.ptnBpm=!!doc.ptnBpm; $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
-  S.patterns.forEach(pt=>{ if(pt.bpm===undefined) pt.bpm=null; if(!Array.isArray(pt.len)) pt.len=new Array(NPADS).fill(NSTEPS); if(!pt.locks||typeof pt.locks!=='object') pt.locks={}; });
+  S.patterns.forEach(pt=>{ if(pt.bpm===undefined) pt.bpm=null; if(!Array.isArray(pt.len)) pt.len=new Array(NPADS).fill(NSTEPS); if(!pt.locks||typeof pt.locks!=='object') pt.locks={}; if(!Array.isArray(pt.sil)) pt.sil=new Array(NSTEPS).fill(0); });
   S.pads.forEach(p=>{ if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16;
     if(p.mute==null)p.mute=false; if(p.solo==null)p.solo=false;   // pre-R43/R44 docs lack these
     if(p.lfoOn==null)p.lfoOn=false; if(p.lfoTgt==null)p.lfoTgt='cutoff'; if(p.lfoShape==null)p.lfoShape='sine';
@@ -5043,6 +5095,7 @@ function applySessionDoc(doc, bufs){
   $('swing').value=S.swing; $('swingV').textContent=Math.round(S.swing*100)+'%';
   $('human').value=S.human; $('humanV').textContent=Math.round(S.human*100)+'%';
   $('epWarpAuto').classList.toggle('on',S.autoWarp);
+  $('silFade').value=S.silFade; $('silFadeV').textContent=Math.round(S.silFade*1000)+'ms';
   $('vcurve').value=S.vcurve; $('midiCh').value=String(S.midiCh);
   $('midiRoot').value=String(S.midiRoot); $('btnChrom').classList.toggle('on',S.midiChrom);
   $('btnNotesOut').classList.toggle('on',S.notesOut); $('btnClkOut').classList.toggle('on',S.clkOut); $('midiOutCh').value=String(S.midiOutCh);
@@ -5155,7 +5208,7 @@ function snapshotSession(){
     return {sr:b.sampleRate,len:b.length,ch};
   });
   return { fmt:'mvx880-project', t:Date.now(), name:$('projName').value, projId:curProjId,
-    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
@@ -5182,7 +5235,7 @@ function dirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(autosave,1500); schedu
 let undoStack=[], redoStack=[], _committed=null, undoTimer=0;
 function undoSnap(){
   return { name:$('projName').value,
-    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
@@ -5504,6 +5557,7 @@ async function renderMix(padSet, traxSet){
       const rev=bpm<0;
       for(let st=0;st<NSTEPS;st++){
         const swing=(st%2===1?S.swing*sd:0);
+        if(pat.sil && pat.sil[posMod(rev?-(absB+st):(absB+st),NSTEPS)]) events.push({when:t+st*sd+swing, sil:true});
         for(let p=0;p<NPADS;p++){
           if(padSet && !padSet.has(p)) continue;
           const L=(pat.len&&pat.len[p])||NSTEPS, idx=posMod(rev?-(absB+st):(absB+st),L);
@@ -5545,8 +5599,13 @@ async function renderMix(padSet, traxSet){
   tempoSeg.forEach(seg=>{ const dt=clamp(60/seg.bpm*S.delayDiv,0.02,1.9);
     (g.dlyNodes||[]).forEach(d=>d.delayTime.setValueAtTime(dt,seg.t)); });
   const chokeOff={};
-  events.sort((a,b)=>a.when-b.when);
-  for(const ev of events) triggerPad(oc, g, ev.p, ev.v, ev.when, chokeOff, ev.pitch);
+  events.sort((a,b)=>(a.when-b.when) || ((a.sil?0:1)-(b.sil?0:1)));   // a cut on the same step lands first
+  let gateDown=false;
+  for(const ev of events){
+    if(ev.sil){ silenceAt(g, ev.when, S.silFade); gateDown=true; continue; }
+    if(gateDown){ silRestore(g, Math.max(0.001,ev.when-0.002)); gateDown=false; }
+    triggerPad(oc, g, ev.p, ev.v, ev.when, chokeOff, ev.pitch);
+  }
   for(const x of trax){ const w=wireTrack(oc,g,x.tr,x.b,0.05,x.tr.gain); if(x.tr.loop) w.src.stop(t); }
   return await oc.startRendering();
 }
