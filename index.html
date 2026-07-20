@@ -91,7 +91,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 #notegrid .ncell.non{background:var(--amber-soft);border-color:var(--amber)}
 #notegrid .ncell.curcol{box-shadow:0 0 0 1px var(--lcd) inset}
 #notegrid .nlbl{height:22px;font-size:8px;color:var(--txt-dim);display:flex;align-items:center;justify-content:flex-end;padding-right:3px}
-#bpmbox{display:flex;align-items:center;gap:4px}
+#bpmbox{display:flex;align-items:center;gap:3px}
+#bpmbox button{padding:6px 7px;font-size:11px}
+#bpmbox #bpmRev.on{background:var(--red);border-color:var(--red);color:#fff}
 #bpmbox button{width:30px;height:26px;padding:0;font-size:14px;background:transparent;border-color:var(--lcd-dim);color:var(--lcd)}
 #bpmval{min-width:52px;text-align:center;font-size:14px;font-weight:700}
 
@@ -213,9 +215,12 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div id="lcdmsg">READY.</div>
   <div id="bpmbox">
     <button id="bpmDown">&#8722;</button>
-    <input type="number" id="bpmval" min="40" max="240" step="0.1" inputmode="decimal"
-      style="width:62px;text-align:center;font-size:14px;font-weight:700;background:transparent;border:none;color:var(--lcd)">
+    <input type="number" id="bpmval" min="-999" max="999" step="0.1" inputmode="decimal"
+      style="width:58px;text-align:center;font-size:14px;font-weight:700;background:transparent;border:none;color:var(--lcd)">
     <button id="bpmUp">+</button>
+    <button id="bpmHalf" title="half time">&#189;</button>
+    <button id="bpmDbl" title="double time">&#215;2</button>
+    <button id="bpmRev" title="negative BPM = sequencer runs backwards">REV</button>
   </div>
 </div>
 
@@ -1121,8 +1126,19 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      dark = empty, GREEN = sample loaded, AMBER = this pad has steps in
      the current pattern. LEDs live-update on step edits and pattern
      switches; the FX dot moved beside the LED.
+   - R55: TOTAL BPM CONTROL. The 40–240 clamp is gone: BPM is now signed
+     ±1…±999, and NEGATIVE BPM runs the sequencer BACKWARDS (steps walk
+     15→0 with all locks/ratchets/probability intact; the song/chain
+     arrangement still advances forward bar by bar; the offline bounce
+     mirrors the reversed order). All time math (step clock, delay sync,
+     synced LFOs, warp, note-repeat, stutter, MIDI clock out) uses the
+     magnitude, so effects stay musical in reverse. New transport
+     buttons: ½ (half time), ×2 (double time), REV (flip direction, lit
+     red while reversed). Typing 0 flips direction. Per-pattern tempos
+     inherit the full range, so one pattern can run forward and the
+     next backward.
    ================================================================ */
-const BUILD = 'MVX-880 · R54 · 2026-07-15 · pad numbers + status LEDs';
+const BUILD = 'MVX-880 · R55 · 2026-07-15 · total BPM control — ±1…999, reverse play';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1130,6 +1146,11 @@ console.log(BUILD);
 const $ = id => document.getElementById(id);
 const lcd = m => { $('lcdmsg').textContent = m; };
 const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
+const posMod = (n,m)=>((n%m)+m)%m;
+/* BPM is signed: negative = the sequencer runs BACKWARDS. Time math always
+   uses the magnitude (BPS); direction only affects step order. */
+function clampBpm(b){ const sg=b<0?-1:1; return sg*clamp(Math.abs(b),1,999); }
+function bpmAbs(){ return Math.abs(S.bpm); }
 
 /* ---------------- state ---------------- */
 const NPADS = 64, NSTEPS = 16, NPAT = 8;
@@ -1269,7 +1290,7 @@ function applyPadFx(n, p, ctx){
 }
 const LFO_BEATS={'1/1':4,'1/2':2,'1/4':1,'1/8':0.5,'1/16':0.25};
 function lfoHz(p){
-  if(p.lfoSync && p.lfoSync!=='free'){ const beats=LFO_BEATS[p.lfoSync]||1; return 1/(beats*(60/S.bpm)); }
+  if(p.lfoSync && p.lfoSync!=='free'){ const beats=LFO_BEATS[p.lfoSync]||1; return 1/(beats*(60/bpmAbs())); }
   return clamp(p.lfoRate||2,0.02,40);
 }
 function applyPadLfo(n, p, ctx){
@@ -1373,7 +1394,7 @@ function buildGraph(ctx){
   return g;
 }
 
-function delayTime(){ return clamp(60/S.bpm*S.delayDiv, 0.02, 1.9); }
+function delayTime(){ return clamp(60/bpmAbs()*S.delayDiv, 0.02, 1.9); }
 function scApplyRoutingG(g,ctx){ // trigger pad → direct (unducked); others → duck bus
   if(!g||!g.pads) return; const t=ctx?ctx.currentTime:0;
   for(let i=0;i<NPADS;i++){ const n=g.pads[i]; if(!n||!n.dryDuck) continue;
@@ -1581,8 +1602,8 @@ document.getElementById('logo').addEventListener('click',()=>{
 function writeLiveStep(idx, vel, when){ // quantize a live hit onto the grid (LIVE REC)
   if(!(S.liveRec && playing)) return;
   const sd=stepDur(), pat=S.patterns[S.pattern], L=trackLen(pat,idx);
-  const pos=((curAbsStep%L) + ((when!=null?when:AC.currentTime)-lastStepTime)/sd) % L;
-  const st=Math.round(pos)%L;
+  const pos=(posMod(curAbsStep,L) + ((when!=null?when:AC.currentTime)-lastStepTime)/sd) % L;
+  const st=posMod(Math.round(pos),L);
   pat.steps[idx][st]=vel;
   if(idx===S.seqPad) drawSteps();
   dirty();
@@ -1633,7 +1654,7 @@ function repStart(idx,vel){
   ensureAudio();
   const h={nextT:AC.currentTime, vel};
   h.timer=setInterval(()=>{               // mini lookahead scheduler — sample-accurate rolls
-    const iv=60/S.bpm/parseInt($('repRate').value,10);
+    const iv=60/bpmAbs()/parseInt($('repRate').value,10);
     while(h.nextT<AC.currentTime+0.1){
       triggerPad(AC,LIVE,idx,h.vel,h.nextT,chokeLive);
       writeLiveStep(idx,h.vel,h.nextT);
@@ -1799,7 +1820,7 @@ $('epWarp').addEventListener('click',()=>{
   ensureAudio();
   const src = warpOrig[i] || S.buffers[p.bufId];
   if(!warpOrig[i]) warpOrig[i]=src;
-  const beats=p.warpBeats||4, targetDur=beats*(60/S.bpm), ratio=targetDur/src.duration;
+  const beats=p.warpBeats||4, targetDur=beats*(60/bpmAbs()), ratio=targetDur/src.duration;
   if(!isFinite(ratio)||ratio<=0){ lcd('WARP: bad ratio.'); return; }
   try{ stopPadVoices(i); }catch(e){}
   lcd('WARPING '+src.duration.toFixed(2)+'s → '+targetDur.toFixed(2)+'s ('+beats+' beats @ '+S.bpm.toFixed(1)+') …');
@@ -1823,9 +1844,9 @@ function autoWarpTick(){
   for(let i=0;i<NPADS;i++){
     const p=S.pads[i];
     if(!p.warped || p.bufId<0) continue;
-    if(Math.abs((p.warpBpm||0)-S.bpm)<0.5) continue;   // ignore MIDI-clock jitter
+    if(Math.abs(Math.abs(p.warpBpm||0)-bpmAbs())<0.5) continue;   // ignore MIDI-clock jitter (sign is direction, not speed)
     if(!warpOrig[i]) warpOrig[i]=S.buffers[p.bufId];
-    const src=warpOrig[i], targetDur=(p.warpBeats||4)*(60/S.bpm), ratio=targetDur/src.duration;
+    const src=warpOrig[i], targetDur=(p.warpBeats||4)*(60/bpmAbs()), ratio=targetDur/src.duration;
     if(!isFinite(ratio)||ratio<=0) continue;
     try{ stopPadVoices(i); }catch(e){}
     const out=timeStretch(src,ratio);
@@ -3100,14 +3121,14 @@ $('btnPackPersist').addEventListener('click',async ()=>{
 
 /* ---------------- sequencer ---------------- */
 let playing=false, curStep=0, nextStepTime=0, lastStepTime=0, seqTimer=0, seqSolo=false;
-function stepDur(){ return 60/S.bpm/4; }
+function stepDur(){ return 60/bpmAbs()/4; }
 
 function schedStep(barStep, absStep, t){
   const sd=stepDur(), pat=S.patterns[S.pattern], fired=[];
   const swing = (barStep%2===1) ? S.swing*sd : 0;
   for(let p=0;p<NPADS;p++){
     if(seqSolo && p!==S.seqPad) continue;
-    const L=trackLen(pat,p), idx=absStep%L;
+    const L=trackLen(pat,p), idx=posMod(absStep,L);
     const v=pat.steps[p][idx];
     if(!(v>0)) continue;
     const lk=pat.locks && pat.locks[p+':'+idx];
@@ -3144,7 +3165,7 @@ function flashFired(fired){ // visual proof a row actually triggered
 }
 function markStep(absStep){
   curAbsStep=absStep;
-  const cur=absStep % trackLen(S.patterns[S.pattern],S.seqPad);
+  const cur=posMod(absStep, trackLen(S.patterns[S.pattern],S.seqPad));
   curStep=cur; lastStepTime=AC?AC.currentTime:0;
   document.querySelectorAll('#stepgrid .step').forEach((el,i)=>el.classList.toggle('cur',i===cur));
   if(notesMode) document.querySelectorAll('#notegrid .ncell').forEach(el=>el.classList.toggle('curcol',+el.dataset.col===cur));
@@ -3156,8 +3177,10 @@ function seqTick(){
       const sd=stepDur(); for(let k=0;k<6;k++) moSend([0xF8], nextStepTime+k*sd/6);
     }
     nextStepTime += stepDur();
-    curStepSched=(curStepSched+1)%NSTEPS; absStepSched++;
-    if(curStepSched===0){
+    const dir=S.bpm<0?-1:1;                       // negative BPM: the sequence runs backwards
+    curStepSched=posMod(curStepSched+dir,NSTEPS); absStepSched+=dir;
+    const barDone = dir>0 ? curStepSched===0 : curStepSched===NSTEPS-1;
+    if(barDone){                                   // the ARRANGEMENT still advances forward
       if(S.chainOn && S.chain.length){
         S.chainPos=(S.chainPos+1)%S.chain.length; selectPattern(S.chain[S.chainPos]); drawSeq();
       } else if(S.songOn && S.song.length){ songAdvance(); }
@@ -3205,7 +3228,10 @@ $('btnStop').addEventListener('click',stopSeq);
 $('btnRec').addEventListener('click',()=>{ S.liveRec=!S.liveRec; $('btnRec').classList.toggle('on',S.liveRec); $('btnLiveRec').classList.toggle('on',S.liveRec); lcd(S.liveRec?'STEP REC ARMED — pad hits write steps, not audio. For audio: LIVE \u25cf REC or TRAX.':'STEP REC OFF'); });
 $('btnLiveRec').addEventListener('click',()=>$('btnRec').click());
 
-function setBpm(b){ S.bpm=clamp(b,40,240);
+function setBpm(b){
+  if(b===0) b=S.bpm>0?-1:1;   // crossing zero flips direction
+  S.bpm=clampBpm(b);
+  $('bpmRev').classList.toggle('on',S.bpm<0);
   if(S.ptnBpm && !S.extClk && !vinylOn) S.patterns[S.pattern].bpm=S.bpm;
   $('bpmval').value=S.bpm.toFixed(1);
   $('djBpm').value=S.bpm; $('djBpmV').textContent=S.bpm.toFixed(1);
@@ -3215,6 +3241,10 @@ function setBpm(b){ S.bpm=clamp(b,40,240);
   dirty(); }
 $('bpmUp').addEventListener('click',()=>setBpm(S.bpm+1));
 $('bpmDown').addEventListener('click',()=>setBpm(S.bpm-1));
+$('bpmHalf').addEventListener('click',()=>{ setBpm(S.bpm/2); lcd('HALF TIME · '+S.bpm.toFixed(1)+' BPM'); });
+$('bpmDbl').addEventListener('click',()=>{ setBpm(S.bpm*2); lcd('DOUBLE TIME · '+S.bpm.toFixed(1)+' BPM'); });
+$('bpmRev').addEventListener('click',()=>{ setBpm(-S.bpm);
+  lcd(S.bpm<0?'REVERSE · sequencer runs backwards at '+Math.abs(S.bpm).toFixed(1)+' BPM':'FORWARD · '+S.bpm.toFixed(1)+' BPM'); });
 $('bpmval').addEventListener('change',e=>{ const v=parseFloat(e.target.value); if(isFinite(v)) setBpm(v); else setBpm(S.bpm); });
 $('djBpm').addEventListener('input',e=>setBpm(parseFloat(e.target.value)));
 $('swing').addEventListener('input',e=>{ S.swing=parseFloat(e.target.value); $('swingV').textContent=Math.round(S.swing*100)+'%'; dirty(); });
@@ -3446,7 +3476,7 @@ function disarmTrax(){
   if(traxStream){ try{ traxStream.getTracks().forEach(t=>t.stop()); }catch(e){} traxStream=null; micBusy=false; resumeSession(); }
 }
 function trackLoopEnd(b){ // loop the take at the nearest whole bar so it stays in step
-  const bar=60/S.bpm/4*NSTEPS;
+  const bar=60/bpmAbs()/4*NSTEPS;
   let end=Math.round(b.duration/bar)*bar;
   if(end<bar*0.99 || end>b.duration+0.001) end=Math.floor(b.duration/bar)*bar;
   if(end<bar*0.99) end=b.duration;   // shorter than a bar: loop the whole take
@@ -3715,7 +3745,7 @@ function arpStart(notes){
   arpTimer=setInterval(()=>{
     if(!arpNotes) return;
     while(arpNext<AC.currentTime+0.12){
-      const dur=60/S.bpm/2;
+      const dur=60/bpmAbs()/2;
       const vv=instVoice(noteHz(arpNotes[arpIdx%arpNotes.length]),arpNext);
       vv.stop(arpNext+dur*0.85);
       arpIdx++; arpNext+=dur;
@@ -4044,7 +4074,7 @@ function stutterStart(){
   g.cancelScheduledValues(AC.currentTime);
   stutNext=AC.currentTime+0.02;
   const sched=()=>{
-    const cyc=60/S.bpm/4;                  // 1/16 gate synced to tempo
+    const cyc=60/bpmAbs()/4;                  // 1/16 gate synced to tempo
     while(stutNext<AC.currentTime+0.15){
       g.setValueAtTime(1,stutNext);
       g.setValueAtTime(0,stutNext+cyc*0.55);
@@ -4154,7 +4184,7 @@ function selectPattern(i){
   S.pattern=i;
   const pb=S.patterns[i].bpm;
   if(S.ptnBpm && pb && !S.extClk){
-    S.bpm=clamp(pb,40,240);
+    S.bpm=clampBpm(pb);
     $('bpmval').value=S.bpm.toFixed(1);
     $('djBpm').value=S.bpm; $('djBpmV').textContent=S.bpm.toFixed(1);
     liveDelaySync();
@@ -4857,8 +4887,10 @@ function onClockTick(){
     if(clkTicks===0){
       ensureAudio();
       schedStep(curStepSched, absStepSched, AC.currentTime+0.005);
-      curStepSched=(curStepSched+1)%NSTEPS; absStepSched++;
-      if(curStepSched===0){
+      const dir=S.bpm<0?-1:1;
+      curStepSched=posMod(curStepSched+dir,NSTEPS); absStepSched+=dir;
+      const barDone = dir>0 ? curStepSched===0 : curStepSched===NSTEPS-1;
+      if(barDone){
         if(S.chainOn && S.chain.length){ S.chainPos=(S.chainPos+1)%S.chain.length; selectPattern(S.chain[S.chainPos]); drawSeq(); }
         else if(S.songOn && S.song.length){ songAdvance(); }
       }
@@ -5411,9 +5443,9 @@ function exportMidi(){
   const perPad={}, tempoEvs=[]; let absStepExp=0, lastBpm=-1;
   seq.forEach((pi,bar)=>{
     const pat=S.patterns[pi];
-    const bpm=(S.ptnBpm && pat.bpm)? clamp(pat.bpm,40,240) : S.bpm;
+    const bpm=(S.ptnBpm && pat.bpm)? clampBpm(pat.bpm) : S.bpm;
     const barTick=bar*NSTEPS*TPS;
-    if(bpm!==lastBpm){ const upq=Math.round(60000000/bpm);
+    if(bpm!==lastBpm){ const upq=Math.round(60000000/Math.abs(bpm));
       tempoEvs.push({tick:barTick,ord:0,msg:[0xFF,0x51,0x03,(upq>>>16)&255,(upq>>>8)&255,upq&255]}); lastBpm=bpm; }
     for(let st=0;st<NSTEPS;st++){
       const stTick=barTick+st*TPS+(st%2===1?Math.round(S.swing*TPS):0);
@@ -5466,14 +5498,15 @@ async function renderMix(padSet, traxSet){
   for(let l=0;l<loops;l++){
     for(const pi of seq){
       const pat=S.patterns[pi];
-      const bpm=(S.ptnBpm && pat.bpm)? clamp(pat.bpm,40,240) : S.bpm;
-      const sd=60/bpm/4;
+      const bpm=(S.ptnBpm && pat.bpm)? clampBpm(pat.bpm) : S.bpm;
+      const sd=60/Math.abs(bpm)/4;
       tempoSeg.push({t,bpm});
+      const rev=bpm<0;
       for(let st=0;st<NSTEPS;st++){
         const swing=(st%2===1?S.swing*sd:0);
         for(let p=0;p<NPADS;p++){
           if(padSet && !padSet.has(p)) continue;
-          const L=(pat.len&&pat.len[p])||NSTEPS, idx=(absB+st)%L;
+          const L=(pat.len&&pat.len[p])||NSTEPS, idx=posMod(rev?-(absB+st):(absB+st),L);
           const v=pat.steps[p][idx]; if(!(v>0)) continue;
           const lk=pat.locks&&pat.locks[p+':'+idx];
           if(lk && lk.prob!=null && Math.random()>lk.prob) continue;
