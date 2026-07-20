@@ -112,14 +112,20 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
 .pad{aspect-ratio:1;background:var(--pad);border:1px solid var(--line);border-radius:10px;
   position:relative;touch-action:none;user-select:none;-webkit-user-select:none;
   display:flex;flex-direction:column;justify-content:flex-end;padding:6px;overflow:hidden}
-.pad .pn{font-size:9px;color:var(--txt-dim)}
+.pad .pn{position:absolute;top:5px;left:7px;font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--txt-dim)}
+.pad.loaded .pn{color:var(--txt)}
 .pad .pname{font-size:9px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pad.loaded{border-color:#4a5262}
+/* status LED: dark = empty · green = sample loaded · amber = playing in this pattern */
+.pad .led{position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;
+  background:#191d24;border:1px solid #000;box-shadow:inset 0 1px 2px #000}
+.pad.loaded .led{background:var(--green);border-color:#2a5c2e;box-shadow:0 0 4px rgba(99,199,106,.7)}
+.pad.inseq .led{background:var(--amber);border-color:#7a4a16;box-shadow:0 0 6px rgba(255,140,46,.9)}
 .pad.hit{background:var(--amber-soft);border-color:var(--amber)}
 .pad.hit .pn,.pad.hit .pname{color:#120d04}
 .pad.sel{border:2px solid var(--amber)}
-.pad.fx::after{content:'';position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;
-  background:var(--amber);box-shadow:0 0 5px var(--amber)}
+.pad.fx::after{content:'';position:absolute;top:8px;right:19px;width:5px;height:5px;border-radius:50%;
+  background:var(--amber);box-shadow:0 0 4px var(--amber)}
 #editpanel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px}
 .pslider{display:flex;align-items:center;gap:8px;margin-bottom:2px}
 .pslider .lbl{min-width:44px}
@@ -1110,8 +1116,13 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
        (audio included, base64) into one .json; IMPORT BACKUP restores
        them — projects survive browser-storage wipes and move between
        devices.
+   - R54: PAD LEGIBILITY — every pad shows its number (bold, top-left,
+     brightens when loaded) and a hardware-style status LED (top-right):
+     dark = empty, GREEN = sample loaded, AMBER = this pad has steps in
+     the current pattern. LEDs live-update on step edits and pattern
+     switches; the FX dot moved beside the LED.
    ================================================================ */
-const BUILD = 'MVX-880 · R53 · 2026-07-15 · channel EQ, auto-warp, M4A export, backup';
+const BUILD = 'MVX-880 · R54 · 2026-07-15 · pad numbers + status LEDs';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1590,9 +1601,10 @@ function hitLive(idx, vel, pitchOff){
 const padEls=[];
 function buildPads(){
   const gr=$('padgrid'); gr.innerHTML='';
+  padEls.length=0;   // rebuilds must not leave drawPads/flashPad writing to detached elements
   for(let i=0;i<16;i++){
     const el=document.createElement('div'); el.className='pad';
-    el.innerHTML='<div class="pname"></div><div class="pn"></div>';
+    el.innerHTML='<div class="pn"></div><div class="led"></div><div class="pname"></div>';
     el.addEventListener('touchstart',e=>{
       e.preventDefault();
       const t=e.changedTouches[0], r=el.getBoundingClientRect();
@@ -1642,9 +1654,11 @@ function padPress(slot,vel){
   hitLive(idx,vel); drawEditTitleOnly();
 }
 function drawPads(){
+  const pat=S.patterns[S.pattern];
   for(let s=0;s<16;s++){
     const idx=padIndex(s), p=S.pads[idx], el=padEls[s];
     el.classList.toggle('loaded',p.bufId>=0);
+    el.classList.toggle('inseq',p.bufId>=0 && pat.steps[idx].some(v=>v>0));   // amber LED: this pad plays in the current pattern
     el.classList.toggle('sel',S.edit && idx===S.editPad);
     el.classList.toggle('fx',hasFx(p));
     el.querySelector('.pn').textContent=padName(idx);
@@ -4192,6 +4206,7 @@ function drawSteps(){
     gr.appendChild(el);
   }
   drawNotes();   // keep the melodic lane in step with the velocity grid
+  drawPads();    // pad LEDs mirror the current pattern's usage
 }
 function setTrackLen(d){
   const pat=S.patterns[S.pattern];
