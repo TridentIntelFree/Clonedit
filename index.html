@@ -1245,8 +1245,22 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      stuck-note failsafe: All-Notes-Off + All-Sound-Off on STOP and on
      silencer cuts. (5) SILENT-TAKE GUARD: a take that commits at
      near-zero peak warns immediately with the likely cause.
+   - R64: TRAX WORKFLOW FIXES (field report). (1) LIVE ONLY truly
+     isolates: each manual hit now taps its OWN voice into the live
+     bus via a per-voice gain node, so sequenced hits on the same pad
+     no longer leak into a LIVE ONLY take (the old pad-wide gate let
+     everything on that pad through while a manual voice rang).
+     (2) RE-RECORD OVER A LANE: while a lane is armed, its previous
+     take stays silent during recording and is replaced on STOP —
+     selecting a track and recording now overwrites it. (3) Every
+     TRAX lane has a ✕ CLEAR button (confirm) that stops its voices
+     and empties just that lane. (4) TO PAD targeting: KEEP/JAM→PAD
+     and take→PAD land on the CURRENT pad only if it's empty,
+     otherwise the first empty pad (same bank first) — and the pad
+     selection ring is now always visible, even on an empty pad
+     outside EDIT mode, so you can see where audio will land.
    ================================================================ */
-const BUILD = 'MVX-880 · R63 · 2026-07-15 · prevention + failsafes — black box, rewind';
+const BUILD = 'MVX-880 · R64 · 2026-07-20 · trax workflow — live-only isolation, re-record, clear, smart to-pad';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1488,7 +1502,6 @@ function buildGraph(ctx){
     // mixer mute/solo gate — downstream of the fader (ch.gain) and its vol-LFO,
     // so a muted channel is truly silent; also the per-channel meter tap point
     const mute=ctx.createGain(); mute.gain.value=1; tail.connect(mute);
-    const liveSend=ctx.createGain(); liveSend.gain.value=0; mute.connect(liveSend); liveSend.connect(g.liveBus);
     const meterAn=ctx.createAnalyser(); meterAn.fftSize=256; mute.connect(meterAn);
     const dryDuck=ctx.createGain(); dryDuck.gain.value=1;   // ducked path (default)
     const dryDir=ctx.createGain(); dryDir.gain.value=0;     // direct path (trigger pad only)
@@ -1499,7 +1512,7 @@ function buildGraph(ctx){
     // per-pad LFO — one oscillator + depth gain, routed to the chosen param
     const lfoOsc=ctx.createOscillator(), lfoAmp=ctx.createGain(); lfoAmp.gain.value=0;
     lfoOsc.connect(lfoAmp); try{ lfoOsc.start(); }catch(e){}
-    const node={in:drv,drv,crush,flt,eqLo,eqMid,eqHi,ch,pan,rev,dly,dryDuck,dryDir,mute,liveSend,meterAn,lfoOsc,lfoAmp};
+    const node={in:drv,drv,crush,flt,eqLo,eqMid,eqHi,ch,pan,rev,dly,dryDuck,dryDir,mute,meterAn,lfoOsc,lfoAmp};
     applyPadFx(node,p,ctx);
     applyPadLfo(node,p,ctx);
     g.pads.push(node);
@@ -1543,7 +1556,7 @@ function updatePerf(){
   const t=AC.currentTime, f=perfFactor();
   liveVoices.forEach(src=>{ try{ src.playbackRate.setTargetAtTime(src._base*f,t,0.02); }catch(e){} });
 }
-function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff){
+function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
   const p=S.pads[idx]; if(p.bufId<0) return null;
   let buf=S.buffers[p.bufId]; if(!buf) return null;
   let s0=p.start, e0=p.end;
@@ -1568,6 +1581,11 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff){
   env.gain.setValueAtTime(v,relStart);
   env.gain.linearRampToValueAtTime(0.0001,relStart+p.rel);
   src.connect(env); env.connect(g.pads[idx].in);
+  let ltg=null;
+  if(liveTap && g.liveBus){   // per-voice tap: ONLY this manual voice reaches the LIVE-ONLY record bus
+    ltg=ctx.createGain(); ltg.gain.value=p.gain;
+    env.connect(ltg); ltg.connect(g.liveBus);
+  }
   // per-pad voice cap — sustained samples on dense steps used to stack
   // dozens of full-length voices into a wash that masks everything else
   const act=g.pads[idx].act || (g.pads[idx].act=[]);
@@ -1593,6 +1611,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff){
     liveVoices.delete(src);
     if(live && LIVE.warbGain){ try{ LIVE.warbGain.disconnect(src.playbackRate); }catch(e){} }
     try{src.disconnect();env.disconnect();}catch(e){}
+    if(ltg){ try{ ltg.disconnect(); }catch(e){} }
   };
   return {env,src};
 }
@@ -1644,6 +1663,7 @@ function bbKeep(){
   const L=buf.getChannelData(0), R=buf.getChannelData(1);
   let src=(bbPos-bbFilled+bbL.length)%bbL.length;
   for(let i=0;i<n;i++){ L[i]=bbL[src]; R[i]=bbR[src]; src++; if(src>=bbL.length)src=0; }
+  S.editPad=pickTargetPad();
   loadIntoTarget(buf,'blackbox');
   lcd('BLACK BOX \u2192 '+padName(S.editPad)+' \u00b7 last '+(n/AC.sampleRate).toFixed(0)+'s saved — trim/chop it in SMPL.');
 }
@@ -1758,20 +1778,16 @@ function writeLiveStep(idx, vel, when){ // quantize a live hit onto the grid (LI
   if(idx===S.seqPad) drawSteps();
   dirty();
 }
-function markLiveVoice(idx,a){ // manual voice → open the pad's live-record send until it ends
-  const n=LIVE&&LIVE.pads[idx]; if(!n||!n.liveSend||!a||!a.src) return;
-  n._liveRef=(n._liveRef||0)+1;
-  try{ n.liveSend.gain.setValueAtTime(1,AC.currentTime); }catch(e){}
-  a.src.addEventListener('ended',()=>{
-    n._liveRef=Math.max(0,(n._liveRef||1)-1);
-    if(!n._liveRef){ try{ n.liveSend.gain.setTargetAtTime(0,AC.currentTime,0.03); }catch(e){} }
-  });
+function pickTargetPad(){ // prefer the selected pad if it's empty; else first empty pad (this bank, then any); else the selection
+  if(S.pads[S.editPad].bufId<0) return S.editPad;
+  for(let s2=0;s2<16;s2++){ const i=S.bank*16+s2; if(S.pads[i].bufId<0) return i; }
+  for(let i=0;i<NPADS;i++) if(S.pads[i].bufId<0) return i;
+  return S.editPad;
 }
 function hitLive(idx, vel, pitchOff){
   ensureAudio();
   if(silGateDown && LIVE){ silRestore(LIVE, AC.currentTime); silGateDown=false; }
-  const a=triggerPad(AC, LIVE, idx, vel, AC.currentTime, chokeLive, pitchOff||0);
-  if(a){ markLiveVoice(idx,a); }
+  const a=triggerPad(AC, LIVE, idx, vel, AC.currentTime, chokeLive, pitchOff||0, true);
   if(a) activeEnv[idx]=a;
   flashPad(idx,vel);
   if(S.notesOut && midiOutDev && S.pads[idx].bufId>=0)
@@ -1817,8 +1833,7 @@ function repStart(idx,vel){
   h.timer=setInterval(()=>{               // mini lookahead scheduler — sample-accurate rolls
     const iv=60/bpmAbs()/parseInt($('repRate').value,10);
     while(h.nextT<AC.currentTime+0.1){
-      const v=triggerPad(AC,LIVE,idx,h.vel,h.nextT,chokeLive);
-      if(v) markLiveVoice(idx,v);
+      triggerPad(AC,LIVE,idx,h.vel,h.nextT,chokeLive,0,true);
       writeLiveStep(idx,h.vel,h.nextT);
       const dt=Math.max(0,(h.nextT-AC.currentTime)*1000);
       setTimeout(()=>flashPad(idx,h.vel),dt);
@@ -1842,7 +1857,7 @@ function drawPads(){
     const idx=padIndex(s), p=S.pads[idx], el=padEls[s];
     el.classList.toggle('loaded',p.bufId>=0);
     el.classList.toggle('inseq',p.bufId>=0 && pat.steps[idx].some(v=>v>0));   // amber LED: this pad plays in the current pattern
-    el.classList.toggle('sel',S.edit && idx===S.editPad);
+    el.classList.toggle('sel',idx===S.editPad);   // the TARGET pad is always visible, even when empty
     el.classList.toggle('fx',hasFx(p));
     el.querySelector('.pn').textContent=padName(idx);
     el.querySelector('.pname').textContent=p.name||'';
@@ -3788,6 +3803,7 @@ $('btnJamSave').addEventListener('click',()=>{
 });
 $('btnJamPad').addEventListener('click',()=>{
   if(!jamBuf) return;
+  S.editPad=pickTargetPad();
   loadIntoTarget(jamBuf, jamStamp());
   if(Math.abs(perfPitch+perfBend)>0.01)
     lcd('LOADED → '+padName(S.editPad)+' — note: pitch fader at '+(perfPitch>=0?'+':'')+perfPitch.toFixed(1)+' st bends this pad too (double-tap fader to zero).');
@@ -3829,7 +3845,10 @@ function drawTrax(){
       else{ traxFxSel=i; drawTraxFx(); $('traxfx').style.display='block'; }
       drawTrax();
     });
-    row.append(num,rec,mu,so,lp,nm,vol,fx);
+    const clr=document.createElement('button'); clr.innerHTML='&#215;'; clr.title='clear this take';
+    clr.addEventListener('click',()=>{ if(tr.bufId<0){ lcd('TRACK '+(i+1)+' is already empty.'); return; }
+      if(confirm('Clear the take on TRACK '+(i+1)+'?')) clearTrack(i); });
+    row.append(num,rec,mu,so,lp,nm,vol,fx,clr);
     el.appendChild(row);
   });
   if($('traxfx').style.display!=='none') drawTraxFx();
@@ -3857,9 +3876,17 @@ $('tfxDly').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.dly=par
 $('tfxPad').addEventListener('click',()=>{
   const tr=S.trax[traxFxSel];
   if(tr.bufId<0){ lcd('TRACK '+(traxFxSel+1)+' IS EMPTY.'); return; }
+  S.editPad=pickTargetPad();   // never silently overwrite a used pad when an empty one exists
   const p=S.pads[S.editPad]; p.bufId=tr.bufId; p.start=0; p.end=1; p.name=(tr.name||'take').slice(0,14); p.warped=false; delete warpOrig[S.editPad];
-  drawPads(); drawEdit(); dirty(); lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad));
+  drawPads(); drawEdit(); dirty(); lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad)+(S.pads[S.editPad]?'':''));
 });
+function clearTrack(i){
+  traxVoices.forEach(v=>{ if(v.i===i){ try{ v.src.stop(); }catch(e){} } });
+  S.trax[i]=newTrack();
+  if(traxArm===i) disarmTrax();
+  if(traxFxSel===i) $('traxfx').style.display='none';
+  drawTrax(); dirty(); lcd('TRACK '+(i+1)+' CLEARED.');
+}
 $('tfxClr').addEventListener('click',()=>{
   S.trax[traxFxSel]=newTrack();
   if(traxArm===traxFxSel) disarmTrax();
@@ -3916,6 +3943,7 @@ function startTrax(when){
   stopTraxVoices();
   S.trax.forEach((tr,i)=>{
     if(tr.bufId<0) return;
+    if(i===traxArm) return;   // re-recording over this lane: its old take stays silent and gets replaced on STOP
     const b=S.buffers[tr.bufId]; if(!b) return;
     const aud=!tr.mute && (traxSolo<0||traxSolo===i);
     const v=wireTrack(AC,LIVE,tr,b,when,aud?tr.gain:0);
