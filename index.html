@@ -492,10 +492,10 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 
 <!-- TRAX -->
 <div class="view" id="v-trax">
-  <div class="hint"><b>RECORD AUDIO TO A LANE:</b> 1) pick <b>SOURCE</b> (MASTER BUS = all you hear, or MIC). 2) tap <b>&#9679;</b> on a lane to arm. 3) press <b>PLAY</b> to record, <b>STOP</b> to commit. <b>PUT A TAKE ON A PAD:</b> tap that lane&rsquo;s <b>FX</b> button &rarr; <b>TO PAD</b>. &#8734; = loop &middot; M / S = mute / solo.</div>
+  <div class="hint"><b>RECORD AUDIO TO A LANE:</b> 1) pick <b>SOURCE</b> — <b>MASTER BUS</b> = everything you hear &middot; <b>LIVE ONLY</b> = just what YOU play (live instruments, AMP guitar, pads you hit) with the sequencer as silent backing &middot; <b>MIC</b>. 2) tap <b>&#9679;</b> on a lane to arm. 3) press <b>PLAY</b> to record, <b>STOP</b> to commit. <b>PUT A TAKE ON A PAD:</b> tap that lane&rsquo;s <b>FX</b> button &rarr; <b>TO PAD</b>. &#8734; = loop &middot; M / S = mute / solo.</div>
   <div class="row">
     <span class="lbl">SOURCE</span>
-    <select id="traxSrc"><option value="bus">MASTER BUS</option><option value="mic">MIC</option></select>
+    <select id="traxSrc"><option value="bus">MASTER BUS</option><option value="live">LIVE ONLY</option><option value="mic">MIC</option></select>
     <span class="grow" style="font-size:10px;color:var(--txt-dim)">arm &#9679; · PLAY rolls &amp; records · STOP commits</span>
   </div>
   <div id="traxlist"></div>
@@ -1186,8 +1186,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      edits the velocity of an ALREADY-PLACED step (shows its current
      level, places the step if it was off) — previously the only way to
      change a step's loudness was delete + re-add.
+   - R59: LIVE-ONLY RECORDING. TRAX SOURCE gains LIVE ONLY: a dedicated
+     recording bus that carries just what YOU perform — live instruments,
+     AMP guitar, and manually-played pads (touch, MIDI, note-repeat
+     rolls; each manual voice opens its pad's post-FX live-send for its
+     lifetime) — while the sequencer plays as silent backing. MASTER BUS
+     still records everything you hear; MIC unchanged. Overdub real
+     multitrack takes over a beat without the beat printing into them.
    ================================================================ */
-const BUILD = 'MVX-880 · R58 · 2026-07-15 · step velocity — restored + per-step editing';
+const BUILD = 'MVX-880 · R59 · 2026-07-15 · LIVE-ONLY recording — your take, not the mix';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1403,6 +1410,10 @@ function buildGraph(ctx){
   // sidechain duck bus — everything routed here dips when the trigger pad fires;
   // the trigger pad itself takes the direct path to master (punches through)
   g.duckBus=ctx.createGain(); g.duckBus.connect(g.master);
+  // LIVE-ONLY recording bus: carries just what the player performs (live
+  // instruments, AMP, manually-hit pads). Feeds nothing audible — TRAX taps
+  // it when SOURCE is LIVE ONLY, so takes exclude the sequencer.
+  g.liveBus=ctx.createGain();
   // pad channels — built ONCE, connected ONCE (fan-out fix)
   // per-hit env → [drv → crush → flt] insert chain → ch gain → pan → dry + sends
   g.pads=[];
@@ -1425,6 +1436,7 @@ function buildGraph(ctx){
     // mixer mute/solo gate — downstream of the fader (ch.gain) and its vol-LFO,
     // so a muted channel is truly silent; also the per-channel meter tap point
     const mute=ctx.createGain(); mute.gain.value=1; tail.connect(mute);
+    const liveSend=ctx.createGain(); liveSend.gain.value=0; mute.connect(liveSend); liveSend.connect(g.liveBus);
     const meterAn=ctx.createAnalyser(); meterAn.fftSize=256; mute.connect(meterAn);
     const dryDuck=ctx.createGain(); dryDuck.gain.value=1;   // ducked path (default)
     const dryDir=ctx.createGain(); dryDir.gain.value=0;     // direct path (trigger pad only)
@@ -1435,7 +1447,7 @@ function buildGraph(ctx){
     // per-pad LFO — one oscillator + depth gain, routed to the chosen param
     const lfoOsc=ctx.createOscillator(), lfoAmp=ctx.createGain(); lfoAmp.gain.value=0;
     lfoOsc.connect(lfoAmp); try{ lfoOsc.start(); }catch(e){}
-    const node={in:drv,drv,crush,flt,eqLo,eqMid,eqHi,ch,pan,rev,dly,dryDuck,dryDir,mute,meterAn,lfoOsc,lfoAmp};
+    const node={in:drv,drv,crush,flt,eqLo,eqMid,eqHi,ch,pan,rev,dly,dryDuck,dryDir,mute,liveSend,meterAn,lfoOsc,lfoAmp};
     applyPadFx(node,p,ctx);
     applyPadLfo(node,p,ctx);
     g.pads.push(node);
@@ -1657,10 +1669,20 @@ function writeLiveStep(idx, vel, when){ // quantize a live hit onto the grid (LI
   if(idx===S.seqPad) drawSteps();
   dirty();
 }
+function markLiveVoice(idx,a){ // manual voice → open the pad's live-record send until it ends
+  const n=LIVE&&LIVE.pads[idx]; if(!n||!n.liveSend||!a||!a.src) return;
+  n._liveRef=(n._liveRef||0)+1;
+  try{ n.liveSend.gain.setValueAtTime(1,AC.currentTime); }catch(e){}
+  a.src.addEventListener('ended',()=>{
+    n._liveRef=Math.max(0,(n._liveRef||1)-1);
+    if(!n._liveRef){ try{ n.liveSend.gain.setTargetAtTime(0,AC.currentTime,0.03); }catch(e){} }
+  });
+}
 function hitLive(idx, vel, pitchOff){
   ensureAudio();
   if(silGateDown && LIVE){ silRestore(LIVE, AC.currentTime); silGateDown=false; }
   const a=triggerPad(AC, LIVE, idx, vel, AC.currentTime, chokeLive, pitchOff||0);
+  if(a){ markLiveVoice(idx,a); }
   if(a) activeEnv[idx]=a;
   flashPad(idx,vel);
   if(S.notesOut && midiOutDev && S.pads[idx].bufId>=0)
@@ -1706,7 +1728,8 @@ function repStart(idx,vel){
   h.timer=setInterval(()=>{               // mini lookahead scheduler — sample-accurate rolls
     const iv=60/bpmAbs()/parseInt($('repRate').value,10);
     while(h.nextT<AC.currentTime+0.1){
-      triggerPad(AC,LIVE,idx,h.vel,h.nextT,chokeLive);
+      const v=triggerPad(AC,LIVE,idx,h.vel,h.nextT,chokeLive);
+      if(v) markLiveVoice(idx,v);
       writeLiveStep(idx,h.vel,h.nextT);
       const dt=Math.max(0,(h.nextT-AC.currentTime)*1000);
       setTimeout(()=>flashPad(idx,h.vel),dt);
@@ -3761,7 +3784,7 @@ async function armTrack(i){
     catch(err){ micBusy=false; drawTrax(); lcd('MIC DENIED/UNAVAILABLE ('+((err&&err.name)||'error')+').'); return; }
   }
   traxArm=i; drawTrax();
-  lcd('TRACK '+(i+1)+' ARMED · '+($('traxSrc').value==='mic'?'MIC':'BUS')+' — press PLAY to roll, STOP to commit.');
+  lcd('TRACK '+(i+1)+' ARMED · '+$('traxSrc').selectedOptions[0].textContent+' — press PLAY to roll, STOP to commit.');
 }
 function disarmTrax(){
   traxArm=-1;
@@ -3852,7 +3875,10 @@ function traxBeginCapture(when){
       if(cap.len>=ctx.sampleRate*TRAX_MAX_S) traxCommit();
     };
     const sink=ctx.createGain(); sink.gain.value=0;
-    if(useMic) srcNode.connect(tap); else (LIVE.perfGain||LIVE.master).connect(tap);
+    cap.srcMode=useMic?'mic':($('traxSrc').value==='live'?'live':'bus');
+    if(useMic) srcNode.connect(tap);
+    else if(cap.srcMode==='live') LIVE.liveBus.connect(tap);
+    else (LIVE.perfGain||LIVE.master).connect(tap);
     tap.connect(sink); sink.connect(ctx.destination);
     cap.tap=tap; cap.sink=sink;
     // sync marker: a ±4.0 impulse pair fired into the TAP ONLY (never audible)
@@ -3869,13 +3895,15 @@ function traxBeginCapture(when){
       ms.onended=()=>{ try{ms.disconnect();}catch(e){} };
     }catch(e){}
     traxCap=cap;
-    lcd('ROLLING — TRACK '+(traxArm+1)+' recording ('+(useMic?'MIC':'BUS')+') · STOP commits.');
+    lcd('ROLLING — TRACK '+(traxArm+1)+' recording ('+cap.srcMode.toUpperCase()+') · STOP commits.');
   }catch(e){ traxCap=null; lcd('TRACK REC FAILED: '+(e.message||'tap error')); }
 }
 function traxCommit(){
   const cap=traxCap; if(!cap) return;
   traxCap=null;
-  try{ if(cap.srcNode) cap.srcNode.disconnect(); else (LIVE.perfGain||LIVE.master).disconnect(cap.tap); }catch(e){}
+  try{ if(cap.srcNode) cap.srcNode.disconnect();
+    else if(cap.srcMode==='live') LIVE.liveBus.disconnect(cap.tap);
+    else (LIVE.perfGain||LIVE.master).disconnect(cap.tap); }catch(e){}
   try{ cap.tap.disconnect(); cap.sink.disconnect(); }catch(e){}
   const i=traxArm;
   disarmTrax();
@@ -3925,6 +3953,7 @@ function instBus(){ // lazy per-graph: level + rev/dly sends into the master mix
     const rv=AC.createGain(); rv.gain.value=S.inst.rev;
     const dl=AC.createGain(); dl.gain.value=S.inst.dly;
     g.connect(LIVE.duckBus||LIVE.master); g.connect(rv); g.connect(dl);   // live instruments duck too
+    if(LIVE.liveBus) g.connect(LIVE.liveBus);   // …and count as live performance for LIVE-ONLY recording
     rv.connect(LIVE.revIn); dl.connect(LIVE.dlyIn);
     LIVE._inst={g,rv,dl};
   }
@@ -4846,6 +4875,7 @@ function ampBuild(){
   A.treb.connect(A.out);                               // dry
   A.treb.connect(A.chDelay); A.chDelay.connect(A.chWet); A.chWet.connect(A.out);   // chorus wet
   A.out.connect(LIVE.master);
+  if(LIVE.liveBus) A.out.connect(LIVE.liveBus);   // guitar is live performance
   A.out.connect(A.dsend); A.dsend.connect(LIVE.dlyIn);
   A.out.connect(A.rsend); A.rsend.connect(LIVE.revIn);
   return A;
