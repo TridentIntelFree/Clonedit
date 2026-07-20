@@ -1215,8 +1215,18 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      context, gains/gates, buffer table integrity, dangling pad bufIds,
      voice counts, recent JS errors — into the text box for one-
      screenshot bug reports. Errors now keep an 8-entry ring buffer.
+   - R62: GAIN FORENSICS (field DIAG showed the silence: pad channel
+     gain written to 0 while every gate/buffer was healthy — and the
+     rebuild stayed silent because state carried the 0). Every writer
+     of pad gain (EDIT fader, MIXER fader, MIDI CC with its CC number)
+     now logs into a forensics ring shown by DIAG, alongside a per-pad
+     state/node gain table and the saved CC LEARN maps — the next
+     occurrence names the culprit. The self-healer now also restores
+     any loaded pad whose gain sits below 0.05 to 0.8 before rebuilding,
+     so healing actually restores sound. Prime suspect: a controller CC
+     mapped to SEL PAD GAIN streaming zeros.
    ================================================================ */
-const BUILD = 'MVX-880 · R61 · 2026-07-15 · self-heal + DIAG snapshot';
+const BUILD = 'MVX-880 · R62 · 2026-07-15 · gain forensics + healing that heals';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1667,6 +1677,8 @@ function startMeter(){ if(!meterRAF) meterRAF=requestAnimationFrame(meterLoop); 
 /* surface runtime errors on-device — no console on iPhone */
 const errLog=[];
 function logErr(m){ errLog.push(new Date().toTimeString().slice(0,8)+' '+m); if(errLog.length>8) errLog.shift(); }
+const gainLog=[];   // who wrote a pad's channel gain, when, to what — the ch:0 forensics
+function logGain(idx,v,src){ gainLog.push(new Date().toTimeString().slice(0,8)+' '+padName(idx)+'='+(+v).toFixed(2)+' by '+src); if(gainLog.length>10) gainLog.shift(); }
 window.onerror=function(msg,src,line){ logErr(msg+' @'+line); lcd('ERR: '+msg+' @'+line); try{plog('ERR: '+msg+' line '+line);}catch(e){} };
 window.onunhandledrejection=function(ev){ const m=ev&&ev.reason&&ev.reason.message?ev.reason.message:'promise rejection'; logErr(m); lcd('ERR: '+m); };
 
@@ -1839,7 +1851,7 @@ function bindEdit(id, key, fmt, applyLive){
     if(LIVE && applyLive) applyLive(LIVE.pads[S.editPad], p);
   });
 }
-bindEdit('epGain','gain',null,(n,p)=>{ n.ch.gain.setTargetAtTime(p.gain,AC.currentTime,0.01); });
+bindEdit('epGain','gain',null,(n,p)=>{ logGain(S.editPad,p.gain,'EDIT fader'); n.ch.gain.setTargetAtTime(p.gain,AC.currentTime,0.01); });
 bindEdit('epPitch','pitch',null,null);
 bindEdit('epFine','fine',null,null);
 bindEdit('epPan','pan',null,(n,p)=>{ if(n.pan) n.pan.pan.setTargetAtTime(p.pan,AC.currentTime,0.01); });
@@ -2034,7 +2046,7 @@ function drawMixer(){
     fader.min=0; fader.max=1.2; fader.step=0.01; fader.value= idx<0?S.masterVol:p.gain;
     fader.addEventListener('input',e=>{ const v=parseFloat(e.target.value);
       if(idx<0){ S.masterVol=v; if(LIVE) LIVE.master.gain.setTargetAtTime(v,AC.currentTime,0.02); if($('mxVol')){ $('mxVol').value=v; $('mxVolV').textContent=pct(v);} }
-      else{ p.gain=v; if(LIVE) LIVE.pads[idx].ch.gain.setTargetAtTime(v,AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); }
+      else{ p.gain=v; logGain(idx,v,'MIXER fader'); if(LIVE) LIVE.pads[idx].ch.gain.setTargetAtTime(v,AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); }
       dirty(); });
     farea.append(mtr,fader); el.appendChild(farea);
     mixMeters.push({idx,fill});
@@ -5279,7 +5291,7 @@ function applyCc(cc,val){
   else if(t==='m:dfb'){ S.delayFb=x*0.85; if(LIVE){ LIVE.dlyFb.gain.setTargetAtTime(S.delayFb,AC.currentTime,0.02); if(LIVE.dlyFb2) LIVE.dlyFb2.gain.setTargetAtTime(S.delayFb,AC.currentTime,0.02); } }
   else{
     const p=S.pads[S.editPad], n=LIVE?LIVE.pads[S.editPad]:null;
-    if(t==='p:gain'){ p.gain=x*1.2; if(n) n.ch.gain.setTargetAtTime(p.gain,AC.currentTime,0.02); }
+    if(t==='p:gain'){ p.gain=x*1.2; logGain(S.editPad,p.gain,'MIDI CC#'+cc); if(n) n.ch.gain.setTargetAtTime(p.gain,AC.currentTime,0.02); }
     else if(t==='p:pitch'){ p.pitch=Math.round(x*24-12); }
     else if(t==='p:pan'){ p.pan=x*2-1; if(n&&n.pan) n.pan.pan.setTargetAtTime(p.pan,AC.currentTime,0.02); }
     else if(t==='p:rev'){ p.rev=x; if(n) n.rev.gain.setTargetAtTime(x,AC.currentTime,0.02); }
@@ -6193,6 +6205,9 @@ function diagDump(tag){
       'buffers:'+S.buffers.length+' loadedPads:'+S.pads.filter(x=>x.bufId>=0).length+' dangling:'+(dang.length?dang.join(' '):'none')+' voices:'+acts,
       'gates — perf:'+(LIVE?g(LIVE.perfGain):'-')+' duck:'+(LIVE?g(LIVE.duckBus):'-')+' master:'+(LIVE?g(LIVE.master):'-')+' silGate:'+silGateDown,
       'selPad '+padName(S.editPad)+' — bufId:'+(p0?S.pads[S.editPad].bufId:'-')+' ch:'+(p0?g(p0.ch):'-')+' mute:'+(p0?g(p0.mute):'-')+' solo:'+S.pads.filter(x=>x.solo).length+' muted:'+S.pads.filter(x=>x.mute).length,
+      'padGains: '+S.pads.map((pd,i)=>pd.bufId>=0?padName(i)+':'+pd.gain.toFixed(2)+'/'+(LIVE&&LIVE.pads[i]?g(LIVE.pads[i].ch):'-'):null).filter(Boolean).join(' '),
+      'ccMaps: '+(Object.keys(S.ccMaps).length?JSON.stringify(S.ccMaps):'none')+' · midiIn:'+(midiAccess?'on':'off'),
+      'gainWrites: '+(gainLog.length?gainLog.join(' | '):'none'),
       'errors: '+(errLog.length?errLog.join(' | '):'none'),
     ];
     lines.forEach(l=>plog(l));
@@ -6208,10 +6223,13 @@ setInterval(()=>{
   if(lastFireT && now-lastFireT<2500 && lastLoudT && now-lastLoudT>5000 && now-lastHealT>30000){
     lastHealT=now;
     diagDump('auto-heal');
+    const zeroed=[];
+    S.pads.forEach((pd,i)=>{ if(pd.bufId>=0 && pd.gain<0.05){ zeroed.push(padName(i)+' was '+pd.gain.toFixed(2)); pd.gain=0.8; } });
+    if(zeroed.length) plog('SELF-HEAL: restored zeroed pad gains → 0.8: '+zeroed.join(', ')+' (see gainWrites above for who zeroed them)');
     plog('SELF-HEAL: steps firing but output silent — rebuilding audio and restarting playback.');
     try{ stopSeq(); }catch(e){}
     try{ rebuildAudio(); }catch(e){}
-    try{ startSeq(); lcd('AUDIO SELF-HEALED — playback restarted (see PROJ log)'); }catch(e){}
+    try{ startSeq(); drawEdit(); drawMixer(); lcd('AUDIO SELF-HEALED — playback restarted (see PROJ log)'); }catch(e){}
   }
 },2500);
 
