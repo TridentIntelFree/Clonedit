@@ -288,6 +288,10 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <div class="pslider"><span class="lbl">RESO</span><input type="range" id="epFRes" min="0.5" max="18" step="0.1"><span class="val" id="epFResV"></span></div>
     <div class="pslider"><span class="lbl">DRIVE</span><input type="range" id="epDrv" min="0" max="1" step="0.01"><span class="val" id="epDrvV"></span></div>
     <div class="pslider"><span class="lbl">CRUSH</span><input type="range" id="epCrush" min="4" max="16" step="1"><span class="val" id="epCrushV"></span></div>
+    <h3>CHANNEL EQ <span style="color:var(--txt-dim);letter-spacing:0">— low shelf 200 · mid 1k · high shelf 4k</span></h3>
+    <div class="pslider"><span class="lbl">LOW</span><input type="range" id="epEqLo" min="-12" max="12" step="0.5"><span class="val" id="epEqLoV"></span></div>
+    <div class="pslider"><span class="lbl">MID</span><input type="range" id="epEqMid" min="-12" max="12" step="0.5"><span class="val" id="epEqMidV"></span></div>
+    <div class="pslider"><span class="lbl">HIGH</span><input type="range" id="epEqHi" min="-12" max="12" step="0.5"><span class="val" id="epEqHiV"></span></div>
     <h3>LFO <span style="color:var(--txt-dim);letter-spacing:0">— continuous modulation (bakes into bounce)</span></h3>
     <div class="row">
       <button id="epLfoOn">LFO OFF</button>
@@ -308,6 +312,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <select id="epWarpBeats"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>6</option><option>8</option><option>16</option></select>
       <button id="epWarp" class="grow">WARP &#8594; FIT TEMPO</button>
       <button id="epWarpReset">RESET</button>
+      <button id="epWarpAuto" class="on">AUTO</button>
     </div>
     <div id="epWarpInfo" style="font-size:10px;color:var(--lcd);margin-top:2px">—</div>
   </div>
@@ -771,6 +776,11 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnProjPersist">KEEP OFFLINE</button>
   </div>
   <div id="projStoreTxt" style="font-size:10px;color:var(--lcd);margin-bottom:4px">—</div>
+  <div class="row">
+    <button id="btnLibBackup" class="grow">BACKUP ALL &#11015; .JSON</button>
+    <button id="btnLibImport" class="grow">IMPORT BACKUP</button>
+  </div>
+  <input type="file" id="libIn" style="display:none">
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>
@@ -785,6 +795,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <select id="bLoops"><option>1</option><option selected>2</option><option>4</option><option>8</option></select>
   </div>
   <div class="row"><button id="btnBounce" class="grow">BOUNCE &#8594; 44.1k / 16-BIT STEREO WAV (+3s tail)</button></div>
+  <div class="row"><button id="btnCompressed" class="grow">EXPORT COMPRESSED (M4A/WEBM &middot; renders in real time)</button></div>
   <div class="row"><button id="btnStems" class="grow">BOUNCE STEMS &#8594; PER-PAD / PER-TRACK WAV</button></div>
   <div class="row"><button id="btnMidi" class="grow">EXPORT MIDI &#8594; .MID (SOURCE, per-pad tracks)</button></div>
   <div id="stemlist"></div>
@@ -1083,8 +1094,24 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      in the breakdown, bells/glass/riser for air, ghost-note probability,
      hat ratchets, sidechain pump off the kick, 30% humanize, hall
      reverb + ping-pong delay. 16 pads, every one an in-house synth.
+   - R53: the last four pro-checklist items, together.
+     * PER-CHANNEL EQ: 3-band (low shelf 200 / mid bell 1k Q0.8 / high
+       shelf 4k, ±12dB) inserted in every pad channel after the filter —
+       full sliders in PADS → EDIT, mini L/M/H sliders on each mixer
+       strip. Applied by applyPadFx, so it's live AND baked into bounce.
+     * AUTO-WARP: warped pads re-stretch from the pristine original when
+       the tempo settles (500ms debounce, 0.5 BPM threshold to ignore
+       MIDI-clock jitter) — loops stay locked to the grid through tempo
+       changes. Toggle in the WARP row; persisted.
+     * COMPRESSED EXPORT (PROJ): offline render, then real-time encode
+       via MediaRecorder — AAC .m4a where supported (Safari/iOS, newer
+       Chrome), else Opus .webm. ~10× smaller than WAV for sharing.
+     * LIBRARY BACKUP (PROJ): BACKUP ALL packs every saved project
+       (audio included, base64) into one .json; IMPORT BACKUP restores
+       them — projects survive browser-storage wipes and move between
+       devices.
    ================================================================ */
-const BUILD = "MVX-880 · R52 · 2026-07-15 · Claude's Song — factory demo arrangement";
+const BUILD = 'MVX-880 · R53 · 2026-07-15 · channel EQ, auto-warp, M4A export, backup';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1099,8 +1126,9 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   gain:0.9, pitch:0, fine:0, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
   choke:0, note:36+i, reverse:false, mode:'one',
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
+  eqLo:0, eqMid:0, eqHi:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
-  warpBeats:4, mute:false, solo:false }; }
+  warpBeats:4, warpBpm:0, mute:false, solo:false }; }
 function newPattern(){ const s=[]; for(let p=0;p<NPADS;p++) s.push(new Array(NSTEPS).fill(0)); return { steps:s, bpm:null, len:new Array(NPADS).fill(NSTEPS), locks:{} }; }
 function trackLen(pat,p){ return (pat.len&&pat.len[p])||NSTEPS; }
 function stepLock(pat,p,st){ return pat.locks&&pat.locks[p+':'+st]; }
@@ -1111,7 +1139,7 @@ const S = {
   buffers: [],            // AudioBuffers, referenced by pads via bufId
   patterns: Array.from({length:NPAT},()=>newPattern()),
   pattern: 0, bank: 0, editPad: 0, seqPad: 0,
-  bpm: 100, swing: 0, human: 0, masterVol: 0.9, delayFb: 0.35,
+  bpm: 100, swing: 0, human: 0, autoWarp: true, masterVol: 0.9, delayFb: 0.35,
   revLvl: 0.9, revSize: 3.0, revType: 'hall', delayDiv: 0.375, dlyTone: 5200, dlyMode: 'digital', compAmt: 0.4,
   chain: [], chainOn: false, chainPos: 0,
   vcurve: 'linear', midiCh: -1, extClk: false, pcPat: true,
@@ -1226,6 +1254,7 @@ function applyPadFx(n, p, ctx){
   n.crush.curve = makeCrushCurve(p.crush);
   if(p.ftype==='off'){ n.flt.type='peaking'; n.flt.gain.value=0; n.flt.frequency.value=1000; n.flt.Q.value=0.5; }
   else{ n.flt.type=p.ftype; n.flt.gain.value=0; n.flt.frequency.value=cutHz(p.fcut); n.flt.Q.value=p.fres; }
+  if(n.eqLo){ n.eqLo.gain.value=p.eqLo||0; n.eqMid.gain.value=p.eqMid||0; n.eqHi.gain.value=p.eqHi||0; }
 }
 const LFO_BEATS={'1/1':4,'1/2':2,'1/4':1,'1/8':0.5,'1/16':0.25};
 function lfoHz(p){
@@ -1301,11 +1330,15 @@ function buildGraph(ctx){
     const drv=ctx.createWaveShaper();
     const crush=ctx.createWaveShaper();
     const flt=ctx.createBiquadFilter();
+    // 3-band channel EQ: low shelf 200 / mid bell 1k / high shelf 4k, ±12dB
+    const eqLo=ctx.createBiquadFilter(); eqLo.type='lowshelf'; eqLo.frequency.value=200;
+    const eqMid=ctx.createBiquadFilter(); eqMid.type='peaking'; eqMid.frequency.value=1000; eqMid.Q.value=0.8;
+    const eqHi=ctx.createBiquadFilter(); eqHi.type='highshelf'; eqHi.frequency.value=4000;
     const ch=ctx.createGain(); ch.gain.value=p.gain;
     const pan=ctx.createStereoPanner ? ctx.createStereoPanner() : null;
     const rev=ctx.createGain(); rev.gain.value=p.rev;
     const dly=ctx.createGain(); dly.gain.value=p.dly;
-    drv.connect(crush); crush.connect(flt); flt.connect(ch);
+    drv.connect(crush); crush.connect(flt); flt.connect(eqLo); eqLo.connect(eqMid); eqMid.connect(eqHi); eqHi.connect(ch);
     let tail=ch;
     if(pan){ pan.pan.value=p.pan; ch.connect(pan); tail=pan; }
     // mixer mute/solo gate — downstream of the fader (ch.gain) and its vol-LFO,
@@ -1321,7 +1354,7 @@ function buildGraph(ctx){
     // per-pad LFO — one oscillator + depth gain, routed to the chosen param
     const lfoOsc=ctx.createOscillator(), lfoAmp=ctx.createGain(); lfoAmp.gain.value=0;
     lfoOsc.connect(lfoAmp); try{ lfoOsc.start(); }catch(e){}
-    const node={in:drv,drv,crush,flt,ch,pan,rev,dly,dryDuck,dryDir,mute,meterAn,lfoOsc,lfoAmp};
+    const node={in:drv,drv,crush,flt,eqLo,eqMid,eqHi,ch,pan,rev,dly,dryDuck,dryDir,mute,meterAn,lfoOsc,lfoAmp};
     applyPadFx(node,p,ctx);
     applyPadLfo(node,p,ctx);
     g.pads.push(node);
@@ -1650,6 +1683,9 @@ function drawEdit(){
   $('epFRes').value=p.fres; $('epFResV').textContent='Q '+p.fres.toFixed(1);
   $('epDrv').value=p.drv; $('epDrvV').textContent=Math.round(p.drv*100)+'%';
   $('epCrush').value=p.crush; $('epCrushV').textContent=p.crush>=16?'OFF':p.crush+' bit';
+  $('epEqLo').value=p.eqLo||0; $('epEqLoV').textContent=eqFmt(p.eqLo||0);
+  $('epEqMid').value=p.eqMid||0; $('epEqMidV').textContent=eqFmt(p.eqMid||0);
+  $('epEqHi').value=p.eqHi||0; $('epEqHiV').textContent=eqFmt(p.eqHi||0);
   $('epLfoOn').textContent=p.lfoOn?'LFO ON':'LFO OFF'; $('epLfoOn').classList.toggle('on',!!p.lfoOn);
   $('epLfoTgt').value=p.lfoTgt||'cutoff'; $('epLfoShape').value=p.lfoShape||'sine'; $('epLfoSync').value=p.lfoSync||'free';
   $('epLfoRate').value=p.lfoRate||2; $('epLfoRateV').textContent=(p.lfoSync&&p.lfoSync!=='free')?p.lfoSync:(p.lfoRate||2).toFixed(2)+'Hz';
@@ -1682,7 +1718,7 @@ $('epChoke').addEventListener('change',e=>{ S.pads[S.editPad].choke=parseInt(e.t
 $('epRevrs').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.reverse=!p.reverse; if(p.bufId>=0) getReversed(p.bufId); drawEdit(); dirty(); });
 $('epMode').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.mode=p.mode==='gate'?'one':'gate'; drawEdit(); dirty(); });
 function liveFx(){ const p=S.pads[S.editPad]; if(LIVE) applyPadFx(LIVE.pads[S.editPad],p,AC); drawPads(); drawEdit(); dirty(); }
-function hasFx(p){ return p.ftype!=='off' || p.drv>0 || p.crush<16; }
+function hasFx(p){ return p.ftype!=='off' || p.drv>0 || p.crush<16 || !!(p.eqLo||p.eqMid||p.eqHi); }
 $('epFType').addEventListener('change',e=>{
   const p=S.pads[S.editPad]; p.ftype=e.target.value;
   // jump cutoff somewhere audible when enabling — 16kHz LP sounds like nothing
@@ -1700,6 +1736,11 @@ $('epDrv').addEventListener('input',e=>{ S.pads[S.editPad].drv=parseFloat(e.targ
 $('epDrv').addEventListener('change',trigSel);
 $('epCrush').addEventListener('input',e=>{ S.pads[S.editPad].crush=parseInt(e.target.value,10); liveFx(); });
 $('epCrush').addEventListener('change',trigSel);
+const eqFmt=v=>(v>0?'+':'')+(+v).toFixed(1)+'dB';
+['Lo','Mid','Hi'].forEach(b=>{
+  $('epEq'+b).addEventListener('input',e=>{ S.pads[S.editPad]['eq'+b]=parseFloat(e.target.value); liveFx(); });
+  $('epEq'+b).addEventListener('change',trigSel);
+});
 
 /* ---- per-pad LFO ---- */
 function liveLfo(){ const p=S.pads[S.editPad]; if(LIVE) applyPadLfo(LIVE.pads[S.editPad],p,AC); drawEdit(); dirty(); }
@@ -1749,12 +1790,38 @@ $('epWarp').addEventListener('click',()=>{
   try{ stopPadVoices(i); }catch(e){}
   lcd('WARPING '+src.duration.toFixed(2)+'s → '+targetDur.toFixed(2)+'s ('+beats+' beats @ '+S.bpm.toFixed(1)+') …');
   const out=timeStretch(src,ratio);
-  S.buffers.push(out); p.bufId=S.buffers.length-1; p.start=0; p.end=1; p.pitch=0; p.fine=0; p.warped=true;
+  S.buffers.push(out); p.bufId=S.buffers.length-1; p.start=0; p.end=1; p.pitch=0; p.fine=0; p.warped=true; p.warpBpm=S.bpm;
   workBuf=out; slices=[]; selSlice=-1;
   drawPads(); drawEdit(); drawWave(); dirty();
   hitLive(i,0.9);
   lcd('WARPED · '+targetDur.toFixed(2)+'s locks to '+beats+' beats @ '+S.bpm.toFixed(1));
 });
+$('epWarpAuto').addEventListener('click',()=>{ S.autoWarp=!S.autoWarp; $('epWarpAuto').classList.toggle('on',S.autoWarp);
+  lcd(S.autoWarp?'AUTO-WARP ON — warped pads re-stretch when the tempo changes':'AUTO-WARP OFF'); dirty(); });
+/* auto-warp: when the tempo settles, re-stretch every warped pad so loops
+   stay locked to the grid. Stretches from the pristine pre-warp original
+   when it's in memory; after a restore the current buffer is adopted as
+   the new original (one-generation artifact bound, never compounding). */
+let autoWarpT=0;
+function autoWarpTick(){
+  if(!S.autoWarp) return;
+  let n=0;
+  for(let i=0;i<NPADS;i++){
+    const p=S.pads[i];
+    if(!p.warped || p.bufId<0) continue;
+    if(Math.abs((p.warpBpm||0)-S.bpm)<0.5) continue;   // ignore MIDI-clock jitter
+    if(!warpOrig[i]) warpOrig[i]=S.buffers[p.bufId];
+    const src=warpOrig[i], targetDur=(p.warpBeats||4)*(60/S.bpm), ratio=targetDur/src.duration;
+    if(!isFinite(ratio)||ratio<=0) continue;
+    try{ stopPadVoices(i); }catch(e){}
+    const out=timeStretch(src,ratio);
+    S.buffers.push(out); p.bufId=S.buffers.length-1; p.start=0; p.end=1; p.warpBpm=S.bpm;
+    if(i===S.editPad){ workBuf=out; slices=[]; selSlice=-1; drawWave(); drawEdit(); }
+    n++;
+  }
+  if(n){ dirty(); lcd('AUTO-WARP · '+n+' pad'+(n>1?'s':'')+' re-locked to '+S.bpm.toFixed(1)+' BPM'); }
+}
+function scheduleAutoWarp(){ clearTimeout(autoWarpT); autoWarpT=setTimeout(autoWarpTick,500); }
 $('epWarpReset').addEventListener('click',()=>{
   const i=S.editPad, p=S.pads[i];
   if(!warpOrig[i]){ lcd('WARP: nothing to reset.'); return; }
@@ -1855,6 +1922,12 @@ function drawMixer(){
         inp.addEventListener('input',e=>{ p[key]=parseFloat(e.target.value); if(LIVE) LIVE.pads[idx][key].gain.setTargetAtTime(p[key],AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); dirty(); });
         r.append(s,inp); return r; };
       el.appendChild(mkSend('R','rev')); el.appendChild(mkSend('D','dly'));
+      const mkEq=(lbl,key)=>{ const r=document.createElement('div'); r.className='msend';
+        const s=document.createElement('span'); s.textContent=lbl;
+        const inp=document.createElement('input'); inp.type='range'; inp.min=-12; inp.max=12; inp.step=0.5; inp.value=p[key]||0; inp.title='EQ '+lbl+' (±12dB)';
+        inp.addEventListener('input',e=>{ p[key]=parseFloat(e.target.value); if(LIVE) applyPadFx(LIVE.pads[idx],p,AC); if(idx===S.editPad) drawEdit(); dirty(); });
+        r.append(s,inp); return r; };
+      el.appendChild(mkEq('L','eqLo')); el.appendChild(mkEq('M','eqMid')); el.appendChild(mkEq('H','eqHi'));
     }else{
       const cl=document.createElement('div'); cl.className='mval'; cl.id='mixMasterClip'; cl.textContent='';
       el.appendChild(cl);
@@ -3124,6 +3197,7 @@ function setBpm(b){ S.bpm=clamp(b,40,240);
   $('djBpm').value=S.bpm; $('djBpmV').textContent=S.bpm.toFixed(1);
   liveDelaySync();
   refreshLfoRates();
+  scheduleAutoWarp();
   dirty(); }
 $('bpmUp').addEventListener('click',()=>setBpm(S.bpm+1));
 $('bpmDown').addEventListener('click',()=>setBpm(S.bpm-1));
@@ -4838,7 +4912,7 @@ $('btnSave').addEventListener('click',()=>{
     return {sr:b.sampleRate,len:b.length,ch:chans};
   });
   const doc={ fmt:'mvx880-project', build:BUILD, name:$('projName').value,
-    bpm:S.bpm, swing:S.swing, human:S.human, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
@@ -4869,7 +4943,7 @@ function reapplyLivePads(){   // push S.pads channel state onto the live graph (
   applyMixMutes();
 }
 function applySessionDoc(doc, bufs){
-  S.bpm=doc.bpm; S.swing=doc.swing; S.human=doc.human||0; S.masterVol=doc.masterVol; S.delayFb=doc.delayFb;
+  S.bpm=doc.bpm; S.swing=doc.swing; S.human=doc.human||0; S.autoWarp=doc.autoWarp!=null?!!doc.autoWarp:true; S.masterVol=doc.masterVol; S.delayFb=doc.delayFb;
   S.revLvl=(doc.revLvl!=null)?doc.revLvl:0.9;
   S.revSize=(doc.revSize!=null)?doc.revSize:3.0;
   S.delayDiv=(doc.delayDiv!=null)?doc.delayDiv:0.375;
@@ -4906,7 +4980,8 @@ function applySessionDoc(doc, bufs){
     if(p.mute==null)p.mute=false; if(p.solo==null)p.solo=false;   // pre-R43/R44 docs lack these
     if(p.lfoOn==null)p.lfoOn=false; if(p.lfoTgt==null)p.lfoTgt='cutoff'; if(p.lfoShape==null)p.lfoShape='sine';
     if(p.lfoSync==null)p.lfoSync='free'; if(p.lfoRate==null)p.lfoRate=2; if(p.lfoDepth==null)p.lfoDepth=0.5;
-    if(p.warpBeats==null)p.warpBeats=4; });
+    if(p.warpBeats==null)p.warpBeats=4; if(p.warpBpm==null)p.warpBpm=0;
+    if(p.eqLo==null)p.eqLo=0; if(p.eqMid==null)p.eqMid=0; if(p.eqHi==null)p.eqHi=0; });
   Object.keys(revCache).forEach(k=>delete revCache[k]);
   Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
   Object.keys(activeEnv).forEach(k=>delete activeEnv[k]);
@@ -4920,6 +4995,7 @@ function applySessionDoc(doc, bufs){
   { const keep=S.ptnBpm; S.ptnBpm=false; setBpm(S.bpm); S.ptnBpm=keep; }  // don't clobber the restored pattern's own BPM
   $('swing').value=S.swing; $('swingV').textContent=Math.round(S.swing*100)+'%';
   $('human').value=S.human; $('humanV').textContent=Math.round(S.human*100)+'%';
+  $('epWarpAuto').classList.toggle('on',S.autoWarp);
   $('vcurve').value=S.vcurve; $('midiCh').value=String(S.midiCh);
   $('midiRoot').value=String(S.midiRoot); $('btnChrom').classList.toggle('on',S.midiChrom);
   $('btnNotesOut').classList.toggle('on',S.notesOut); $('btnClkOut').classList.toggle('on',S.clkOut); $('midiOutCh').value=String(S.midiOutCh);
@@ -5032,7 +5108,7 @@ function snapshotSession(){
     return {sr:b.sampleRate,len:b.length,ch};
   });
   return { fmt:'mvx880-project', t:Date.now(), name:$('projName').value, projId:curProjId,
-    bpm:S.bpm, swing:S.swing, human:S.human, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
@@ -5059,7 +5135,7 @@ function dirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(autosave,1500); schedu
 let undoStack=[], redoStack=[], _committed=null, undoTimer=0;
 function undoSnap(){
   return { name:$('projName').value,
-    bpm:S.bpm, swing:S.swing, human:S.human, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, masterVol:S.masterVol, delayFb:S.delayFb,
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
@@ -5437,6 +5513,90 @@ $('btnBounce').addEventListener('click',async ()=>{
     plog('WAV done: '+Math.round(wav.size/1024)+' KB · 44.1k/16-bit stereo.');
     lcd('BOUNCE COMPLETE.');
   }catch(err){ plog('Bounce failed: '+err.message); lcd('BOUNCE FAILED.'); }
+});
+
+/* ---- compressed export: offline render, then real-time encode via MediaRecorder.
+   AAC (audio/mp4 → .m4a) where supported (Safari/iOS, newer Chrome), else
+   Opus (.webm). Real-time is the price of zero dependencies. ---- */
+let cmpBusy=false;
+function mimeLabel(m){ return m.indexOf('mp4')>=0?'M4A (AAC)':'WEBM (Opus)'; }
+$('btnCompressed').addEventListener('click',async ()=>{
+  if(cmpBusy){ lcd('COMPRESSED EXPORT already running…'); return; }
+  const mime=['audio/mp4','audio/mp4;codecs=mp4a.40.2','audio/webm;codecs=opus','audio/webm']
+    .find(m=>window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m));
+  if(!mime){ plog('Compressed export unavailable — this browser\'s MediaRecorder has no AAC/Opus. Use WAV.'); lcd('NO COMPRESSED CODEC — use WAV.'); return; }
+  cmpBusy=true;
+  let iv=0;
+  try{
+    lcd('RENDERING …');
+    const rendered=await renderMix(null,null);
+    if(!rendered){ plog('Nothing to export.'); lcd('NOTHING TO EXPORT.'); cmpBusy=false; return; }
+    ensureAudio();
+    const dur=rendered.duration;
+    const src=AC.createBufferSource(); src.buffer=rendered;
+    const msd=AC.createMediaStreamDestination();   // private stream — silent, doesn't touch the master
+    src.connect(msd);
+    const rec=new MediaRecorder(msd.stream,{mimeType:mime,audioBitsPerSecond:192000});
+    const chunks=[];
+    rec.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+    const done=new Promise(res=>{ rec.onstop=res; });
+    rec.start(500);
+    const t0=AC.currentTime;
+    src.start();
+    iv=setInterval(()=>{ const left=Math.max(0,dur-(AC.currentTime-t0));
+      lcd('ENCODING '+mimeLabel(mime)+' · '+Math.ceil(left)+'s left — keep the app open'); },500);
+    await new Promise(res=>{ src.onended=res; });
+    await new Promise(res=>setTimeout(res,300));   // let the tail flush into the recorder
+    try{ rec.stop(); }catch(e){}
+    await done;
+    const blob=new Blob(chunks,{type:mime});
+    const ext=mime.indexOf('mp4')>=0?'m4a':'webm';
+    download(blob, ($('projName').value||'mvx-session')+'.'+ext);
+    plog('Compressed export: '+Math.round(blob.size/1024)+' KB .'+ext+' (WAV would be ~'+Math.round(dur*44100*4/1024)+' KB).');
+    lcd('EXPORTED .'+ext.toUpperCase()+' · '+Math.round(blob.size/1024)+' KB');
+  }catch(err){ plog('Compressed export failed: '+err.message); lcd('EXPORT FAILED.'); }
+  finally{ clearInterval(iv); cmpBusy=false; }
+});
+
+/* ---- whole-library backup / restore: every saved project in one JSON file ---- */
+function u8ToB64(u8){ let s=''; const CH=0x8000; for(let i=0;i<u8.length;i+=CH) s+=String.fromCharCode.apply(null,u8.subarray(i,i+CH)); return btoa(s); }
+function b64ToU8(b64){ const bin=atob(b64), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); return u8; }
+$('btnLibBackup').addEventListener('click',async ()=>{
+  const idx=await projIndexGet();
+  if(!idx.length){ lcd('LIBRARY EMPTY — nothing to back up.'); return; }
+  lcd('PACKING '+idx.length+' project(s) …');
+  const out=[];
+  for(const m of idx){
+    let doc=null; try{ doc=await idbGet('proj:'+m.id); }catch(e){}
+    if(!doc) continue;
+    out.push({ id:m.id, doc:Object.assign({},doc,{
+      buffers:(doc.buffers||[]).map(b=>({sr:b.sr,len:b.len,ch:b.ch.map(ab=>u8ToB64(new Uint8Array(ab)))})) }) });
+  }
+  const blob=new Blob([JSON.stringify({fmt:'mvx880-library',t:Date.now(),projects:out})],{type:'application/json'});
+  download(blob,'mvx-library-backup.json');
+  plog('Library backup: '+out.length+' project(s), '+(blob.size/1048576).toFixed(1)+' MB.');
+  lcd('BACKUP SAVED · '+out.length+' projects');
+});
+$('btnLibImport').addEventListener('click',()=>{ $('libIn').value=''; $('libIn').click(); });
+$('libIn').addEventListener('change',async e=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  try{
+    const j=JSON.parse(await f.text());
+    if(j.fmt!=='mvx880-library'||!Array.isArray(j.projects)) throw new Error('not an MVX library backup');
+    let n=0;
+    for(const pr of j.projects){
+      if(!pr||!pr.id||!pr.doc||pr.doc.fmt!=='mvx880-project') continue;
+      const doc=Object.assign({},pr.doc,{
+        buffers:(pr.doc.buffers||[]).map(b=>({sr:b.sr,len:b.len,ch:b.ch.map(s=>b64ToU8(s).buffer)})) });
+      await idbPut('proj:'+pr.id,doc);
+      await projIndexUpsert({ id:pr.id, name:doc.name||'untitled', t:doc.t||Date.now(),
+        pads:(doc.pads||[]).filter(p=>p.bufId>=0).length, kb:docKB(doc) });
+      n++;
+    }
+    await drawProjects();
+    plog('Imported '+n+' project(s) from '+f.name+'.');
+    lcd('IMPORTED · '+n+' project(s) into the library');
+  }catch(err){ plog('Import failed: '+err.message); lcd('IMPORT FAILED: '+err.message); }
 });
 $('btnStems').addEventListener('click',async ()=>{
   const src2=$('bSrc').value;
