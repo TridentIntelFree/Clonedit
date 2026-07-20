@@ -808,6 +808,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnDocLoad" class="grow">LOAD DOC</button>
     <button id="btnDocExport">EXPORT CURRENT</button>
     <button id="btnDocSpec">SPEC</button>
+    <button id="btnDiag" title="engine state snapshot">DIAG</button>
   </div>
   <textarea id="docText" spellcheck="false" placeholder='Ask any AI: "write me an MVX-880 song doc" (tap SPEC for the format), then paste the JSON here and tap LOAD DOC.'></textarea>
   <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">A song doc describes pads (synth preset + note + mix), patterns (steps · pitches · locks · silencer · signed BPM) and the arrangement — the whole production as text. EXPORT lets an AI remix what you made. Console: <span style="color:var(--lcd)">window.MVX.load / .export / .play / .spec</span></div>
@@ -1203,8 +1204,19 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      full resumeSession revival (context resume, dead-stream rebuild,
      wedged-clock rebuild) DURING playback — previously revival only
      ran on touch/visibility, so hands-off listening stayed silent.
+   - R61: SELF-HEAL + DIAG (follow-up: pads went silent while LIVE
+     instruments still sounded — so the session/output is alive and the
+     failure is engine-level in the pad path; not reproducible off-
+     device). Two responses: (1) the playback watchdog now detects
+     "steps are firing but the master has been silent >5s" and
+     automatically dumps a diagnostic snapshot to the PROJ log, rebuilds
+     the whole audio graph, and restarts playback (once per 30s max).
+     (2) A DIAG button (PROJ → AI JAM row) captures engine state —
+     context, gains/gates, buffer table integrity, dangling pad bufIds,
+     voice counts, recent JS errors — into the text box for one-
+     screenshot bug reports. Errors now keep an 8-entry ring buffer.
    ================================================================ */
-const BUILD = 'MVX-880 · R60 · 2026-07-15 · wake lock + mid-song output watchdog';
+const BUILD = 'MVX-880 · R61 · 2026-07-15 · self-heal + DIAG snapshot';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1634,6 +1646,7 @@ function meterLoop(){
   const l=readAn(LIVE.meterL,_mbufL), r=readAn(LIVE.meterR,_mbufR);
   paintBar($('mL'),l.rms,l.pk); paintBar($('mR'),r.rms,r.pk);
   const pk=Math.max(l.pk,r.pk), now=performance.now();
+  if(pk>0.02) lastLoudT=now;
   if(pk>=0.895) mClipHold=now;
   $('mClip').classList.toggle('on', now-mClipHold<800);
   // per-channel mixer meters — only when the MIX tab is visible
@@ -1652,8 +1665,10 @@ function meterLoop(){
 function startMeter(){ if(!meterRAF) meterRAF=requestAnimationFrame(meterLoop); }
 
 /* surface runtime errors on-device — no console on iPhone */
-window.onerror=function(msg,src,line){ lcd('ERR: '+msg+' @'+line); try{plog('ERR: '+msg+' line '+line);}catch(e){} };
-window.onunhandledrejection=function(ev){ const m=ev&&ev.reason&&ev.reason.message?ev.reason.message:'promise rejection'; lcd('ERR: '+m); };
+const errLog=[];
+function logErr(m){ errLog.push(new Date().toTimeString().slice(0,8)+' '+m); if(errLog.length>8) errLog.shift(); }
+window.onerror=function(msg,src,line){ logErr(msg+' @'+line); lcd('ERR: '+msg+' @'+line); try{plog('ERR: '+msg+' line '+line);}catch(e){} };
+window.onunhandledrejection=function(ev){ const m=ev&&ev.reason&&ev.reason.message?ev.reason.message:'promise rejection'; logErr(m); lcd('ERR: '+m); };
 
 /* test tone through the FULL master chain — tap the MVX-880 logo.
    Beep audible + pads silent = sample/decode issue.
@@ -3457,6 +3472,7 @@ function schedStep(barStep, absStep, t){
     }
     fired.push({p,v:hv});
   }
+  if(fired.length) lastFireT=performance.now();
   if(silGateDown && fired.length){ silRestore(LIVE, t+swing); silGateDown=false; }   // sound returns on the next hit
   const delay=Math.max(0,(t-AC.currentTime)*1000);
   setTimeout(()=>{ markStep(absStep); flashFired(fired); },delay);
@@ -6003,6 +6019,7 @@ $('btnDocExport').addEventListener('click',()=>{
   lcd('DOC EXPORTED to the text box — copy it to your AI.');
 });
 $('btnDocSpec').addEventListener('click',()=>{ $('docText').value=SONGDOC_SPEC; lcd('SPEC in the text box — hand it to any AI and ask for a song.'); });
+$('btnDiag').addEventListener('click',()=>{ const d=diagDump('manual'); $('docText').value=d; lcd('DIAG in the text box + PROJ log — screenshot or copy it when reporting a bug.'); });
 $('libIn').addEventListener('change',async e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;
   try{
@@ -6163,7 +6180,40 @@ window.addEventListener('pagehide',()=>autosave());
 setInterval(()=>{ if(!document.hidden && S.buffers.length) autosave(); },60000);
 window.addEventListener('focus',resumeSession);
 document.body.addEventListener('touchstart',()=>{ if(AC) resumeSession(); },{passive:true});
-setInterval(()=>{ if(playing && AC && !document.hidden) resumeSession(); },2500);   // mid-song output death self-heals
+let lastLoudT=0, lastFireT=0, lastHealT=-1e9;   // -inf: the 30s rate-limit must not block the FIRST heal
+function diagDump(tag){
+  try{
+    const dang=[]; S.pads.forEach((pd,i)=>{ if(pd.bufId>=0 && !S.buffers[pd.bufId]) dang.push(padName(i)+'→'+pd.bufId); });
+    const acts=LIVE?LIVE.pads.reduce((a,n)=>a+((n&&n.act)?n.act.length:0),0):-1;
+    const g=id=>{ try{ return +id.gain.value.toFixed(3); }catch(e){ return '?'; } };
+    const p0=LIVE?LIVE.pads[S.editPad]:null;
+    const lines=[
+      'DIAG('+tag+') '+BUILD,
+      'ctx:'+(AC?AC.state:'none')+' @'+(AC?Math.round(AC.sampleRate):0)+'Hz outDead:'+(AC?outIsDead():'-')+' playing:'+playing+' songPos:'+songPos+' ptn:'+(S.pattern+1),
+      'buffers:'+S.buffers.length+' loadedPads:'+S.pads.filter(x=>x.bufId>=0).length+' dangling:'+(dang.length?dang.join(' '):'none')+' voices:'+acts,
+      'gates — perf:'+(LIVE?g(LIVE.perfGain):'-')+' duck:'+(LIVE?g(LIVE.duckBus):'-')+' master:'+(LIVE?g(LIVE.master):'-')+' silGate:'+silGateDown,
+      'selPad '+padName(S.editPad)+' — bufId:'+(p0?S.pads[S.editPad].bufId:'-')+' ch:'+(p0?g(p0.ch):'-')+' mute:'+(p0?g(p0.mute):'-')+' solo:'+S.pads.filter(x=>x.solo).length+' muted:'+S.pads.filter(x=>x.mute).length,
+      'errors: '+(errLog.length?errLog.join(' | '):'none'),
+    ];
+    lines.forEach(l=>plog(l));
+    return lines.join('\n');
+  }catch(e){ plog('DIAG failed: '+e.message); return ''; }
+}
+setInterval(()=>{
+  if(!(playing && AC && !document.hidden)) return;
+  resumeSession();   // mid-song output death self-heals
+  const now=performance.now();
+  // pads scheduled + firing but the master has been silent >5s → engine-level
+  // failure we can't hear-diagnose remotely: dump state and rebuild everything.
+  if(lastFireT && now-lastFireT<2500 && lastLoudT && now-lastLoudT>5000 && now-lastHealT>30000){
+    lastHealT=now;
+    diagDump('auto-heal');
+    plog('SELF-HEAL: steps firing but output silent — rebuilding audio and restarting playback.');
+    try{ stopSeq(); }catch(e){}
+    try{ rebuildAudio(); }catch(e){}
+    try{ startSeq(); lcd('AUDIO SELF-HEALED — playback restarted (see PROJ log)'); }catch(e){}
+  }
+},2500);
 
 /* ---------------- boot ---------------- */
 buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader(); drawTrax(); drawLive(); drawSidechain();
