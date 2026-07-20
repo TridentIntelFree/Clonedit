@@ -641,6 +641,10 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnJamPad" style="display:none">TO PAD</button>
   </div>
   <div class="row">
+    <button id="btnBlackBox" class="grow">&#9202; KEEP LAST 30s (black box)</button>
+  </div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">The app is ALWAYS listening to itself. Played something great without recording? Tap to save the last 30 seconds onto the TARGET pad.</div>
+  <div class="row">
     <button id="btnTilt">TILT WAH</button>
     <button id="btnTape" class="grow">TAPE STOP (hold)</button>
     <button id="btnStut" class="grow">STUTTER (hold)</button>
@@ -803,6 +807,8 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnLibImport" class="grow">IMPORT BACKUP</button>
   </div>
   <input type="file" id="libIn" style="display:none">
+  <h3>REWIND <span style="color:var(--txt-dim);letter-spacing:0">— automatic checkpoints, every 3 min while you work</span></h3>
+  <div id="rewindList"></div>
   <h3>AI JAM — SONG DOC <span style="color:var(--txt-dim);letter-spacing:0">— compose this app from plain text</span></h3>
   <div class="row">
     <button id="btnDocLoad" class="grow">LOAD DOC</button>
@@ -1225,8 +1231,22 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      any loaded pad whose gain sits below 0.05 to 0.8 before rebuilding,
      so healing actually restores sound. Prime suspect: a controller CC
      mapped to SEL PAD GAIN streaming zeros.
+   - R63: PREVENTION + FAILSAFE BUNDLE. Field DIAG #2 showed gainWrites
+     NONE with both pads' STATE at 0 → the saved project itself was
+     poisoned by the earlier incidents. (1) LOAD FAILSAFE: a project
+     where EVERY loaded pad has ~0 volume is repaired to 0.8 at load,
+     before first play — no more heal-on-every-session. Healed gains
+     now persist (dirty()). (2) BLACK BOX: the app always keeps the
+     last 30s of the master in memory — "KEEP LAST 30s" (DJ) writes
+     what you just heard onto the TARGET pad; survives output rebuilds.
+     (3) TIME MACHINE: automatic checkpoints every 3 min (kept 6, or 3
+     for huge projects) with a REWIND list in PROJ; rewinding first
+     checkpoints the present so it's always reversible. (4) MIDI
+     stuck-note failsafe: All-Notes-Off + All-Sound-Off on STOP and on
+     silencer cuts. (5) SILENT-TAKE GUARD: a take that commits at
+     near-zero peak warns immediately with the likely cause.
    ================================================================ */
-const BUILD = 'MVX-880 · R62 · 2026-07-15 · gain forensics + healing that heals';
+const BUILD = 'MVX-880 · R63 · 2026-07-15 · prevention + failsafes — black box, rewind';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1596,6 +1616,37 @@ function stopPadVoices(idx){ // cut every sounding voice on a pad NOW (clear / r
   if(activeEnv[idx]) delete activeEnv[idx];
 }
 
+/* BLACK BOX — always-on rolling capture of the last 30s of the master.
+   Whatever you just heard is always recoverable: KEEP writes it to a pad. */
+const BB_SECONDS=30;
+let bbTap=null, bbL=null, bbR=null, bbPos=0, bbFilled=0;
+function bbStart(){
+  if(!AC||!LIVE||bbTap) return;
+  try{
+    const n=Math.ceil(AC.sampleRate*BB_SECONDS);
+    if(!bbL||bbL.length!==n){ bbL=new Float32Array(n); bbR=new Float32Array(n); bbPos=0; bbFilled=0; }
+    bbTap=AC.createScriptProcessor(4096,2,2);
+    bbTap.onaudioprocess=e=>{
+      const inL=e.inputBuffer.getChannelData(0), inR=e.inputBuffer.getChannelData(e.inputBuffer.numberOfChannels>1?1:0);
+      let p=bbPos;
+      for(let i=0;i<inL.length;i++){ bbL[p]=inL[i]; bbR[p]=inR[i]; p++; if(p>=bbL.length)p=0; }
+      bbPos=p; bbFilled=Math.min(bbL.length,bbFilled+inL.length);
+    };
+    const sink=AC.createGain(); sink.gain.value=0;
+    LIVE.softclip.connect(bbTap); bbTap.connect(sink); sink.connect(AC.destination);
+    LIVE.bbTap=bbTap; LIVE.bbSink=sink;
+  }catch(e){ bbTap=null; }
+}
+function bbKeep(){
+  ensureAudio();
+  if(!bbTap||!bbFilled){ lcd('BLACK BOX: nothing captured yet — play something first.'); return; }
+  const n=bbFilled, buf=AC.createBuffer(2,n,AC.sampleRate);
+  const L=buf.getChannelData(0), R=buf.getChannelData(1);
+  let src=(bbPos-bbFilled+bbL.length)%bbL.length;
+  for(let i=0;i<n;i++){ L[i]=bbL[src]; R[i]=bbR[src]; src++; if(src>=bbL.length)src=0; }
+  loadIntoTarget(buf,'blackbox');
+  lcd('BLACK BOX \u2192 '+padName(S.editPad)+' \u00b7 last '+(n/AC.sampleRate).toFixed(0)+'s saved — trim/chop it in SMPL.');
+}
 function ensureAudio(){
   if(AC) { resumeSession(); return; }
   const Ctor = window.AudioContext || window.webkitAudioContext;
@@ -1635,6 +1686,7 @@ function ensureAudio(){
   }catch(e){}
   if(AC.state!=='running') AC.resume();
   startMeter();
+  bbStart();
   lcd('AUDIO ONLINE · '+Math.round(AC.sampleRate)+' Hz · state:'+AC.state);
 }
 
@@ -2120,7 +2172,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
     refreshHaveKeys().then(()=>{ drawPackList(); updateStoreMeter(); });   // always reflect current on-device library
   }
   if(b.dataset.v==='mix'){ drawEdit(); drawSidechain(); drawMixer(); }
-  if(b.dataset.v==='proj'){ $('bSrc').value=(S.songOn&&S.song.length)?'song':((S.chainOn&&S.chain.length)?'chain':'pat'); drawProjects(); }
+  if(b.dataset.v==='proj'){ $('bSrc').value=(S.songOn&&S.song.length)?'song':((S.chainOn&&S.chain.length)?'chain':'pat'); drawProjects(); drawRewind(); }
   if(b.dataset.v==='trax'){ drawTrax(); }
   if(b.dataset.v==='live'){ drawLive(); }
   if(b.dataset.v==='amp'){ ampListDevices(); }
@@ -3553,6 +3605,7 @@ function silenceAt(g, t, fade){
     if(act) act.forEach(v=>{ try{ v.env.gain.cancelScheduledValues(t); v.env.gain.setTargetAtTime(0,t,f/3); v.src.stop(t+f+0.15); }catch(e){} });
   }
   try{ const gn=g.perfGain.gain; gn.cancelScheduledValues(t); gn.setValueAtTime(1,t); gn.linearRampToValueAtTime(0.0001,t+f); }catch(e){}
+  if(g===LIVE && S.notesOut) moAllOff(t);   // the SILENCER cuts hardware synths too
 }
 function silRestore(g, t){
   try{ const gn=g.perfGain.gain; gn.cancelScheduledValues(t); gn.setValueAtTime(0.0001,t); gn.linearRampToValueAtTime(1,t+0.008); }catch(e){}
@@ -3570,13 +3623,14 @@ function stopSeq(){
   playing=false; clearInterval(seqTimer);
   wakeRelease();
   if(S.clkOut) moSend([0xFC]);        // MIDI STOP
+  if(S.notesOut) moAllOff();          // stuck-note failsafe
   stopTraxVoices();
-  if(traxCap) traxCommit();
   panicVoices();                 // STOP silences sounding samples (long one-shots don't ring on)
   if(silGateDown && LIVE){ silRestore(LIVE, AC.currentTime); silGateDown=false; }
   $('btnPlay').classList.remove('on');
   document.querySelectorAll('#stepgrid .step').forEach(el=>el.classList.remove('cur'));
   lcd('STOP.');
+  if(traxCap) traxCommit();      // last, so a take message (incl. the silent-take warning) isn't clobbered by "STOP."
 }
 $('btnPlay').addEventListener('click',startSeq);
 $('btnStop').addEventListener('click',stopSeq);
@@ -3976,7 +4030,13 @@ function traxCommit(){
   S.trax[i].name='take'+(i+1);
   drawTrax(); dirty();
   $('btnPerfRec').classList.remove('on');
-  lcd('TAKE \u2192 TRACK '+(i+1)+' \u00b7 '+buf.duration.toFixed(1)+'s — it plays with the transport; find it in TRAX.');
+  let tpk=0; for(let k=0;k<dl.length;k+=4){ const a=Math.abs(dl[k]); if(a>tpk) tpk=a; }
+  if(tpk<0.004){
+    plog('SILENT-TAKE GUARD: track '+(i+1)+' take peaked at '+tpk.toFixed(4)+' — likely wrong SOURCE (BUS/LIVE/MIC) or nothing played. Kept anyway.');
+    lcd('\u26a0 TAKE '+(i+1)+' LOOKS SILENT — check SOURCE (BUS records the mix, LIVE ONLY records what you play, MIC needs the mic).');
+  }else{
+    lcd('TAKE \u2192 TRACK '+(i+1)+' \u00b7 '+buf.duration.toFixed(1)+'s — it plays with the transport; find it in TRAX.');
+  }
 }
 
 /* ---------------- LIVE — playable instruments ---------------- */
@@ -5164,6 +5224,8 @@ function midiNow(when){ // AudioContext seconds → Web MIDI (performance.now) m
 }
 function moSend(bytes,when){ if(!midiOutDev) return;
   try{ midiOutDev.send(bytes, (when!=null&&AC)? midiNow(when) : undefined); }catch(e){} }
+function moAllOff(when){ if(!midiOutDev) return; const ch=S.midiOutCh&15;
+  moSend([0xB0|ch,123,0],when); moSend([0xB0|ch,120,0],when); }   // hardware can never hang on a stuck note
 function moNote(note,vel,when,durS){ // schedules ON at `when` (ctx-time) and its OFF after durS
   if(!S.notesOut||!midiOutDev) return;
   const ch=S.midiOutCh&15, n=clamp(Math.round(note),0,127);
@@ -5414,6 +5476,16 @@ function applySessionDoc(doc, bufs){
     if(p.lfoSync==null)p.lfoSync='free'; if(p.lfoRate==null)p.lfoRate=2; if(p.lfoDepth==null)p.lfoDepth=0.5;
     if(p.warpBeats==null)p.warpBeats=4; if(p.warpBpm==null)p.warpBpm=0;
     if(p.eqLo==null)p.eqLo=0; if(p.eqMid==null)p.eqMid=0; if(p.eqHi==null)p.eqHi=0; });
+  { // LOAD FAILSAFE: every loaded pad at ~0 volume = a poisoned save (a real
+    // field failure wrote gain 0 into state and autosave kept it). One pad at
+    // 0 is legit mixing; ALL of them is never intentional — repair silently.
+    const lp=S.pads.filter(p=>p.bufId>=0);
+    if(lp.length && lp.every(p=>(p.gain||0)<0.05)){
+      lp.forEach(p=>{ p.gain=0.8; });
+      try{ logGain(S.pads.indexOf(lp[0]),0.8,'LOAD-repair (all pads were 0)'); }catch(e){}
+      setTimeout(()=>{ try{ plog('LOAD FAILSAFE: every loaded pad had volume 0 (poisoned save) — restored to 0.8.'); lcd('FIXED: pad volumes were saved at 0 — restored to 0.8.'); }catch(e){} },50);
+    }
+  }
   Object.keys(revCache).forEach(k=>delete revCache[k]);
   Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
   Object.keys(activeEnv).forEach(k=>delete activeEnv[k]);
@@ -5787,6 +5859,50 @@ async function drawProjects(){
     row.append(main,load,dup,del); el.appendChild(row);
   });
 }
+/* TIME MACHINE — the app checkpoints itself every 3 minutes. REWIND is
+   always reversible: rewinding first checkpoints the present. */
+let ckptBusy=false;
+async function ckptSave(){
+  if(ckptBusy||!S.buffers.length) return; ckptBusy=true;
+  try{
+    const doc=snapshotSession();
+    await idbPut('ckpt:'+Date.now(),doc);
+    let ks=(await idbKeysS(IDB_STORE)).filter(k=>typeof k==='string'&&k.indexOf('ckpt:')===0).sort();
+    const keep=docKB(doc)>8192?3:6;   // big sample-heavy projects keep fewer
+    while(ks.length>keep){ await idbDelS(IDB_STORE,ks.shift()); }
+  }catch(e){}
+  ckptBusy=false;
+}
+setInterval(ckptSave,180000);
+async function drawRewind(){
+  const el=$('rewindList'); if(!el) return;
+  let ks=[]; try{ ks=(await idbKeysS(IDB_STORE)).filter(k=>typeof k==='string'&&k.indexOf('ckpt:')===0).sort().reverse(); }catch(e){}
+  el.innerHTML='';
+  if(!ks.length){ el.innerHTML='<div style="font-size:10px;color:var(--txt-dim);padding:2px 0 6px">No checkpoints yet — they appear automatically every 3 minutes while you work.</div>'; return; }
+  ks.forEach(k=>{
+    const t=parseInt(k.slice(5),10);
+    const row=document.createElement('div'); row.className='row';
+    const nm=document.createElement('span'); nm.style.cssText='font-size:11px;flex:1;color:var(--lcd)';
+    nm.textContent='\u23f1 '+ageText(Date.now()-t);
+    const b=document.createElement('button'); b.textContent='REWIND';
+    b.addEventListener('click',async ()=>{
+      if(!confirm('Rewind the session to '+ageText(Date.now()-t)+'? A checkpoint of RIGHT NOW is saved first, so you can rewind the rewind.')) return;
+      try{
+        try{ await idbPut('ckpt:'+Date.now(), snapshotSession()); }catch(e){}
+        const doc=await idbGet(k);
+        if(!doc){ lcd('CHECKPOINT MISSING.'); drawRewind(); return; }
+        if(playing) stopSeq();
+        applySessionDoc(doc,docToBuffers(doc));
+        curProjId=doc.projId||null;
+        await idbPut('last',snapshotSession());
+        drawProjects(); drawRewind();
+        lcd('REWOUND \u2713 session restored from '+ageText(Date.now()-t));
+      }catch(e){ lcd('REWIND FAILED: '+e.message); }
+    });
+    row.append(nm,b); el.appendChild(row);
+  });
+}
+$('btnBlackBox').addEventListener('click',bbKeep);
 $('btnProjSave').addEventListener('click',projSave);
 $('btnProjSaveNew').addEventListener('click',projSaveNew);
 $('btnProjNew').addEventListener('click',()=>{ if(confirm('Start a new empty project? Save first if you want to keep the current one.')) projNew(); });
@@ -6122,6 +6238,7 @@ function rebuildOut(){
     const p=LIVE.ael.play();
     if(p && p.catch) p.catch(()=>{ try{ LIVE.softclip.connect(AC.destination); }catch(e){} });
     if(jamOn && typeof jamTap!=='undefined' && jamTap){ try{ LIVE.softclip.connect(jamTap); }catch(e){} }   // don't drop an in-flight REC OUT
+    if(LIVE.bbTap){ try{ LIVE.softclip.connect(LIVE.bbTap); }catch(e){} }   // black box keeps listening
     lcd('OUT REVIVED · '+AC.state);
   }catch(e){
     try{ LIVE.softclip.connect(AC.destination); }catch(e2){}
@@ -6134,7 +6251,7 @@ function rebuildAudio(){ // last resort: wedged context — new context, new gra
   try{ if(ampOn) ampDisable(); }catch(e){}
   try{ if(LIVE && LIVE.ael){ LIVE.ael.srcObject=null; LIVE.ael.remove(); } }catch(e){}
   try{ if(AC) AC.close(); }catch(e){}
-  AC=null; LIVE=null;
+  AC=null; LIVE=null; bbTap=null;   // black box re-arms on the fresh context (history kept if the rate matches)
   liveVoices.clear();
   Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
   Object.keys(activeEnv).forEach(k=>delete activeEnv[k]);
@@ -6225,7 +6342,7 @@ setInterval(()=>{
     diagDump('auto-heal');
     const zeroed=[];
     S.pads.forEach((pd,i)=>{ if(pd.bufId>=0 && pd.gain<0.05){ zeroed.push(padName(i)+' was '+pd.gain.toFixed(2)); pd.gain=0.8; } });
-    if(zeroed.length) plog('SELF-HEAL: restored zeroed pad gains → 0.8: '+zeroed.join(', ')+' (see gainWrites above for who zeroed them)');
+    if(zeroed.length){ plog('SELF-HEAL: restored zeroed pad gains → 0.8: '+zeroed.join(', ')+' (see gainWrites above for who zeroed them)'); dirty(); }
     plog('SELF-HEAL: steps firing but output silent — rebuilding audio and restarting playback.');
     try{ stopSeq(); }catch(e){}
     try{ rebuildAudio(); }catch(e){}
@@ -6239,7 +6356,7 @@ if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
   navigator.serviceWorker.register('./sw.js').catch(()=>{});   // offline shell — network-first, so updates land when online
 }
 document.body.addEventListener('touchstart',function once(){ ensureAudio(); document.body.removeEventListener('touchstart',once); },{passive:true});
-drawSong(); undoInit(); drawProjects();
+drawSong(); undoInit(); drawProjects(); drawRewind();
 lcd('READY · load a sample into a pad (SMPL tab).');
 offerRestore();
 
