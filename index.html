@@ -1193,8 +1193,18 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      lifetime) — while the sequencer plays as silent backing. MASTER BUS
      still records everything you hear; MIC unchanged. Overdub real
      multitrack takes over a beat without the beat printing into them.
+   - R60: MID-SONG SILENCE HARDENING (report: song plays once, then the
+     transport keeps running silently). Cause profile matches the iOS
+     audio-session death — the output MediaStream dies (typically when
+     the screen dims ~1 min in) while the sequencer keeps scheduling.
+     Fixes: (1) Screen Wake Lock held while the transport plays, so iOS
+     never dims mid-song (the usual trigger); released on STOP, re-
+     acquired on return. (2) A 2.5s playback watchdog that runs the
+     full resumeSession revival (context resume, dead-stream rebuild,
+     wedged-clock rebuild) DURING playback — previously revival only
+     ran on touch/visibility, so hands-off listening stayed silent.
    ================================================================ */
-const BUILD = 'MVX-880 · R59 · 2026-07-15 · LIVE-ONLY recording — your take, not the mix';
+const BUILD = 'MVX-880 · R60 · 2026-07-15 · wake lock + mid-song output watchdog';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -3498,6 +3508,7 @@ function startSeq(){
   curStepSched=0; curStep=0; absStepSched=0;
   nextStepTime=AC.currentTime+0.08;   // offsets set BEFORE the loop reads them (ordering fix)
   if(S.clkOut && !S.extClk) moSend([0xFA]);   // MIDI START — followers reset to bar 1
+  wakeAcquire();                              // screen stays on = iOS audio session stays alive
   startTrax(nextStepTime);            // tape lanes roll (and record) from bar 1
   if(!S.extClk) seqTimer=setInterval(seqTick,25);
   autoStart();
@@ -3529,6 +3540,7 @@ function panicVoices(){ // silence every sounding pad voice immediately (short c
 }
 function stopSeq(){
   playing=false; clearInterval(seqTimer);
+  wakeRelease();
   if(S.clkOut) moSend([0xFC]);        // MIDI STOP
   stopTraxVoices();
   if(traxCap) traxCommit();
@@ -6080,6 +6092,7 @@ function rebuildOut(){
     LIVE.ael.srcObject=LIVE.msd.stream;
     const p=LIVE.ael.play();
     if(p && p.catch) p.catch(()=>{ try{ LIVE.softclip.connect(AC.destination); }catch(e){} });
+    if(jamOn && typeof jamTap!=='undefined' && jamTap){ try{ LIVE.softclip.connect(jamTap); }catch(e){} }   // don't drop an in-flight REC OUT
     lcd('OUT REVIVED · '+AC.state);
   }catch(e){
     try{ LIVE.softclip.connect(AC.destination); }catch(e2){}
@@ -6099,6 +6112,16 @@ function rebuildAudio(){ // last resort: wedged context — new context, new gra
   ensureAudio();
   lcd('AUDIO REBUILT · press PLAY');
 }
+let wakeLock=null;
+async function wakeAcquire(){  // keep the screen on while music plays (iOS 16.4+/Android)
+  try{
+    if(navigator.wakeLock && !wakeLock){
+      wakeLock=await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release',()=>{ wakeLock=null; });
+    }
+  }catch(e){ wakeLock=null; }
+}
+function wakeRelease(){ try{ if(wakeLock){ wakeLock.release(); wakeLock=null; } }catch(e){} }
 function resumeSession(){
   if(!AC) return;
   if(micBusy || ampOn || (mediaRec && mediaRec.state==='recording')) return;   // mic/amp owns the session — forcing 'playback' here kills the capture
@@ -6132,6 +6155,7 @@ document.addEventListener('visibilitychange',()=>{
     autosave();
   }else{
     resumeSession();
+    if(playing) wakeAcquire();
   }
 });
 window.addEventListener('pageshow',resumeSession);
@@ -6139,6 +6163,7 @@ window.addEventListener('pagehide',()=>autosave());
 setInterval(()=>{ if(!document.hidden && S.buffers.length) autosave(); },60000);
 window.addEventListener('focus',resumeSession);
 document.body.addEventListener('touchstart',()=>{ if(AC) resumeSession(); },{passive:true});
+setInterval(()=>{ if(playing && AC && !document.hidden) resumeSession(); },2500);   // mid-song output death self-heals
 
 /* ---------------- boot ---------------- */
 buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader(); drawTrax(); drawLive(); drawSidechain();
