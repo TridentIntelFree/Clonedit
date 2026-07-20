@@ -447,6 +447,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <span id="lockHint" style="font-size:10px;color:var(--txt-dim)">tap step to toggle</span>
   </div>
   <div id="stepgrid"></div>
+  <div class="row">
+    <span class="lbl">VEL</span>
+    <input type="range" id="stepVel" min="0.2" max="1" step="0.05" value="0.85" class="grow">
+    <button id="btnSolo">SOLO</button>
+    <button id="btnRowClr">CLR ROW</button>
+    <button id="btnPatClr">CLR PTN</button>
+  </div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 4px">VEL sets the loudness of steps you place next (step brightness shows it). To change a placed step: <b style="color:var(--amber)">LOCK</b> &#8594; tap the step &#8594; VEL slider.</div>
   <div id="notesPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
     <div class="row" style="margin-bottom:6px">
       <span class="lbl">SCALE</span>
@@ -463,17 +471,11 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">Left = abrupt CUT, right = soft fade. Cuts pads + live instruments and chokes the reverb/delay tails; sound returns on the next programmed or played hit. Bakes into the bounce. (TRAX tape lanes keep rolling.)</div>
   <div id="steplock" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
     <div class="row"><span class="lbl">STEP</span><span id="slTitle" style="color:var(--amber);font-size:12px">—</span><span class="grow"></span><button id="slClr">CLEAR LOCKS</button></div>
+    <div class="pslider"><span class="lbl">VEL</span><input type="range" id="slVel" min="0.1" max="1" step="0.05" value="0.85"><span class="val" id="slVelV">—</span></div>
     <div class="pslider"><span class="lbl">PITCH</span><input type="range" id="slPitch" min="-24" max="24" step="1" value="0"><span class="val" id="slPitchV">off</span></div>
     <div class="pslider"><span class="lbl">PROB</span><input type="range" id="slProb" min="0.05" max="1" step="0.05" value="1"><span class="val" id="slProbV">100%</span></div>
     <div class="pslider"><span class="lbl">RATCH</span><input type="range" id="slRat" min="1" max="6" step="1" value="1"><span class="val" id="slRatV">1</span></div>
     <div class="pslider"><span class="lbl">NUDGE</span><input type="range" id="slNudge" min="-0.5" max="0.5" step="0.05" value="0"><span class="val" id="slNudgeV">0</span></div>
-  </div>
-  <div class="row">
-    <span class="lbl">VEL</span>
-    <input type="range" id="stepVel" min="0.2" max="1" step="0.05" value="0.85" class="grow">
-    <button id="btnSolo">SOLO</button>
-    <button id="btnRowClr">CLR ROW</button>
-    <button id="btnPatClr">CLR PTN</button>
   </div>
   <div class="row">
     <button id="btnLiveRec" class="rec grow">LIVE REC (quantized pad input)</button>
@@ -1177,8 +1179,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
        entirely as a song doc (button beside CLAUDE'S SONG). Two of its
        patterns carry bpm −126 — the mirror sections literally play
        backwards — and the SILENCER punctuates the mirror + breakdown.
+   - R58: STEP VELOCITY back in reach + per-step editing. The VEL row
+     had been pushed below the NOTES/SILENCER sections (off-screen on
+     phones — "the feature disappeared"); it now sits directly under the
+     step grid with a hint. NEW: the LOCK panel gets a VEL slider that
+     edits the velocity of an ALREADY-PLACED step (shows its current
+     level, places the step if it was off) — previously the only way to
+     change a step's loudness was delete + re-add.
    ================================================================ */
-const BUILD = 'MVX-880 · R57 · 2026-07-15 · AI JAM — song docs + Mirrors for Machines';
+const BUILD = 'MVX-880 · R58 · 2026-07-15 · step velocity — restored + per-step editing';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -4544,6 +4553,9 @@ function drawStepLock(){
   panel.style.display='block';
   const lk=S.patterns[S.pattern].locks[S.seqPad+':'+seqSelStep]||{};
   $('slTitle').textContent=padName(S.seqPad)+' · step '+(seqSelStep+1);
+  const sv=S.patterns[S.pattern].steps[S.seqPad][seqSelStep];
+  $('slVel').value=sv>0?sv:parseFloat($('stepVel').value);
+  $('slVelV').textContent=sv>0?Math.round(sv*100)+'%':'(step off)';
   $('slPitch').value=lk.pitch||0; $('slPitchV').textContent=lk.pitch?((lk.pitch>0?'+':'')+lk.pitch+' st'):'off';
   $('slProb').value=lk.prob!=null?lk.prob:1; $('slProbV').textContent=Math.round((lk.prob!=null?lk.prob:1)*100)+'%';
   $('slRat').value=lk.rat||1; $('slRatV').textContent=String(lk.rat||1);
@@ -4556,6 +4568,11 @@ function setLock(field,val,def){
   if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
   drawSteps(); drawStepLock(); dirty();
 }
+$('slVel').addEventListener('input',e=>{
+  if(seqSelStep<0) return;
+  S.patterns[S.pattern].steps[S.seqPad][seqSelStep]=parseFloat(e.target.value);
+  drawSteps(); drawStepLock(); dirty();
+});
 $('slPitch').addEventListener('input',e=>setLock('pitch',parseInt(e.target.value,10),0));
 $('slProb').addEventListener('input',e=>setLock('prob',parseFloat(e.target.value),1));
 $('slRat').addEventListener('input',e=>setLock('rat',parseInt(e.target.value,10),1));
