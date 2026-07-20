@@ -154,6 +154,8 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
 #silrow{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:6px 0}
 #silrow .step{aspect-ratio:auto;height:26px}
 #silrow .step.on{background:var(--red);border-color:var(--red)}
+#docText{width:100%;height:110px;background:var(--lcd-bg);color:var(--lcd);border:1px solid var(--line);
+  border-radius:6px;font-family:inherit;font-size:10px;padding:7px 8px;resize:vertical;margin:4px 0}
 .step.lockmark::after{content:'';position:absolute;top:3px;right:3px;width:5px;height:5px;border-radius:50%;background:var(--lcd);box-shadow:0 0 3px var(--lcd)}
 .step.selstep{box-shadow:inset 0 0 0 2px var(--amber)}
 #seqpadstrip{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin:6px 0}
@@ -799,6 +801,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnLibImport" class="grow">IMPORT BACKUP</button>
   </div>
   <input type="file" id="libIn" style="display:none">
+  <h3>AI JAM — SONG DOC <span style="color:var(--txt-dim);letter-spacing:0">— compose this app from plain text</span></h3>
+  <div class="row">
+    <button id="btnDocLoad" class="grow">LOAD DOC</button>
+    <button id="btnDocExport">EXPORT CURRENT</button>
+    <button id="btnDocSpec">SPEC</button>
+  </div>
+  <textarea id="docText" spellcheck="false" placeholder='Ask any AI: "write me an MVX-880 song doc" (tap SPEC for the format), then paste the JSON here and tap LOAD DOC.'></textarea>
+  <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">A song doc describes pads (synth preset + note + mix), patterns (steps · pitches · locks · silencer · signed BPM) and the arrangement — the whole production as text. EXPORT lets an AI remix what you made. Console: <span style="color:var(--lcd)">window.MVX.load / .export / .play / .spec</span></div>
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>
@@ -1154,8 +1164,21 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      stream), survives save/restore, playhead tracks the row. STOP and
      manual pad hits always reopen the gate so the app can never stick
      silent. TRAX tape lanes intentionally keep rolling.
+   - R57: AI JAM — the app is now scriptable from plain text, and ships
+     a second Claude composition written in that very format.
+     * SONG DOC (mvx-songdoc-1): a JSON schema describing a complete
+       production — pads as synth preset + note + mix, patterns as
+       steps/velocities/pitches with locks, silencer cuts and signed
+       per-pattern BPM, plus arrangement, master FX and sidechain.
+       PROJ → AI JAM: paste + LOAD DOC, EXPORT CURRENT (round-trips
+       preset-based pads so an AI can remix your work), SPEC (the
+       schema, ready to hand to any AI). Console: window.MVX.
+     * "MIRRORS FOR MACHINES": melodic techno, D minor, 126 BPM, defined
+       entirely as a song doc (button beside CLAUDE'S SONG). Two of its
+       patterns carry bpm −126 — the mirror sections literally play
+       backwards — and the SILENCER punctuates the mirror + breakdown.
    ================================================================ */
-const BUILD = 'MVX-880 · R56 · 2026-07-15 · SILENCER — sequenced cut with fade';
+const BUILD = 'MVX-880 · R57 · 2026-07-15 · AI JAM — song docs + Mirrors for Machines';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2067,7 +2090,7 @@ function loadIntoTarget(buf,name){
   const bid=S.buffers.length-1;
   const p=S.pads[S.editPad];
   p.bufId=bid; p.start=0; p.end=1; p.name=name.slice(0,14); p.warped=false;
-  delete warpOrig[S.editPad];   // new sample → drop any stale pre-warp original
+  delete warpOrig[S.editPad]; delete p.srcPreset; delete p.srcNote;
   drawPads(); drawEdit(); drawWave(); drawMixer(); dirty();
   lcd('LOADED → '+padName(S.editPad)+' · '+buf.duration.toFixed(2)+'s');
 }
@@ -2808,6 +2831,7 @@ $('btnPresetLoad').addEventListener('click',async ()=>{
   try{
     const buf=await renderPreset(d,midi);
     loadIntoTarget(buf,d.name);
+    S.pads[S.editPad].srcPreset=d.id; S.pads[S.editPad].srcNote=midi;   // provenance → song-doc export round-trips
     hitLive(S.editPad,0.9);
   }catch(err){ lcd('PRESET FAILED: '+(err&&err.message?err.message:'render error')); }
 });
@@ -2842,7 +2866,7 @@ function assignBufToPad(idx,buf,name){
   S.buffers.push(buf); const bid=S.buffers.length-1;
   const p=S.pads[idx];
   p.bufId=bid; p.start=0; p.end=1; p.pitch=0; p.fine=0; p.reverse=false; p.mode='one'; p.warped=false;
-  delete warpOrig[idx];
+  delete warpOrig[idx]; delete p.srcPreset; delete p.srcNote;   // provenance is re-set by preset/kit/songdoc loaders
   p.name=(name||'').slice(0,14);
   return bid;
 }
@@ -2857,6 +2881,7 @@ async function loadKit(kit, layBeat){
       if(!def) continue;
       const buf=await renderPreset(def, note!=null?note:def.note);
       assignBufToPad(i, buf, def.name);
+      S.pads[i].srcPreset=pid; S.pads[i].srcNote=note!=null?note:def.note;
     }
     if(layBeat){
       const pat=S.patterns[S.pattern];
@@ -2880,12 +2905,233 @@ async function loadKit(kit, layBeat){
   cs.style.cssText='background:var(--lcd-bg);color:var(--lcd);border-color:var(--amber)';
   cs.addEventListener('click',()=>loadClaudeSong());
   row.appendChild(cs);
+  const mr=document.createElement('button'); mr.textContent='MIRRORS ♪'; mr.dataset.kit='mirrors';
+  mr.style.cssText='background:var(--lcd-bg);color:var(--lcd);border-color:var(--amber)';
+  mr.addEventListener('click',()=>loadSongDoc(MIRRORS_DOC));
+  row.appendChild(mr);
   KITS.forEach(kit=>{
     const b=document.createElement('button'); b.textContent=kit.name; b.dataset.kit=kit.id;
     b.addEventListener('click',()=>loadKit(kit, $('kitBeat').checked));
     row.appendChild(b);
   });
 })();
+
+/* ================= SONG DOC — the AI jam interface =================
+   A plain-text JSON format that describes a complete production: pads
+   (synth preset + note + mix), patterns (steps with velocity + pitch,
+   locks, silencer cuts, signed per-pattern BPM) and the arrangement.
+   Any AI — or human — can write one in chat and paste it into
+   PROJ → AI JAM; the app renders every sound and plays it. EXPORT
+   round-trips the current session so an AI can remix your work.
+   Programmatic access: window.MVX.load(docOrJson) / .export() /
+   .play() / .stop() / .spec */
+const SONGDOC_SPEC=JSON.stringify({
+  "_what":"MVX-880 song doc. Paste into PROJ → AI JAM → LOAD, or window.MVX.load(doc).",
+  "_presets":"drums: dkick dsnare dclap dhat dohat drim dtom dcow dshk dcong · bass: b808 bsub breese bfm · keys: pgrand pfelt kep korg · lead/pad: lsuper lpluck pwarm · strings/brass: scello sens spizz brs bstab · fx: xbell xglass xzap xsweep xgrain",
+  "_notes":"note = MIDI number the preset is rendered at (60=C4). Steps: pad index → [[step0-15, velocity0-1, pitchSemitones?], …]. locks: 'pad:step' → {prob:0-1, rat:2-4, nudge:-0.5..0.5}. sil: steps where EVERYTHING cuts until the next hit. Negative pattern bpm plays that pattern BACKWARDS.",
+  "fmt":"mvx-songdoc-1","title":"My Song","bpm":120,"swing":0.05,"human":0.2,"silFade":0.06,
+  "revType":"hall|room|plate|spring|cath|gated","revSize":3,"dlyMode":"digital|pingpong|tape","delayDiv":0.375,"delayFb":0.3,"dlyTone":5000,
+  "sidechain":{"on":true,"trig":0,"depth":0.35,"rel":0.25},
+  "loop":true,"song":[[0,2],[1,2]],
+  "pads":[{"preset":"dkick","note":36,"gain":0.9,"pan":0,"rev":0,"dly":0,"choke":0,"eqLo":0,"eqMid":0,"eqHi":0}],
+  "patterns":[{"steps":{"0":[[0,0.9],[8,0.9]],"1":[[4,0.8,7]]},"locks":{"1:4":{"prob":0.7}},"sil":[12],"bpm":null}]
+},null,1);
+async function loadSongDoc(doc){
+  if(kitBusy) return false;
+  if(typeof doc==='string'){ try{ doc=JSON.parse(doc); }catch(e){ lcd('SONG DOC: not valid JSON — '+e.message); return false; } }
+  if(!doc||doc.fmt!=='mvx-songdoc-1'||!Array.isArray(doc.pads)||!Array.isArray(doc.patterns)){
+    lcd('SONG DOC: bad format — need fmt "mvx-songdoc-1" with pads[] and patterns[]. Tap SPEC for the schema.'); return false; }
+  kitBusy=true;
+  ensureAudio();
+  try{
+    lcd('RENDERING “'+(doc.title||'song')+'” …');
+    try{ panicVoices(); }catch(e){}
+    for(let i=0;i<NPADS;i++){ S.pads[i]=newPad(i); delete warpOrig[i]; }   // a doc defines the WHOLE session — no leftovers
+    for(let i=0;i<Math.min(16,doc.pads.length);i++){
+      const pd=doc.pads[i]; if(!pd||!pd.preset) continue;
+      const def=PRESETS.find(x=>x.id===pd.preset);
+      if(!def){ plog('songdoc: unknown preset "'+pd.preset+'" on pad '+i+' — skipped'); continue; }
+      const note=pd.note!=null?pd.note:def.note;
+      const buf=await renderPreset(def,note);
+      assignBufToPad(i,buf,def.name);
+      S.pads[i].srcPreset=def.id; S.pads[i].srcNote=note;
+      ['gain','pan','rev','dly','choke','eqLo','eqMid','eqHi','att','rel','mode'].forEach(k=>{ if(pd[k]!=null) S.pads[i][k]=pd[k]; });
+    }
+    const P=Array.from({length:NPAT},()=>newPattern());
+    doc.patterns.slice(0,NPAT).forEach((pp,pi)=>{
+      if(!pp) return;
+      if(pp.bpm!=null) P[pi].bpm=clampBpm(pp.bpm);
+      if(Array.isArray(pp.sil)) pp.sil.forEach(x=>{ const st=x|0; if(st>=0&&st<NSTEPS) P[pi].sil[st]=1; });
+      if(pp.steps) for(const k in pp.steps){
+        const pad=parseInt(k,10); if(!(pad>=0&&pad<NPADS)) continue;
+        (pp.steps[k]||[]).forEach(ev=>{
+          if(!Array.isArray(ev)) return;
+          const st=ev[0]|0, vel=ev[1]!=null?ev[1]:0.9, pitch=Math.round(ev[2]||0);
+          if(st<0||st>=NSTEPS) return;
+          P[pi].steps[pad][st]=clamp(vel,0.05,1);
+          if(pitch){ const kk=pad+':'+st, lk=P[pi].locks[kk]||{}; lk.pitch=pitch; P[pi].locks[kk]=lk; }
+        });
+      }
+      if(pp.locks) for(const kk in pp.locks){
+        const src=pp.locks[kk]||{}, lk=P[pi].locks[kk]||{};
+        if(src.pitch!=null) lk.pitch=Math.round(src.pitch);
+        if(src.prob!=null) lk.prob=clamp(src.prob,0,1);
+        if(src.rat!=null&&src.rat>1) lk.rat=clamp(src.rat|0,2,4);
+        if(src.nudge!=null) lk.nudge=clamp(src.nudge,-0.5,0.5);
+        if(Object.keys(lk).length) P[pi].locks[kk]=lk;
+      }
+      if(pp.len) for(const k in pp.len){ const pad=parseInt(k,10); if(pad>=0&&pad<NPADS) P[pi].len[pad]=clamp(pp.len[k]|0,1,NSTEPS); }
+    });
+    S.patterns=P; S.pattern=0;
+    S.song=Array.isArray(doc.song)? doc.song.filter(x=>Array.isArray(x)).map(x=>({pat:clamp(x[0]|0,0,NPAT-1),reps:clamp(x[1]|0,1,64)})) : [];
+    S.songOn=S.song.length>0; S.songLoop=doc.loop!==false; songPos=0; songRep=0;
+    S.chain=[]; S.chainOn=false; S.chainPos=0;
+    S.ptnBpm=doc.patterns.some(pp=>pp&&pp.bpm!=null); $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
+    if(doc.bpm!=null) setBpm(doc.bpm);
+    if(doc.swing!=null){ S.swing=clamp(doc.swing,0,0.6); $('swing').value=S.swing; $('swingV').textContent=Math.round(S.swing*100)+'%'; }
+    if(doc.human!=null){ S.human=clamp(doc.human,0,1); $('human').value=S.human; $('humanV').textContent=Math.round(S.human*100)+'%'; }
+    if(doc.silFade!=null){ S.silFade=clamp(doc.silFade,0.005,0.6); $('silFade').value=S.silFade; $('silFadeV').textContent=Math.round(S.silFade*1000)+'ms'; }
+    if(doc.revType&&['hall','room','plate','spring','cath','gated'].indexOf(doc.revType)>=0){ S.revType=doc.revType; $('mxRevType').value=doc.revType; }
+    if(doc.revSize!=null){ S.revSize=clamp(doc.revSize,0.8,6); $('mxRevSize').value=S.revSize; $('mxRevSizeV').textContent=S.revSize.toFixed(1)+'s'; }
+    if(doc.dlyMode&&['digital','pingpong','tape'].indexOf(doc.dlyMode)>=0){ S.dlyMode=doc.dlyMode; $('mxDlyMode').value=doc.dlyMode; }
+    if(doc.delayDiv!=null){ S.delayDiv=doc.delayDiv; $('mxDlyDiv').value=String(doc.delayDiv); }
+    if(doc.delayFb!=null){ S.delayFb=clamp(doc.delayFb,0,0.85); $('mxDlyFb').value=S.delayFb; $('mxDlyFbV').textContent=Math.round(S.delayFb*100)+'%'; }
+    if(doc.dlyTone!=null){ S.dlyTone=clamp(doc.dlyTone,500,12000); $('mxDlyTone').value=S.dlyTone; $('mxDlyToneV').textContent=Math.round(S.dlyTone/100)/10+'k'; }
+    const sc=doc.sidechain||{};
+    S.scOn=!!sc.on; if(sc.trig!=null)S.scTrig=clamp(sc.trig|0,0,NPADS-1);
+    if(sc.depth!=null)S.scDepth=clamp(sc.depth,0,0.95); if(sc.rel!=null)S.scRel=clamp(sc.rel,0.05,0.6);
+    if(AC&&LIVE){ LIVE.conv.buffer=makeIR(AC,S.revSize,S.revType); buildDelayNet(AC,LIVE); reapplyLivePads(); }
+    scApplyRouting(); drawSidechain();
+    S.bank=0; S.editPad=0; S.seqPad=0;
+    $('projName').value=(doc.title||'songdoc').slice(0,40);
+    buildPads(); drawPads(); drawEdit(); drawSeq(); drawFader(); drawMixer(); drawSong(); dirty();
+    lcd('“'+(doc.title||'song')+'” LOADED — press PLAY ♪');
+    return true;
+  }catch(err){ lcd('SONG DOC FAILED: '+(err&&err.message||'error')); return false; }
+  finally{ kitBusy=false; }
+}
+function exportSongDoc(){
+  const pads=[];
+  for(let i=0;i<16;i++){ const p=S.pads[i];
+    if(p.bufId<0){ pads.push(null); continue; }
+    const o={preset:p.srcPreset||null};
+    if(p.srcNote!=null) o.note=p.srcNote;
+    if(!o.preset) o.name=p.name;    // sampled/recorded pads can't be re-synthesized from text
+    o.gain=+p.gain.toFixed(2); if(p.pan)o.pan=+p.pan.toFixed(2);
+    if(p.rev)o.rev=+p.rev.toFixed(2); if(p.dly)o.dly=+p.dly.toFixed(2);
+    if(p.choke)o.choke=p.choke; if(p.eqLo)o.eqLo=p.eqLo; if(p.eqMid)o.eqMid=p.eqMid; if(p.eqHi)o.eqHi=p.eqHi;
+    pads.push(o);
+  }
+  const patterns=S.patterns.map(pt=>{
+    const steps={};
+    for(let p=0;p<NPADS;p++){ const evs=[];
+      for(let st=0;st<NSTEPS;st++){ const v=pt.steps[p][st]; if(v>0){
+        const lk=pt.locks[p+':'+st], pitch=lk&&lk.pitch;
+        evs.push(pitch?[st,+v.toFixed(2),pitch]:[st,+v.toFixed(2)]); } }
+      if(evs.length) steps[p]=evs; }
+    const locks={};
+    for(const k in pt.locks){ const lk=pt.locks[k], o={};
+      if(lk.prob!=null) o.prob=lk.prob; if(lk.rat>1) o.rat=lk.rat; if(lk.nudge) o.nudge=lk.nudge;
+      if(Object.keys(o).length) locks[k]=o; }
+    const sil=[]; (pt.sil||[]).forEach((v,i)=>{ if(v) sil.push(i); });
+    const o={steps};
+    if(Object.keys(locks).length) o.locks=locks;
+    if(sil.length) o.sil=sil;
+    if(pt.bpm!=null) o.bpm=pt.bpm;
+    return o;
+  });
+  return { fmt:'mvx-songdoc-1', title:$('projName').value, bpm:S.bpm, swing:S.swing, human:S.human, silFade:S.silFade,
+    revType:S.revType, revSize:S.revSize, dlyMode:S.dlyMode, delayDiv:S.delayDiv, delayFb:S.delayFb, dlyTone:S.dlyTone,
+    sidechain:{on:S.scOn,trig:S.scTrig,depth:S.scDepth,rel:S.scRel},
+    loop:S.songLoop, song:S.song.map(x=>[x.pat,x.reps]), pads, patterns };
+}
+window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
+  load:d=>loadSongDoc(d), export:exportSongDoc, play:()=>startSeq(), stop:()=>stopSeq() };
+
+/* ============ "Mirrors for Machines" — composition #2 by Claude ============
+   Melodic techno, D minor, 126 BPM: Dm | Bb | F | C. Written AS a song doc —
+   the same format any AI can paste in. Two patterns carry NEGATIVE tempo
+   (they play backwards: the mirror), and the SILENCER punctuates the mirror
+   and the breakdown. A machine writing music that literally reverses itself. */
+const MIRRORS_DOC={ fmt:'mvx-songdoc-1', title:'Mirrors for Machines',
+  bpm:126, swing:0.04, human:0.18, silFade:0.08,
+  revType:'plate', revSize:2.6, dlyMode:'pingpong', delayDiv:0.375, delayFb:0.34, dlyTone:5200,
+  sidechain:{on:true,trig:0,depth:0.4,rel:0.22}, loop:true,
+  song:[[0,2],[1,2],[2,2],[3,2],[4,2],[5,2],[6,2],[2,2],[3,2],[5,2],[4,2],[7,2]],
+  pads:[
+    {preset:'dkick',note:36,gain:0.95},
+    {preset:'dclap',note:39,gain:0.75,rev:0.18},
+    {preset:'dhat',note:42,gain:0.55,pan:0.2,choke:1},
+    {preset:'dohat',note:46,gain:0.45,pan:0.2,rev:0.1,choke:1},
+    {preset:'dshk',note:70,gain:0.4,pan:-0.35},
+    {preset:'drim',note:37,gain:0.5,pan:-0.25},
+    {preset:'dcow',note:56,gain:0.5,pan:0.3},
+    {preset:'bsub',note:38,gain:0.95},
+    {preset:'lsuper',note:62,gain:0.65,rev:0.25,dly:0.2},
+    {preset:'lpluck',note:74,gain:0.6,pan:-0.2,rev:0.25,dly:0.3},
+    {preset:'korg',note:50,gain:0.6,pan:0.15,rev:0.2},
+    {preset:'xbell',note:74,gain:0.45,pan:0.35,rev:0.5,dly:0.25},
+    {preset:'pwarm',note:50,gain:0.5,rev:0.4},
+    {preset:'xglass',note:62,gain:0.45,rev:0.5},
+    {preset:'xsweep',note:60,gain:0.55,rev:0.3},
+    {preset:'xzap',note:69,gain:0.5,pan:-0.3,dly:0.3},
+  ],
+  patterns:[
+  { steps:{ 9:[[0,0.6,0],[2,0.55,3],[4,0.6,7],[6,0.55,12],[8,0.6,-4],[10,0.55,0],[12,0.6,3],[14,0.55,8]],
+            12:[[0,0.5,0],[8,0.5,-4]], 13:[[0,0.35]], 4:[[2,0.35],[6,0.35],[10,0.35],[14,0.35]],
+            0:[[0,0.7]], 11:[[12,0.3,12]] },
+    locks:{'11:12':{prob:0.5}} },
+  { steps:{ 0:[[0,0.95],[4,0.95],[8,0.95],[12,0.95]], 1:[[4,0.75],[12,0.75]],
+            3:[[2,0.45],[10,0.45]], 2:[[6,0.5],[14,0.5]],
+            4:[[0,0.3],[2,0.3],[4,0.3],[6,0.3],[8,0.3],[10,0.3],[12,0.3],[14,0.3]],
+            7:[[2,0.9,0],[6,0.85,0],[10,0.9,-4],[14,0.85,-4]],
+            9:[[0,0.5,0],[2,0.45,3],[4,0.5,7],[6,0.45,12],[8,0.5,-4],[10,0.45,0],[12,0.5,3],[14,0.45,8]],
+            12:[[0,0.5,0],[8,0.5,-4]], 5:[[7,0.4]] },
+    locks:{'5:7':{prob:0.6}} },
+  { steps:{ 0:[[0,0.95],[4,0.95],[8,0.95],[12,0.95]], 1:[[4,0.75],[12,0.75]],
+            3:[[2,0.45],[10,0.45]], 2:[[6,0.5],[14,0.5]],
+            4:[[0,0.3],[2,0.3],[4,0.3],[6,0.3],[8,0.3],[10,0.3],[12,0.3],[14,0.3]],
+            7:[[2,0.9,0],[6,0.85,0],[10,0.9,-4],[14,0.85,-4]],
+            8:[[0,0.8,7],[2,0.7,5],[4,0.75,3],[7,0.7,0],[8,0.8,8],[10,0.7,7],[12,0.75,3],[15,0.65,5]],
+            9:[[1,0.4,12],[9,0.4,8]], 12:[[0,0.5,0],[8,0.5,-4]], 5:[[7,0.4]] },
+    locks:{'9:1':{prob:0.5},'9:9':{prob:0.5},'5:7':{prob:0.6}} },
+  { steps:{ 0:[[0,0.95],[4,0.95],[8,0.95],[12,0.95]], 1:[[4,0.75],[12,0.75]],
+            3:[[2,0.45],[10,0.45]], 2:[[6,0.5],[14,0.5]],
+            4:[[0,0.3],[2,0.3],[4,0.3],[6,0.3],[8,0.3],[10,0.3],[12,0.3],[14,0.3]],
+            6:[[3,0.5],[11,0.5],[14,0.45,-2]],
+            7:[[2,0.9,3],[6,0.85,3],[10,0.9,-2],[14,0.85,-2]],
+            10:[[0,0.7,3],[3,0.6,3],[8,0.7,-2],[11,0.6,-2]],
+            8:[[4,0.7,10],[6,0.65,8],[12,0.7,5],[14,0.65,7]],
+            12:[[0,0.5,3],[8,0.5,-2]] } },
+  { bpm:-126,
+    steps:{ 0:[[0,0.85],[4,0.85],[8,0.85],[12,0.85]],
+            2:[[0,0.4],[2,0.4],[4,0.4],[6,0.4],[8,0.4],[10,0.4],[12,0.4],[14,0.4]],
+            8:[[0,0.8,7],[2,0.7,5],[4,0.75,3],[7,0.7,0],[8,0.8,8],[10,0.7,7],[12,0.75,3],[15,0.65,5]],
+            9:[[0,0.5,0],[2,0.45,3],[4,0.5,7],[6,0.45,12],[8,0.5,-4],[10,0.45,0],[12,0.5,3],[14,0.45,8]],
+            12:[[0,0.5,0],[8,0.5,-4]], 11:[[5,0.35,15]] },
+    sil:[8], locks:{'11:5':{prob:0.6}} },
+  { steps:{ 0:[[0,0.95],[4,0.95],[8,0.95],[12,0.95]], 1:[[4,0.8],[12,0.8]],
+            3:[[2,0.5],[10,0.5]],
+            2:[[0,0.45],[1,0.3],[2,0.45],[3,0.3],[4,0.45],[5,0.3],[6,0.45],[7,0.3],[8,0.45],[9,0.3],[10,0.45],[11,0.3],[12,0.45],[13,0.3],[14,0.45],[15,0.45]],
+            4:[[0,0.3],[2,0.3],[4,0.3],[6,0.3],[8,0.3],[10,0.3],[12,0.3],[14,0.3]],
+            15:[[15,0.5]],
+            7:[[2,0.95,0],[3,0.6,12],[6,0.9,0],[10,0.95,-4],[11,0.6,8],[14,0.9,-4]],
+            8:[[0,0.8,7],[2,0.7,5],[4,0.75,3],[7,0.7,0],[8,0.8,8],[10,0.7,7],[12,0.75,3],[15,0.65,5]],
+            10:[[7,0.5,0],[15,0.5,-4]],
+            9:[[0,0.5,0],[2,0.45,3],[4,0.5,7],[6,0.45,12],[8,0.5,-4],[10,0.45,0],[12,0.5,3],[14,0.45,8]],
+            11:[[0,0.35,12],[8,0.35,8]], 14:[[0,0.5]] },
+    locks:{'2:15':{rat:2},'15:15':{prob:0.6},'14:0':{prob:0.5}} },
+  { steps:{ 0:[[0,0.7]], 4:[[2,0.3],[6,0.3],[10,0.3],[14,0.3]],
+            12:[[0,0.55,3],[8,0.55,-2]], 13:[[0,0.4,3]],
+            10:[[4,0.45,3],[12,0.45,-2]],
+            9:[[0,0.55,3],[2,0.5,7],[4,0.55,10],[6,0.5,15],[8,0.55,-2],[10,0.5,2],[12,0.55,5],[14,0.5,10]],
+            11:[[10,0.35,15]], 7:[[0,0.8,3],[8,0.8,-2]] },
+    sil:[12], locks:{'10:4':{prob:0.6},'10:12':{prob:0.6},'11:10':{prob:0.5}} },
+  { bpm:-126,
+    steps:{ 9:[[0,0.5,0],[2,0.45,3],[4,0.5,7],[6,0.45,12],[8,0.5,-4],[10,0.45,0],[12,0.5,3],[14,0.45,8]],
+            12:[[0,0.5,0],[8,0.5,-4]], 13:[[0,0.4]], 0:[[0,0.6],[8,0.5]], 11:[[4,0.3,12]] },
+    locks:{'11:4':{prob:0.5}} },
+  ]};
 
 /* ================= CLAUDE'S SONG — "Amber Signal" =================
    A composition by Claude, written as the factory demo. A-minor, 92 BPM,
@@ -5685,6 +5931,19 @@ $('btnLibBackup').addEventListener('click',async ()=>{
   lcd('BACKUP SAVED · '+out.length+' projects');
 });
 $('btnLibImport').addEventListener('click',()=>{ $('libIn').value=''; $('libIn').click(); });
+$('btnDocLoad').addEventListener('click',async ()=>{
+  const t=$('docText').value.trim();
+  if(!t){ lcd('Paste a song doc first — tap SPEC to see the format.'); return; }
+  const ok=await loadSongDoc(t);
+  if(ok) plog('Song doc loaded: '+($('projName').value||'untitled'));
+});
+$('btnDocExport').addEventListener('click',()=>{
+  $('docText').value=JSON.stringify(exportSongDoc());
+  const anon=S.pads.filter(p=>p.bufId>=0&&!p.srcPreset).length;
+  plog('Exported song doc'+(anon?' ('+anon+' sampled pad(s) noted by name only — presets round-trip, recordings don\'t)':'')+'.');
+  lcd('DOC EXPORTED to the text box — copy it to your AI.');
+});
+$('btnDocSpec').addEventListener('click',()=>{ $('docText').value=SONGDOC_SPEC; lcd('SPEC in the text box — hand it to any AI and ask for a song.'); });
 $('libIn').addEventListener('change',async e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;
   try{
