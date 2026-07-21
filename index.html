@@ -15,7 +15,7 @@
   --chassis:#17191d; --panel:#1e2127; --panel2:#242833; --line:#31363f;
   --lcd-bg:#120d04; --lcd:#ffb454; --lcd-dim:#8a6530;
   --pad:#2b303a; --pad-hi:#3a4150; --amber:#ff8c2e; --amber-soft:#c9722a;
-  --txt:#c9ccd4; --txt-dim:#7b8090; --red:#e5484d; --green:#63c76a;
+  --txt:#c9ccd4; --txt-dim:#7b8090; --red:#e5484d; --green:#63c76a; --sel:#4aa3ff;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{background:var(--chassis);color:var(--txt);
@@ -125,7 +125,13 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
 .pad.inseq .led{background:var(--amber);border-color:#7a4a16;box-shadow:0 0 6px rgba(255,140,46,.9)}
 .pad.hit{background:var(--amber-soft);border-color:var(--amber)}
 .pad.hit .pn,.pad.hit .pname{color:#120d04}
-.pad.sel{border:2px solid var(--amber)}
+/* SELECTED pad — blue, distinct from the green/amber status LEDs, so it reads
+   on an empty pad too. A blue "SEL" tag names it; the ring shows where audio
+   (KEEP / take → PAD / JAM) will land. */
+.pad.sel{border:2px solid var(--sel);box-shadow:0 0 0 1px var(--sel),0 0 12px rgba(74,163,255,.55)}
+.pad.sel .pn{color:var(--sel)}
+.pad.sel::before{content:'SEL';position:absolute;top:5px;left:50%;transform:translateX(-50%);
+  font-size:8px;font-weight:700;letter-spacing:.5px;color:var(--sel);text-shadow:0 0 6px rgba(74,163,255,.8)}
 .pad.fx::after{content:'';position:absolute;top:8px;right:19px;width:5px;height:5px;border-radius:50%;
   background:var(--amber);box-shadow:0 0 4px var(--amber)}
 #editpanel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px}
@@ -1287,8 +1293,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      are cached per (sample, direction, speed) and rebuilt only when the knob
      settles, so triggers never hitch. Speed is per-pad, persists, and bakes
      into the WAV bounce (caches are pre-built before the offline render).
+   - R68: CLEARER PAD SELECTION + DELIBERATE OVERWRITE. The selected pad now
+     shows a blue ring + glow and a small "SEL" tag — visible even on an empty
+     pad, so you always know which pad is selected and where KEEP / take→PAD /
+     JAM→PAD will land. And a pad you TAP now wins: your pick overwrites even
+     a full pad, overcoming the auto "send to an empty pad" fallback. That
+     fallback still applies when you haven't tapped (e.g. right after loading),
+     so quick sampling never clobbers a used pad by accident.
    ================================================================ */
-const BUILD = 'MVX-880 · R67 · 2026-07-21 · per-pad SPEED (varispeed) + KEEP PITCH time-stretch';
+const BUILD = 'MVX-880 · R68 · 2026-07-21 · clearer pad selection (blue SEL) + a tapped pad overwrites';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1839,11 +1852,18 @@ function writeLiveStep(idx, vel, when){ // quantize a live hit onto the grid (LI
   if(idx===S.seqPad) drawSteps();
   dirty();
 }
-function pickTargetPad(){ // prefer the selected pad if it's empty; else first empty pad (this bank, then any); else the selection
-  if(S.pads[S.editPad].bufId<0) return S.editPad;
-  for(let s2=0;s2<16;s2++){ const i=S.bank*16+s2; if(S.pads[i].bufId<0) return i; }
-  for(let i=0;i<NPADS;i++) if(S.pads[i].bufId<0) return i;
-  return S.editPad;
+/* A deliberately tapped pad wins: manualPad is set when you tap a pad and
+   consumed by the next send, so your pick overwrites even a FULL pad. Without
+   a fresh tap (e.g. right after loading), the auto plan still fills an empty
+   pad so quick sampling never clobbers a used pad by accident. */
+let manualPad=false;
+function pickTargetPad(){
+  const chosen=manualPad; manualPad=false;                 // honor a deliberate tap once, then back to auto
+  if(S.pads[S.editPad].bufId<0) return S.editPad;          // selected pad is empty — land here
+  if(chosen) return S.editPad;                             // you tapped this (full) pad on purpose — overwrite it
+  for(let s2=0;s2<16;s2++){ const i=S.bank*16+s2; if(S.pads[i].bufId<0) return i; }   // else first empty (this bank)
+  for(let i=0;i<NPADS;i++) if(S.pads[i].bufId<0) return i;                            // …then any empty
+  return S.editPad;                                        // no empty pad left — fall back to the selection
 }
 function hitLive(idx, vel, pitchOff){
   ensureAudio();
@@ -1907,7 +1927,7 @@ function repStop(idx){ const h=repHold[idx]; if(h){ clearInterval(h.timer); dele
 function repStopAll(){ Object.keys(repHold).forEach(k=>repStop(k)); }
 function padPress(slot,vel){
   const idx=padIndex(slot);
-  S.editPad=idx;
+  S.editPad=idx; manualPad=true;   // a deliberate tap — this pick beats the auto "send to an empty pad" plan
   if(S.edit){ S.seqPad=idx; hitLive(idx,vel); drawPads(); drawEdit(); return; }
   if(repOn && S.pads[idx].bufId>=0){ repStart(idx,vel); drawEditTitleOnly(); return; }
   hitLive(idx,vel); drawEditTitleOnly();
