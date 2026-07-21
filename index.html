@@ -1327,8 +1327,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      allowed values (no more "hall|room|…" pipe strings an AI copies literally),
      and a complete WORKING example that loads as-is. (3) Song docs carry
      CHORDS: several entries on one step load/export/round-trip as harmony.
+   - R72: TRAX RECORDING SAFETY (field report — "recorded another track and it
+     overwrote track one with the master"). (1) REC PERFORMANCE never clobbers
+     a take: it records to an EMPTY lane (the armed lane only if IT is empty,
+     else the first empty one) — no more overwriting an existing track through
+     a stale arm. When every lane is full it says so instead of overwriting.
+     (2) Arming a lane that already holds a take now warns that PLAY RE-RECORDS
+     over it. (The "recorded the master" part was the pre-R66 REC PERFORMANCE
+     behavior — it now captures only the live bus; update the app to get it.)
    ================================================================ */
-const BUILD = 'MVX-880 · R71 · 2026-07-21 · AI JAM: forgiving loader + a clear prompt that actually works';
+const BUILD = 'MVX-880 · R72 · 2026-07-21 · REC PERFORMANCE cannot overwrite a track; re-record warning';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -4117,7 +4125,10 @@ async function armTrack(i){
     catch(err){ micBusy=false; drawTrax(); lcd('MIC DENIED/UNAVAILABLE ('+((err&&err.name)||'error')+').'); return; }
   }
   traxArm=i; drawTrax();
-  lcd('TRACK '+(i+1)+' ARMED · '+$('traxSrc').selectedOptions[0].textContent+' — press PLAY to roll, STOP to commit.');
+  const hasTake=S.trax[i].bufId>=0;
+  lcd('TRACK '+(i+1)+' ARMED · '+$('traxSrc').selectedOptions[0].textContent+(hasTake
+    ? ' — PLAY RE-RECORDS over this take (its old audio is replaced on STOP).'
+    : ' — press PLAY to roll, STOP to commit.'));
 }
 function disarmTrax(){
   traxArm=-1;
@@ -4792,9 +4803,12 @@ function drawLive(){
 $('btnPerfRec').addEventListener('click',()=>{
   if(traxCap){ stopSeq(); return; }            // rolling — stop commits the take
   ensureAudio();
-  let i=traxArm;
-  if(i<0) i=S.trax.findIndex(t=>t.bufId<0);
-  if(i<0){ lcd('ALL 8 TRACKS FULL — clear one in TRAX first.'); return; }
+  // REC PERFORMANCE always goes to an EMPTY lane so it can never overwrite a
+  // track you already recorded. Use the armed lane only if IT is empty; else
+  // the first empty lane. (To re-record a specific take, arm it in TRAX and
+  // press PLAY — that path is the deliberate overwrite.)
+  let i=(traxArm>=0 && S.trax[traxArm].bufId<0) ? traxArm : S.trax.findIndex(t=>t.bufId<0);
+  if(i<0){ lcd('ALL 8 TRACKS HAVE TAKES — clear one in TRAX (✕), or arm it there and PLAY to re-record.'); return; }
   $('traxSrc').value='live';                   // REC PERFORMANCE isolates what YOU play (the live bus), not the whole mix
   if(traxStream) disarmTrax();                 // a pending mic arm would hijack the capture source
   traxArm=i; drawTrax();
