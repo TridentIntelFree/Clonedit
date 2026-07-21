@@ -280,6 +280,8 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <div class="pslider"><span class="lbl">GAIN</span><input type="range" id="epGain" min="0" max="1.2" step="0.01"><span class="val" id="epGainV"></span></div>
     <div class="pslider"><span class="lbl">PITCH</span><input type="range" id="epPitch" min="-12" max="12" step="1"><span class="val" id="epPitchV"></span></div>
     <div class="pslider"><span class="lbl">FINE</span><input type="range" id="epFine" min="-100" max="100" step="1"><span class="val" id="epFineV"></span></div>
+    <div class="pslider"><span class="lbl">SPEED</span><input type="range" id="epSpeed" min="0.25" max="4" step="0.01"><span class="val" id="epSpeedV"></span></div>
+    <div class="row" style="margin:-2px 0 2px"><button id="epKeepPitch">KEEP PITCH</button><span style="font-size:10px;color:var(--txt-dim)">ON = time-stretch (pitch stays) · OFF = varispeed (pitch follows, like tape)</span></div>
     <div class="pslider"><span class="lbl">PAN</span><input type="range" id="epPan" min="-1" max="1" step="0.05"><span class="val" id="epPanV"></span></div>
     <div class="pslider"><span class="lbl">REV</span><input type="range" id="epRev" min="0" max="1" step="0.01"><span class="val" id="epRevV"></span></div>
     <div class="pslider"><span class="lbl">DLY</span><input type="range" id="epDly" min="0" max="1" step="0.01"><span class="val" id="epDlyV"></span></div>
@@ -1277,8 +1279,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      (on-screen instrument, guitar/amp, and manually-played pads via the
      R64 per-voice taps), never the backing sequencer. To capture the full
      mix on purpose, arm a lane in TRAX and set the source to MASTER BUS.
+   - R67: PER-PAD SPEED + KEEP PITCH. Now that BPM only drives the sequencer,
+     each pad gets its own SPEED knob (0.25×–4×, EDIT panel). VARISPEED (the
+     default) multiplies playback rate — pitch follows, like tape/turntable —
+     and is instant (next hit). KEEP PITCH swaps in a time-stretched buffer so
+     the sample plays faster/slower at its ORIGINAL pitch; stretched buffers
+     are cached per (sample, direction, speed) and rebuilt only when the knob
+     settles, so triggers never hitch. Speed is per-pad, persists, and bakes
+     into the WAV bounce (caches are pre-built before the offline render).
    ================================================================ */
-const BUILD = 'MVX-880 · R66 · 2026-07-21 · REC PERFORMANCE captures only your live playing, not the beat';
+const BUILD = 'MVX-880 · R67 · 2026-07-21 · per-pad SPEED (varispeed) + KEEP PITCH time-stretch';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1295,7 +1305,7 @@ function bpmAbs(){ return Math.abs(S.bpm); }
 /* ---------------- state ---------------- */
 const NPADS = 64, NSTEPS = 16, NPAT = 8;
 function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
-  gain:0.9, pitch:0, fine:0, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
+  gain:0.9, pitch:0, fine:0, speed:1, keepPitch:false, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
   choke:0, note:36+i, reverse:false, mode:'one',
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
   eqLo:0, eqMid:0, eqHi:0,
@@ -1563,6 +1573,29 @@ function getReversed(bid){
   revCache[bid]=r; return r;
 }
 
+/* ---- per-pad playback SPEED ----
+   OFF (varispeed): playbackRate is multiplied by speed — pitch follows, like
+   a turntable/tape. ON (keepPitch): the sample is time-stretched to 1/speed
+   (pitch preserved) and played at base pitch. Stretched buffers are cached
+   per (bufId, direction, speed) and rebuilt only when the knob settles, so
+   triggers never hitch — a trigger only READS the cache (varispeed fallback
+   if it isn't built yet). */
+const speedCache = {};   // `${bufId}|${dir}|${spd}` -> pitch-preserved AudioBuffer
+function speedKey(bufId,reverse,spd){ return bufId+'|'+(reverse?'r':'f')+'|'+spd.toFixed(3); }
+function buildSpeedStretch(bufId,reverse,spd){   // sync build + cache (no-op at 1×)
+  if(bufId<0 || Math.abs(spd-1)<=0.001) return null;
+  const key=speedKey(bufId,reverse,spd);
+  if(speedCache[key]) return speedCache[key];
+  const src=reverse?getReversed(bufId):S.buffers[bufId];
+  if(!src) return null;
+  const out=timeStretch(src, 1/spd);   // faster => shorter, pitch preserved
+  speedCache[key]=out; return out;
+}
+function padSpeed(p){ return clamp(p.speed||1,0.25,4); }
+function ensureSpeedCaches(){   // pre-build every pitch-locked pad's stretch (before a bounce, or after load)
+  for(let i=0;i<NPADS;i++){ const p=S.pads[i];
+    if(p.bufId>=0 && p.keepPitch){ const s=padSpeed(p); if(Math.abs(s-1)>0.001) buildSpeedStretch(p.bufId,!!p.reverse,s); } }
+}
 /* trigger a pad into a given graph (live or offline) */
 const chokeLive = {};    // group -> last env GainNode (live path)
 const activeEnv = {};    // padIdx -> {env,src} for gate-mode release (live)
@@ -1580,14 +1613,24 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
   let s0=p.start, e0=p.end;
   if(p.reverse){ buf=getReversed(p.bufId); s0=1-p.end; e0=1-p.start; }
   const baseRate=Math.pow(2,(p.pitch+(pitchOff||0)+p.fine/100)/12);
+  // SPEED: varispeed multiplies the rate; keepPitch swaps in a pre-stretched
+  // buffer (pitch preserved) and plays at base pitch. If the stretch isn't
+  // cached yet, fall back to varispeed for this one hit.
+  const spd=padSpeed(p);
+  let speedMul=spd;
+  if(p.keepPitch && Math.abs(spd-1)>0.001){
+    const sb=speedCache[speedKey(p.bufId,!!p.reverse,spd)];
+    if(sb){ buf=sb; speedMul=1; }
+  }
+  const effBase=baseRate*speedMul;
   const live=(ctx===AC);
-  const rate=live? baseRate*perfFactor() : baseRate;
+  const rate=live? effBase*perfFactor() : effBase;
   const off=s0*buf.duration;
   const sliceDur=Math.max(0.005,(e0-s0)*buf.duration);
   const outDur=sliceDur/rate;
   const src=ctx.createBufferSource(); src.buffer=buf; src.playbackRate.value=rate;
   if(live){
-    src._base=baseRate;
+    src._base=effBase;
     liveVoices.add(src);
     if(LIVE.warbGain){ try{ LIVE.warbGain.connect(src.playbackRate); }catch(e){} }
   }
@@ -1898,6 +1941,13 @@ function drawEdit(){
   $('epGain').value=p.gain; $('epGainV').textContent=p.gain.toFixed(2);
   $('epPitch').value=p.pitch; $('epPitchV').textContent=(p.pitch>0?'+':'')+p.pitch+' st';
   $('epFine').value=p.fine; $('epFineV').textContent=(p.fine>0?'+':'')+p.fine+' ct';
+  { const sp=padSpeed(p); $('epSpeed').value=sp; $('epSpeedV').textContent=sp.toFixed(2)+'×';
+    $('epKeepPitch').classList.toggle('on',!!p.keepPitch);
+    $('epKeepPitch').textContent=p.keepPitch?'KEEP PITCH':'VARISPEED';
+    // keep-pitch pad showing a sample with no cached stretch yet (e.g. a freshly
+    // loaded sample) — build it now so the next hit is pitch-locked, not varispeed
+    if(p.keepPitch && p.bufId>=0 && Math.abs(sp-1)>0.001 && !speedCache[speedKey(p.bufId,!!p.reverse,sp)])
+      buildSpeedStretch(p.bufId,!!p.reverse,sp); }
   $('epPan').value=p.pan; $('epPanV').textContent=p.pan.toFixed(2);
   $('epRev').value=p.rev; $('epRevV').textContent=p.rev.toFixed(2);
   $('epDly').value=p.dly; $('epDlyV').textContent=p.dly.toFixed(2);
@@ -1939,13 +1989,30 @@ function bindEdit(id, key, fmt, applyLive){
 bindEdit('epGain','gain',null,(n,p)=>{ logGain(S.editPad,p.gain,'EDIT fader'); n.ch.gain.setTargetAtTime(p.gain,AC.currentTime,0.01); });
 bindEdit('epPitch','pitch',null,null);
 bindEdit('epFine','fine',null,null);
+/* SPEED — varispeed is instant (next hit); keepPitch rebuilds the stretch when
+   the knob settles so triggers never hitch mid-move. */
+let speedBuildT=0;
+$('epSpeed').addEventListener('input',e=>{
+  const p=S.pads[S.editPad]; p.speed=clamp(parseFloat(e.target.value)||1,0.25,4);
+  $('epSpeedV').textContent=p.speed.toFixed(2)+'×'; dirty();
+  if(p.keepPitch && p.bufId>=0){ clearTimeout(speedBuildT);
+    speedBuildT=setTimeout(()=>{ buildSpeedStretch(p.bufId,!!p.reverse,padSpeed(p)); drawEdit(); },220); }
+});
+$('epKeepPitch').addEventListener('click',()=>{
+  const p=S.pads[S.editPad]; p.keepPitch=!p.keepPitch;
+  if(p.keepPitch && p.bufId>=0) buildSpeedStretch(p.bufId,!!p.reverse,padSpeed(p));
+  drawEdit(); dirty();
+  lcd(p.keepPitch?('KEEP PITCH — pad plays '+padSpeed(p).toFixed(2)+'× with pitch preserved'):('VARISPEED — pad speed also shifts pitch (tape/turntable)'));
+});
 bindEdit('epPan','pan',null,(n,p)=>{ if(n.pan) n.pan.pan.setTargetAtTime(p.pan,AC.currentTime,0.01); });
 bindEdit('epRev','rev',null,(n,p)=>{ n.rev.gain.setTargetAtTime(p.rev,AC.currentTime,0.01); });
 bindEdit('epDly','dly',null,(n,p)=>{ n.dly.gain.setTargetAtTime(p.dly,AC.currentTime,0.01); });
 bindEdit('epAtt','att',null,null);
 bindEdit('epRel','rel',null,null);
 $('epChoke').addEventListener('change',e=>{ S.pads[S.editPad].choke=parseInt(e.target.value,10); dirty(); });
-$('epRevrs').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.reverse=!p.reverse; if(p.bufId>=0) getReversed(p.bufId); drawEdit(); dirty(); });
+$('epRevrs').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.reverse=!p.reverse; if(p.bufId>=0) getReversed(p.bufId);
+  if(p.keepPitch && p.bufId>=0) buildSpeedStretch(p.bufId,!!p.reverse,padSpeed(p));   // stretch depends on direction
+  drawEdit(); dirty(); });
 $('epMode').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.mode=p.mode==='gate'?'one':'gate'; drawEdit(); dirty(); });
 function liveFx(){ const p=S.pads[S.editPad]; if(LIVE) applyPadFx(LIVE.pads[S.editPad],p,AC); drawPads(); drawEdit(); dirty(); }
 function hasFx(p){ return p.ftype!=='off' || p.drv>0 || p.crush<16 || !!(p.eqLo||p.eqMid||p.eqHi); }
@@ -5526,6 +5593,7 @@ function applySessionDoc(doc, bufs){
     if(p.lfoOn==null)p.lfoOn=false; if(p.lfoTgt==null)p.lfoTgt='cutoff'; if(p.lfoShape==null)p.lfoShape='sine';
     if(p.lfoSync==null)p.lfoSync='free'; if(p.lfoRate==null)p.lfoRate=2; if(p.lfoDepth==null)p.lfoDepth=0.5;
     if(p.warpBeats==null)p.warpBeats=4; if(p.warpBpm==null)p.warpBpm=0;
+    if(p.speed==null)p.speed=1; if(p.keepPitch==null)p.keepPitch=false;
     if(p.eqLo==null)p.eqLo=0; if(p.eqMid==null)p.eqMid=0; if(p.eqHi==null)p.eqHi=0; });
   { // LOAD FAILSAFE: every loaded pad at ~0 volume = a poisoned save (a real
     // field failure wrote gain 0 into state and autosave kept it). One pad at
@@ -5538,6 +5606,7 @@ function applySessionDoc(doc, bufs){
     }
   }
   Object.keys(revCache).forEach(k=>delete revCache[k]);
+  Object.keys(speedCache).forEach(k=>delete speedCache[k]);   // keyed by bufId — stale after a load
   Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
   Object.keys(activeEnv).forEach(k=>delete activeEnv[k]);
   Object.keys(warpOrig).forEach(k=>delete warpOrig[k]);   // pre-warp originals belong to the outgoing session
@@ -5572,6 +5641,7 @@ function applySessionDoc(doc, bufs){
   $('mxDlyDiv').value=String(S.delayDiv);
   $('mxRevType').value=S.revType; $('mxDlyMode').value=S.dlyMode;
   document.querySelectorAll('#bankrow [data-b]').forEach(x=>x.classList.toggle('on',parseInt(x.dataset.b,10)===S.bank));
+  ensureSpeedCaches();   // pitch-locked pads need their stretched buffers ready before the first hit/bounce
   drawPads(); drawEdit(); drawSeq(); drawCcMaps(); drawWave(); drawTrax(); drawLive(); drawSidechain(); drawSong(); drawMixer();
 }
 $('jsonIn').addEventListener('change',async e=>{
@@ -5642,6 +5712,7 @@ function gcBuffers(){ // drop orphaned samples (every re-render leaves one) so t
   S.pads.forEach(p=>{ if(p.bufId>=0) p.bufId=map[p.bufId]; });
   S.trax.forEach(tr=>{ if(tr.bufId>=0) tr.bufId=map[tr.bufId]; });
   Object.keys(revCache).forEach(k=>delete revCache[k]);   // keyed by old ids
+  Object.keys(speedCache).forEach(k=>delete speedCache[k]);   // keyed by old ids
   S.buffers=nb;
   // keep the undo BASELINE in step with the renumbering, or the next
   // commitUndo sees a phantom "change" and undo needs pressing twice.
@@ -6041,6 +6112,7 @@ $('btnMidi').addEventListener('click',exportMidi);
 /* shared offline render — padSet/traxSet null = all; a Set restricts to those
    indices (Set() = none). Used by the master bounce and per-stem export. */
 async function renderMix(padSet, traxSet){
+  ensureSpeedCaches();   // bake pitch-locked stretches so the offline render matches what you hear live
   const loops=parseInt($('bLoops').value,10);
   const src=$('bSrc').value;
   let seq;
