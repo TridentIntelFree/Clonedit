@@ -471,7 +471,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <button id="noteOctDn">&#8722;</button><span id="noteOctV" style="min-width:24px;text-align:center;color:var(--lcd);font-size:12px">0</span><button id="noteOctUp">+</button>
     </div>
     <div id="notegrid"></div>
-    <div style="font-size:10px;color:var(--txt-dim);margin-top:4px">Rows are scale notes for THIS pad (root = the sample's own pitch). Tap to place, tap again to remove — one note per step, written as pitch locks so they bounce + export to MIDI.</div>
+    <div style="font-size:10px;color:var(--txt-dim);margin-top:4px">Rows are scale notes for THIS pad (root = the sample's own pitch). Tap to place, tap again to remove. <b>Stack several notes in the same column for a chord</b> — they fire together as harmony. Written as pitch locks, so chords bounce + export to MIDI.</div>
   </div>
   <h3>SILENCER <span style="color:var(--txt-dim);letter-spacing:0">— place a cut; everything drops out until the next hit</span></h3>
   <div id="silrow"></div>
@@ -1310,8 +1310,17 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      project saved with a pad soloed loaded with every OTHER pad silenced
      ("one channel plays, all the pads are silent"). SOLO is a transient
      audition state, so it's cleared on load (mutes still persist).
+   - R70: (1) SELECTION UNIFIED — tapping a pad now also makes it the sequencer
+     row, not just the EDIT target. Before, they only synced in EDIT mode, so
+     selecting a pad and "removing it from the sequence" edited a DIFFERENT
+     row and the pad kept playing. Now the pad you tap (blue SEL) is the row
+     the step grid edits everywhere; the SEQ pad-strip selects it back too.
+     (2) NOTES-LANE HARMONY — the melodic NOTES lane is now polyphonic: stack
+     several notes in one column and the pad fires them together as a chord
+     (voices don't choke each other; per-pad voice cap raised 3→6). Chords
+     persist, bounce to WAV, and export to MIDI as real chords.
    ================================================================ */
-const BUILD = 'MVX-880 · R69 · 2026-07-21 · save no longer overwrites another project; solo cleared on load';
+const BUILD = 'MVX-880 · R70 · 2026-07-21 · tap = sequencer row too; NOTES lane plays chords';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1671,10 +1680,11 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
     env.connect(ltg); ltg.connect(g.liveBus);
   }
   // per-pad voice cap — sustained samples on dense steps used to stack
-  // dozens of full-length voices into a wash that masks everything else
+  // dozens of full-length voices into a wash. 6 leaves room for a chord
+  // (NOTES lane harmony) plus its tail overlapping the next step.
   const act=g.pads[idx].act || (g.pads[idx].act=[]);
   act.push(env._v={env,src});
-  if(act.length>3){
+  if(act.length>6){
     const old=act.shift();
     try{ old.env.gain.cancelScheduledValues(when); old.env.gain.setTargetAtTime(0,when,0.015); old.src.stop(when+0.12); }catch(e){}
   }
@@ -1937,10 +1947,16 @@ function repStop(idx){ const h=repHold[idx]; if(h){ clearInterval(h.timer); dele
 function repStopAll(){ Object.keys(repHold).forEach(k=>repStop(k)); }
 function padPress(slot,vel){
   const idx=padIndex(slot);
-  S.editPad=idx; manualPad=true;   // a deliberate tap — this pick beats the auto "send to an empty pad" plan
-  if(S.edit){ S.seqPad=idx; hitLive(idx,vel); drawPads(); drawEdit(); return; }
-  if(repOn && S.pads[idx].bufId>=0){ repStart(idx,vel); drawEditTitleOnly(); return; }
-  hitLive(idx,vel); drawEditTitleOnly();
+  // The tapped pad is THE current pad everywhere: EDIT target, blue SEL, AND the
+  // sequencer row. Before, seqPad only followed in EDIT mode, so selecting a pad
+  // then "removing it from the sequence" edited a DIFFERENT row — the pad kept
+  // playing. Sync them so the step grid always shows the pad you selected.
+  const seqChanged = S.seqPad!==idx;
+  S.editPad=idx; S.seqPad=idx; manualPad=true;
+  if(seqChanged) seqSelStep=-1;
+  if(S.edit){ hitLive(idx,vel); drawPads(); drawEdit(); if(seqChanged) drawSeq(); return; }
+  if(repOn && S.pads[idx].bufId>=0){ repStart(idx,vel); drawEditTitleOnly(); if(seqChanged) drawSeq(); return; }
+  hitLive(idx,vel); drawEditTitleOnly(); if(seqChanged) drawSeq();
 }
 function drawPads(){
   const pat=S.patterns[S.pattern];
@@ -3655,14 +3671,20 @@ function schedStep(barStep, absStep, t){
     if(S.human>0){ when+=(Math.random()*2-1)*S.human*0.012;      // humanize: ±12ms drift + velocity breathing
       hv=clamp(v*(1-Math.random()*S.human*0.22),0.05,1);
       if(when<AC.currentTime) when=AC.currentTime; }
-    const pitchOff=(lk&&lk.pitch)||0;
+    // NOTES-lane harmony: a column can hold several pitches — fire the pad
+    // once per note so they sound together as a chord.
+    const chord=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0];
     const rat=(lk&&lk.rat>1)?lk.rat:1;                           // ratchet / roll
-    if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, hv, when+r*rd, chokeLive, pitchOff); }
-    else triggerPad(AC, LIVE, p, hv, when, chokeLive, pitchOff);
-    if(S.notesOut && midiOutDev){   // mirror the step to hardware: pad's NOTE + step pitch
-      const base=(S.pads[p].note>=0?S.pads[p].note:36+p)+pitchOff;
-      if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) moNote(base,hv,when+r*rd,rd*0.8); }
-      else moNote(base,hv,when,sd*0.85);
+    const creg=chord.length>1?null:chokeLive;                    // chord voices must not choke each other
+    chord.forEach(pitchOff=>{
+      if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, hv, when+r*rd, creg, pitchOff); }
+      else triggerPad(AC, LIVE, p, hv, when, creg, pitchOff);
+    });
+    if(S.notesOut && midiOutDev){   // mirror the step (whole chord) to hardware
+      const baseNote=(S.pads[p].note>=0?S.pads[p].note:36+p);
+      chord.forEach(pitchOff=>{ const base=baseNote+pitchOff;
+        if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) moNote(base,hv,when+r*rd,rd*0.8); }
+        else moNote(base,hv,when,sd*0.85); });
     }
     fired.push({p,v:hv});
   }
@@ -4771,7 +4793,7 @@ function drawSeq(){
     const idx=padIndex(s);
     const b=document.createElement('button'); b.textContent=padName(idx).slice(1);
     if(idx===S.seqPad) b.classList.add('on');
-    b.addEventListener('click',()=>{ S.seqPad=idx; seqSelStep=-1; drawSeq(); drawStepLock(); });
+    b.addEventListener('click',()=>{ S.seqPad=idx; S.editPad=idx; manualPad=true; seqSelStep=-1; drawSeq(); drawStepLock(); drawPads(); });
     st.appendChild(b);
   }
   $('seqPadName').textContent=padName(S.seqPad)+(S.pads[S.seqPad].name?' · '+S.pads[S.seqPad].name:'');
@@ -4836,6 +4858,7 @@ function drawStepLock(){
 function setLock(field,val,def){
   if(seqSelStep<0) return;
   const pat=S.patterns[S.pattern], k=S.seqPad+':'+seqSelStep, lk=pat.locks[k]||{};
+  if(field==='pitch') delete lk.pitches;   // the step-lock pitch control edits a single note — collapse any chord here
   if(val===def) delete lk[field]; else lk[field]=val;
   if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
   drawSteps(); drawStepLock(); dirty();
@@ -4883,28 +4906,37 @@ function drawNotes(){
       c.dataset.col=i;
       if(row[i]>0){
         const lk=pat.locks && pat.locks[S.seqPad+':'+i];
-        if((((lk&&lk.pitch)||0))===off) c.classList.add('non');
+        if(notePitches(lk,row[i]).includes(off)) c.classList.add('non');   // light every note in the chord
       }
       c.addEventListener('click',()=>toggleNote(i,off));
       gr.appendChild(c);
     }
   });
 }
+function notePitches(lk,rowv){   // the pitch offsets active in a NOTES column (a chord may hold several)
+  if(!(rowv>0)) return [];
+  if(lk && lk.pitches && lk.pitches.length) return lk.pitches.slice();
+  return [ (lk&&lk.pitch)||0 ];
+}
+function setNotePitches(pat,k,row,i,set){   // write a column's chord back; keeps lk.pitch as the lowest for MIDI-out/compat
+  set=Array.from(new Set(set)).sort((a,b)=>a-b);
+  let lk=pat.locks[k]||{};
+  if(!set.length){ row[i]=0; delete lk.pitch; delete lk.pitches; if(!Object.keys(lk).length) delete pat.locks[k]; else pat.locks[k]=lk; return; }
+  if(!(row[i]>0)) row[i]=parseFloat($('stepVel').value);
+  if(set.length===1){ delete lk.pitches; if(set[0]===0) delete lk.pitch; else lk.pitch=set[0]; }
+  else { lk.pitches=set; lk.pitch=set[0]; }
+  if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
+}
 function toggleNote(i,off){
+  // Polyphonic: tapping adds/removes a note in the column, so several pitches
+  // can stack into a chord (harmony). Tapping a lit note removes just that one.
   const pat=S.patterns[S.pattern], k=S.seqPad+':'+i, row=pat.steps[S.seqPad];
-  const cur=(pat.locks[k]&&pat.locks[k].pitch)||0;
-  if(row[i]>0 && cur===off){                       // tap the lit cell: remove the note
-    row[i]=0;
-    const lk=pat.locks[k];
-    if(lk){ delete lk.pitch; if(!Object.keys(lk).length) delete pat.locks[k]; }
-    if(playing) stopPadVoices(S.seqPad);
-  }else{                                           // place (or re-pitch) the note
-    row[i]=parseFloat($('stepVel').value);
-    const lk=pat.locks[k]||{};
-    if(off===0) delete lk.pitch; else lk.pitch=off;
-    if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
-    if(!playing) hitLive(S.seqPad,row[i],off);     // audition while stopped
-  }
+  let set=notePitches(pat.locks[k],row[i]);
+  const had=set.includes(off);
+  set = had ? set.filter(x=>x!==off) : set.concat(off);
+  setNotePitches(pat,k,row,i,set);
+  if(playing) stopPadVoices(S.seqPad);
+  else if(!had) hitLive(S.seqPad,(row[i]>0?row[i]:parseFloat($('stepVel').value)),off);   // audition the added note
   drawSteps(); dirty();
 }
 $('btnNotes').addEventListener('click',()=>{
@@ -6129,14 +6161,16 @@ function exportMidi(){
         const L=(pat.len&&pat.len[p])||NSTEPS, idx=(absStepExp+st)%L;
         const v=pat.steps[p][idx]; if(!(v>0)) continue;
         const lk=pat.locks&&pat.locks[p+':'+idx];
-        const base=(S.pads[p].note>=0?S.pads[p].note:36)+((lk&&lk.pitch)||0);
-        const note=clamp(base,0,127), vel=clamp(Math.round(v*127),1,127);
+        const baseNote=(S.pads[p].note>=0?S.pads[p].note:36);
+        const chord=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0];   // export the whole chord
+        const vel=clamp(Math.round(v*127),1,127);
         let tick=stTick+((lk&&lk.nudge)?Math.round(lk.nudge*TPS):0); if(tick<0) tick=0;
         const rat=(lk&&lk.rat>1)?lk.rat:1, gate=Math.max(20,Math.round((rat>1?TPS/rat:TPS)*0.85));
         (perPad[p]=perPad[p]||[]);
-        for(let r=0;r<rat;r++){ const on=tick+Math.round(r*(TPS/rat));
-          perPad[p].push({tick:on,ord:1,msg:[0x90,note,vel]});
-          perPad[p].push({tick:on+gate,ord:0,msg:[0x80,note,0]}); }
+        chord.forEach(po=>{ const note=clamp(baseNote+po,0,127);
+          for(let r=0;r<rat;r++){ const on=tick+Math.round(r*(TPS/rat));
+            perPad[p].push({tick:on,ord:1,msg:[0x90,note,vel]});
+            perPad[p].push({tick:on+gate,ord:0,msg:[0x80,note,0]}); } });
       }
     }
     absStepExp+=NSTEPS;
@@ -6192,9 +6226,12 @@ async function renderMix(padSet, traxSet){
           let hv=v;
           if(S.human>0){ when=Math.max(0.01,when+(Math.random()*2-1)*S.human*0.012);   // same humanize as live playback
             hv=clamp(v*(1-Math.random()*S.human*0.22),0.05,1); }
-          const pitch=(lk&&lk.pitch)||0, rat=(lk&&lk.rat>1)?lk.rat:1;
-          if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) events.push({when:when+r*rd,p,v:hv,pitch}); }
-          else events.push({when,p,v:hv,pitch});
+          const chord=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0], rat=(lk&&lk.rat>1)?lk.rat:1;
+          const isChord=chord.length>1;                            // NOTES-lane harmony bakes into the bounce too
+          chord.forEach(pitch=>{
+            if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) events.push({when:when+r*rd,p,v:hv,pitch,chord:isChord}); }
+            else events.push({when,p,v:hv,pitch,chord:isChord});
+          });
         }
       }
       if(pat.autom){ const barDur=sd*NSTEPS;
@@ -6228,7 +6265,7 @@ async function renderMix(padSet, traxSet){
   for(const ev of events){
     if(ev.sil){ silenceAt(g, ev.when, S.silFade); gateDown=true; continue; }
     if(gateDown){ silRestore(g, Math.max(0.001,ev.when-0.002)); gateDown=false; }
-    triggerPad(oc, g, ev.p, ev.v, ev.when, chokeOff, ev.pitch);
+    triggerPad(oc, g, ev.p, ev.v, ev.when, ev.chord?null:chokeOff, ev.pitch);   // chord voices don't choke each other
   }
   for(const x of trax){ const w=wireTrack(oc,g,x.tr,x.b,0.05,x.tr.gain); if(x.tr.loop) w.src.stop(t); }
   return await oc.startRendering();
