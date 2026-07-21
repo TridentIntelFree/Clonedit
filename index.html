@@ -796,7 +796,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 
 <!-- PROJECT -->
 <div class="view" id="v-proj">
-  <div class="hint"><b>PROJECT LIBRARY</b> — keep as many beats as you like on the device. <b>SAVE</b> updates the open one, <b>SAVE AS NEW</b> keeps a copy, <b>NEW</b> starts fresh. Below: bounce to WAV/stems/MIDI, or export the session as a JSON file.</div>
+  <div class="hint"><b>PROJECT LIBRARY</b> — keep as many beats as you like on the device. <b>SAVE</b> updates the open project (shown below the NAME); <b>rename first</b> and SAVE keeps the original and stores a new one. <b>SAVE AS NEW</b> always makes a copy, <b>NEW</b> starts fresh. Below: bounce to WAV/stems/MIDI, or export the session as a JSON file.</div>
   <div class="row"><span class="lbl">NAME</span><input type="text" id="projName" class="grow" value="untitled"><span id="projCur" style="font-size:9px;color:var(--txt-dim)"></span></div>
   <h3>PROJECT LIBRARY <span id="projLibInfo" style="color:var(--txt-dim);letter-spacing:0"></span></h3>
   <div class="row">
@@ -1300,8 +1300,18 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      a full pad, overcoming the auto "send to an empty pad" fallback. That
      fallback still applies when you haven't tapped (e.g. right after loading),
      so quick sampling never clobbers a used pad by accident.
+   - R69: PROJECT SAVE/LOAD SAFETY (field reports). (1) DATA-LOSS GUARD: plain
+     SAVE overwrites the OPEN project in place — so building a new beat and
+     hitting SAVE while an old project was open replaced it. SAVE now saves as
+     a NEW entry when the project name has been changed (or the open project is
+     gone), so the original is never clobbered; the NAME row shows which
+     project SAVE will update. Persistent storage is requested on every save so
+     iOS can't evict the library under pressure. (2) SILENT-PADS-ON-LOAD: a
+     project saved with a pad soloed loaded with every OTHER pad silenced
+     ("one channel plays, all the pads are silent"). SOLO is a transient
+     audition state, so it's cleared on load (mutes still persist).
    ================================================================ */
-const BUILD = 'MVX-880 · R68 · 2026-07-21 · clearer pad selection (blue SEL) + a tapped pad overwrites';
+const BUILD = 'MVX-880 · R69 · 2026-07-21 · save no longer overwrites another project; solo cleared on load';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -5625,6 +5635,14 @@ function applySessionDoc(doc, bufs){
       setTimeout(()=>{ try{ plog('LOAD FAILSAFE: every loaded pad had volume 0 (poisoned save) — restored to 0.8.'); lcd('FIXED: pad volumes were saved at 0 — restored to 0.8.'); }catch(e){} },50);
     }
   }
+  { // SOLO is a transient "audition this pad" state, not song data. A project
+    // saved with a pad soloed would load with every OTHER pad silenced — the
+    // "one channel plays, all the pads that built the sound are silent" report.
+    // Clear solos on load (mutes, a deliberate channel-off, still persist).
+    const soloed=S.pads.filter(p=>p.solo).length;
+    if(soloed){ S.pads.forEach(p=>{ p.solo=false; });
+      setTimeout(()=>{ try{ plog('Cleared '+soloed+' solo(s) from the loaded project so every pad plays (use S in MIX to solo again).'); }catch(e){} },50); }
+  }
   Object.keys(revCache).forEach(k=>delete revCache[k]);
   Object.keys(speedCache).forEach(k=>delete speedCache[k]);   // keyed by bufId — stale after a load
   Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
@@ -5894,18 +5912,31 @@ function projMeta(id,doc){ return { id, name:doc.name||'untitled', t:doc.t||Date
 async function projIndexGet(){ try{ return (await idbGet('projIndex'))||[]; }catch(e){ return []; } }
 async function projIndexUpsert(meta){ let idx=await projIndexGet(); idx=idx.filter(x=>x.id!==meta.id); idx.unshift(meta); await idbPut('projIndex',idx); }
 async function projIndexRemove(id){ let idx=await projIndexGet(); idx=idx.filter(x=>x.id!==id); await idbPut('projIndex',idx); }
+async function requestPersist(){   // iOS may evict non-persisted IndexedDB under storage pressure — losing the whole library
+  try{ if(navigator.storage && navigator.storage.persist && !(await navigator.storage.persisted())) await navigator.storage.persist(); }catch(e){}
+}
 async function projSaveNew(){
   const id='p'+Date.now().toString(36)+Math.floor(Math.random()*1e3).toString(36);
   const doc=snapshotSession(); doc.projId=id;
   try{ await idbPut('proj:'+id,doc); await projIndexUpsert(projMeta(id,doc)); }
   catch(e){ lcd('SAVE FAILED: '+(e&&e.message||'storage')); return; }
+  requestPersist();
   curProjId=id; await drawProjects(); lcd('SAVED “'+doc.name+'” to library'); plog('Project saved: '+doc.name);
 }
 async function projSave(){
   if(!curProjId){ return projSaveNew(); }
+  const idx=await projIndexGet();
+  const open=idx.find(x=>x.id===curProjId);
+  const nm=($('projName').value||'untitled');
+  // DATA-LOSS GUARD: SAVE updates the OPEN project in place. If that project is
+  // gone, or you've renamed it (a strong signal you mean a different beat),
+  // save as a NEW entry instead of overwriting — the old project is never lost.
+  if(!open){ plog('The open project was no longer in the library — saving as a new entry.'); return projSaveNew(); }
+  if((open.name||'')!==nm){ plog('Renamed “'+(open.name||'untitled')+'” → “'+nm+'” — saved as a NEW project; the original is untouched. (Use the same name to update in place.)'); lcd('SAVED “'+nm+'” as a NEW project — “'+(open.name||'untitled')+'” kept.'); return projSaveNew(); }
   const doc=snapshotSession(); doc.projId=curProjId;
   try{ await idbPut('proj:'+curProjId,doc); await projIndexUpsert(projMeta(curProjId,doc)); }
   catch(e){ lcd('SAVE FAILED: '+(e&&e.message||'storage')); return; }
+  requestPersist();
   await drawProjects(); lcd('UPDATED “'+doc.name+'”'); plog('Project updated: '+doc.name);
 }
 async function projLoad(id){
@@ -5985,7 +6016,8 @@ async function drawProjects(){
   const totKb=idx.reduce((a,x)=>a+(x.kb||0),0);
   $('projLibInfo').textContent = idx.length? ('· '+idx.length+' saved · '+(totKb>1024?(totKb/1024).toFixed(1)+'MB':totKb+'KB')) : '· none yet';
   updateProjStore();
-  $('projCur').textContent = curProjId? '● in library' : '○ unsaved';
+  { const openMeta = curProjId && idx.find(x=>x.id===curProjId);
+    $('projCur').textContent = openMeta ? ('● SAVE updates “'+(openMeta.name||'untitled')+'”') : (curProjId? '● in library' : '○ unsaved — SAVE makes a new entry'); }
   el.innerHTML='';
   if(!idx.length){ el.innerHTML='<div style="font-size:11px;color:var(--txt-dim);padding:4px">No saved projects yet. Make a beat and tap SAVE AS NEW.</div>'; return; }
   idx.forEach(m=>{
