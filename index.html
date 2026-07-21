@@ -322,13 +322,13 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     </div>
     <div class="pslider"><span class="lbl">DEPTH</span><input type="range" id="epLfoDepth" min="0" max="1" step="0.01"><span class="val" id="epLfoDepthV"></span></div>
     <div style="font-size:10px;color:var(--txt-dim);margin-top:2px">CUTOFF LFO needs the FILTER set (not OFF).</div>
-    <h3>WARP <span style="color:var(--txt-dim);letter-spacing:0">— pitch-preserving time-stretch to the grid</span></h3>
+    <h3>WARP <span style="color:var(--txt-dim);letter-spacing:0">— manual pitch-preserving stretch to the grid (BPM never touches your samples)</span></h3>
     <div class="row">
       <span class="lbl">BEATS</span>
       <select id="epWarpBeats"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>6</option><option>8</option><option>16</option></select>
       <button id="epWarp" class="grow">WARP &#8594; FIT TEMPO</button>
       <button id="epWarpReset">RESET</button>
-      <button id="epWarpAuto" class="on">AUTO</button>
+      <button id="epWarpAuto">AUTO</button>
     </div>
     <div id="epWarpInfo" style="font-size:10px;color:var(--lcd);margin-top:2px">—</div>
   </div>
@@ -1136,10 +1136,12 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
        shelf 4k, ±12dB) inserted in every pad channel after the filter —
        full sliders in PADS → EDIT, mini L/M/H sliders on each mixer
        strip. Applied by applyPadFx, so it's live AND baked into bounce.
-     * AUTO-WARP: warped pads re-stretch from the pristine original when
-       the tempo settles (500ms debounce, 0.5 BPM threshold to ignore
-       MIDI-clock jitter) — loops stay locked to the grid through tempo
-       changes. Toggle in the WARP row; persisted.
+     * AUTO-WARP (opt-in, default OFF as of R65): when explicitly enabled
+       via the AUTO toggle in the WARP row, warped pads re-stretch from the
+       pristine original when the tempo settles (500ms debounce, 0.5 BPM
+       threshold to ignore MIDI-clock jitter) so loops stay locked to the
+       grid. OFF by default so BPM only drives the sequencer — samples play
+       at their natural speed regardless of tempo.
      * COMPRESSED EXPORT (PROJ): offline render, then real-time encode
        via MediaRecorder — AAC .m4a where supported (Safari/iOS, newer
        Chrome), else Opus .webm. ~10× smaller than WAV for sharing.
@@ -1259,8 +1261,17 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      otherwise the first empty pad (same bank first) — and the pad
      selection ring is now always visible, even on an empty pad
      outside EDIT mode, so you can see where audio will land.
+   - R65: BPM ⟂ PLAYBACK SPEED. Field report: lowering the BPM slowed the
+     actual samples (loaded loops AND trax-takes-on-pads), because AUTO-WARP
+     re-stretched every warped pad on each tempo change. AUTO-WARP is now an
+     opt-in that DEFAULTS OFF and loads OFF (so projects saved under the old
+     default stop slowing) — BPM drives ONLY the sequencer's step timing;
+     samples play at their natural speed at any tempo. WARP → FIT TEMPO
+     stays as a deliberate, one-time manual stretch; the AUTO toggle in the
+     WARP row re-enables tempo-following for anyone who wants grid-locked
+     loops.
    ================================================================ */
-const BUILD = 'MVX-880 · R64 · 2026-07-20 · trax workflow — live-only isolation, re-record, clear, smart to-pad';
+const BUILD = 'MVX-880 · R65 · 2026-07-21 · BPM drives only the sequencer — samples keep their natural speed';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1293,7 +1304,7 @@ const S = {
   buffers: [],            // AudioBuffers, referenced by pads via bufId
   patterns: Array.from({length:NPAT},()=>newPattern()),
   pattern: 0, bank: 0, editPad: 0, seqPad: 0,
-  bpm: 100, swing: 0, human: 0, autoWarp: true, silFade: 0.06, masterVol: 0.9, delayFb: 0.35,
+  bpm: 100, swing: 0, human: 0, autoWarp: false, silFade: 0.06, masterVol: 0.9, delayFb: 0.35,
   revLvl: 0.9, revSize: 3.0, revType: 'hall', delayDiv: 0.375, dlyTone: 5200, dlyMode: 'digital', compAmt: 0.4,
   chain: [], chainOn: false, chainPos: 0,
   vcurve: 'linear', midiCh: -1, extClk: false, pcPat: true,
@@ -2009,7 +2020,7 @@ $('epWarp').addEventListener('click',()=>{
   lcd('WARPED · '+targetDur.toFixed(2)+'s locks to '+beats+' beats @ '+S.bpm.toFixed(1));
 });
 $('epWarpAuto').addEventListener('click',()=>{ S.autoWarp=!S.autoWarp; $('epWarpAuto').classList.toggle('on',S.autoWarp);
-  lcd(S.autoWarp?'AUTO-WARP ON — warped pads re-stretch when the tempo changes':'AUTO-WARP OFF'); dirty(); });
+  lcd(S.autoWarp?'AUTO-WARP ON — warped pads follow the tempo (BPM will re-stretch them)':'AUTO-WARP OFF — BPM affects only the sequencer'); dirty(); });
 /* auto-warp: when the tempo settles, re-stretch every warped pad so loops
    stay locked to the grid. Stretches from the pristine pre-warp original
    when it's in memory; after a restore the current buffer is adopted as
@@ -5465,7 +5476,12 @@ function reapplyLivePads(){   // push S.pads channel state onto the live graph (
   applyMixMutes();
 }
 function applySessionDoc(doc, bufs){
-  S.bpm=doc.bpm; S.swing=doc.swing; S.human=doc.human||0; S.autoWarp=doc.autoWarp!=null?!!doc.autoWarp:true; S.silFade=doc.silFade!=null?doc.silFade:0.06; S.masterVol=doc.masterVol; S.delayFb=doc.delayFb;
+  S.bpm=doc.bpm; S.swing=doc.swing; S.human=doc.human||0;
+  // BPM must only drive the sequencer: AUTO-WARP (tempo re-stretches samples)
+  // is retired as a default — always load OFF so a project saved under the old
+  // default doesn't keep slowing loops/trax-on-pads when the tempo changes.
+  S.autoWarp=false;
+  S.silFade=doc.silFade!=null?doc.silFade:0.06; S.masterVol=doc.masterVol; S.delayFb=doc.delayFb;
   S.revLvl=(doc.revLvl!=null)?doc.revLvl:0.9;
   S.revSize=(doc.revSize!=null)?doc.revSize:3.0;
   S.delayDiv=(doc.delayDiv!=null)?doc.delayDiv:0.375;
