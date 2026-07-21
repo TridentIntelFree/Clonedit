@@ -817,15 +817,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <input type="file" id="libIn" style="display:none">
   <h3>REWIND <span style="color:var(--txt-dim);letter-spacing:0">— automatic checkpoints, every 3 min while you work</span></h3>
   <div id="rewindList"></div>
-  <h3>AI JAM — SONG DOC <span style="color:var(--txt-dim);letter-spacing:0">— compose this app from plain text</span></h3>
+  <h3>AI JAM — SONG DOC <span style="color:var(--txt-dim);letter-spacing:0">— an AI writes a beat as JSON; this app plays it</span></h3>
   <div class="row">
     <button id="btnDocLoad" class="grow">LOAD DOC</button>
     <button id="btnDocExport">EXPORT CURRENT</button>
     <button id="btnDocSpec">SPEC</button>
     <button id="btnDiag" title="engine state snapshot">DIAG</button>
   </div>
-  <textarea id="docText" spellcheck="false" placeholder='Ask any AI: "write me an MVX-880 song doc" (tap SPEC for the format), then paste the JSON here and tap LOAD DOC.'></textarea>
-  <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">A song doc describes pads (synth preset + note + mix), patterns (steps · pitches · locks · silencer · signed BPM) and the arrangement — the whole production as text. EXPORT lets an AI remix what you made. Console: <span style="color:var(--lcd)">window.MVX.load / .export / .play / .spec</span></div>
+  <textarea id="docText" spellcheck="false" placeholder='Tap SPEC → copy the whole thing → paste it to any AI and ask for a beat → paste the AI&apos;s reply back here → tap LOAD DOC. (Code fences / extra text are fine.)'></textarea>
+  <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px"><b>SPEC</b> puts a ready-to-paste prompt (with a working example) in the box — hand it to an AI, paste the reply back, LOAD. The loader pulls the JSON out even if the AI wraps it in ```json or adds chatter. EXPORT lets an AI remix what you made. Console: <span style="color:var(--lcd)">window.MVX.load / .export / .play / .spec</span></div>
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>
@@ -1319,8 +1319,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      several notes in one column and the pad fires them together as a chord
      (voices don't choke each other; per-pad voice cap raised 3→6). Chords
      persist, bounce to WAV, and export to MIDI as real chords.
+   - R71: AI JAM MADE IT WORK (field report — Grok's output wouldn't load and
+     the SPEC confused both AI and human). (1) TOLERANT LOADER: the doc box
+     now digs the JSON out of a normal chat reply — strips ```json fences and
+     ignores prose before/after — so an AI's answer pastes straight in.
+     (2) CLEAR SPEC: SPEC is now a plain-language prompt with the exact keys,
+     allowed values (no more "hall|room|…" pipe strings an AI copies literally),
+     and a complete WORKING example that loads as-is. (3) Song docs carry
+     CHORDS: several entries on one step load/export/round-trip as harmony.
    ================================================================ */
-const BUILD = 'MVX-880 · R70 · 2026-07-21 · tap = sequencer row too; NOTES lane plays chords';
+const BUILD = 'MVX-880 · R71 · 2026-07-21 · AI JAM: forgiving loader + a clear prompt that actually works';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -3192,20 +3200,80 @@ async function loadKit(kit, layBeat){
    round-trips the current session so an AI can remix your work.
    Programmatic access: window.MVX.load(docOrJson) / .export() /
    .play() / .stop() / .spec */
-const SONGDOC_SPEC=JSON.stringify({
-  "_what":"MVX-880 song doc. Paste into PROJ → AI JAM → LOAD, or window.MVX.load(doc).",
-  "_presets":"drums: dkick dsnare dclap dhat dohat drim dtom dcow dshk dcong · bass: b808 bsub breese bfm · keys: pgrand pfelt kep korg · lead/pad: lsuper lpluck pwarm · strings/brass: scello sens spizz brs bstab · fx: xbell xglass xzap xsweep xgrain",
-  "_notes":"note = MIDI number the preset is rendered at (60=C4). Steps: pad index → [[step0-15, velocity0-1, pitchSemitones?], …]. locks: 'pad:step' → {prob:0-1, rat:2-4, nudge:-0.5..0.5}. sil: steps where EVERYTHING cuts until the next hit. Negative pattern bpm plays that pattern BACKWARDS.",
-  "fmt":"mvx-songdoc-1","title":"My Song","bpm":120,"swing":0.05,"human":0.2,"silFade":0.06,
-  "revType":"hall|room|plate|spring|cath|gated","revSize":3,"dlyMode":"digital|pingpong|tape","delayDiv":0.375,"delayFb":0.3,"dlyTone":5000,
-  "sidechain":{"on":true,"trig":0,"depth":0.35,"rel":0.25},
-  "loop":true,"song":[[0,2],[1,2]],
-  "pads":[{"preset":"dkick","note":36,"gain":0.9,"pan":0,"rev":0,"dly":0,"choke":0,"eqLo":0,"eqMid":0,"eqHi":0}],
-  "patterns":[{"steps":{"0":[[0,0.9],[8,0.9]],"1":[[4,0.8,7]]},"locks":{"1:4":{"prob":0.7}},"sil":[12],"bpm":null}]
-},null,1);
+const SONGDOC_EXAMPLE={
+  fmt:'mvx-songdoc-1', title:'Example Beat', bpm:120, swing:0.08, human:0.15, loop:true,
+  song:[[0,4]],
+  pads:[
+    {preset:'dkick', note:36, gain:1.0},
+    {preset:'dclap', note:60, gain:0.8, rev:0.18},
+    {preset:'dohat', note:70, gain:0.5, pan:0.2},
+    {preset:'b808',  note:36, gain:0.9}
+  ],
+  patterns:[
+    { steps:{
+        "0":[[0,1],[4,1],[8,1],[12,1]],
+        "1":[[4,0.8],[12,0.8]],
+        "2":[[2,0.5],[6,0.5],[10,0.5],[14,0.5]],
+        "3":[[0,0.9,0],[0,0.9,7],[8,0.9,3]]
+      }, sil:[], bpm:null }
+  ]
+};
+const SONGDOC_SPEC=
+`MVX-880 SONG DOC — jam with an AI in 3 steps:
+1) Copy this ENTIRE message.  2) Paste it to any AI (Claude, ChatGPT, Grok…) and ask for a beat.
+3) Paste the AI's reply back here (PROJ → AI JAM box) and tap LOAD.  (Fences / extra text are fine — the loader digs the JSON out.)
+
+===== INSTRUCTIONS FOR THE AI =====
+Compose a beat for the MVX-880 groovebox. Reply with ONE JSON object that matches the schema below. Do not invent field names. Prose around it is tolerated, but the JSON object must be complete and valid.
+
+REQUIRED top-level keys: "fmt":"mvx-songdoc-1", "pads":[…], "patterns":[…].
+OPTIONAL: "title", "bpm" 1-999, "swing" 0-0.6, "human" 0-1, "loop":true, "song":[[patternIndex,repeats],…].
+
+pads[]  (up to 16 voices; pad 0 is first):
+  {"preset":"<id>","note":<MIDI 60=C4>,"gain":0-1.2,"pan":-1..1,"rev":0-1,"dly":0-1,"choke":0-8}
+  preset ids —
+    drums:  dkick dsnare dclap dhat dohat drim dtom dcow dshk dcong
+    bass:   b808 bsub breese bfm
+    keys:   pgrand pfelt kep korg
+    lead:   lsuper lpluck pwarm
+    orch:   scello sens spizz brs bstab
+    fx:     xbell xglass xzap xsweep xgrain
+
+patterns[]  (up to 8, each 16 steps):
+  {"steps":{"<padIndex>":[[step,vel,pitch],…]},"sil":[steps],"bpm":null}
+    step 0-15 · vel 0-1 · pitch = semitones (optional; 0 or omit for none).
+    Put SEVERAL entries on the same step (same pad) for a CHORD.
+    "bpm": null follows the song tempo; a NEGATIVE bpm plays that pattern BACKWARDS.
+    "sil": steps where all sound cuts until the next hit (optional; [] is fine).
+
+OPTIONAL mix — use a single value, not a list:
+  "revType":"hall"  (or room, plate, spring, cath, gated) · "revSize":0.8-6
+  "dlyMode":"digital"  (or pingpong, tape) · "delayDiv":0.375 · "delayFb":0-0.85
+  "sidechain":{"on":true,"trig":<padIndex>,"depth":0-0.95}
+
+===== COPY-PASTE EXAMPLE (this exact JSON loads and plays) =====
+`+JSON.stringify(SONGDOC_EXAMPLE,null,2);
+/* AIs almost always wrap JSON in a ```json fence with prose around it, or add
+   a sentence before/after. Be forgiving: strip fences, then fall back to the
+   outermost {...} so a normal chat reply still loads. */
+function parseSongDocText(t){
+  if(t&&typeof t==='object') return t;
+  if(typeof t!=='string') return null;
+  let s=t.trim();
+  const fence=s.match(/```(?:json)?\s*([\s\S]*?)```/i);   // ```json … ``` (or plain ``` … ```)
+  if(fence) s=fence[1].trim();
+  try{ return JSON.parse(s); }catch(e){}
+  const a=s.indexOf('{'), b=s.lastIndexOf('}');            // pull the JSON object out of surrounding text
+  if(a>=0&&b>a){ try{ return JSON.parse(s.slice(a,b+1)); }catch(e){} }
+  return null;
+}
 async function loadSongDoc(doc){
   if(kitBusy) return false;
-  if(typeof doc==='string'){ try{ doc=JSON.parse(doc); }catch(e){ lcd('SONG DOC: not valid JSON — '+e.message); return false; } }
+  if(typeof doc==='string'){
+    const parsed=parseSongDocText(doc);
+    if(!parsed){ lcd('SONG DOC: couldn’t find valid JSON. Paste the AI’s reply — a { … } object is enough (code fences and extra text are OK).'); return false; }
+    doc=parsed;
+  }
   if(!doc||doc.fmt!=='mvx-songdoc-1'||!Array.isArray(doc.pads)||!Array.isArray(doc.patterns)){
     lcd('SONG DOC: bad format — need fmt "mvx-songdoc-1" with pads[] and patterns[]. Tap SPEC for the schema.'); return false; }
   kitBusy=true;
@@ -3231,13 +3299,19 @@ async function loadSongDoc(doc){
       if(Array.isArray(pp.sil)) pp.sil.forEach(x=>{ const st=x|0; if(st>=0&&st<NSTEPS) P[pi].sil[st]=1; });
       if(pp.steps) for(const k in pp.steps){
         const pad=parseInt(k,10); if(!(pad>=0&&pad<NPADS)) continue;
+        const byStep={};
         (pp.steps[k]||[]).forEach(ev=>{
           if(!Array.isArray(ev)) return;
           const st=ev[0]|0, vel=ev[1]!=null?ev[1]:0.9, pitch=Math.round(ev[2]||0);
           if(st<0||st>=NSTEPS) return;
           P[pi].steps[pad][st]=clamp(vel,0.05,1);
-          if(pitch){ const kk=pad+':'+st, lk=P[pi].locks[kk]||{}; lk.pitch=pitch; P[pi].locks[kk]=lk; }
+          (byStep[st]=byStep[st]||[]).push(pitch);   // several entries on one step = a chord
         });
+        for(const st in byStep){
+          const set=Array.from(new Set(byStep[st])).sort((a,b)=>a-b), kk=pad+':'+st;
+          if(set.length>1){ const lk=P[pi].locks[kk]||{}; lk.pitches=set; lk.pitch=set[0]; P[pi].locks[kk]=lk; }
+          else if(set[0]){ const lk=P[pi].locks[kk]||{}; lk.pitch=set[0]; P[pi].locks[kk]=lk; }
+        }
       }
       if(pp.locks) for(const kk in pp.locks){
         const src=pp.locks[kk]||{}, lk=P[pi].locks[kk]||{};
@@ -3293,8 +3367,9 @@ function exportSongDoc(){
     const steps={};
     for(let p=0;p<NPADS;p++){ const evs=[];
       for(let st=0;st<NSTEPS;st++){ const v=pt.steps[p][st]; if(v>0){
-        const lk=pt.locks[p+':'+st], pitch=lk&&lk.pitch;
-        evs.push(pitch?[st,+v.toFixed(2),pitch]:[st,+v.toFixed(2)]); } }
+        const lk=pt.locks[p+':'+st];
+        const pitches=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0];   // a chord exports as one entry per note
+        pitches.forEach(po=>{ evs.push(po?[st,+v.toFixed(2),po]:[st,+v.toFixed(2)]); }); } }
       if(evs.length) steps[p]=evs; }
     const locks={};
     for(const k in pt.locks){ const lk=pt.locks[k], o={};
@@ -6358,7 +6433,7 @@ $('btnDocExport').addEventListener('click',()=>{
   plog('Exported song doc'+(anon?' ('+anon+' sampled pad(s) noted by name only — presets round-trip, recordings don\'t)':'')+'.');
   lcd('DOC EXPORTED to the text box — copy it to your AI.');
 });
-$('btnDocSpec').addEventListener('click',()=>{ $('docText').value=SONGDOC_SPEC; lcd('SPEC in the text box — hand it to any AI and ask for a song.'); });
+$('btnDocSpec').addEventListener('click',()=>{ $('docText').value=SONGDOC_SPEC; lcd('SPEC + example in the box — copy ALL of it to an AI, ask for a beat, paste the reply back, tap LOAD DOC.'); });
 $('btnDiag').addEventListener('click',()=>{ const d=diagDump('manual'); $('docText').value=d; lcd('DIAG in the text box + PROJ log — screenshot or copy it when reporting a bug.'); });
 $('libIn').addEventListener('change',async e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;
