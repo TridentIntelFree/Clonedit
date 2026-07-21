@@ -522,7 +522,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 
 <!-- LIVE -->
 <div class="view" id="v-live">
-  <div class="hint"><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records your playing to the next empty tape lane &mdash; open <b>TRAX</b> to hear, loop, FX, or send it to a pad.</div>
+  <div class="hint"><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records <b>only what you play</b> (not the backing beat) to the next empty tape lane &mdash; open <b>TRAX</b> to hear, loop, FX, or send it to a pad. To capture the whole mix instead, arm a lane in <b>TRAX</b> and set the source to MASTER BUS.</div>
   <div class="row">
     <button id="btnPerfRec" class="rec grow">&#9679; REC PERFORMANCE &#8594; TRACK</button>
   </div>
@@ -1270,8 +1270,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      stays as a deliberate, one-time manual stretch; the AUTO toggle in the
      WARP row re-enables tempo-following for anyone who wants grid-locked
      loops.
+   - R66: REC PERFORMANCE ISOLATES (field report). The ● REC PERFORMANCE
+     button on the LIVE tab forced the capture source to MASTER BUS, so it
+     recorded the whole mix (the beat + your playing) instead of just what
+     you played. It now records the LIVE bus — only your live performance
+     (on-screen instrument, guitar/amp, and manually-played pads via the
+     R64 per-voice taps), never the backing sequencer. To capture the full
+     mix on purpose, arm a lane in TRAX and set the source to MASTER BUS.
    ================================================================ */
-const BUILD = 'MVX-880 · R65 · 2026-07-21 · BPM drives only the sequencer — samples keep their natural speed';
+const BUILD = 'MVX-880 · R66 · 2026-07-21 · REC PERFORMANCE captures only your live playing, not the beat';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -4594,13 +4601,13 @@ $('btnPerfRec').addEventListener('click',()=>{
   let i=traxArm;
   if(i<0) i=S.trax.findIndex(t=>t.bufId<0);
   if(i<0){ lcd('ALL 8 TRACKS FULL — clear one in TRAX first.'); return; }
-  $('traxSrc').value='bus';
+  $('traxSrc').value='live';                   // REC PERFORMANCE isolates what YOU play (the live bus), not the whole mix
   if(traxStream) disarmTrax();                 // a pending mic arm would hijack the capture source
   traxArm=i; drawTrax();
   if(playing) stopSeq();
   startSeq();                                  // transport rolls; capture starts on the armed lane
   $('btnPerfRec').classList.add('on');
-  lcd('RECORDING \u2192 TRACK '+(i+1)+' — play! Tap again (or STOP) to commit.');
+  lcd('RECORDING \u2192 TRACK '+(i+1)+' — play! Only your live playing is captured, not the beat. Tap again (or STOP) to commit.');
 });
 $('instSel').addEventListener('change',e=>{ instPanic(); S.inst.mode=e.target.value; drawLive(); dirty(); });
 $('instVoiceSel').addEventListener('change',e=>{ S.inst.voice=e.target.value; dirty(); });
