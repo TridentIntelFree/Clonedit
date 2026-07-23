@@ -1361,8 +1361,17 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      to the developer via the OS share sheet / clipboard — no server, no public
      endpoint, private to each tester. Collected blobs go in the repo's
      feedback/ folder for later analysis.
+   - R75: ONLINE CAPPED FEEDBACK INBOX. Optional online path for the feedback
+     panel: set FEEDBACK_ENDPOINT to a deployed relay (feedback/worker.js — a
+     tiny Cloudflare Worker holding the GitHub token server-side) and reports
+     POST to it while online. The relay stores them in feedback/inbox.json as a
+     RING BUFFER capped at 100, so even a spam flood can never keep more than
+     100 short messages; it also throttles per IP and rejects anything that
+     isn't a small jbhfb1 blob. With no endpoint set (default) or offline, it
+     still falls back to the share/copy path — nothing breaks. decode.js reads
+     the whole inbox on request.
    ================================================================ */
-const BUILD = 'JBH-88 · R74 · 2026-07-21 · renamed to JBH-88 + private beta feedback';
+const BUILD = 'JBH-88 · R75 · 2026-07-21 · online feedback inbox capped at 100 (spam-proof), with offline fallback';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -6494,37 +6503,59 @@ $('btnDocExport').addEventListener('click',()=>{
 });
 $('btnDocSpec').addEventListener('click',()=>{ $('docText').value=SONGDOC_SPEC; lcd('SPEC + example in the box — copy ALL of it to an AI, ask for a beat, paste the reply back, tap LOAD DOC.'); });
 $('btnDiag').addEventListener('click',()=>{ const d=diagDump('manual'); $('docText').value=d; lcd('DIAG in the text box + PROJ log — screenshot or copy it when reporting a bug.'); });
-/* BETA FEEDBACK — offline-safe, un-spammable, private. There is no server:
-   the report is packaged into an opaque 'jbhfb1:' blob (base64) and handed to
-   the OS share sheet / clipboard so the tester sends it to the developer
-   directly. No public endpoint to spam; other testers never see it; the blob
-   resists casual tampering (edit it and it won't decode). The developer drops
-   collected blobs into the repo's feedback/ folder for later analysis. */
+/* BETA FEEDBACK — private, un-spammable, offline-safe.
+   Each report is packaged into an opaque 'jbhfb1:' blob (base64 — hides the
+   text, resists casual tampering).
+   ONLINE INBOX: if FEEDBACK_ENDPOINT is set (a small relay you deploy — see
+   feedback/worker.js) and the tester is online, the blob is POSTed to it. The
+   relay appends to feedback/inbox.json in the repo as a RING BUFFER capped at
+   100 reports, so even a spam flood can never store more than 100 short
+   messages. I read that file on request.
+   OFFLINE / no endpoint: falls back to the OS share sheet / clipboard so the
+   tester forwards the blob to the developer directly. Either way there is no
+   public write path to abuse. */
+const FEEDBACK_ENDPOINT='';   // ← paste your deployed Worker URL here to turn on the online 100-message inbox; empty = share/copy only
+// You can also set it without editing this file:  localStorage.setItem('jbh_fb_endpoint','https://…')
+function feedbackEndpoint(){ try{ return (localStorage.getItem('jbh_fb_endpoint')||'').trim()||FEEDBACK_ENDPOINT; }catch(e){ return FEEDBACK_ENDPOINT; } }
 let lastFbT=0;
 function encodeFeedback(obj){
   const j=JSON.stringify(obj);
   try{ return 'jbhfb1:'+btoa(unescape(encodeURIComponent(j))); }catch(e){ return 'jbhfb1:'+btoa(j); }
+}
+async function fbShareFallback(blob,cat,hasDiag){
+  const shareText='JBH-88 beta report ['+cat.toUpperCase()+'] — please forward to the developer:\n\n'+blob;
+  if(navigator.share){
+    try{ await navigator.share({title:'JBH-88 beta feedback',text:shareText}); $('fbMsg').textContent='✓ Report shared — thank you!'+(hasDiag?' (version + diagnostics included.)':''); $('fbText').value=''; return; }
+    catch(e){ if(e&&e.name==='AbortError'){ $('fbMsg').textContent='Share cancelled — tap SEND again to retry.'; lastFbT=0; return; } }
+  }
+  try{ await navigator.clipboard.writeText(shareText); $('fbMsg').textContent='✓ Report copied — paste it to the developer (message/email). Thank you!'; $('fbText').value=''; }
+  catch(e){ $('fbText').value=shareText; $('fbMsg').textContent='Report ready in the box above — copy it and send to the developer.'; }
 }
 $('fbSubmit').addEventListener('click',async ()=>{
   const msg=$('fbText').value.trim();
   if(msg.length<4){ $('fbMsg').textContent='Add a few words about what happened first.'; return; }
   const now=Date.now();
   if(now-lastFbT<15000){ $('fbMsg').textContent='One report every 15 seconds, please (keeps things tidy).'; return; }
-  const report={ f:'jbhfb1', v:BUILD, t:new Date().toISOString(), cat:$('fbCat').value, msg:msg.slice(0,1400) };
-  if($('fbDiag').checked){ try{ report.diag=diagDump('feedback'); }catch(e){} }
+  const cat=$('fbCat').value, hasDiag=$('fbDiag').checked;
+  const report={ f:'jbhfb1', v:BUILD, t:new Date().toISOString(), cat, msg:msg.slice(0,1400) };
+  if(hasDiag){ try{ report.diag=diagDump('feedback'); }catch(e){} }
   const blob=encodeFeedback(report);
-  const shareText='JBH-88 beta report ['+report.cat.toUpperCase()+'] — please forward to the developer:\n\n'+blob;
   lastFbT=now;
-  let shared=false;
-  if(navigator.share){
-    try{ await navigator.share({title:'JBH-88 beta feedback',text:shareText}); shared=true; }
-    catch(e){ if(e&&e.name==='AbortError'){ $('fbMsg').textContent='Share cancelled — tap SEND again, or it will be copied instead.'; lastFbT=0; return; } }
+  // ONLINE inbox path (capped at 100 server-side); fall back to share on any failure
+  const endpoint=feedbackEndpoint();
+  if(endpoint && navigator.onLine){
+    $('fbMsg').textContent='Sending …';
+    try{
+      const ctrl=('AbortController' in window)?new AbortController():null;
+      const to=ctrl?setTimeout(()=>ctrl.abort(),12000):0;
+      const res=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({blob}),signal:ctrl?ctrl.signal:undefined});
+      if(to) clearTimeout(to);
+      if(res.ok){ $('fbMsg').textContent='✓ Sent — thank you! Your report reached the developer’s inbox.'; $('fbText').value=''; return; }
+      if(res.status===429){ $('fbMsg').textContent='Inbox is rate-limited right now — please try again in a bit.'; lastFbT=0; return; }
+      // other status → fall through to share so nothing is lost
+    }catch(e){ /* offline/blocked/timeout → fall through to share */ }
   }
-  if(!shared){
-    try{ await navigator.clipboard.writeText(shareText); $('fbMsg').textContent='✓ Report copied — paste it to the developer (message/email). Thank you!'; }
-    catch(e){ $('fbText').value=shareText; $('fbMsg').textContent='Report ready in the box above — copy it and send to the developer.'; return; }
-  } else { $('fbMsg').textContent='✓ Report shared — thank you! (App version'+($('fbDiag').checked?' + diagnostics':'')+' included.)'; }
-  $('fbText').value='';
+  await fbShareFallback(blob,cat,hasDiag);
 });
 $('libIn').addEventListener('change',async e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;

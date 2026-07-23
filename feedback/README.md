@@ -1,12 +1,45 @@
 # JBH-88 — Beta Feedback
 
-A private, un-spammable, offline-friendly channel for beta testers to report
-issues. There is **no server**: the app packages each report into an opaque
-`jbhfb1:` blob and hands it to the tester's share sheet / clipboard, so it
-reaches the developer directly. Other testers never see it, and there is no
-public endpoint to spam.
+A private, spam-limited channel for beta testers to report issues. Every report
+is packaged into an opaque `jbhfb1:` blob (base64 — hides the text and resists
+casual tampering). There are two delivery paths:
 
-## How it flows
+- **Online inbox (recommended)** — if you deploy the tiny relay in `worker.js`
+  and set its URL as `FEEDBACK_ENDPOINT` in `index.html`, the app POSTs reports
+  to it and the relay stores them in **`inbox.json`** as a **ring buffer capped
+  at 100**. Even a spam flood can never grow the inbox past 100 short messages.
+  Ask the assistant to "check the beta feedback" and it reads `inbox.json`.
+- **Share fallback** — with no endpoint set, or when the tester is offline, the
+  app hands the blob to the OS share sheet / clipboard so the tester forwards it
+  to you directly (drop those into `reports/`). No public endpoint either way.
+
+## The online inbox (`inbox.json`)
+
+```json
+{ "fmt": "jbh-inbox-1", "cap": 100, "updated": "<iso>",
+  "reports": [ { "t": "<iso>", "ip": "<4-byte hash>", "blob": "jbhfb1:…" } ] }
+```
+
+Newest last; the relay trims to the last 100. `ip` is a short non-reversible
+hash (spot repeat spammers without storing anyone's address). `decode.js` with
+no arguments decodes the whole inbox.
+
+### Deploy the relay (once)
+
+The app is a static file and can't hold a GitHub token safely, so a minimal
+Cloudflare Worker (`worker.js`) holds it server-side and only ever appends to
+`inbox.json`. See the header of `worker.js` for the exact steps:
+
+1. Make a GitHub **fine-grained token** limited to this repo, **Contents:
+   Read and write** only.
+2. `wrangler deploy worker.js` (or paste it into the Cloudflare dashboard).
+3. Set Worker vars: `GH_TOKEN` (secret), `GH_REPO`, `GH_BRANCH`, `GH_PATH=feedback/inbox.json`.
+4. Put the Worker URL into `FEEDBACK_ENDPOINT` in `index.html`.
+
+The token never touches the app or the testers. The relay throttles per IP and
+rejects anything that isn't a small `jbhfb1:` blob.
+
+## Share-fallback flow
 
 1. **Tester** (in the app): PROJ tab → **BETA FEEDBACK** → pick a type, write
    what happened, leave "attach diagnostics" on → **PACKAGE & SEND REPORT**.
