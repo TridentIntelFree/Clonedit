@@ -1370,8 +1370,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      isn't a small jbhfb1 blob. With no endpoint set (default) or offline, it
      still falls back to the share/copy path — nothing breaks. decode.js reads
      the whole inbox on request.
+   - R76: AI-JAM SILENT-LOAD FIX (beta report: "Ai upload didn't work" — the
+     session came back empty). A song doc that parsed but landed ZERO pads used
+     to still say "LOADED" and play silence. Now it refuses with a specific
+     reason — naming the unknown preset ids (or noting sample-only pads) and
+     pointing to SPEC — and a partial load reports how many pads loaded and how
+     many presets were skipped, so a bad AI reply is obvious instead of silent.
    ================================================================ */
-const BUILD = 'JBH-88 · R75 · 2026-07-21 · online feedback inbox capped at 100 (spam-proof), with offline fallback';
+const BUILD = 'JBH-88 · R76 · 2026-07-23 · AI-jam tells you when a doc loads empty (unknown presets)';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -3325,15 +3331,27 @@ async function loadSongDoc(doc){
     lcd('RENDERING “'+(doc.title||'song')+'” …');
     try{ panicVoices(); }catch(e){}
     for(let i=0;i<NPADS;i++){ S.pads[i]=newPad(i); delete warpOrig[i]; }   // a doc defines the WHOLE session — no leftovers
+    let loadedPads=0; const unknownPresets=[]; let namedOnly=0;
     for(let i=0;i<Math.min(16,doc.pads.length);i++){
-      const pd=doc.pads[i]; if(!pd||!pd.preset) continue;
+      const pd=doc.pads[i]; if(!pd) continue;
+      if(!pd.preset){ if(pd.name) namedOnly++; continue; }   // sampled/recorded pads carry a name only — can't re-synthesize from text
       const def=PRESETS.find(x=>x.id===pd.preset);
-      if(!def){ plog('songdoc: unknown preset "'+pd.preset+'" on pad '+i+' — skipped'); continue; }
+      if(!def){ unknownPresets.push(pd.preset); plog('songdoc: unknown preset "'+pd.preset+'" on pad '+i+' — skipped'); continue; }
       const note=pd.note!=null?pd.note:def.note;
       const buf=await renderPreset(def,note);
       assignBufToPad(i,buf,def.name);
       S.pads[i].srcPreset=def.id; S.pads[i].srcNote=note;
       ['gain','pan','rev','dly','choke','eqLo','eqMid','eqHi','att','rel','mode'].forEach(k=>{ if(pd[k]!=null) S.pads[i][k]=pd[k]; });
+      loadedPads++;
+    }
+    if(loadedPads===0){   // don't silently say LOADED when nothing landed — the #1 AI-jam failure
+      kitBusy=false;
+      const why = unknownPresets.length
+        ? 'the preset id'+(unknownPresets.length>1?'s':'')+' '+[...new Set(unknownPresets)].map(x=>'"'+x+'"').join(', ')+' aren’t in JBH-88'
+        : (namedOnly? 'the pads have names but no "preset" (sampled pads can’t be rebuilt from text)' : 'no pad had a valid "preset"');
+      plog('SONG DOC loaded 0 pads — '+why+'. Valid ids are in SPEC.');
+      lcd('SONG DOC: nothing to play — '+why+'. Tap SPEC for the exact preset ids and hand it back to the AI.');
+      return false;
     }
     const P=Array.from({length:NPAT},()=>newPattern());
     doc.patterns.slice(0,NPAT).forEach((pp,pi)=>{
@@ -3389,7 +3407,8 @@ async function loadSongDoc(doc){
     S.bank=0; S.editPad=0; S.seqPad=0;
     $('projName').value=(doc.title||'songdoc').slice(0,40);
     buildPads(); drawPads(); drawEdit(); drawSeq(); drawFader(); drawMixer(); drawSong(); dirty();
-    lcd('“'+(doc.title||'song')+'” LOADED — press PLAY ♪');
+    const skip = unknownPresets.length ? ' ('+unknownPresets.length+' unknown preset'+(unknownPresets.length>1?'s':'')+' skipped — see PROJ log)' : '';
+    lcd('“'+(doc.title||'song')+'” LOADED · '+loadedPads+' pad'+(loadedPads>1?'s':'')+skip+' — press PLAY ♪');
     return true;
   }catch(err){ lcd('SONG DOC FAILED: '+(err&&err.message||'error')); return false; }
   finally{ kitBusy=false; }
