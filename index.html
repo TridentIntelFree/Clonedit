@@ -511,6 +511,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <div class="row"><span class="lbl">TRACK</span><span id="tfxTitle" style="color:var(--amber);font-size:12px">T1</span>
       <span class="grow"></span>
       <button id="tfxPad">TO PAD</button>
+      <button id="tfxEdit">EDIT &#9656; SMPL</button>
       <button id="tfxClr">CLEAR</button>
     </div>
     <div class="row">
@@ -1335,8 +1336,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      (2) Arming a lane that already holds a take now warns that PLAY RE-RECORDS
      over it. (The "recorded the master" part was the pre-R66 REC PERFORMANCE
      behavior — it now captures only the live bus; update the app to get it.)
+   - R73: EDIT A TRAX TAKE IN THE SAMPLE EDITOR (requested). The TRAX FX panel
+     gains "EDIT ▸ SMPL": it copies the take onto a target pad and opens it in
+     the SMPL sample editor, so you can TRIM / CHOP / TRANSIENT / REVERSE / NORM
+     a recording with the full toolset. It works on a COPY, so the lane's
+     original take is never altered; the edited result lives on the pad
+     (playable, sequenceable, choppable across pads).
    ================================================================ */
-const BUILD = 'MVX-880 · R72 · 2026-07-21 · REC PERFORMANCE cannot overwrite a track; re-record warning';
+const BUILD = 'MVX-880 · R73 · 2026-07-21 · edit TRAX takes in the SMPL sample editor';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -4099,6 +4106,24 @@ $('tfxPad').addEventListener('click',()=>{
   S.editPad=pickTargetPad();   // never silently overwrite a used pad when an empty one exists
   const p=S.pads[S.editPad]; p.bufId=tr.bufId; p.start=0; p.end=1; p.name=(tr.name||'take').slice(0,14); p.warped=false; delete warpOrig[S.editPad];
   drawPads(); drawEdit(); dirty(); lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad)+(S.pads[S.editPad]?'':''));
+});
+$('tfxEdit').addEventListener('click',()=>{
+  const tr=S.trax[traxFxSel];
+  if(tr.bufId<0){ lcd('TRACK '+(traxFxSel+1)+' IS EMPTY.'); return; }
+  ensureAudio();
+  const orig=S.buffers[tr.bufId]; if(!orig){ lcd('TRACK '+(traxFxSel+1)+' has no audio.'); return; }
+  // Open the take in the SMPL sample editor by copying it onto a target pad.
+  // A COPY, so trims/normalize/reverse never alter the lane's original take.
+  const copy=mkAudioBuf(orig.length,orig.sampleRate,orig.numberOfChannels);
+  for(let c=0;c<orig.numberOfChannels;c++) copy.copyToChannel(orig.getChannelData(c).slice(),c);
+  S.buffers.push(copy); const bid=S.buffers.length-1;
+  S.editPad=pickTargetPad();
+  const p=S.pads[S.editPad]; p.bufId=bid; p.start=0; p.end=1; p.name=(tr.name||'take').slice(0,14); p.warped=false; delete warpOrig[S.editPad];
+  workBuf=copy; slices=[]; selSlice=-1;
+  drawPads(); drawEdit(); dirty();
+  const b=document.querySelector('#tabs button[data-v="smpl"]'); if(b) b.click();
+  drawWave();
+  lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad)+' (a copy) \u2014 edit in SMPL: TRIM / CHOP / TRANSIENT / REVERSE / NORM. The lane\u2019s take is untouched.');
 });
 function clearTrack(i){
   traxVoices.forEach(v=>{ if(v.i===i){ try{ v.src.stop(); }catch(e){} } });
