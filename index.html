@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>MVX-880</title>
+<title>JBH-88</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" href="icon.png">
@@ -210,7 +210,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 
 <div id="hdr">
   <div>
-    <div id="logo">MVX-880</div>
+    <div id="logo">JBH-88</div>
     <div id="build"></div>
   </div>
   <div id="transport">
@@ -370,7 +370,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <select id="packPick" class="grow">
       <option value="samples/real-cc0-full.json">Full Kit — Drums + Real (CC0)</option>
       <option value="samples/real-cc0.json">Real Instruments · Core (CC0)</option>
-      <option value="samples/manifest.json">MVX Studio (synth)</option>
+      <option value="samples/manifest.json">JBH Studio (synth)</option>
       <option value="custom">Custom URL…</option>
     </select>
     <button id="btnPackLoad">LOAD PACK</button>
@@ -826,7 +826,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnDiag" title="engine state snapshot">DIAG</button>
   </div>
   <textarea id="docText" spellcheck="false" placeholder='Tap SPEC → copy the whole thing → paste it to any AI and ask for a beat → paste the AI&apos;s reply back here → tap LOAD DOC. (Code fences / extra text are fine.)'></textarea>
-  <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px"><b>SPEC</b> puts a ready-to-paste prompt (with a working example) in the box — hand it to an AI, paste the reply back, LOAD. The loader pulls the JSON out even if the AI wraps it in ```json or adds chatter. EXPORT lets an AI remix what you made. Console: <span style="color:var(--lcd)">window.MVX.load / .export / .play / .spec</span></div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px"><b>SPEC</b> puts a ready-to-paste prompt (with a working example) in the box — hand it to an AI, paste the reply back, LOAD. The loader pulls the JSON out even if the AI wraps it in ```json or adds chatter. EXPORT lets an AI remix what you made. Console: <span style="color:var(--lcd)">window.JBH.load / .export / .play / .spec</span></div>
+  <h3>BETA FEEDBACK <span style="color:var(--txt-dim);letter-spacing:0">— private; packaged and sent only to the developer</span></h3>
+  <div class="row">
+    <span class="lbl">TYPE</span>
+    <select id="fbCat"><option value="bug">BUG</option><option value="crash">CRASH / SILENCE</option><option value="audio">AUDIO GLITCH</option><option value="idea">IDEA / REQUEST</option><option value="other">OTHER</option></select>
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px;margin-left:auto"><input type="checkbox" id="fbDiag" checked> attach diagnostics</label>
+  </div>
+  <textarea id="fbText" spellcheck="true" maxlength="1400" placeholder="What happened? What did you expect? Steps to reproduce if you can. Your report is packaged privately — other testers never see it, and it goes only to the developer."></textarea>
+  <div class="row"><button id="fbSubmit" class="grow">&#128232; PACKAGE &amp; SEND REPORT</button></div>
+  <div id="fbMsg" style="font-size:10px;color:var(--lcd);margin:2px 0 6px">Reports are anonymous unless you add your name. Version + optional diagnostics are attached automatically.</div>
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>
@@ -856,7 +865,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 <script>
 'use strict';
 /* ================================================================
-   MVX-880 — sampling workstation (rebuild of final form)
+   JBH-88 — sampling workstation (rebuild of final form)
    Fixes carried forward:
    - Gain fan-out: per-pad channel/pan/send nodes are built ONCE and
      connected ONCE to the buses. Per-hit sources connect only into
@@ -1342,8 +1351,18 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      a recording with the full toolset. It works on a COPY, so the lane's
      original take is never altered; the edited result lives on the pad
      (playable, sequenceable, choppable across pads).
+   - R74: RENAME → JBH-88 + BETA FEEDBACK. (1) The app's visible name is now
+     JBH-88 (title, logo, welcome, AI-JAM prompt). Internal data-format ids
+     (mvx880-project, the IndexedDB name, mvx-songdoc-1) are UNCHANGED so every
+     existing saved project, library, and song doc still loads; window.JBH is
+     the console API with window.MVX kept as a back-compat alias. (2) BETA
+     FEEDBACK (PROJ): testers write a report that's packaged into an opaque,
+     un-spammable 'jbhfb1:' blob (app version + optional diagnostics) and sent
+     to the developer via the OS share sheet / clipboard — no server, no public
+     endpoint, private to each tester. Collected blobs go in the repo's
+     feedback/ folder for later analysis.
    ================================================================ */
-const BUILD = 'MVX-880 · R73 · 2026-07-21 · edit TRAX takes in the SMPL sample editor';
+const BUILD = 'JBH-88 · R74 · 2026-07-21 · renamed to JBH-88 + private beta feedback';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1871,7 +1890,7 @@ function logGain(idx,v,src){ gainLog.push(new Date().toTimeString().slice(0,8)+'
 window.onerror=function(msg,src,line){ logErr(msg+' @'+line); lcd('ERR: '+msg+' @'+line); try{plog('ERR: '+msg+' line '+line);}catch(e){} };
 window.onunhandledrejection=function(ev){ const m=ev&&ev.reason&&ev.reason.message?ev.reason.message:'promise rejection'; logErr(m); lcd('ERR: '+m); };
 
-/* test tone through the FULL master chain — tap the MVX-880 logo.
+/* test tone through the FULL master chain — tap the JBH-88 logo.
    Beep audible + pads silent = sample/decode issue.
    Beep silent = output/session issue. */
 document.getElementById('logo').addEventListener('click',()=>{
@@ -3234,12 +3253,12 @@ const SONGDOC_EXAMPLE={
   ]
 };
 const SONGDOC_SPEC=
-`MVX-880 SONG DOC — jam with an AI in 3 steps:
+`JBH-88 SONG DOC — jam with an AI in 3 steps:
 1) Copy this ENTIRE message.  2) Paste it to any AI (Claude, ChatGPT, Grok…) and ask for a beat.
 3) Paste the AI's reply back here (PROJ → AI JAM box) and tap LOAD.  (Fences / extra text are fine — the loader digs the JSON out.)
 
 ===== INSTRUCTIONS FOR THE AI =====
-Compose a beat for the MVX-880 groovebox. Reply with ONE JSON object that matches the schema below. Do not invent field names. Prose around it is tolerated, but the JSON object must be complete and valid.
+Compose a beat for the JBH-88 groovebox. Reply with ONE JSON object that matches the schema below. Do not invent field names. Prose around it is tolerated, but the JSON object must be complete and valid.
 
 REQUIRED top-level keys: "fmt":"mvx-songdoc-1", "pads":[…], "patterns":[…].
 OPTIONAL: "title", "bpm" 1-999, "swing" 0-0.6, "human" 0-1, "loop":true, "song":[[patternIndex,repeats],…].
@@ -3404,6 +3423,7 @@ function exportSongDoc(){
 }
 window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
   load:d=>loadSongDoc(d), export:exportSongDoc, play:()=>startSeq(), stop:()=>stopSeq() };
+window.JBH=window.MVX;   // JBH-88 is the current name; window.MVX kept as a back-compat alias
 
 /* ============ "Mirrors for Machines" — composition #2 by Claude ============
    Melodic techno, D minor, 126 BPM: Dm | Bb | F | C. Written AS a song doc —
@@ -6293,7 +6313,7 @@ function exportMidi(){
   if(!usedPads.length){ plog('MIDI: nothing to export — source is empty.'); lcd('NO MIDI TO EXPORT.'); return; }
   // track 0: tempo map + time signature
   const t0=[{tick:0,ord:0,msg:[0xFF,0x58,0x04,0x04,0x02,0x24,0x08]},
-            {tick:0,ord:0,msg:[0xFF,0x03,midiStr('MVX tempo').length,...midiStr('MVX tempo')]}].concat(tempoEvs);
+            {tick:0,ord:0,msg:[0xFF,0x03,midiStr('JBH tempo').length,...midiStr('JBH tempo')]}].concat(tempoEvs);
   const ntrks=1+usedPads.length;
   const head=[0x4D,0x54,0x68,0x64,0,0,0,6, 0,1, (ntrks>>>8)&255,ntrks&255, (PPQ>>>8)&255,PPQ&255];
   let bytes=head.concat(midiTrack(t0));
@@ -6474,6 +6494,38 @@ $('btnDocExport').addEventListener('click',()=>{
 });
 $('btnDocSpec').addEventListener('click',()=>{ $('docText').value=SONGDOC_SPEC; lcd('SPEC + example in the box — copy ALL of it to an AI, ask for a beat, paste the reply back, tap LOAD DOC.'); });
 $('btnDiag').addEventListener('click',()=>{ const d=diagDump('manual'); $('docText').value=d; lcd('DIAG in the text box + PROJ log — screenshot or copy it when reporting a bug.'); });
+/* BETA FEEDBACK — offline-safe, un-spammable, private. There is no server:
+   the report is packaged into an opaque 'jbhfb1:' blob (base64) and handed to
+   the OS share sheet / clipboard so the tester sends it to the developer
+   directly. No public endpoint to spam; other testers never see it; the blob
+   resists casual tampering (edit it and it won't decode). The developer drops
+   collected blobs into the repo's feedback/ folder for later analysis. */
+let lastFbT=0;
+function encodeFeedback(obj){
+  const j=JSON.stringify(obj);
+  try{ return 'jbhfb1:'+btoa(unescape(encodeURIComponent(j))); }catch(e){ return 'jbhfb1:'+btoa(j); }
+}
+$('fbSubmit').addEventListener('click',async ()=>{
+  const msg=$('fbText').value.trim();
+  if(msg.length<4){ $('fbMsg').textContent='Add a few words about what happened first.'; return; }
+  const now=Date.now();
+  if(now-lastFbT<15000){ $('fbMsg').textContent='One report every 15 seconds, please (keeps things tidy).'; return; }
+  const report={ f:'jbhfb1', v:BUILD, t:new Date().toISOString(), cat:$('fbCat').value, msg:msg.slice(0,1400) };
+  if($('fbDiag').checked){ try{ report.diag=diagDump('feedback'); }catch(e){} }
+  const blob=encodeFeedback(report);
+  const shareText='JBH-88 beta report ['+report.cat.toUpperCase()+'] — please forward to the developer:\n\n'+blob;
+  lastFbT=now;
+  let shared=false;
+  if(navigator.share){
+    try{ await navigator.share({title:'JBH-88 beta feedback',text:shareText}); shared=true; }
+    catch(e){ if(e&&e.name==='AbortError'){ $('fbMsg').textContent='Share cancelled — tap SEND again, or it will be copied instead.'; lastFbT=0; return; } }
+  }
+  if(!shared){
+    try{ await navigator.clipboard.writeText(shareText); $('fbMsg').textContent='✓ Report copied — paste it to the developer (message/email). Thank you!'; }
+    catch(e){ $('fbText').value=shareText; $('fbMsg').textContent='Report ready in the box above — copy it and send to the developer.'; return; }
+  } else { $('fbMsg').textContent='✓ Report shared — thank you! (App version'+($('fbDiag').checked?' + diagnostics':'')+' included.)'; }
+  $('fbText').value='';
+});
 $('libIn').addEventListener('change',async e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;
   try{
