@@ -348,11 +348,20 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div class="row">
     <span class="lbl">TARGET</span><span id="smTarget" style="color:var(--amber)">A01</span>
     <span class="grow"></span>
+    <button id="btnFreeSounds" title="open free CC0 sound libraries in a new tab">&#127760; FREE SOUNDS</button>
     <button id="btnImport">IMPORT FILE</button>
     <button id="btnMic" class="rec">REC MIC</button>
   </div>
+  <div id="freeSoundsBar" style="display:none;font-size:10px;color:var(--txt-dim);margin:2px 0 4px;line-height:1.5">
+    Download a sound, then tap <b>IMPORT FILE</b> (you can pick several at once — they fill empty pads).
+    <div class="row" style="gap:6px;margin-top:3px">
+      <a id="lnkPixabay" href="https://pixabay.com/sound-effects/search/?order=ec" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none;color:var(--lcd);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 0;font-size:11px">PIXABAY &#8599;</a>
+      <a id="lnkFreesound" href="https://freesound.org/search/?f=license:%22Creative+Commons+0%22" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none;color:var(--lcd);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 0;font-size:11px">FREESOUND CC0 &#8599;</a>
+    </div>
+    <div style="margin-top:3px">Pixabay &amp; Freesound-CC0 sounds are free to use in your tracks. Importing is always fine — the app never re-hosts them.</div>
+  </div>
   <!-- iOS fix: no accept attribute — the wildcard greys out audio files in the iOS picker; rely on the decoder -->
-  <input type="file" id="fileIn" style="display:none">
+  <input type="file" id="fileIn" multiple style="display:none">
   <div class="row"><span class="lbl">MIC LVL</span><div id="miclvl"><div></div></div></div>
   <h3>PRESETS <span style="color:var(--txt-dim);letter-spacing:0">— synth-rendered into the TARGET pad</span></h3>
   <div class="row">
@@ -368,6 +377,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">— download online, stored on-device, used offline</span></h3>
   <div class="row">
     <select id="packPick" class="grow">
+      <option value="samples/jbh-drums.json">JBH Drums — Kit One (CC0) ★ new</option>
       <option value="samples/real-cc0-full.json">Full Kit — Drums + Real (CC0)</option>
       <option value="samples/real-cc0.json">Real Instruments · Core (CC0)</option>
       <option value="samples/manifest.json">JBH Studio (synth)</option>
@@ -1376,8 +1386,19 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      reason — naming the unknown preset ids (or noting sample-only pads) and
      pointing to SPEC — and a partial load reports how many pads loaded and how
      many presets were skipped, so a bad AI reply is obvious instead of silent.
+   - R77: BETTER DRUMS + EASY FREE-SOUND IMPORT (requested — the old CC0 drums
+     sounded fake/thin and were missing basics). (1) NEW PACK "JBH Drums — Kit
+     One (CC0)": 27 original one-shots synthesized from scratch (four kicks:
+     808/909/acoustic/tight, four snares, closed/open hats + crash/ride, clap,
+     three toms, congas/cowbell/rimshot/shaker/tambourine/clave, and tuned 808
+     bass) — punchy transients, pitch envelopes, layering, saturation. Fully
+     CC0/original, so it ships and redistributes freely. Pick it in SMPL →
+     SAMPLE PACKS. (2) FREE SOUNDS: a button by IMPORT opens Pixabay + Freesound
+     CC0 in a new tab, and IMPORT FILE now takes MULTIPLE files at once, filling
+     empty pads. (Importing is always license-safe; the app never re-hosts the
+     files — only bundled sounds are our own CC0 synthesis.)
    ================================================================ */
-const BUILD = 'JBH-88 · R76 · 2026-07-23 · AI-jam tells you when a doc loads empty (unknown presets)';
+const BUILD = 'JBH-88 · R77 · 2026-07-23 · new CC0 drum kit (27 one-shots) + free-sound import';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2395,16 +2416,37 @@ function decode(ab){
   });
 }
 
+$('btnFreeSounds').addEventListener('click',()=>{
+  const bar=$('freeSoundsBar'); const show=bar.style.display==='none';
+  bar.style.display=show?'block':'none'; $('btnFreeSounds').classList.toggle('on',show);
+  if(show) lcd('FREE SOUNDS — grab CC0 sounds from Pixabay/Freesound, then IMPORT FILE (multi-select fills empty pads).');
+});
 $('btnImport').addEventListener('click',()=>{ ensureAudio(); $('fileIn').value=''; $('fileIn').click(); });
 $('fileIn').addEventListener('change',async e=>{
-  const f=e.target.files && e.target.files[0]; if(!f) return;
-  lcd('DECODING '+f.name+' …');
-  try{
-    ensureAudio();
-    const ab=await f.arrayBuffer();
-    const buf=await decode(ab);
+  const files=e.target.files ? Array.from(e.target.files) : []; if(!files.length) return;
+  ensureAudio();
+  if(files.length===1){
+    const f=files[0]; lcd('DECODING '+f.name+' …');
+    try{ const buf=await decode(await f.arrayBuffer()); loadIntoTarget(buf, f.name.replace(/\.[^.]+$/,'')); }
+    catch(err){ lcd('DECODE FAILED: '+(err && err.message ? err.message : 'unsupported format')); }
+    return;
+  }
+  // MULTI-IMPORT: first file → the selected/target pad, the rest → the next
+  // empty pads AFTER it (kept consecutive so a kit stays together), wrapping.
+  let cur=S.editPad, ok=0, fail=0, full=false, landed=[];
+  for(let k=0;k<files.length;k++){
+    const f=files[k];
+    lcd('DECODING '+(k+1)+'/'+files.length+' · '+f.name+' …');
+    let buf; try{ buf=await decode(await f.arrayBuffer()); }catch(err){ fail++; continue; }
+    if(k>0){
+      let t=-1; for(let off=1;off<=NPADS;off++){ const i=(cur+off)%NPADS; if(S.pads[i].bufId<0){ t=i; break; } }
+      if(t<0){ full=true; break; } S.editPad=t; cur=t;
+    }
     loadIntoTarget(buf, f.name.replace(/\.[^.]+$/,''));
-  }catch(err){ lcd('DECODE FAILED: '+(err && err.message ? err.message : 'unsupported format')); }
+    landed.push(padName(S.editPad)); ok++;
+  }
+  drawPads();
+  lcd('IMPORTED '+ok+' sound'+(ok!==1?'s':'')+(landed.length?' → '+landed.join(', '):'')+(fail?' · '+fail+' failed (unsupported)':'')+(full?' · pads full — clear some for the rest':''));
 });
 
 function loadIntoTarget(buf,name){

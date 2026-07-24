@@ -1,209 +1,209 @@
 {
-"name": "MVX Studio Pack",
-"samples": [
-{
-"id": "mvxkit:kick01",
-"name": "Kick",
-"cat": "DRUMS",
-"file": "kick01.wav"
-},
-{
-"id": "mvxkit:snare01",
-"name": "Snare",
-"cat": "DRUMS",
-"file": "snare01.wav"
-},
-{
-"id": "mvxkit:hatclosed01",
-"name": "Closed Hat",
-"cat": "DRUMS",
-"file": "hatclosed01.wav"
-},
-{
-"id": "mvxkit:hatopen01",
-"name": "Open Hat",
-"cat": "DRUMS",
-"file": "hatopen01.wav"
-},
-{
-"id": "mvxkit:clap01",
-"name": "Clap",
-"cat": "DRUMS",
-"file": "clap01.wav"
-},
-{
-"id": "mvxkit:rim01",
-"name": "Rimshot",
-"cat": "DRUMS",
-"file": "rim01.wav"
-},
-{
-"id": "mvxkit:tomhi01",
-"name": "Tom Hi",
-"cat": "DRUMS",
-"file": "tomhi01.wav"
-},
-{
-"id": "mvxkit:tommid01",
-"name": "Tom Mid",
-"cat": "DRUMS",
-"file": "tommid01.wav"
-},
-{
-"id": "mvxkit:tomlo01",
-"name": "Tom Lo",
-"cat": "DRUMS",
-"file": "tomlo01.wav"
-},
-{
-"id": "mvxkit:cowbell01",
-"name": "Cowbell",
-"cat": "PERC",
-"file": "cowbell01.wav"
-},
-{
-"id": "mvxkit:perc01",
-"name": "Perc Hit",
-"cat": "PERC",
-"file": "perc01.wav"
-},
-{
-"id": "studio:bass_sub_c1",
-"name": "Sub Bass C1",
-"cat": "BASS",
-"file": "bass_sub_c1.wav"
-},
-{
-"id": "studio:bass_reese_c1",
-"name": "Reese Bass C1",
-"cat": "BASS",
-"file": "bass_reese_c1.wav"
-},
-{
-"id": "studio:bass_fm_c1",
-"name": "FM Bass C1",
-"cat": "BASS",
-"file": "bass_fm_c1.wav"
-},
-{
-"id": "studio:bass_pluck_c2",
-"name": "Pluck Bass C2",
-"cat": "BASS",
-"file": "bass_pluck_c2.wav"
-},
-{
-"id": "studio:keys_ep_c3",
-"name": "Electric Piano C3",
-"cat": "KEYS",
-"file": "keys_ep_c3.wav"
-},
-{
-"id": "studio:keys_glass_c4",
-"name": "Glass Bell C4",
-"cat": "KEYS",
-"file": "keys_glass_c4.wav"
-},
-{
-"id": "studio:keys_organ_c3",
-"name": "Organ C3",
-"cat": "KEYS",
-"file": "keys_organ_c3.wav"
-},
-{
-"id": "studio:pluck_nylon_c3",
-"name": "Nylon Pluck C3",
-"cat": "PLUCK",
-"file": "pluck_nylon_c3.wav"
-},
-{
-"id": "studio:pluck_harp_c4",
-"name": "Harp C4",
-"cat": "PLUCK",
-"file": "pluck_harp_c4.wav"
-},
-{
-"id": "studio:pad_saw_c3",
-"name": "Warm Saw Pad C3",
-"cat": "PAD",
-"file": "pad_saw_c3.wav"
-},
-{
-"id": "studio:pad_glass_c3",
-"name": "Glass Pad C3",
-"cat": "PAD",
-"file": "pad_glass_c3.wav"
-},
-{
-"id": "studio:brass_stab_c3",
-"name": "Brass Stab C3",
-"cat": "BRASS",
-"file": "brass_stab_c3.wav"
-},
-{
-"id": "studio:brass_horn_c3",
-"name": "Horn C3",
-"cat": "BRASS",
-"file": "brass_horn_c3.wav"
-},
-{
-"id": "studio:strings_cello_c2",
-"name": "Cello C2",
-"cat": "STRINGS",
-"file": "strings_cello_c2.wav"
-},
-{
-"id": "studio:strings_ens_c3",
-"name": "String Ensemble C3",
-"cat": "STRINGS",
-"file": "strings_ens_c3.wav"
-},
-{
-"id": "studio:perc_conga",
-"name": "Conga",
-"cat": "PERC",
-"file": "perc_conga.wav"
-},
-{
-"id": "studio:perc_conga_lo",
-"name": "Conga Lo",
-"cat": "PERC",
-"file": "perc_conga_lo.wav"
-},
-{
-"id": "studio:perc_shaker2",
-"name": "Shaker Tight",
-"cat": "PERC",
-"file": "perc_shaker2.wav"
-},
-{
-"id": "studio:fx_riser",
-"name": "Noise Riser",
-"cat": "FX",
-"file": "fx_riser.wav"
-},
-{
-"id": "studio:fx_downlifter",
-"name": "Downlifter",
-"cat": "FX",
-"file": "fx_downlifter.wav"
-},
-{
-"id": "studio:fx_impact",
-"name": "Impact",
-"cat": "FX",
-"file": "fx_impact.wav"
-},
-{
-"id": "studio:fx_vinyl",
-"name": "Vinyl Crackle",
-"cat": "FX",
-"file": "fx_vinyl.wav"
-},
-{
-"id": "studio:fx_zap",
-"name": "Laser Zap",
-"cat": "FX",
-"file": "fx_zap.wav"
-}
-]
+ "name": "JBH Studio (synth)",
+ "samples": [
+  {
+   "id": "mvxkit:kick01",
+   "name": "Kick",
+   "cat": "DRUMS",
+   "file": "kick01.wav"
+  },
+  {
+   "id": "mvxkit:snare01",
+   "name": "Snare",
+   "cat": "DRUMS",
+   "file": "snare01.wav"
+  },
+  {
+   "id": "mvxkit:hatclosed01",
+   "name": "Closed Hat",
+   "cat": "DRUMS",
+   "file": "hatclosed01.wav"
+  },
+  {
+   "id": "mvxkit:hatopen01",
+   "name": "Open Hat",
+   "cat": "DRUMS",
+   "file": "hatopen01.wav"
+  },
+  {
+   "id": "mvxkit:clap01",
+   "name": "Clap",
+   "cat": "DRUMS",
+   "file": "clap01.wav"
+  },
+  {
+   "id": "mvxkit:rim01",
+   "name": "Rimshot",
+   "cat": "DRUMS",
+   "file": "rim01.wav"
+  },
+  {
+   "id": "mvxkit:tomhi01",
+   "name": "Tom Hi",
+   "cat": "DRUMS",
+   "file": "tomhi01.wav"
+  },
+  {
+   "id": "mvxkit:tommid01",
+   "name": "Tom Mid",
+   "cat": "DRUMS",
+   "file": "tommid01.wav"
+  },
+  {
+   "id": "mvxkit:tomlo01",
+   "name": "Tom Lo",
+   "cat": "DRUMS",
+   "file": "tomlo01.wav"
+  },
+  {
+   "id": "mvxkit:cowbell01",
+   "name": "Cowbell",
+   "cat": "PERC",
+   "file": "cowbell01.wav"
+  },
+  {
+   "id": "mvxkit:perc01",
+   "name": "Perc Hit",
+   "cat": "PERC",
+   "file": "perc01.wav"
+  },
+  {
+   "id": "studio:bass_sub_c1",
+   "name": "Sub Bass C1",
+   "cat": "BASS",
+   "file": "bass_sub_c1.wav"
+  },
+  {
+   "id": "studio:bass_reese_c1",
+   "name": "Reese Bass C1",
+   "cat": "BASS",
+   "file": "bass_reese_c1.wav"
+  },
+  {
+   "id": "studio:bass_fm_c1",
+   "name": "FM Bass C1",
+   "cat": "BASS",
+   "file": "bass_fm_c1.wav"
+  },
+  {
+   "id": "studio:bass_pluck_c2",
+   "name": "Pluck Bass C2",
+   "cat": "BASS",
+   "file": "bass_pluck_c2.wav"
+  },
+  {
+   "id": "studio:keys_ep_c3",
+   "name": "Electric Piano C3",
+   "cat": "KEYS",
+   "file": "keys_ep_c3.wav"
+  },
+  {
+   "id": "studio:keys_glass_c4",
+   "name": "Glass Bell C4",
+   "cat": "KEYS",
+   "file": "keys_glass_c4.wav"
+  },
+  {
+   "id": "studio:keys_organ_c3",
+   "name": "Organ C3",
+   "cat": "KEYS",
+   "file": "keys_organ_c3.wav"
+  },
+  {
+   "id": "studio:pluck_nylon_c3",
+   "name": "Nylon Pluck C3",
+   "cat": "PLUCK",
+   "file": "pluck_nylon_c3.wav"
+  },
+  {
+   "id": "studio:pluck_harp_c4",
+   "name": "Harp C4",
+   "cat": "PLUCK",
+   "file": "pluck_harp_c4.wav"
+  },
+  {
+   "id": "studio:pad_saw_c3",
+   "name": "Warm Saw Pad C3",
+   "cat": "PAD",
+   "file": "pad_saw_c3.wav"
+  },
+  {
+   "id": "studio:pad_glass_c3",
+   "name": "Glass Pad C3",
+   "cat": "PAD",
+   "file": "pad_glass_c3.wav"
+  },
+  {
+   "id": "studio:brass_stab_c3",
+   "name": "Brass Stab C3",
+   "cat": "BRASS",
+   "file": "brass_stab_c3.wav"
+  },
+  {
+   "id": "studio:brass_horn_c3",
+   "name": "Horn C3",
+   "cat": "BRASS",
+   "file": "brass_horn_c3.wav"
+  },
+  {
+   "id": "studio:strings_cello_c2",
+   "name": "Cello C2",
+   "cat": "STRINGS",
+   "file": "strings_cello_c2.wav"
+  },
+  {
+   "id": "studio:strings_ens_c3",
+   "name": "String Ensemble C3",
+   "cat": "STRINGS",
+   "file": "strings_ens_c3.wav"
+  },
+  {
+   "id": "studio:perc_conga",
+   "name": "Conga",
+   "cat": "PERC",
+   "file": "perc_conga.wav"
+  },
+  {
+   "id": "studio:perc_conga_lo",
+   "name": "Conga Lo",
+   "cat": "PERC",
+   "file": "perc_conga_lo.wav"
+  },
+  {
+   "id": "studio:perc_shaker2",
+   "name": "Shaker Tight",
+   "cat": "PERC",
+   "file": "perc_shaker2.wav"
+  },
+  {
+   "id": "studio:fx_riser",
+   "name": "Noise Riser",
+   "cat": "FX",
+   "file": "fx_riser.wav"
+  },
+  {
+   "id": "studio:fx_downlifter",
+   "name": "Downlifter",
+   "cat": "FX",
+   "file": "fx_downlifter.wav"
+  },
+  {
+   "id": "studio:fx_impact",
+   "name": "Impact",
+   "cat": "FX",
+   "file": "fx_impact.wav"
+  },
+  {
+   "id": "studio:fx_vinyl",
+   "name": "Vinyl Crackle",
+   "cat": "FX",
+   "file": "fx_vinyl.wav"
+  },
+  {
+   "id": "studio:fx_zap",
+   "name": "Laser Zap",
+   "cat": "FX",
+   "file": "fx_zap.wav"
+  }
+ ]
 }
