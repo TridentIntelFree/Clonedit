@@ -353,12 +353,17 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnMic" class="rec">REC MIC</button>
   </div>
   <div id="freeSoundsBar" style="display:none;font-size:10px;color:var(--txt-dim);margin:2px 0 4px;line-height:1.5">
-    Download a sound, then tap <b>IMPORT FILE</b> (you can pick several at once — they fill empty pads).
-    <div class="row" style="gap:6px;margin-top:3px">
+    <div class="row" style="gap:6px">
       <a id="lnkPixabay" href="https://pixabay.com/sound-effects/search/?order=ec" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none;color:var(--lcd);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 0;font-size:11px">PIXABAY &#8599;</a>
       <a id="lnkFreesound" href="https://freesound.org/search/?f=license:%22Creative+Commons+0%22" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none;color:var(--lcd);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 0;font-size:11px">FREESOUND CC0 &#8599;</a>
     </div>
-    <div style="margin-top:3px">Pixabay &amp; Freesound-CC0 sounds are free to use in your tracks. Importing is always fine — the app never re-hosts them.</div>
+    <div style="margin-top:4px"><b>PASTE A LINK</b> — a direct <b>.wav / .mp3 / .zip</b> URL imports straight in (ZIPs are unpacked automatically):</div>
+    <div class="row" style="gap:6px;margin-top:3px">
+      <input type="text" id="importUrl" class="grow" placeholder="https://…/sound.mp3  (or a .zip)" spellcheck="false" autocapitalize="off" autocomplete="off">
+      <button id="btnImportUrl">IMPORT URL</button>
+    </div>
+    <div style="margin-top:4px"><b>On iPhone</b>, if a download “vanished”: it went to <b>Files → Downloads</b>. Tap <b>IMPORT FILE</b> → <b>Browse</b> → <b>Downloads</b> and pick it (you can select several). If it’s a <b>.zip</b>, import it as-is — the app unpacks the sounds inside.</div>
+    <div style="margin-top:3px;color:var(--lcd-dim)">Note: some sites (incl. Pixabay) block direct link-fetch for security; if IMPORT URL fails, download the file and use IMPORT FILE instead. Both are license-safe — the app never re-hosts your sounds.</div>
   </div>
   <!-- iOS fix: no accept attribute — the wildcard greys out audio files in the iOS picker; rely on the decoder -->
   <input type="file" id="fileIn" multiple style="display:none">
@@ -1397,8 +1402,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      CC0 in a new tab, and IMPORT FILE now takes MULTIPLE files at once, filling
      empty pads. (Importing is always license-safe; the app never re-hosts the
      files — only bundled sounds are our own CC0 synthesis.)
+   - R78: EASIER SOUND IMPORT (report: downloaded a file, couldn't find/unpack
+     it). (1) IN-APP UNZIP: importing a .zip (or a zip picked via IMPORT FILE)
+     now unpacks the audio inside automatically and spreads it across pads —
+     no manual unzip needed (DecompressionStream). (2) IMPORT URL: paste a
+     direct .wav/.mp3/.zip link and it fetches + imports straight in, with a
+     clear message when a host (e.g. Pixabay) blocks direct fetch. (3) Plain-
+     language iOS guidance: downloads live in Files → Downloads (IMPORT FILE →
+     Browse → Downloads). All decode paths funnel through one importer.
    ================================================================ */
-const BUILD = 'JBH-88 · R77 · 2026-07-23 · new CC0 drum kit (27 one-shots) + free-sound import';
+const BUILD = 'JBH-88 · R78 · 2026-07-23 · import from URL + auto-unzip downloaded sound packs';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2421,32 +2434,90 @@ $('btnFreeSounds').addEventListener('click',()=>{
   bar.style.display=show?'block':'none'; $('btnFreeSounds').classList.toggle('on',show);
   if(show) lcd('FREE SOUNDS — grab CC0 sounds from Pixabay/Freesound, then IMPORT FILE (multi-select fills empty pads).');
 });
+const AUDIO_RE=/\.(wav|mp3|ogg|oga|m4a|aac|flac|aif|aiff|caf|opus)$/i;
+/* Minimal in-app ZIP reader (central-directory based) so a downloaded pack of
+   sounds imports without the user having to unpack it first. Deflate via the
+   built-in DecompressionStream (iOS 16.4+ / modern browsers). */
+async function unzipEntries(ab){
+  const dv=new DataView(ab), u8=new Uint8Array(ab), N=ab.byteLength;
+  let eocd=-1; const lim=Math.max(0,N-22-65536);
+  for(let i=N-22;i>=lim;i--){ if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; } }
+  if(eocd<0) throw new Error('not a zip');
+  const count=dv.getUint16(eocd+10,true); let p=dv.getUint32(eocd+16,true);
+  const dec=new TextDecoder(), out=[];
+  for(let n=0;n<count && p+46<=N;n++){
+    if(dv.getUint32(p,true)!==0x02014b50) break;
+    const method=dv.getUint16(p+10,true), compSize=dv.getUint32(p+20,true),
+      nameLen=dv.getUint16(p+28,true), extraLen=dv.getUint16(p+30,true), commLen=dv.getUint16(p+32,true), lho=dv.getUint32(p+42,true);
+    const name=dec.decode(u8.subarray(p+46,p+46+nameLen));
+    p+=46+nameLen+extraLen+commLen;
+    if(name.endsWith('/') || name.indexOf('__MACOSX')>=0 || !AUDIO_RE.test(name)) continue;
+    const lNameLen=dv.getUint16(lho+26,true), lExtraLen=dv.getUint16(lho+28,true);
+    const start=lho+30+lNameLen+lExtraLen, comp=u8.subarray(start,start+compSize);
+    let data;
+    if(method===0){ data=comp.slice().buffer; }
+    else if(method===8){
+      if(typeof DecompressionStream==='undefined') throw new Error('this browser can’t unzip — update iOS/Safari, or unpack it on your device');
+      data=await new Response(new Blob([comp]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer();
+    } else continue;
+    out.push({name,ab:data});
+  }
+  return out;
+}
+function looksZip(ab){ const u=new Uint8Array(ab); return u.length>3 && u[0]===0x50 && u[1]===0x4b && (u[2]===3||u[2]===5||u[2]===7); }
+async function expandItems(items){   // unpack any zips into their audio entries
+  const out=[];
+  for(const it of items){
+    if(looksZip(it.ab) || /\.zip$/i.test(it.name||'')){
+      let entries; try{ entries=await unzipEntries(it.ab); }catch(err){ lcd('Couldn’t unpack '+(it.name||'zip')+' — '+(err.message||'try unzipping on your device')); continue; }
+      if(!entries.length) lcd('No audio files found inside '+(it.name||'the zip')+'.');
+      out.push(...entries);
+    } else out.push(it);
+  }
+  return out;
+}
+async function importItems(items){   // items:[{name,ab}] → decode each onto consecutive pads from the target
+  if(!items.length) return;
+  ensureAudio();
+  let cur=S.editPad, ok=0, fail=0, full=false, landed=[], first=true;
+  for(let k=0;k<items.length;k++){
+    const it=items[k];
+    lcd('DECODING '+(k+1)+'/'+items.length+' · '+(it.name||'sound')+' …');
+    let buf; try{ buf=await decode(it.ab.slice(0)); }catch(err){ fail++; continue; }
+    if(!first){
+      let t=-1; for(let off=1;off<=NPADS;off++){ const i=(cur+off)%NPADS; if(S.pads[i].bufId<0){ t=i; break; } }
+      if(t<0){ full=true; break; } S.editPad=t;
+    }
+    loadIntoTarget(buf, (it.name||'sample').replace(/^.*[\/\\]/,'').replace(/\.[^.]+$/,''));
+    landed.push(padName(S.editPad)); cur=S.editPad; first=false; ok++;
+  }
+  drawPads();
+  if(ok===1 && !fail && !full) return;   // loadIntoTarget already showed a nice message
+  lcd('IMPORTED '+ok+' sound'+(ok!==1?'s':'')+(landed.length?' → '+landed.join(', '):'')+(fail?' · '+fail+' skipped (not audio)':'')+(full?' · pads full — clear some for more':''));
+}
 $('btnImport').addEventListener('click',()=>{ ensureAudio(); $('fileIn').value=''; $('fileIn').click(); });
 $('fileIn').addEventListener('change',async e=>{
   const files=e.target.files ? Array.from(e.target.files) : []; if(!files.length) return;
   ensureAudio();
-  if(files.length===1){
-    const f=files[0]; lcd('DECODING '+f.name+' …');
-    try{ const buf=await decode(await f.arrayBuffer()); loadIntoTarget(buf, f.name.replace(/\.[^.]+$/,'')); }
-    catch(err){ lcd('DECODE FAILED: '+(err && err.message ? err.message : 'unsupported format')); }
-    return;
+  const items=[]; for(const f of files) items.push({name:f.name, ab:await f.arrayBuffer()});
+  await importItems(await expandItems(items));
+});
+$('btnImportUrl').addEventListener('click',async ()=>{
+  let url=($('importUrl').value||'').trim(); if(!url){ lcd('Paste a direct link to a .wav / .mp3 / .zip file first.'); return; }
+  if(!/^https?:\/\//i.test(url)) url='https://'+url;
+  ensureAudio();
+  lcd('FETCHING '+url.replace(/^https?:\/\//,'').slice(0,44)+' …');
+  try{
+    const res=await fetch(url,{mode:'cors'});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const ab=await res.arrayBuffer();
+    const items=await expandItems([{name:(url.split('?')[0].split('/').pop()||'sound'), ab}]);
+    if(!items.length){ lcd('That link had no importable audio.'); return; }
+    await importItems(items);
+    $('importUrl').value='';
+  }catch(err){
+    lcd('Couldn’t fetch that link — '+((err&&err.message)||'blocked')+'. Many sites (incl. Pixabay) block direct fetch; download the file and use IMPORT FILE instead.');
   }
-  // MULTI-IMPORT: first file → the selected/target pad, the rest → the next
-  // empty pads AFTER it (kept consecutive so a kit stays together), wrapping.
-  let cur=S.editPad, ok=0, fail=0, full=false, landed=[];
-  for(let k=0;k<files.length;k++){
-    const f=files[k];
-    lcd('DECODING '+(k+1)+'/'+files.length+' · '+f.name+' …');
-    let buf; try{ buf=await decode(await f.arrayBuffer()); }catch(err){ fail++; continue; }
-    if(k>0){
-      let t=-1; for(let off=1;off<=NPADS;off++){ const i=(cur+off)%NPADS; if(S.pads[i].bufId<0){ t=i; break; } }
-      if(t<0){ full=true; break; } S.editPad=t; cur=t;
-    }
-    loadIntoTarget(buf, f.name.replace(/\.[^.]+$/,''));
-    landed.push(padName(S.editPad)); ok++;
-  }
-  drawPads();
-  lcd('IMPORTED '+ok+' sound'+(ok!==1?'s':'')+(landed.length?' → '+landed.join(', '):'')+(fail?' · '+fail+' failed (unsupported)':'')+(full?' · pads full — clear some for the rest':''));
 });
 
 function loadIntoTarget(buf,name){
