@@ -357,13 +357,19 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <a id="lnkPixabay" href="https://pixabay.com/sound-effects/search/?order=ec" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none;color:var(--lcd);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 0;font-size:11px">PIXABAY &#8599;</a>
       <a id="lnkFreesound" href="https://freesound.org/search/?f=license:%22Creative+Commons+0%22" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none;color:var(--lcd);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 0;font-size:11px">FREESOUND CC0 &#8599;</a>
     </div>
-    <div style="margin-top:4px"><b>PASTE A LINK</b> — a direct <b>.wav / .mp3 / .zip</b> URL imports straight in (ZIPs are unpacked automatically):</div>
-    <div class="row" style="gap:6px;margin-top:3px">
-      <input type="text" id="importUrl" class="grow" placeholder="https://…/sound.mp3  (or a .zip)" spellcheck="false" autocapitalize="off" autocomplete="off">
-      <button id="btnImportUrl">IMPORT URL</button>
+    <div style="margin-top:6px;padding:6px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--txt)">
+      <b style="color:var(--lcd)">📲 iPhone — the reliable way:</b>
+      <div style="margin-top:2px">1. On Pixabay, tap <b>Download</b>. When the <b>Share/Open</b> sheet pops up (or a preview opens), choose <b>“Save to Files”</b> → <b>Downloads</b> (or On My iPhone).</div>
+      <div>2. Back here, tap <b>IMPORT FILE</b> → <b>Browse</b> → <b>Recents</b> or <b>Downloads</b>, and pick the sound(s). A <b>.zip</b> imports as-is — the app unpacks it.</div>
+      <div style="color:var(--lcd-dim);margin-top:2px">The “Save to Files” step is the one people miss — without it the file just opens/previews and is never saved.</div>
     </div>
-    <div style="margin-top:4px"><b>On iPhone</b>, if a download “vanished”: it went to <b>Files → Downloads</b>. Tap <b>IMPORT FILE</b> → <b>Browse</b> → <b>Downloads</b> and pick it (you can select several). If it’s a <b>.zip</b>, import it as-is — the app unpacks the sounds inside.</div>
-    <div style="margin-top:3px;color:var(--lcd-dim)">Note: some sites (incl. Pixabay) block direct link-fetch for security; if IMPORT URL fails, download the file and use IMPORT FILE instead. Both are license-safe — the app never re-hosts your sounds.</div>
+    <div style="margin-top:6px"><b>OR paste a DIRECT link</b> (a <b>.wav/.mp3/.zip</b> file URL, not a Pixabay page):</div>
+    <div class="row" style="gap:5px;margin-top:3px">
+      <input type="text" id="importUrl" class="grow" placeholder="https://…/sound.mp3" spellcheck="false" autocapitalize="off" autocomplete="off" inputmode="url">
+      <button id="btnPasteUrl" title="paste from clipboard">PASTE</button>
+      <button id="btnImportUrl">GO</button>
+    </div>
+    <div style="margin-top:3px;color:var(--lcd-dim)">Direct-link import only works for hosts that allow it — <b>Pixabay page links won’t fetch</b> (they block it), so for Pixabay use the Save-to-Files steps above. Every path is license-safe; the app never re-hosts your sounds.</div>
   </div>
   <!-- iOS fix: no accept attribute — the wildcard greys out audio files in the iOS picker; rely on the decoder -->
   <input type="file" id="fileIn" multiple style="display:none">
@@ -1410,8 +1416,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      clear message when a host (e.g. Pixabay) blocks direct fetch. (3) Plain-
      language iOS guidance: downloads live in Files → Downloads (IMPORT FILE →
      Browse → Downloads). All decode paths funnel through one importer.
+   - R79: iOS IMPORT HELP (report: can't paste into the URL box; Pixabay
+     downloads show a Share/Open sheet and never reach Files). (1) A one-tap
+     PASTE button reads the clipboard into the URL box (iOS long-press paste is
+     unreliable). (2) Rewrote the panel with the actual iPhone recipe: on the
+     Share sheet choose "Save to Files" → Downloads, then IMPORT FILE → Browse
+     → Recents/Downloads — calling out that the missed "Save to Files" step is
+     why downloads seem to vanish. Made clear Pixabay PAGE links can't be
+     fetched directly.
    ================================================================ */
-const BUILD = 'JBH-88 · R78 · 2026-07-23 · import from URL + auto-unzip downloaded sound packs';
+const BUILD = 'JBH-88 · R79 · 2026-07-23 · iOS import help: one-tap PASTE + Save-to-Files recipe';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2501,6 +2515,14 @@ $('fileIn').addEventListener('change',async e=>{
   ensureAudio();
   const items=[]; for(const f of files) items.push({name:f.name, ab:await f.arrayBuffer()});
   await importItems(await expandItems(items));
+});
+$('btnPasteUrl').addEventListener('click',async ()=>{
+  // iOS long-press paste is finicky; one-tap read from the clipboard is reliable
+  try{
+    const t=(await navigator.clipboard.readText()||'').trim();
+    if(t){ $('importUrl').value=t; lcd('Pasted — tap GO to import.'); }
+    else{ $('importUrl').focus(); lcd('Clipboard empty. Copy a direct file link first (or long-press the box → Paste).'); }
+  }catch(e){ $('importUrl').focus(); lcd('Couldn’t read the clipboard — long-press the box and tap Paste, then GO.'); }
 });
 $('btnImportUrl').addEventListener('click',async ()=>{
   let url=($('importUrl').value||'').trim(); if(!url){ lcd('Paste a direct link to a .wav / .mp3 / .zip file first.'); return; }
