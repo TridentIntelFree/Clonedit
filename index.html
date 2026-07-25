@@ -527,6 +527,17 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnViewCircle">&#9711; CIRCLE</button>
     <span id="viewHint" style="font-size:10px;color:var(--txt-dim);flex:1">rows of steps</span>
   </div>
+  <div class="row">
+    <button id="btnScaleLock">&#128274; SCALE</button>
+    <select id="scaleRoot"></select>
+    <select id="scaleName">
+      <option value="major">MAJOR</option><option value="minor" selected>MINOR</option>
+      <option value="dorian">DORIAN</option><option value="mixo">MIXOLYD</option>
+      <option value="pmaj">PENT MAJ</option><option value="pmin">PENT MIN</option><option value="blues">BLUES</option>
+    </select>
+    <button id="btnScaleFix" title="snap pitches already written in this pattern">FIX PTN</button>
+  </div>
+  <div id="scaleHint" style="font-size:10px;color:var(--txt-dim);margin:0 0 4px">Off — pitches are chromatic (any semitone).</div>
   <div id="stepgrid"></div>
   <div id="circlewrap" style="display:none">
     <canvas id="circle" width="760" height="760" style="width:100%;height:auto;display:block;background:var(--lcd-bg);border:1px solid var(--line);border-radius:10px;touch-action:none"></canvas>
@@ -1619,8 +1630,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      ring turns at its OWN track LEN, so polymeter (long supported, never
      visible) becomes something you watch drift, with a blue playhead per
      ring. The hub shows the pattern and selected track.
+   - R87: SCALE LOCK (SEQ) — a musical guard-rail, off by default. Pitch in the
+     sequencer is a semitone OFFSET from each pad's own sound, so offset 0 is
+     that pad's tonic; locking snaps every offset to the nearest degree of the
+     chosen KEY + SCALE. It applies where pitch is written or played: the step
+     LOCK pitch control, the NOTES lane (whose rows now follow this scale
+     rather than borrowing the LIVE instrument's), and chromatic MIDI input.
+     FIX PTN retunes pitches already written in the current pattern, chords
+     included, and reports how many moved. Persists with the project.
    ================================================================ */
-const BUILD = 'JBH-88 · R86 · 2026-07-25 · CIRCLE view — polymeter you can watch (GRID/CIRCLE toggle)';
+const BUILD = 'JBH-88 · R87 · 2026-07-25 · SCALE LOCK — write and play in key';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1658,6 +1677,7 @@ const S = {
   chain: [], chainOn: false, chainPos: 0,
   vcurve: 'linear', midiCh: -1, extClk: false, pcPat: true,
   midiChrom: false, midiRoot: 60, midiIn: '*',
+  scaleLock: false, scaleRoot: 0, scaleName: 'minor',   // musical guard-rail for written + played pitch
   notesOut: false, clkOut: false, midiOutCh: 0,
   ccMaps: {},             // ccNum -> target string
   edit:false, liveRec:false, ptnBpm:false,
@@ -5669,7 +5689,8 @@ function drawStepLock(){
 function setLock(field,val,def){
   if(seqSelStep<0) return;
   const pat=S.patterns[S.pattern], k=S.seqPad+':'+seqSelStep, lk=pat.locks[k]||{};
-  if(field==='pitch') delete lk.pitches;   // the step-lock pitch control edits a single note — collapse any chord here
+  if(field==='pitch'){ delete lk.pitches;   // the step-lock pitch control edits a single note — collapse any chord here
+    val=snapToScale(val); }                  // SCALE LOCK: land in key
   if(val===def) delete lk[field]; else lk[field]=val;
   if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
   drawSteps(); drawStepLock(); dirty();
@@ -5693,7 +5714,7 @@ $('slClr').addEventListener('click',()=>{ delete S.patterns[S.pattern].locks[S.s
 let notesMode=false, noteOct=0;
 const NOTE_ROWS=8;
 function noteOffsets(){ // semitone offset per row, TOP row first
-  const sc=SCALES[S.inst.scale]||SCALES.minor, n=sc.length, out=[];
+  const sc=SCALES[S.scaleName]||SCALES.minor, n=sc.length, out=[];
   for(let r=0;r<NOTE_ROWS;r++){
     const deg=NOTE_ROWS-1-r;
     out.push(sc[deg%n]+12*Math.floor(deg/n)+noteOct*12);
@@ -5705,7 +5726,7 @@ function drawNotes(){
   const gr=$('notegrid'); gr.innerHTML='';
   const pat=S.patterns[S.pattern], row=pat.steps[S.seqPad], L=trackLen(pat,S.seqPad);
   gr.style.gridTemplateColumns='30px repeat('+L+',1fr)';
-  $('noteScale').value=S.inst.scale in SCALES ? S.inst.scale : 'minor';
+  $('noteScale').value=S.scaleName in SCALES ? S.scaleName : 'minor';
   $('noteOctV').textContent=(noteOct>0?'+':'')+noteOct;
   const offs=noteOffsets();
   offs.forEach((off,r)=>{
@@ -5756,7 +5777,7 @@ $('btnNotes').addEventListener('click',()=>{
   if(notesMode) drawNotes();
   lcd(notesMode?'NOTES: tap the grid to write a melody on '+padName(S.seqPad):'NOTES closed');
 });
-$('noteScale').addEventListener('change',e=>{ S.inst.scale=e.target.value; drawNotes(); dirty(); });
+$('noteScale').addEventListener('change',e=>{ S.scaleName=e.target.value; $('scaleName').value=e.target.value; drawScaleLock(); drawNotes(); dirty(); });
 $('noteOctDn').addEventListener('click',()=>{ noteOct=clamp(noteOct-1,-3,3); drawNotes(); });
 $('noteOctUp').addEventListener('click',()=>{ noteOct=clamp(noteOct+1,-3,3); drawNotes(); });
 function drawSil(){
@@ -5936,6 +5957,65 @@ $('btnKitBuild').addEventListener('click',async ()=>{
   }catch(err){ lcd('KIT BUILD FAILED: '+(err&&err.message||'error')); }
   finally{ kitBuilding=false; $('btnKitBuild').disabled=false; }
 });
+
+/* ---------------- SCALE LOCK — a musical guard-rail ---------------------------
+   Pitch in the sequencer is a SEMITONE OFFSET from each pad's own sound, so
+   offset 0 is that pad's tonic. Locking snaps every written or played offset
+   to the nearest degree of the chosen scale — you can still play anything, it
+   just lands in key. Off by default; nothing is rewritten unless you ask. */
+function snapToScale(semi){
+  if(!S.scaleLock) return semi;
+  const sc=SCALES[S.scaleName]||SCALES.minor;
+  const oct=Math.floor(semi/12), rem=semi-oct*12;
+  let best=sc[0], bd=Infinity;
+  for(const d of sc){ const dist=Math.abs(d-rem); if(dist<bd){ bd=dist; best=d; } }
+  if(Math.abs(12-rem)<bd) return (oct+1)*12;      // nearer the octave above
+  return oct*12+best;
+}
+const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+(function(){ const r=$('scaleRoot');
+  NOTE_NAMES.forEach((n,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=n; r.appendChild(o); });
+  r.value='0';
+})();
+function scaleLabel(){
+  return NOTE_NAMES[S.scaleRoot|0]+' '+($('scaleName').selectedOptions[0]?$('scaleName').selectedOptions[0].textContent:S.scaleName);
+}
+function drawScaleLock(){
+  $('btnScaleLock').classList.toggle('on',!!S.scaleLock);
+  $('scaleRoot').value=String(S.scaleRoot|0);
+  $('scaleName').value=S.scaleName;
+  $('scaleRoot').disabled=$('scaleName').disabled=false;
+  $('scaleHint').textContent = S.scaleLock
+    ? 'ON — every pitch you write or play snaps into '+scaleLabel()+'. FIX PTN retunes what is already there.'
+    : 'Off — pitches are chromatic (any semitone).';
+}
+$('btnScaleLock').addEventListener('click',()=>{
+  S.scaleLock=!S.scaleLock; drawScaleLock(); drawNotes(); drawStepLock(); dirty();
+  lcd(S.scaleLock?('SCALE LOCK ON · '+scaleLabel()+' — written and played notes snap into key.'):'SCALE LOCK OFF — chromatic again.');
+});
+$('scaleRoot').addEventListener('change',e=>{ S.scaleRoot=parseInt(e.target.value,10)||0; drawScaleLock(); dirty(); lcd('KEY '+scaleLabel()); });
+$('scaleName').addEventListener('change',e=>{ S.scaleName=e.target.value; $('noteScale').value=e.target.value; drawScaleLock(); drawNotes(); dirty(); lcd('SCALE '+scaleLabel()); });
+$('btnScaleFix').addEventListener('click',()=>{
+  if(!S.scaleLock){ lcd('Turn SCALE LOCK on first, then FIX PTN retunes this pattern into key.'); return; }
+  const pat=S.patterns[S.pattern]; let n=0;
+  for(const k in pat.locks){
+    const lk=pat.locks[k];
+    if(lk.pitches && lk.pitches.length){
+      const snapped=Array.from(new Set(lk.pitches.map(snapToScale))).sort((a,b)=>a-b);
+      if(snapped.join()!==lk.pitches.join()) n++;
+      lk.pitches=snapped; lk.pitch=snapped[0];
+      if(snapped.length===1){ delete lk.pitches; if(!snapped[0]) delete lk.pitch; }
+    }else if(lk.pitch){
+      const s=snapToScale(lk.pitch);
+      if(s!==lk.pitch) n++;
+      if(s) lk.pitch=s; else delete lk.pitch;
+    }
+    if(!Object.keys(lk).length) delete pat.locks[k];
+  }
+  drawSteps(); drawStepLock(); dirty();
+  lcd(n? ('RETUNED '+n+' step'+(n>1?'s':'')+' into '+scaleLabel()) : ('Everything in PTN '+(S.pattern+1)+' is already in '+scaleLabel()+'.'));
+});
+drawScaleLock();
 
 /* ---------------- EUCLID — spread N hits as evenly as possible over K steps ----
    Bjorklund's algorithm: the pattern behind tresillo, clave, and most
@@ -6282,7 +6362,6 @@ function ampAutoCorr(buf,sr){
   if(a) T0=T0-bb/(2*a);
   return sr/T0;
 }
-const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 function ampShowTuner(f){
   if(!(f>50&&f<1200)){ $('ampTuner').textContent='—'; $('ampTunerCents').textContent=''; return; }
   const nn=12*Math.log2(f/440)+69, rd=Math.round(nn);
@@ -6562,7 +6641,7 @@ function onMidi(ev){
     mlog('NOTE ON  ch'+(ch+1)+' n'+d[1]+' v'+d[2]);
     if(noteLearnPad!==null){ S.pads[noteLearnPad].note=d[1]; lcd('NOTE '+d[1]+' → '+padName(noteLearnPad)); noteLearnPad=null; drawEdit(); return; }
     if(S.midiChrom){   // instrument mode: whole keyboard plays the selected pad, transposed
-      if(S.pads[S.editPad].bufId>=0) hitLive(S.editPad, velCurve(d[2]), d[1]-S.midiRoot);
+      if(S.pads[S.editPad].bufId>=0) hitLive(S.editPad, velCurve(d[2]), snapToScale(d[1]-S.midiRoot));
       return;
     }
     const idx=S.pads.findIndex(p=>p.note===d[1] && p.note>=0);
@@ -6666,6 +6745,7 @@ $('btnSave').addEventListener('click',()=>{
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
+    scaleLock:S.scaleLock, scaleRoot:S.scaleRoot, scaleName:S.scaleName,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
@@ -6708,6 +6788,8 @@ function applySessionDoc(doc, bufs){
   S.vcurve=doc.vcurve; S.midiCh=doc.midiCh; S.pcPat=doc.pcPat; S.ccMaps=doc.ccMaps||{};
   S.midiChrom=!!doc.midiChrom; S.midiRoot=doc.midiRoot!=null?doc.midiRoot:60;
   S.notesOut=!!doc.notesOut; S.clkOut=!!doc.clkOut; S.midiOutCh=doc.midiOutCh!=null?doc.midiOutCh:0;
+  S.scaleLock=!!doc.scaleLock; S.scaleRoot=doc.scaleRoot|0; S.scaleName=(doc.scaleName in SCALES)?doc.scaleName:'minor';
+  try{ drawScaleLock(); }catch(e){}
   S.chain=doc.chain||[]; S.pads=doc.pads; S.patterns=doc.patterns;
   // playback position — without these a restore lands on PTN 1 / BANK A with chain off
   S.chainOn=!!doc.chainOn;
@@ -6890,6 +6972,7 @@ function snapshotSession(){
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
+    scaleLock:S.scaleLock, scaleRoot:S.scaleRoot, scaleName:S.scaleName,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
@@ -6917,6 +7000,7 @@ function undoSnap(){
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
+    scaleLock:S.scaleLock, scaleRoot:S.scaleRoot, scaleName:S.scaleName,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
