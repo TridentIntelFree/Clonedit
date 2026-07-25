@@ -1,7 +1,7 @@
 /* JBH-88 offline shell.
    Network-first: online always serves the newest deployed build (no stale
    caches), offline falls back to the last good copy. */
-const CACHE = 'jbh88-shell-v2';   // bumped: renamed app + new icon set
+const CACHE = 'jbh88-shell-v3';   // bumped: index.html is now a build artifact
 const SHELL = ['./', './index.html', './manifest.webmanifest',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png',
   './icons/maskable-192.png', './icons/maskable-512.png'];

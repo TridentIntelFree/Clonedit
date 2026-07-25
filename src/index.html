@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>JBH-88 Groovebox</title>
+<meta name="description" content="Offline sampler, sequencer and groovebox: build a drum kit from any sound, program euclidean polyrhythms, record live takes — with no connection.">
+<meta name="apple-mobile-web-app-title" content="JBH-88">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#17191d">
+<!-- manifest + icon links are injected by vite.config.js (see staticHead) so the
+     bundler leaves their paths alone -->
+</head>
+<body>
+
+<div id="tour" aria-hidden="true">
+  <div id="tourDim"></div>
+  <div id="tourSpot"></div>
+  <div id="tourCard" role="dialog" aria-label="Guided tour">
+    <div id="tourStep"></div>
+    <h3 id="tourTitle"></h3>
+    <div id="tourBody"></div>
+    <div class="row" style="margin-top:8px">
+      <button id="tourSkip">SKIP</button>
+      <span class="grow"></span>
+      <button id="tourBack">BACK</button>
+      <button id="tourNext" class="on">NEXT</button>
+    </div>
+  </div>
+</div>
+
+<div id="hdr">
+  <div>
+    <div id="logo">JBH-88</div>
+    <div id="build"></div>
+  </div>
+  <div id="transport">
+    <button aria-label="Show me around — replay the guided tour" id="btnTour" title="show me around">?</button>
+    <button aria-label="Undo" id="btnUndo" title="undo">&#8630;</button>
+    <button aria-label="Redo" id="btnRedo" title="redo">&#8631;</button>
+    <button aria-label="Play" id="btnPlay">&#9654;</button>
+    <button aria-label="Stop" id="btnStop">&#9632;</button>
+    <button aria-label="Record steps into the pattern" id="btnRec" class="rec">&#9679;</button>
+  </div>
+</div>
+
+<div id="lcdstrip">
+  <div id="lcdmsg" role="status" aria-live="polite" aria-atomic="true">READY.</div>
+  <div id="bpmbox">
+    <button aria-label="Tempo down" id="bpmDown">&#8722;</button>
+    <input type="number" id="bpmval" min="-999" max="999" step="0.1" inputmode="decimal"
+      style="width:58px;text-align:center;font-size:14px;font-weight:700;background:transparent;border:none;color:var(--lcd)">
+    <button aria-label="Tempo up" id="bpmUp">+</button>
+    <button aria-label="Half tempo" id="bpmHalf" title="half time">&#189;</button>
+    <button id="bpmDbl" title="double time">&#215;2</button>
+    <button id="bpmRev" title="negative BPM = sequencer runs backwards">REV</button>
+  </div>
+</div>
+
+<div id="masterMeter">
+  <span class="mlbl">OUT</span>
+  <div class="mcol">
+    <div class="mbar"><div id="mL"></div></div>
+    <div class="mbar"><div id="mR"></div></div>
+  </div>
+  <span id="mClip" title="output near ceiling — limiter working">CLIP</span>
+</div>
+
+<div id="restoreBar" style="display:none;align-items:center;gap:8px;padding:7px 10px;background:var(--panel2);border-bottom:1px solid var(--amber);font-size:11px">
+  <span style="color:var(--amber)">&#9209; LAST SESSION</span>
+  <span id="restoreAge" style="color:var(--txt-dim);flex:1"></span>
+  <button id="btnRestore" class="on">RESTORE</button>
+  <button aria-label="Dismiss the restore prompt" id="btnRestoreX">&#215;</button>
+</div>
+
+<div id="tabs" role="tablist" aria-label="Sections">
+  <button role="tab" aria-label="Pads" data-v="pads" class="on">PADS</button>
+  <button role="tab" aria-label="Sampler" data-v="smpl">SMPL</button>
+  <button role="tab" aria-label="Sequencer" data-v="seq">SEQ</button>
+  <button role="tab" aria-label="Tape tracks" data-v="trax">TRAX</button>
+  <button role="tab" aria-label="Live instruments" data-v="live">LIVE</button>
+  <button role="tab" aria-label="Amp and guitar input" data-v="amp">AMP</button>
+  <button role="tab" aria-label="DJ decks" data-v="dj">DJ</button>
+  <button role="tab" aria-label="Mixer" data-v="mix">MIX</button>
+  <button role="tab" aria-label="MIDI" data-v="midi">MIDI</button>
+  <button role="tab" aria-label="Projects and export" data-v="proj">PROJ</button>
+</div>
+
+<!-- PADS -->
+<div class="view on" role="tabpanel" aria-label="Pads" id="v-pads">
+  <div class="hint"><b>PADS</b> — tap to play (higher = louder). Tap <b>EDIT</b> then a pad to shape it (gain / pitch / FX). Record pad hits into the grid with the top-right <b>&#9679;</b>, or capture audio to a lane in <b>TRAX</b>.</div>
+  <div class="row" id="bankrow">
+    <button aria-label="Bank A" data-b="0" class="on">BANK A</button><button aria-label="Bank B" data-b="1">B</button>
+    <button aria-label="Bank C" data-b="2">C</button><button aria-label="Bank D" data-b="3">D</button>
+    <button id="btnEdit">EDIT</button>
+  </div>
+  <div class="row">
+    <button id="btnRepeat">REPEAT</button>
+    <select aria-label="Repeat rate" id="repRate"><option value="1">1/4</option><option value="2">1/8</option><option value="4" selected>1/16</option><option value="6">1/16T</option><option value="8">1/32</option></select>
+    <span style="font-size:10px;color:var(--txt-dim)">hold a pad &#8594; BPM-synced roll (writes steps when &#9679; REC is on)</span>
+  </div>
+  <div id="padgrid"></div>
+  <div id="editpanel" style="display:none">
+    <div class="row"><span class="lbl">PAD</span><span id="epTitle" style="color:var(--amber);font-size:12px">—</span>
+      <span class="grow"></span>
+      <button id="epClear">CLEAR</button>
+    </div>
+    <div class="pslider"><span class="lbl">GAIN</span><input type="range" id="epGain" min="0" max="1.2" step="0.01"><span class="val" id="epGainV"></span></div>
+    <div class="pslider"><span class="lbl">PITCH</span><input type="range" id="epPitch" min="-12" max="12" step="1"><span class="val" id="epPitchV"></span></div>
+    <div class="pslider"><span class="lbl">FINE</span><input type="range" id="epFine" min="-100" max="100" step="1"><span class="val" id="epFineV"></span></div>
+    <div class="pslider"><span class="lbl">SPEED</span><input type="range" id="epSpeed" min="0.25" max="4" step="0.01"><span class="val" id="epSpeedV"></span></div>
+    <div class="row" style="margin:-2px 0 2px"><button id="epKeepPitch">KEEP PITCH</button><span style="font-size:10px;color:var(--txt-dim)">ON = time-stretch (pitch stays) · OFF = varispeed (pitch follows, like tape)</span></div>
+    <div class="pslider"><span class="lbl">PAN</span><input type="range" id="epPan" min="-1" max="1" step="0.05"><span class="val" id="epPanV"></span></div>
+    <div class="pslider"><span class="lbl">REV</span><input type="range" id="epRev" min="0" max="1" step="0.01"><span class="val" id="epRevV"></span></div>
+    <div class="pslider"><span class="lbl">DLY</span><input type="range" id="epDly" min="0" max="1" step="0.01"><span class="val" id="epDlyV"></span></div>
+    <div class="pslider"><span class="lbl">ATT</span><input type="range" id="epAtt" min="0" max="0.25" step="0.001"><span class="val" id="epAttV"></span></div>
+    <div class="pslider"><span class="lbl">REL</span><input type="range" id="epRel" min="0.005" max="1" step="0.005"><span class="val" id="epRelV"></span></div>
+    <div class="row">
+      <span class="lbl">CHOKE</span>
+      <select id="epChoke"><option value="0">OFF</option><option value="1">GRP 1</option><option value="2">GRP 2</option><option value="3">GRP 3</option><option value="4">GRP 4</option></select>
+      <button id="epRevrs">REVERSE</button>
+      <button id="epMode">1-SHOT</button>
+    </div>
+    <div id="grainPanel" style="display:none;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px;margin:4px 0">
+      <div style="font-size:10px;color:var(--lcd);margin-bottom:4px">&#9729; GRAIN CLOUD — <b>hold the pad</b> and slide: left/right = POSITION, up/down = DENSITY. Sequenced steps play a burst.</div>
+      <div class="pslider"><span class="lbl">POS</span><input type="range" id="grPos" min="0" max="1" step="0.005"><span class="val" id="grPosV">0%</span></div>
+      <div class="pslider"><span class="lbl">SIZE</span><input type="range" id="grSize" min="0.01" max="0.6" step="0.005"><span class="val" id="grSizeV">120ms</span></div>
+      <div class="pslider"><span class="lbl">DENSITY</span><input type="range" id="grDens" min="1" max="50" step="1"><span class="val" id="grDensV">18/s</span></div>
+      <div class="pslider"><span class="lbl">SPREAD</span><input type="range" id="grSpread" min="0" max="1" step="0.01"><span class="val" id="grSpreadV">5%</span></div>
+      <div class="pslider"><span class="lbl">PITCH JIT</span><input type="range" id="grPitch" min="0" max="24" step="1"><span class="val" id="grPitchV">±0 st</span></div>
+      <div class="pslider"><span class="lbl">BURST</span><input type="range" id="grBurst" min="0.05" max="4" step="0.05"><span class="val" id="grBurstV">0.45s</span></div>
+    </div>
+    <div class="row">
+      <span class="lbl">NOTE</span><span id="epNote" style="color:var(--lcd);font-size:12px">—</span>
+      <button id="epLearn">LEARN</button>
+    </div>
+    <h3>PAD FX (per-chop insert — bakes into bounce)</h3>
+    <div class="row">
+      <span class="lbl">FILTER</span>
+      <select id="epFType"><option value="off">OFF</option><option value="lowpass">LP</option><option value="highpass">HP</option><option value="bandpass">BP</option></select>
+    </div>
+    <div class="pslider"><span class="lbl">CUTOFF</span><input type="range" id="epFCut" min="0" max="1" step="0.005"><span class="val" id="epFCutV"></span></div>
+    <div class="pslider"><span class="lbl">RESO</span><input type="range" id="epFRes" min="0.5" max="18" step="0.1"><span class="val" id="epFResV"></span></div>
+    <div class="pslider"><span class="lbl">DRIVE</span><input type="range" id="epDrv" min="0" max="1" step="0.01"><span class="val" id="epDrvV"></span></div>
+    <div class="pslider"><span class="lbl">CRUSH</span><input type="range" id="epCrush" min="4" max="16" step="1"><span class="val" id="epCrushV"></span></div>
+    <h3>CHANNEL EQ <span style="color:var(--txt-dim);letter-spacing:0">— low shelf 200 · mid 1k · high shelf 4k</span></h3>
+    <div class="pslider"><span class="lbl">LOW</span><input type="range" id="epEqLo" min="-12" max="12" step="0.5"><span class="val" id="epEqLoV"></span></div>
+    <div class="pslider"><span class="lbl">MID</span><input type="range" id="epEqMid" min="-12" max="12" step="0.5"><span class="val" id="epEqMidV"></span></div>
+    <div class="pslider"><span class="lbl">HIGH</span><input type="range" id="epEqHi" min="-12" max="12" step="0.5"><span class="val" id="epEqHiV"></span></div>
+    <h3>LFO <span style="color:var(--txt-dim);letter-spacing:0">— continuous modulation (bakes into bounce)</span></h3>
+    <div class="row">
+      <button id="epLfoOn">LFO OFF</button>
+      <span class="lbl">TARGET</span>
+      <select id="epLfoTgt"><option value="cutoff">CUTOFF</option><option value="pan">PAN</option><option value="vol">VOLUME</option></select>
+      <select id="epLfoShape"><option value="sine">SINE</option><option value="triangle">TRI</option><option value="sawtooth">SAW</option><option value="square">SQR</option></select>
+    </div>
+    <div class="row">
+      <span class="lbl">RATE</span>
+      <select id="epLfoSync"><option value="free">FREE</option><option value="1/1">1 BAR</option><option value="1/2">1/2</option><option value="1/4">1/4</option><option value="1/8">1/8</option><option value="1/16">1/16</option></select>
+      <input type="range" id="epLfoRate" min="0.05" max="12" step="0.05" style="flex:1"><span class="val" id="epLfoRateV"></span>
+    </div>
+    <div class="pslider"><span class="lbl">DEPTH</span><input type="range" id="epLfoDepth" min="0" max="1" step="0.01"><span class="val" id="epLfoDepthV"></span></div>
+    <div style="font-size:10px;color:var(--txt-dim);margin-top:2px">CUTOFF LFO needs the FILTER set (not OFF).</div>
+    <h3>WARP <span style="color:var(--txt-dim);letter-spacing:0">— manual pitch-preserving stretch to the grid (BPM never touches your samples)</span></h3>
+    <div class="row">
+      <span class="lbl">BEATS</span>
+      <select id="epWarpBeats"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>6</option><option>8</option><option>16</option></select>
+      <button id="epWarp" class="grow">WARP &#8594; FIT TEMPO</button>
+      <button id="epWarpReset">RESET</button>
+      <button id="epWarpAuto">AUTO</button>
+    </div>
+    <div id="epWarpInfo" style="font-size:10px;color:var(--lcd);margin-top:2px">—</div>
+  </div>
+</div>
+
+<!-- SAMPLER -->
+<div class="view" role="tabpanel" aria-label="Sampler" id="v-smpl">
+  <div class="hint"><b>GET A SOUND ONTO THE TARGET PAD</b> — IMPORT FILE, REC MIC, pick a PRESET, or GET a PACK sample then tap <b>&#8594; PAD</b>. Then CHOP and <b>ASSIGN SLICES</b> to spread one sample across pads.</div>
+  <div class="row">
+    <span class="lbl">TARGET</span><span id="smTarget" style="color:var(--amber)">A01</span>
+    <span class="grow"></span>
+    <button id="btnFreeSounds" title="open free CC0 sound libraries in a new tab">&#127760; FREE SOUNDS</button>
+    <button id="btnImport">IMPORT FILE</button>
+    <button id="btnMic" class="rec">REC MIC</button>
+  </div>
+  <div id="freeSoundsBar" style="display:none;font-size:10px;color:var(--txt-dim);margin:2px 0 4px;line-height:1.5">
+    <div class="row" style="gap:6px">
+      <a id="lnkPixabay" href="https://pixabay.com/sound-effects/search/?order=ec" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none;color:var(--lcd);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 0;font-size:11px">PIXABAY &#8599;</a>
+      <a id="lnkFreesound" href="https://freesound.org/search/?f=license:%22Creative+Commons+0%22" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none;color:var(--lcd);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 0;font-size:11px">FREESOUND CC0 &#8599;</a>
+    </div>
+    <div style="margin-top:6px;padding:6px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--txt)">
+      <b style="color:var(--lcd)">📲 iPhone — the reliable way:</b>
+      <div style="margin-top:2px">1. On Pixabay, tap <b>Download</b>. When the <b>Share/Open</b> sheet pops up (or a preview opens), choose <b>“Save to Files”</b> → <b>Downloads</b> (or On My iPhone).</div>
+      <div>2. Back here, tap <b>IMPORT FILE</b> → <b>Browse</b> → <b>Recents</b> or <b>Downloads</b>, and pick the sound(s). A <b>.zip</b> imports as-is — the app unpacks it.</div>
+      <div style="color:var(--lcd-dim);margin-top:2px">The “Save to Files” step is the one people miss — without it the file just opens/previews and is never saved.</div>
+    </div>
+    <div style="margin-top:6px"><b>OR paste a DIRECT link</b> (a <b>.wav/.mp3/.zip</b> file URL, not a Pixabay page):</div>
+    <div class="row" style="gap:5px;margin-top:3px">
+      <input type="text" id="importUrl" class="grow" placeholder="https://…/sound.mp3" spellcheck="false" autocapitalize="off" autocomplete="off" inputmode="url">
+      <button id="btnPasteUrl" title="paste from clipboard">PASTE</button>
+      <button id="btnImportUrl">GO</button>
+    </div>
+    <div style="margin-top:3px;color:var(--lcd-dim)">Direct-link import only works for hosts that allow it — <b>Pixabay page links won’t fetch</b> (they block it), so for Pixabay use the Save-to-Files steps above. Every path is license-safe; the app never re-hosts your sounds.</div>
+  </div>
+  <!-- iOS fix: no accept attribute — the wildcard greys out audio files in the iOS picker; rely on the decoder -->
+  <input type="file" id="fileIn" multiple style="display:none">
+  <div class="row"><span class="lbl">MIC LVL</span><div id="miclvl"><div></div></div></div>
+  <h3>PRESETS <span style="color:var(--txt-dim);letter-spacing:0">— synth-rendered into the TARGET pad</span></h3>
+  <div class="row">
+    <select aria-label="Synth preset" id="presetSel" class="grow"></select>
+    <select aria-label="Preset pitch" id="presetNote"></select>
+    <button id="btnPresetLoad">RENDER &#8594; PAD</button>
+  </div>
+  <h3>KITS <span style="color:var(--txt-dim);letter-spacing:0">— one tap fills bank A with sounds + a starter beat</span></h3>
+  <div class="row" id="kitRow" style="flex-wrap:wrap;gap:5px"></div>
+  <label class="row" style="font-size:10px;color:var(--txt-dim);gap:5px;cursor:pointer">
+    <input type="checkbox" id="kitBeat" checked style="width:auto"> also lay a starter beat in the current pattern (clears it)
+  </label>
+  <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">— download online, stored on-device, used offline</span></h3>
+  <div class="row">
+    <select aria-label="Sample pack" id="packPick" class="grow">
+      <option value="samples/vsco-real.json">★ REAL Cello + Acoustic Drums (CC0)</option>
+      <option value="samples/jbh-drums.json">JBH Drums — Kit One (synth, CC0)</option>
+      <option value="samples/real-cc0-full.json">Full Kit — Drums + Real (CC0)</option>
+      <option value="samples/real-cc0.json">Real Instruments · Core (CC0)</option>
+      <option value="samples/manifest.json">JBH Studio (synth)</option>
+      <option value="custom">Custom URL…</option>
+    </select>
+    <button id="btnPackLoad">LOAD PACK</button>
+  </div>
+  <div class="row" id="packUrlRow" style="display:none">
+    <input type="text" id="packUrl" class="grow" value="samples/vsco-real.json" spellcheck="false" autocapitalize="off" placeholder="https://…/manifest.json">
+  </div>
+  <div class="row">
+    <span class="lbl">ON DEVICE</span>
+    <span id="packStore" style="font-size:10px;color:var(--lcd);flex:1">—</span>
+    <button id="btnPackPersist">KEEP OFFLINE</button>
+  </div>
+  <div id="packList" style="max-height:210px;overflow-y:auto;margin:6px 0"></div>
+  <h3>MY DOWNLOADS <span style="color:var(--txt-dim);letter-spacing:0">— every sound saved on this device, from any pack</span></h3>
+  <div class="row">
+    <span id="dlInfo" style="font-size:10px;color:var(--lcd);flex:1">—</span>
+    <button id="btnDlRefresh">REFRESH</button>
+    <button id="btnDlClear">DELETE ALL</button>
+  </div>
+  <div id="dlList" style="max-height:230px;overflow-y:auto;margin:6px 0"></div>
+  <div id="wavewrap"><canvas id="wave" role="img" aria-label="Waveform of the loaded sample. The controls below edit it without needing the picture." width="800" height="260"></canvas></div>
+  <div class="row">
+    <button id="btnPrev">&#9654; PREVIEW</button>
+    <button id="btnNorm">NORMALIZE</button>
+    <button id="btnTrim">TRIM SILENCE</button>
+  </div>
+  <h3>SCULPT <span style="color:var(--txt-dim);letter-spacing:0">— reshape the sound on the waveform itself</span></h3>
+  <div class="row">
+    <button id="btnShape">&#9998; DRAW GAIN</button>
+    <button id="btnTame">TAME PEAKS</button>
+    <button id="btnShapeFlat">RESET CURVE</button>
+    <button id="btnShapeApply">APPLY</button>
+  </div>
+  <div id="shapeHint" style="font-size:10px;color:var(--txt-dim);margin:2px 0 4px">
+    <b>DRAW GAIN</b>: drag across the wave to draw a volume curve — pull a loud hit down, lift a quiet tail. <b>TAME PEAKS</b> evens out spikes automatically. <b>APPLY</b> bakes it in (undoable).
+  </div>
+  <div class="pslider"><span class="lbl">LENGTH</span><input type="range" id="shapeLen" min="0.25" max="4" step="0.01" value="1"><span class="val" id="shapeLenV">1.00&times;</span></div>
+  <div class="row">
+    <span id="shapeLenInfo" style="font-size:10px;color:var(--lcd);flex:1">—</span>
+    <button aria-label="Halve the sample length" id="btnLenHalf">&#189;</button>
+    <button aria-label="Double the sample length" id="btnLenDbl">&times;2</button>
+    <button id="btnLenApply">STRETCH / SHRINK</button>
+  </div>
+
+  <h3>PRE-VERB <span style="color:var(--txt-dim);letter-spacing:0">&mdash; reverse reverb: a swell that arrives into the hit</span></h3>
+  <div class="row">
+    <span class="lbl">MODE</span>
+    <select aria-label="Pre-verb mode" id="pvMode" class="grow">
+      <option value="pre">PRE-VERB &mdash; swell &#8594; dry hit</option>
+      <option value="only">SWELL ONLY &mdash; just the riser</option>
+      <option value="boom">BOOMERANG &mdash; swell &#8594; hit &#8594; bloom</option>
+    </select>
+  </div>
+  <div class="row">
+    <span class="lbl">SPACE</span>
+    <select aria-label="Pre-verb space" id="pvType">
+      <option value="hall">HALL</option><option value="room">ROOM</option>
+      <option value="plate">PLATE</option><option value="spring">SPRING</option>
+      <option value="cath">CATHEDRAL</option><option value="gated">GATED</option>
+    </select>
+    <span class="lbl">FROM</span>
+    <select aria-label="Pre-verb source" id="pvSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select>
+  </div>
+  <div class="pslider"><span class="lbl">LENGTH</span><input aria-label="Pre-verb swell length" type="range" id="pvLen" min="0.2" max="4" step="0.05" value="1.5"><span class="val" id="pvLenV">1.50s</span></div>
+  <div class="pslider"><span class="lbl">AMOUNT</span><input aria-label="Pre-verb amount" type="range" id="pvMix" min="0.05" max="1.5" step="0.05" value="0.85"><span class="val" id="pvMixV">85%</span></div>
+  <div class="row">
+    <button id="btnPreverb">&#9204; RENDER PRE-VERB</button>
+    <span id="pvInfo" style="font-size:10px;color:var(--txt-dim);flex:1">&mdash;</span>
+  </div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">
+    The sound is reversed, sent through the reverb, and reversed back &mdash; so the tail runs <b>backwards into</b>
+    the hit instead of away from it. LENGTH is how far ahead the swell starts, so the sample gets longer at the
+    front: put it on a pad and the swell leads into the beat. SPRING and GATED give the hardest arrivals.
+    UNDO restores the original.
+  </div>
+
+  <h3>BUILD A KIT <span style="color:var(--txt-dim);letter-spacing:0">— turn ANY sound into a full drum kit</span></h3>
+  <div class="row">
+    <span class="lbl">PIECES</span>
+    <select id="kbSize">
+      <option value="4">4 · kick snare hat perc</option>
+      <option value="8" selected>8 · + open hat, clap, tom, rim</option>
+      <option value="12">12 · + sub, crash, ride, fx</option>
+    </select>
+    <span class="lbl">FROM</span>
+    <select aria-label="Build the kit from" id="kbSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select>
+  </div>
+  <div class="pslider"><span class="lbl">TUNE</span><input type="range" id="kbTune" min="-12" max="12" step="1" value="0"><span class="val" id="kbTuneV">0 st</span></div>
+  <div class="pslider"><span class="lbl">DECAY</span><input type="range" id="kbDecay" min="0.4" max="2.2" step="0.05" value="1"><span class="val" id="kbDecayV">1.00×</span></div>
+  <div class="pslider"><span class="lbl">SNAP</span><input type="range" id="kbSnap" min="0" max="1" step="0.05" value="0.5"><span class="val" id="kbSnapV">50%</span></div>
+  <div class="row">
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="kbBeat" checked style="width:auto"> lay a starter beat too</label>
+    <span class="grow"></span>
+    <button id="btnKitBuild" class="grow">&#9881; BUILD KIT &#8594; PADS</button>
+  </div>
+  <div id="kbInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">Load any sound (import, pack, mic, or a TRAX take), then BUILD. Each piece is derived from your sample — filtered, pitched and enveloped — so the whole kit shares its character. Fills pads from the TARGET onward. Undoable.</div>
+  <h3>CHOP <span style="color:var(--txt-dim);letter-spacing:0">— tap wave to select &amp; audition a slice</span></h3>
+  <div class="row">
+    <span class="lbl">SLICES</span>
+    <select id="chopN"><option>4</option><option>8</option><option selected>16</option><option>32</option></select>
+    <button id="btnEqual">EQUAL</button>
+    <button id="btnTrans">TRANSIENT</button>
+  </div>
+  <div class="pslider"><span class="lbl">SENS</span><input type="range" id="chopSens" min="1.2" max="4" step="0.05" value="2"><span class="val" id="chopSensV">2.00</span></div>
+  <div class="row">
+    <span class="lbl">SLICE</span>
+    <span id="selInfo" style="color:var(--lcd);font-size:12px;min-width:70px">—</span>
+    <button id="btnSplit">SPLIT @ TAP</button>
+    <button id="btnMerge">MERGE &#8594;</button>
+    <button id="btnZero" class="on">ZERO SNAP</button>
+  </div>
+  <div class="row">
+    <span class="lbl">START</span>
+    <button aria-label="Slice start earlier" id="btnSm">&#8722;</button><button aria-label="Slice start later" id="btnSp">+</button>
+    <span class="lbl">END</span>
+    <button aria-label="Slice end earlier" id="btnEm">&#8722;</button><button aria-label="Slice end later" id="btnEp">+</button>
+    <span style="font-size:10px;color:var(--txt-dim)">10ms steps</span>
+  </div>
+  <div class="row">
+    <span class="lbl">TO PADS</span>
+    <select id="assignFrom"></select>
+    <button id="btnAssign" class="grow">ASSIGN SLICES &#8594; PADS</button>
+  </div>
+</div>
+
+<!-- SEQ -->
+<div class="view" role="tabpanel" aria-label="Sequencer" id="v-seq">
+  <div class="hint"><b>PROGRAM</b> — tap steps for the shown TRACK. <b>NOTES</b> opens a scale grid to write melodies on this pad. <b>LIVE REC</b> records pad taps quantized to the grid. <b>LOCK</b> + a step sets pitch / probability / ratchet / nudge. <b>HUMAN</b> adds timing + velocity drift.</div>
+  <div class="row" id="patrow"><span class="lbl">PTN</span></div>
+  <div class="row" id="chainrow">
+    <span class="lbl">CHAIN</span>
+    <div id="chainview">—</div>
+    <button id="btnChainAdd">+PTN</button>
+    <button id="btnChainClr" aria-label="Clear the chain">CLR</button>
+    <button id="btnChainOn">CHAIN</button>
+  </div>
+  <div class="row" id="songrow">
+    <span class="lbl">SONG</span>
+    <button id="btnSongAdd">+SEC</button>
+    <button id="btnSongOn">SONG</button>
+    <button id="btnSongLoop">LOOP</button>
+    <button id="btnSongClr" aria-label="Clear the song">CLR</button>
+    <span id="songInfo" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
+  </div>
+  <div id="songlist"></div>
+
+  <h3>MORPH <span style="color:var(--txt-dim);letter-spacing:0">&mdash; melt one pattern into another</span></h3>
+  <div class="row">
+    <span class="lbl">FROM</span><select aria-label="Morph from pattern" id="mfFrom"></select>
+    <span class="lbl">TO</span><select aria-label="Morph to pattern" id="mfTo"></select>
+    <span class="lbl">BARS</span>
+    <select aria-label="Morph length in bars" id="mfBars"><option>2</option><option>4</option><option selected>8</option><option>16</option><option>32</option><option>64</option></select>
+  </div>
+  <div class="row">
+    <span class="lbl">ORDER</span>
+    <select aria-label="Morph order" id="mfCurve" class="grow">
+      <option value="weight">METRIC &mdash; offbeats change first</option>
+      <option value="strong">METRIC &mdash; downbeats change first</option>
+      <option value="sweep">SWEEP &mdash; left to right</option>
+      <option value="scatter">SCATTER &mdash; shuffled, repeatable</option>
+      <option value="track">TRACK &mdash; one instrument at a time</option>
+    </select>
+  </div>
+  <div class="row">
+    <span class="lbl">END</span>
+    <select aria-label="What happens when the morph arrives" id="mfMode">
+      <option value="once">LAND ON B</option>
+      <option value="loop">LOOP A&#8594;B</option>
+      <option value="ping">PING-PONG</option>
+      <option value="hold">HOLD &mdash; slider only</option>
+    </select>
+    <label style="font-size:10px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="mfVel" checked> blend velocities</label>
+  </div>
+  <div class="pslider"><span class="lbl">AMOUNT</span><input aria-label="Morph amount" type="range" id="mfAmt" min="0" max="1" step="0.005" value="0"><span class="val" id="mfAmtV">0%</span></div>
+  <div id="mfPreview" style="font-family:ui-monospace;font-size:15px;color:var(--lcd);letter-spacing:2px;margin:2px 0 4px;overflow-x:auto;white-space:nowrap">&mdash;</div>
+  <div class="row">
+    <button id="btnMorphOn">MORPH</button>
+    <button id="btnMorphPrint">PRINT &#8594;</button>
+    <select aria-label="Print the blend into this pattern" id="mfPrint"></select>
+    <span id="mfInfo" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
+  </div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">
+    MORPH advances one notch per bar and takes over from CHAIN / SONG while it runs. The step grid shows what
+    you are hearing, so editing is locked until you stop it &mdash; <b>PRINT</b> freezes the blend you like into a
+    pattern slot. AMOUNT scrubs by hand; set END to HOLD to stay put. It bounces and exports too (source: MORPH).
+  </div>
+
+  <div class="pslider"><span class="lbl">SWING</span><input type="range" id="swing" min="0" max="0.6" step="0.01" value="0"><span class="val" id="swingV">0%</span></div>
+  <div class="pslider"><span class="lbl">HUMAN</span><input type="range" id="human" min="0" max="1" step="0.01" value="0"><span class="val" id="humanV">0%</span></div>
+  <div class="row">
+    <button id="btnPtnBpm">PTN TEMPO</button>
+    <span id="ptnBpmInfo" style="font-size:10px;color:var(--txt-dim)">each pattern keeps its own BPM</span>
+  </div>
+  <h3>TRACK <span id="seqPadName" style="color:var(--amber)"></span></h3>
+  <div id="seqpadstrip"></div>
+  <div class="row">
+    <span class="lbl">PTN</span>
+    <select id="patLenSel"><option value="16">16</option><option value="32">32</option><option value="48">48</option><option value="64">64</option></select>
+    <span class="lbl">LEN</span>
+    <button aria-label="Shorten this track (polymeter)" id="btnLenDn">&#8722;</button><span id="seqLenV" style="min-width:30px;text-align:center;color:var(--lcd);font-size:12px">16</span><button aria-label="Lengthen this track (polymeter)" id="btnLenUp">+</button>
+    <button id="btnStepLock">LOCK</button>
+    <button id="btnNotes">NOTES</button>
+    <span id="lockHint" style="font-size:10px;color:var(--txt-dim)">tap step to toggle</span>
+  </div>
+  <div class="row">
+    <span class="lbl">VIEW</span>
+    <button id="btnViewGrid" class="on">GRID</button>
+    <button id="btnViewCircle">&#9711; CIRCLE</button>
+    <span id="viewHint" style="font-size:10px;color:var(--txt-dim);flex:1">rows of steps</span>
+  </div>
+  <div class="row">
+    <button id="btnScaleLock">&#128274; SCALE</button>
+    <select aria-label="Scale root note" id="scaleRoot"></select>
+    <select aria-label="Scale type" id="scaleName">
+      <option value="major">MAJOR</option><option value="minor" selected>MINOR</option>
+      <option value="dorian">DORIAN</option><option value="mixo">MIXOLYD</option>
+      <option value="pmaj">PENT MAJ</option><option value="pmin">PENT MIN</option><option value="blues">BLUES</option>
+    </select>
+    <button id="btnScaleFix" title="snap pitches already written in this pattern">FIX PTN</button>
+  </div>
+  <div id="scaleHint" style="font-size:10px;color:var(--txt-dim);margin:0 0 4px">Off — pitches are chromatic (any semitone).</div>
+  <div id="stepgrid"></div>
+  <div id="circlewrap" style="display:none">
+    <canvas id="circle" role="img" aria-label="Circular view of the pattern. Switch VIEW to GRID for the same pattern as a list of step buttons." width="760" height="760" style="width:100%;height:auto;display:block;background:var(--lcd-bg);border:1px solid var(--line);border-radius:10px;touch-action:none"></canvas>
+    <div style="font-size:10px;color:var(--txt-dim);margin:4px 0 6px">Outer ring = the selected track — tap its segments to place hits. Inner rings are the other tracks; <b>tap one to select it</b>. Each ring turns at its own LEN, so polymeter is something you can watch.</div>
+  </div>
+  <div class="row">
+    <span class="lbl">VEL</span>
+    <input type="range" id="stepVel" min="0.2" max="1" step="0.05" value="0.85" class="grow">
+    <button id="btnSolo">SOLO</button>
+    <button id="btnRowClr">CLR ROW</button>
+    <button id="btnPatClr">CLR PTN</button>
+  </div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 4px">VEL sets the loudness of steps you place next (step brightness shows it). To change a placed step: <b style="color:var(--amber)">LOCK</b> &#8594; tap the step &#8594; VEL slider.</div>
+
+  <h3>EUCLID <span style="color:var(--txt-dim);letter-spacing:0">— spread N hits evenly over the track</span></h3>
+  <div class="row">
+    <span class="lbl">PRESET</span>
+    <select id="euPreset" class="grow">
+      <option value="">— custom —</option>
+      <option value="3,8,0">Tresillo · 3 in 8</option>
+      <option value="5,8,0">Cinquillo · 5 in 8</option>
+      <option value="5,16,0">Son clave · 5 in 16</option>
+      <option value="7,16,0">Rumba feel · 7 in 16</option>
+      <option value="2,5,0">Bembé · 2 in 5</option>
+      <option value="4,9,0">Agbadza · 4 in 9</option>
+      <option value="3,7,0">Ruchenitza · 3 in 7</option>
+      <option value="7,12,0">West African · 7 in 12</option>
+      <option value="9,16,0">Rolling · 9 in 16</option>
+      <option value="1,4,0">Four on the floor</option>
+      <option value="2,8,4">Backbeat · 2 in 8</option>
+      <option value="8,16,0">Straight 8ths</option>
+    </select>
+  </div>
+  <div class="pslider"><span class="lbl">STEPS</span><input type="range" id="euSteps" min="2" max="16" step="1" value="16"><span class="val" id="euStepsV">16</span></div>
+  <div class="pslider"><span class="lbl">HITS</span><input type="range" id="euHits" min="0" max="16" step="1" value="5"><span class="val" id="euHitsV">5</span></div>
+  <div class="pslider"><span class="lbl">ROTATE</span><input type="range" id="euRot" min="0" max="15" step="1" value="0"><span class="val" id="euRotV">0</span></div>
+  <div id="euPreview" style="font-family:ui-monospace;font-size:15px;color:var(--lcd);letter-spacing:2px;margin:2px 0 4px;overflow-x:auto;white-space:nowrap">—</div>
+  <div class="row">
+    <span class="lbl">MODE</span>
+    <select id="euMode">
+      <option value="replace">REPLACE row</option>
+      <option value="merge">ADD to row</option>
+      <option value="remove">REMOVE from row</option>
+    </select>
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="euSetLen" style="width:auto"> set track LEN (polymeter)</label>
+  </div>
+  <div class="row">
+    <button id="btnEuApply" class="grow">APPLY TO TRACK</button>
+    <button id="btnEuAll">ALL LOADED PADS</button>
+  </div>
+
+  <h3>GROOVE <span style="color:var(--txt-dim);letter-spacing:0">— feel templates: timing push/pull + accents</span></h3>
+  <div class="row">
+    <span class="lbl">FEEL</span>
+    <select aria-label="Groove feel" id="grvSel" class="grow">
+      <option value="straight">STRAIGHT (reset)</option>
+      <option value="mpc54">SWING 54% · subtle</option>
+      <option value="mpc58">SWING 58% · classic</option>
+      <option value="mpc62">SWING 62% · heavy</option>
+      <option value="mpc66">SWING 66% · hard</option>
+      <option value="dilla">OFF-GRID · drunk / lopsided</option>
+      <option value="push">LATIN PUSH · ahead of the beat</option>
+      <option value="drag">REGGAE DRAG · behind the beat</option>
+      <option value="shuffle">TRIPLET SHUFFLE</option>
+      <option value="halftime">HALF-TIME LEAN</option>
+      <option value="loose">HUMAN LOOSE · light drift</option>
+    </select>
+  </div>
+  <div class="pslider"><span class="lbl">AMOUNT</span><input aria-label="Groove amount" type="range" id="grvAmt" min="0" max="1" step="0.05" value="1"><span class="val" id="grvAmtV">100%</span></div>
+  <div class="row">
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="grvVel" checked style="width:auto"> apply accents (velocity)</label>
+    <span class="grow"></span>
+    <button id="btnGrvTrack">THIS TRACK</button>
+    <button id="btnGrvAll">ALL TRACKS</button>
+  </div>
+  <div id="grvInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">Groove writes per-step timing nudges (and accents) into the pattern — it bounces and exports exactly as you hear it. STRAIGHT clears them.</div>
+  <div id="notesPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
+    <div class="row" style="margin-bottom:6px">
+      <span class="lbl">SCALE</span>
+      <select id="noteScale"><option value="major">MAJOR</option><option value="minor">MINOR</option><option value="dorian">DORIAN</option><option value="mixo">MIXOLYD</option><option value="pmaj">PENT MAJ</option><option value="pmin">PENT MIN</option><option value="blues">BLUES</option></select>
+      <span class="lbl">OCT</span>
+      <button aria-label="Octave down" id="noteOctDn">&#8722;</button><span id="noteOctV" style="min-width:24px;text-align:center;color:var(--lcd);font-size:12px">0</span><button aria-label="Octave up" id="noteOctUp">+</button>
+    </div>
+    <div id="notegrid"></div>
+    <div style="font-size:10px;color:var(--txt-dim);margin-top:4px">Rows are scale notes for THIS pad (root = the sample's own pitch). Tap to place, tap again to remove. <b>Stack several notes in the same column for a chord</b> — they fire together as harmony. Written as pitch locks, so chords bounce + export to MIDI.</div>
+  </div>
+  <h3>SILENCER <span style="color:var(--txt-dim);letter-spacing:0">— place a cut; everything drops out until the next hit</span></h3>
+  <div id="silrow"></div>
+  <div class="pslider"><span class="lbl">FADE</span><input type="range" id="silFade" min="0.005" max="0.6" step="0.005" value="0.06"><span class="val" id="silFadeV">60ms</span></div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">Left = abrupt CUT, right = soft fade. Cuts pads + live instruments and chokes the reverb/delay tails; sound returns on the next programmed or played hit. Bakes into the bounce. (TRAX tape lanes keep rolling.)</div>
+  <div id="steplock" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
+    <div class="row"><span class="lbl">STEP</span><span id="slTitle" style="color:var(--amber);font-size:12px">—</span><span class="grow"></span><button id="slClr">CLEAR LOCKS</button></div>
+    <div class="pslider"><span class="lbl">VEL</span><input type="range" id="slVel" min="0.1" max="1" step="0.05" value="0.85"><span class="val" id="slVelV">—</span></div>
+    <div class="pslider"><span class="lbl">PITCH</span><input type="range" id="slPitch" min="-24" max="24" step="1" value="0"><span class="val" id="slPitchV">off</span></div>
+    <div class="pslider"><span class="lbl">PROB</span><input type="range" id="slProb" min="0.05" max="1" step="0.05" value="1"><span class="val" id="slProbV">100%</span></div>
+    <div class="pslider"><span class="lbl">RATCH</span><input type="range" id="slRat" min="1" max="6" step="1" value="1"><span class="val" id="slRatV">1</span></div>
+    <div class="pslider"><span class="lbl">NUDGE</span><input type="range" id="slNudge" min="-0.5" max="0.5" step="0.05" value="0"><span class="val" id="slNudgeV">0</span></div>
+  </div>
+  <div class="row">
+    <button id="btnLiveRec" class="rec grow">LIVE REC (quantized pad input)</button>
+  </div>
+  <h3>AUTOMATION <span style="color:var(--txt-dim);letter-spacing:0">— macro moves recorded into the pattern, replay every loop</span></h3>
+  <div class="row">
+    <button id="btnAutoRec" class="rec">REC</button>
+    <span class="lbl">TARGET</span>
+    <select id="autoTarget" class="grow"></select>
+    <button id="btnAutoClr">CLR</button>
+  </div>
+  <div class="pslider"><span class="lbl">MACRO</span><input type="range" id="autoMacro" min="0" max="1" step="0.001" value="1"><span class="val" id="autoMacroV">—</span></div>
+</div>
+
+<!-- TRAX -->
+<div class="view" role="tabpanel" aria-label="Tape tracks" id="v-trax">
+  <div class="hint"><b>RECORD AUDIO TO A LANE:</b> 1) pick <b>SOURCE</b> — <b>MASTER BUS</b> = everything you hear &middot; <b>LIVE ONLY</b> = just what YOU play (live instruments, AMP guitar, pads you hit) with the sequencer as silent backing &middot; <b>MIC</b>. 2) tap <b>&#9679;</b> on a lane to arm. 3) press <b>PLAY</b> to record, <b>STOP</b> to commit. <b>PUT A TAKE ON A PAD:</b> tap that lane&rsquo;s <b>FX</b> button &rarr; <b>TO PAD</b>. &#8734; = loop &middot; M / S = mute / solo.</div>
+  <div class="row">
+    <span class="lbl">SOURCE</span>
+    <select id="traxSrc"><option value="bus">MASTER BUS</option><option value="live">LIVE ONLY</option><option value="mic">MIC</option></select>
+    <span class="grow" style="font-size:10px;color:var(--txt-dim)">arm &#9679; · PLAY rolls &amp; records · STOP commits</span>
+  </div>
+  <div id="traxlist"></div>
+  <div id="traxfx" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
+    <div class="row"><span class="lbl">TRACK</span><span id="tfxTitle" style="color:var(--amber);font-size:12px">T1</span>
+      <span class="grow"></span>
+      <button id="tfxPad">TO PAD</button>
+      <button id="tfxEdit">EDIT &#9656; SMPL</button>
+      <button id="tfxClr">CLEAR</button>
+    </div>
+    <div class="row">
+      <span class="lbl">FILTER</span>
+      <select id="tfxType"><option value="off">OFF</option><option value="lowpass">LP</option><option value="highpass">HP</option><option value="bandpass">BP</option></select>
+    </div>
+    <div class="pslider"><span class="lbl">CUTOFF</span><input type="range" id="tfxCut" min="0" max="1" step="0.005"><span class="val" id="tfxCutV"></span></div>
+    <div class="pslider"><span class="lbl">PAN</span><input type="range" id="tfxPan" min="-1" max="1" step="0.05"><span class="val" id="tfxPanV"></span></div>
+    <div class="pslider"><span class="lbl">REV</span><input type="range" id="tfxRev" min="0" max="1" step="0.01"><span class="val" id="tfxRevV"></span></div>
+    <div class="pslider"><span class="lbl">DLY</span><input type="range" id="tfxDly" min="0" max="1" step="0.01"><span class="val" id="tfxDlyV"></span></div>
+  </div>
+  <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
+    Tape lanes roll from bar 1 with the sequencer, save with the session, and mix into the
+    WAV bounce. BUS records everything you hear except the tracks themselves — overdub freely.
+  </div>
+</div>
+
+<!-- LIVE -->
+<div class="view" role="tabpanel" aria-label="Live instruments" id="v-live">
+  <div class="hint"><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records <b>only what you play</b> (not the backing beat) to the next empty tape lane &mdash; open <b>TRAX</b> to hear, loop, FX, or send it to a pad. To capture the whole mix instead, arm a lane in <b>TRAX</b> and set the source to MASTER BUS.</div>
+  <div class="row">
+    <button id="btnPerfRec" class="rec grow">&#9679; REC PERFORMANCE &#8594; TRACK</button>
+  </div>
+  <div class="row">
+    <select aria-label="Live instrument" id="instSel" class="grow">
+      <option value="ther">THEREMIN</option>
+      <option value="chord">CHORD PADS</option>
+      <option value="harp">STRUM HARP</option>
+      <option value="keys">SCALE KEYS</option>
+      <option value="ribbon">RIBBON BASS</option>
+      <option value="flute">BREATH FLUTE</option>
+      <option value="perc">SHAKE PERC</option>
+    </select>
+    <select aria-label="Instrument voice" id="instVoiceSel">
+      <option value="glass">GLASS</option>
+      <option value="saw">SAW PAD</option>
+      <option value="ep">FM KEYS</option>
+      <option value="pluck">PLUCK</option>
+    </select>
+  </div>
+  <div class="row">
+    <span class="lbl">KEY</span>
+    <select aria-label="Instrument key" id="instKey"></select>
+    <select aria-label="Instrument scale" id="instScale">
+      <option value="minor">MINOR</option>
+      <option value="major">MAJOR</option>
+      <option value="dorian">DORIAN</option>
+      <option value="mixo">MIXOLYDIAN</option>
+      <option value="pmin">PENT MIN</option>
+      <option value="pmaj">PENT MAJ</option>
+      <option value="blues">BLUES</option>
+    </select>
+    <button id="instSnap" class="on">SNAP</button>
+  </div>
+  <canvas id="liveSurf" width="800" height="460"></canvas>
+  <div id="chordgrid" style="display:none"></div>
+  <div id="keysgrid" style="display:none"></div>
+  <div class="row" id="chordopts" style="display:none">
+    <button id="inst7">7TH</button>
+    <button id="instStrum" class="on">STRUM</button>
+    <button id="instArp">ARP 1/8</button>
+  </div>
+  <div class="row" id="percopts" style="display:none">
+    <select id="percKind">
+      <option value="shaker">SHAKER</option>
+      <option value="tamb">TAMBOURINE</option>
+      <option value="cabasa">CABASA</option>
+      <option value="bells">SLEIGH BELLS</option>
+    </select>
+    <button id="instShake">SHAKE ON</button>
+    <button id="percTapA" class="grow">TAP</button>
+    <button id="percTapG">soft</button>
+  </div>
+  <div class="row" id="fluteopts" style="display:none">
+    <button id="instBreath" class="grow">BREATH CONTROL (MIC) — blow to play</button>
+  </div>
+  <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="instVol" min="0" max="1.2" step="0.01"><span class="val" id="instVolV"></span></div>
+  <div class="pslider"><span class="lbl">REV</span><input type="range" id="instRev" min="0" max="1" step="0.01"><span class="val" id="instRevV"></span></div>
+  <div class="pslider"><span class="lbl">DLY</span><input type="range" id="instDly" min="0" max="1" step="0.01"><span class="val" id="instDlyV"></span></div>
+  <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
+    Everything here plays through the master — jam over the sequencer, record with
+    TRAX (BUS) or REC OUT, then chop the take onto pads.
+  </div>
+</div>
+
+<!-- AMP -->
+<div class="view" role="tabpanel" aria-label="Amp and guitar input" id="v-amp">
+  <div class="hint"><b>GUITAR / LINE / MIC IN</b> — ENABLE INPUT, then play through the amp. <b>Use headphones</b> (feedback!). Record the processed tone with <b>TRAX</b> (SOURCE: MASTER BUS) or <b>DJ &#9679; REC OUT</b>.</div>
+  <div class="row">
+    <button id="btnAmpOn" class="rec grow">&#9673; ENABLE INPUT (guitar / line / mic)</button>
+  </div>
+  <div class="row"><span class="lbl">INPUT</span><select id="ampIn" class="grow"><option value="default">Default input</option></select></div>
+  <div class="row" style="align-items:baseline">
+    <span class="lbl">TUNER</span>
+    <span id="ampTuner" style="color:var(--lcd);font-size:20px;font-weight:700;min-width:52px">&mdash;</span>
+    <span id="ampTunerCents" style="font-size:11px;color:var(--txt-dim);flex:1"></span>
+  </div>
+  <div class="row">
+    <span class="lbl">AMP</span>
+    <select aria-label="Amp model" id="ampModel"><option value="clean">CLEAN</option><option value="crunch">CRUNCH</option><option value="lead">LEAD</option><option value="fuzz">FUZZ</option></select>
+    <select aria-label="Amp preset" id="ampPreset" class="grow">
+      <option value="">— PRESET —</option>
+      <option value="clean">Clean Combo</option>
+      <option value="blues">Blues Crunch</option>
+      <option value="rock">Rock Lead</option>
+      <option value="fuzz">Fuzz Face</option>
+      <option value="ambient">Ambient Wash</option>
+    </select>
+  </div>
+  <div class="pslider"><span class="lbl">GAIN</span><input type="range" id="ampGain" min="0" max="1" step="0.01" value="0.4"><span class="val" id="ampGainV">40%</span></div>
+  <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="ampLevel" min="0" max="1.5" step="0.01" value="0.9"><span class="val" id="ampLevelV">90%</span></div>
+  <div class="pslider"><span class="lbl">GATE</span><input type="range" id="ampGate" min="0" max="1" step="0.01" value="0"><span class="val" id="ampGateV">off</span></div>
+  <h3>TONE</h3>
+  <div class="pslider"><span class="lbl">BASS</span><input type="range" id="ampBass" min="-12" max="12" step="1" value="2"><span class="val" id="ampBassV">+2</span></div>
+  <div class="pslider"><span class="lbl">MID</span><input type="range" id="ampMid" min="-12" max="12" step="1" value="0"><span class="val" id="ampMidV">0</span></div>
+  <div class="pslider"><span class="lbl">TREBLE</span><input type="range" id="ampTreb" min="-12" max="12" step="1" value="3"><span class="val" id="ampTrebV">+3</span></div>
+  <div class="row"><span class="lbl">CAB</span><button id="ampCab" class="on">CABINET SIM</button></div>
+  <h3>FX</h3>
+  <div class="row"><span class="lbl">CHORUS</span><button id="ampChorus">CHORUS</button>
+    <input type="range" id="ampChDepth" min="0" max="0.01" step="0.0002" value="0.003" class="grow"></div>
+  <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="ampDly" min="0" max="1" step="0.01" value="0"><span class="val" id="ampDlyV">0%</span></div>
+  <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="ampRev" min="0" max="1" step="0.01" value="0"><span class="val" id="ampRevV">0%</span></div>
+  <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
+    Plug a guitar in via an audio interface / adapter (or use the mic). <b>Use headphones</b> —
+    mic + speaker will feed back. DELAY/REVERB use the MIX engine (6 verbs, 3 delay modes).
+    The processed signal feeds the master, so record it with TRAX (BUS) or DJ REC OUT.
+  </div>
+</div>
+
+<!-- DJ -->
+<div class="view" role="tabpanel" aria-label="DJ decks" id="v-dj">
+  <div class="hint"><b>&#9679; REC OUT</b> records the master (everything you hear) &mdash; no transport needed. Then <b>SAVE</b> = WAV file, or <b>TO PAD</b> = load the capture onto the target pad. Fader / wheel bend live pitch.</div>
+  <div class="row">
+    <button id="btnJam" class="rec grow">&#9679; REC OUT</button>
+    <button id="btnJamSave" style="display:none">SAVE</button>
+    <button id="btnJamPad" style="display:none">TO PAD</button>
+  </div>
+  <div class="row">
+    <button id="btnBlackBox" class="grow">&#9202; KEEP LAST 30s (black box)</button>
+  </div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">The app is ALWAYS listening to itself. Played something great without recording? Tap to save the last 30 seconds onto the TARGET pad.</div>
+  <div class="row">
+    <button id="btnTilt">TILT WAH</button>
+    <button id="btnTape" class="grow">TAPE STOP (hold)</button>
+    <button id="btnStut" class="grow">STUTTER (hold)</button>
+  </div>
+  <div id="djdeck">
+    <div id="fadercol">
+      <div class="lbl" style="text-align:center">PITCH</div>
+      <div id="pfader"><div id="pfaderdetent"></div><div id="pfaderthumb"></div></div>
+      <div id="pfaderval">0.0 st</div>
+      <button id="btnVinyl">VINYL</button>
+    </div>
+    <div id="wheelcol">
+      <div class="lbl" style="text-align:center">WARBLE WHEEL — drag &amp; release</div>
+      <div id="wheel"><div id="wheelgrip"></div></div>
+      <div id="wheelval">0.0 st</div>
+      <div class="pslider"><span class="lbl">DEPTH</span><input type="range" id="warbDepth" min="0" max="0.12" step="0.002" value="0"><span class="val" id="warbDepthV">0%</span></div>
+      <div class="pslider"><span class="lbl">RATE</span><input type="range" id="warbRate" min="0.3" max="12" step="0.1" value="5"><span class="val" id="warbRateV">5.0Hz</span></div>
+    </div>
+  </div>
+  <h3>TEMPO</h3>
+  <div class="pslider"><span class="lbl">BPM</span><input type="range" id="djBpm" min="40" max="240" step="0.5"><span class="val" id="djBpmV"></span></div>
+  <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
+    Fader bends every sounding voice. VINYL drags tempo with pitch like a platter.
+    Wheel springs back to center. REC OUT captures the master — everything you hear.
+  </div>
+</div>
+
+<!-- MIX -->
+<div class="view" role="tabpanel" aria-label="Mixer" id="v-mix">
+  <div class="hint"><b>MIXER</b> — one strip per in-use pad: live meter, fader, pan, <b>M</b>ute / <b>S</b>olo, and REV/DLY sends. Tap a strip's name to edit that pad. Master + global FX below. Everything bakes into the bounce.</div>
+  <h3>CHANNELS <span id="mixCount" style="color:var(--txt-dim);letter-spacing:0"></span></h3>
+  <div id="mixStrips"></div>
+  <h3>MASTER</h3>
+  <div class="pslider"><span class="lbl">VOLUME</span><input type="range" id="mxVol" min="0" max="1.2" step="0.01"><span class="val" id="mxVolV"></span></div>
+  <div class="pslider"><span class="lbl">COMP</span><input type="range" id="mxComp" min="0" max="1" step="0.01"><span class="val" id="mxCompV"></span></div>
+  <h3>SIDECHAIN <span style="color:var(--txt-dim);letter-spacing:0">— trigger pad ducks pads &amp; live instruments (the pump)</span></h3>
+  <div class="row">
+    <button id="mxScOn">SIDECHAIN</button>
+    <span class="lbl">KICK</span>
+    <select id="mxScTrig" class="grow"></select>
+  </div>
+  <div class="pslider"><span class="lbl">DEPTH</span><input type="range" id="mxScDepth" min="0" max="0.95" step="0.01"><span class="val" id="mxScDepthV"></span></div>
+  <div class="pslider"><span class="lbl">RECOVER</span><input type="range" id="mxScRel" min="0.05" max="0.6" step="0.01"><span class="val" id="mxScRelV"></span></div>
+  <h3>REVERB</h3>
+  <div class="row">
+    <span class="lbl">TYPE</span>
+    <select id="mxRevType">
+      <option value="hall">HALL</option>
+      <option value="room">ROOM</option>
+      <option value="plate">PLATE</option>
+      <option value="spring">SPRING</option>
+      <option value="cath">CATHEDRAL</option>
+      <option value="gated">GATED 80s</option>
+    </select>
+  </div>
+  <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="mxRevLvl" min="0" max="1.2" step="0.01"><span class="val" id="mxRevLvlV"></span></div>
+  <div class="pslider"><span class="lbl">SIZE</span><input type="range" id="mxRevSize" min="0.8" max="6" step="0.1"><span class="val" id="mxRevSizeV"></span></div>
+  <h3>DELAY</h3>
+  <div class="row">
+    <span class="lbl">TIME</span>
+    <select id="mxDlyDiv">
+      <option value="0.25">1/16</option>
+      <option value="0.375">1/16.</option>
+      <option value="0.5">1/8</option>
+      <option value="0.75">1/8.</option>
+      <option value="1">1/4</option>
+      <option value="1.5">1/4.</option>
+    </select>
+    <select aria-label="Delay mode" id="mxDlyMode">
+      <option value="digital">DIGITAL</option>
+      <option value="pingpong">PING-PONG</option>
+      <option value="tape">TAPE</option>
+    </select>
+    <span style="font-size:10px;color:var(--txt-dim)">tempo-synced</span>
+  </div>
+  <div class="pslider"><span class="lbl">FEEDBK</span><input type="range" id="mxDlyFb" min="0" max="0.85" step="0.01"><span class="val" id="mxDlyFbV"></span></div>
+  <div class="pslider"><span class="lbl">TONE</span><input type="range" id="mxDlyTone" min="500" max="12000" step="100"><span class="val" id="mxDlyToneV"></span></div>
+  <h3>SELECTED PAD SENDS <span id="mxPad" style="color:var(--amber)"></span></h3>
+  <div class="pslider"><span class="lbl">REV</span><input type="range" id="mxPadRev" min="0" max="1" step="0.01"><span class="val" id="mxPadRevV"></span></div>
+  <div class="pslider"><span class="lbl">DLY</span><input type="range" id="mxPadDly" min="0" max="1" step="0.01"><span class="val" id="mxPadDlyV"></span></div>
+  <div style="font-size:10px;color:var(--txt-dim);margin-top:8px">Send levels for every pad live in PADS → EDIT. Everything here bakes into the WAV bounce.</div>
+</div>
+
+<!-- MIDI -->
+<div class="view" role="tabpanel" aria-label="MIDI" id="v-midi">
+  <div class="hint"><b>Turn an old phone into a MIDI sound module.</b> Tap <b>ENABLE MIDI</b>, plug a controller in (USB-OTG or Bluetooth), and play. Notes trigger mapped pads; turn on <b>CHROMATIC</b> to play the selected pad melodically across the keyboard with zero setup.</div>
+  <div class="row" style="align-items:center;gap:8px">
+    <span id="midiDot" style="width:12px;height:12px;border-radius:50%;background:#444;flex:none;box-shadow:0 0 0 1px #000 inset"></span>
+    <span id="midiStat" style="font-size:11px;color:var(--lcd);flex:1">MIDI OFF — tap ENABLE MIDI</span>
+  </div>
+  <div class="row"><button id="btnMidiOn" class="grow">ENABLE MIDI</button><button id="btnMidiBle">+ BLUETOOTH</button></div>
+  <div class="row"><span class="lbl">INPUT</span><select id="midiIn" class="grow"><option value="*">ALL INPUTS</option></select></div>
+  <h3>MIDI OUT <span style="color:var(--txt-dim);letter-spacing:0">— drive hardware synths &amp; sync gear</span></h3>
+  <div class="row"><span class="lbl">OUTPUT</span><select id="midiOutSel" class="grow"><option value="">— OFF —</option></select></div>
+  <div class="row">
+    <button id="btnNotesOut">NOTES OUT</button>
+    <button id="btnClkOut">CLOCK OUT</button>
+    <span class="lbl">CH</span>
+    <select aria-label="MIDI output channel" id="midiOutCh"></select>
+  </div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">NOTES OUT sends every sequencer step and pad hit (pad's NOTE + step pitch). CLOCK OUT sends 24&nbsp;PPQN clock with START/STOP so drum machines &amp; synth arps follow this tempo.</div>
+  <div class="row">
+    <span class="lbl">CHAN</span>
+    <select aria-label="MIDI input channel" id="midiCh"><option value="-1">OMNI</option></select>
+    <span class="lbl">VCURVE</span>
+    <select id="vcurve"><option value="linear">LINEAR</option><option value="soft">SOFT</option><option value="hard">HARD</option><option value="fixed">FIXED</option></select>
+  </div>
+  <div class="row">
+    <button id="btnChrom">CHROMATIC PLAY</button>
+    <span class="lbl">ROOT</span>
+    <select id="midiRoot"></select>
+  </div>
+  <div class="row">
+    <button id="btnExtClk">EXT CLOCK (24 PPQN)</button>
+    <button id="btnPcPat" class="on">PC &#8594; PATTERN</button>
+  </div>
+  <div class="row">
+    <button id="btnMapGM">MAP 36&#8594;99 TO PADS</button>
+    <button id="btnMapClear">CLEAR MAP</button>
+  </div>
+  <h3>CC LEARN</h3>
+  <div class="row">
+    <select aria-label="CC learn target" id="ccTarget" class="grow">
+      <option value="m:vol">MASTER VOLUME</option>
+      <option value="m:bpm">BPM</option>
+      <option value="m:swing">SWING</option>
+      <option value="m:dfb">DELAY FEEDBACK</option>
+      <option value="p:gain">SEL PAD GAIN</option>
+      <option value="p:pitch">SEL PAD PITCH</option>
+      <option value="p:pan">SEL PAD PAN</option>
+      <option value="p:rev">SEL PAD REV SEND</option>
+      <option value="p:dly">SEL PAD DLY SEND</option>
+      <option value="p:cut">SEL PAD FILTER CUTOFF</option>
+    </select>
+    <button id="btnCcLearn">LEARN</button>
+  </div>
+  <div id="ccMaps"></div>
+  <h3>MONITOR</h3>
+  <div id="mididlog"></div>
+</div>
+
+<!-- PROJECT -->
+<div class="view" role="tabpanel" aria-label="Projects and export" id="v-proj">
+  <div class="hint"><b>PROJECT LIBRARY</b> — keep as many beats as you like on the device. <b>SAVE</b> updates the open project (shown below the NAME); <b>rename first</b> and SAVE keeps the original and stores a new one. <b>SAVE AS NEW</b> always makes a copy, <b>NEW</b> starts fresh. Below: bounce to WAV/stems/MIDI, or export the session as a JSON file.</div>
+  <div class="row"><span class="lbl">NAME</span><input type="text" id="projName" class="grow" value="untitled"><span id="projCur" style="font-size:9px;color:var(--txt-dim)"></span></div>
+  <h3>PROJECT LIBRARY <span id="projLibInfo" style="color:var(--txt-dim);letter-spacing:0"></span></h3>
+  <div class="row">
+    <button id="btnProjSave" class="grow">&#128190; SAVE</button>
+    <button id="btnProjSaveNew">SAVE AS NEW</button>
+    <button id="btnProjNew">NEW</button>
+  </div>
+  <div id="projList" style="max-height:230px;overflow-y:auto;margin:6px 0"></div>
+  <div class="row" style="gap:8px">
+    <div id="projStoreBar"><div id="projStoreFill"></div></div>
+    <button id="btnProjPersist">KEEP OFFLINE</button>
+  </div>
+  <div id="projStoreTxt" style="font-size:10px;color:var(--lcd);margin-bottom:4px">—</div>
+  <div class="row">
+    <button id="btnLibBackup" class="grow">BACKUP ALL &#11015; .JSON</button>
+    <button id="btnLibImport" class="grow">IMPORT BACKUP</button>
+    <button id="btnLibClear" style="color:var(--red);border-color:#5a2a2c" title="permanently erase every saved project">DELETE ALL</button>
+  </div>
+  <input type="file" id="libIn" style="display:none">
+  <h3>REWIND <span style="color:var(--txt-dim);letter-spacing:0">— automatic checkpoints, every 3 min while you work</span></h3>
+  <div id="rewindList"></div>
+  <h3>AI JAM — SONG DOC <span style="color:var(--txt-dim);letter-spacing:0">— an AI writes a beat as JSON; this app plays it</span></h3>
+  <div class="row">
+    <button id="btnDocLoad" class="grow">LOAD DOC</button>
+    <button id="btnDocExport">EXPORT CURRENT</button>
+    <button id="btnDocSpec">SPEC</button>
+    <button id="btnDiag" title="engine state snapshot">DIAG</button>
+  </div>
+  <textarea id="docText" spellcheck="false" placeholder='Tap SPEC → copy the whole thing → paste it to any AI and ask for a beat → paste the AI&apos;s reply back here → tap LOAD DOC. (Code fences / extra text are fine.)'></textarea>
+  <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px"><b>SPEC</b> puts a ready-to-paste prompt (with a working example) in the box — hand it to an AI, paste the reply back, LOAD. The loader pulls the JSON out even if the AI wraps it in ```json or adds chatter. EXPORT lets an AI remix what you made. Console: <span style="color:var(--lcd)">window.JBH.load / .export / .play / .spec</span></div>
+  <h3>BETA FEEDBACK <span style="color:var(--txt-dim);letter-spacing:0">— private; packaged and sent only to the developer</span></h3>
+  <div class="row">
+    <span class="lbl">TYPE</span>
+    <select id="fbCat"><option value="bug">BUG</option><option value="crash">CRASH / SILENCE</option><option value="audio">AUDIO GLITCH</option><option value="idea">IDEA / REQUEST</option><option value="other">OTHER</option></select>
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px;margin-left:auto"><input type="checkbox" id="fbDiag" checked> attach diagnostics</label>
+  </div>
+  <textarea id="fbText" spellcheck="true" maxlength="1400" placeholder="What happened? What did you expect? Steps to reproduce if you can. Your report is packaged privately — other testers never see it, and it goes only to the developer."></textarea>
+  <div class="row"><button id="fbSubmit" class="grow">&#128232; PACKAGE &amp; SEND REPORT</button></div>
+  <div id="fbMsg" style="font-size:10px;color:var(--lcd);margin:2px 0 6px">Reports are anonymous unless you add your name. Version + optional diagnostics are attached automatically.</div>
+  <h3>SESSION FILE (JSON)</h3>
+  <div class="row">
+    <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>
+    <button id="btnLoad" class="grow">LOAD .JSON</button>
+  </div>
+  <input type="file" id="jsonIn" style="display:none">
+  <h3>MASTER OUT (WAV)</h3>
+  <div class="row">
+    <span class="lbl">SOURCE</span>
+    <select id="bSrc"><option value="pat">CURRENT PATTERN</option><option value="chain">CHAIN</option><option value="song">SONG</option><option value="morph">MORPH A&#8594;B</option></select>
+    <span class="lbl">LOOPS</span>
+    <select id="bLoops"><option>1</option><option selected>2</option><option>4</option><option>8</option></select>
+  </div>
+  <div class="row"><button id="btnBounce" class="grow">BOUNCE &#8594; 44.1k / 16-BIT STEREO WAV (+3s tail)</button></div>
+  <div class="row"><button id="btnCompressed" class="grow">EXPORT COMPRESSED (M4A/WEBM &middot; renders in real time)</button></div>
+  <div class="row"><button id="btnStems" class="grow">BOUNCE STEMS &#8594; PER-PAD / PER-TRACK WAV</button></div>
+  <div class="row"><button id="btnMidi" class="grow">EXPORT MIDI &#8594; .MID (SOURCE, per-pad tracks)</button></div>
+  <div id="stemlist"></div>
+  <div id="projlog"></div>
+
+  <h3>ABOUT</h3>
+  <div id="aboutPanel"></div>
+  <footer>
+    JSON is the session disk — pads, patterns, samples, maps.<br>
+    WAV is the master out — full chain render: pitch, pan, envelopes, chokes, reverb, delay, compressor.<br>
+    <span id="build2"></span>
+  </footer>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -9,16 +9,26 @@ connection and nothing sent anywhere.
 
 | Path | What it is |
 | --- | --- |
-| `index.html` | **The app.** One self-contained file — open it, serve it, or install it as a PWA. This is what gets deployed. |
+| `src/` | **The source.** Edit here. `index.html` (markup), `app.css`, `legacy.js` (the engine), `lib/*.svelte` (components). |
+| `index.html` | **The app — generated.** One self-contained file: open it, serve it, or install it as a PWA. Built from `src/`; do not edit by hand. |
 | `standalone.html` | A frozen, hand-written snapshot of R96, kept as a build-free fallback. See below. |
-| `src/` | Source the app is being migrated to (Vite + Svelte). Not yet the source of `index.html`. |
 | `samples/` | Bundled CC0 sound packs (VSCO-2 CE, plus synthesized drums). |
 | `icons/`, `manifest.webmanifest`, `sw.js` | PWA install and offline shell. |
 | `feedback/` | Beta feedback inbox and the decoder for reading it. |
 
-## Running it
+## Building and running
 
-Nothing to install:
+```sh
+npm install
+npm run build     # src/ -> a single self-contained index.html at the repo root
+npm run dev       # hot-reloading dev server while you work
+```
+
+`npm run build` is the only way `index.html` changes. It is committed because
+there is no CI — that file *is* the deployment — so **build before you push** or
+the deployed app will lag behind the source.
+
+To just run what is already built, no toolchain needed:
 
 ```sh
 python3 -m http.server 8000     # then open http://localhost:8000
@@ -26,6 +36,15 @@ python3 -m http.server 8000     # then open http://localhost:8000
 
 A plain `file://` open works too, except that service-worker install and a few
 `fetch`-based sample loads need an origin, so a local server is better.
+
+### Why the engine is still one big file
+
+`src/legacy.js` holds ~370 top-level declarations that are *true globals* — the
+app, the browser console and the verification suite all read **and write** them
+(`workBuf = b`, `morphBuf = null`). ES module bindings cannot be assigned from
+outside, so bundling it as a module would silently break every one of those. It
+is injected as a classic inline script with identical semantics, and logic moves
+out of it into real modules deliberately, a piece at a time — not in one jump.
 
 ## The standalone fallback
 
@@ -52,11 +71,15 @@ migration is deliberately incremental and is guarded by a browser-driven
 verification suite that drives the real UI by element ID — as long as the IDs
 stay stable, those scripts validate every step.
 
-1. Stand up Vite + Svelte; split out CSS and JS; build back to a single
-   self-contained `index.html` so deployment and offline behaviour are unchanged.
+1. ~~Stand up Vite + Svelte; split out CSS and JS; build back to a single
+   self-contained `index.html`.~~ **Done (R97)** — all thirteen verification
+   scripts pass against the built file, and the global name set was diffed
+   before and after to prove nothing went missing.
 2. Extract the pure logic (euclid, groove, morph, pre-verb, impulse responses,
    persistence) into modules that can be unit-tested in Node without a browser.
 3. Convert the UI tab by tab into Svelte components.
+
+`src/lib/About.svelte` is the first component, mounted into the PROJ tab.
 
 Nothing about the shipped artifact changes: the build emits one inlined HTML
 file, so "it is just an HTML file you can open" stays true.

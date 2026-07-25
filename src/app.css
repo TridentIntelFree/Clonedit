@@ -1,0 +1,270 @@
+:root{
+  --chassis:#17191d; --panel:#1e2127; --panel2:#242833; --line:#31363f;
+  --lcd-bg:#120d04; --lcd:#ffb454; --lcd-dim:#8a6530;
+  --pad:#2b303a; --pad-hi:#3a4150; --amber:#ff8c2e; --amber-soft:#c9722a;
+  --txt:#c9ccd4; --txt-dim:#7b8090; --red:#e5484d; --green:#63c76a; --sel:#4aa3ff;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--chassis);color:var(--txt);
+  font-family:ui-monospace,'SF Mono',SFMono-Regular,Menlo,monospace;
+  overscroll-behavior:none;height:100%}
+body{display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+button{font-family:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);
+  border-radius:6px;font-size:12px;padding:8px 10px;touch-action:manipulation}
+button:active{background:var(--pad-hi)}
+button.on{background:var(--amber-soft);border-color:var(--amber);color:#120d04;font-weight:700}
+button.rec.on{background:var(--red);border-color:var(--red);color:#fff}
+select,input[type=text],input[type=number]{background:var(--lcd-bg);color:var(--lcd);border:1px solid var(--line);
+  border-radius:5px;font-family:inherit;font-size:12px;padding:7px 8px}
+input[type=range]{-webkit-appearance:none;width:100%;height:26px;background:transparent}
+input[type=range]::-webkit-slider-runnable-track{height:4px;background:var(--line);border-radius:2px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;
+  background:var(--panel2);border:2px solid var(--amber);margin-top:-9px}
+
+/* header */
+#hdr{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+#logo{font-weight:800;font-size:15px;letter-spacing:2px;color:var(--amber)}
+#build{font-size:9px;color:var(--txt-dim);line-height:1.2}
+#transport{display:flex;gap:5px;margin-left:auto}
+#transport button{width:44px;height:38px;font-size:15px;padding:0}
+#btnUndo,#btnRedo{width:34px;font-size:17px}
+#btnUndo:disabled,#btnRedo:disabled{opacity:0.35}
+#lcdstrip{display:flex;gap:8px;align-items:center;padding:6px 10px;background:var(--lcd-bg);
+  border-bottom:1px solid var(--line);color:var(--lcd);font-size:11px;min-height:32px}
+#lcdmsg{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#masterMeter{display:flex;align-items:center;gap:7px;padding:3px 10px 4px;background:var(--lcd-bg);border-bottom:1px solid var(--line)}
+#masterMeter .mlbl{font-size:8px;letter-spacing:2px;color:var(--lcd-dim)}
+#masterMeter .mcol{flex:1;display:flex;flex-direction:column;gap:2px}
+#masterMeter .mbar{position:relative;height:4px;background:#000;border-radius:2px;overflow:hidden}
+#masterMeter .mbar>div{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--green);
+  transition:width .04s linear,background .1s linear}
+#mClip{font-size:7px;letter-spacing:1px;color:#3a3a3a;font-weight:700;flex:none}
+#mClip.on{color:var(--red);text-shadow:0 0 6px var(--red)}
+/* mixer channel strips */
+#mixStrips{display:flex;gap:6px;overflow-x:auto;padding:4px 2px 8px;-webkit-overflow-scrolling:touch}
+#mixStrips:empty::after{content:'No channels yet — load a sample or a KIT.';font-size:11px;color:var(--txt-dim)}
+.mstrip{flex:0 0 auto;width:62px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:6px 5px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.mstrip.master{background:var(--panel2);border-color:var(--amber-soft)}
+.mstrip .mnm{font-size:9px;color:var(--txt);width:100%;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.mstrip .msub{font-size:8px;color:var(--txt-dim);height:9px;width:100%;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mstrip .mfarea{display:flex;gap:4px;align-items:stretch;height:120px}
+.mstrip .mmtr{width:6px;background:#000;border-radius:3px;position:relative;overflow:hidden}
+.mstrip .mmtr>div{position:absolute;left:0;right:0;bottom:0;height:0%;background:var(--green)}
+.mstrip input[type=range].vf{-webkit-appearance:slider-vertical;writing-mode:vertical-lr;direction:rtl;width:22px;height:120px;background:transparent}
+.mstrip .mpan{width:100%}
+.mstrip .mpan input[type=range]{height:18px}
+.mstrip .mbtns{display:flex;gap:3px;width:100%}
+.mstrip .mbtns button{flex:1;padding:4px 0;font-size:9px;border-radius:4px}
+.mstrip .msend{display:flex;align-items:center;gap:3px;width:100%}
+.mstrip .msend span{font-size:8px;color:var(--txt-dim);width:8px}
+.mstrip .msend input[type=range]{height:14px}
+.mstrip .mval{font-size:8px;color:var(--lcd)}
+/* project library */
+.projrow{display:flex;align-items:center;gap:6px;padding:7px 8px;border:1px solid var(--line);border-radius:6px;margin-bottom:5px;background:var(--panel)}
+.projrow.cur{border-color:var(--amber);background:var(--panel2)}
+.projrow .pjmain{flex:1;min-width:0}
+.projrow .pjname{font-size:12px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.projrow.cur .pjname{color:var(--amber)}
+.projrow .pjmeta{font-size:9px;color:var(--txt-dim)}
+.projrow button{padding:6px 8px;font-size:11px}
+#projStoreBar{flex:1;height:9px;background:#000;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+#projStoreFill{height:100%;width:0%;background:var(--green);transition:width .25s,background .25s}
+/* melodic notes lane */
+#notegrid{display:grid;gap:2px}
+#notegrid .ncell{aspect-ratio:auto;height:22px;background:var(--pad);border:1px solid var(--line);border-radius:3px;padding:0;font-size:0}
+#notegrid .ncell.root{background:#252b38}
+#notegrid .ncell.q2{border-left-color:#4a5262}
+#notegrid .ncell.non{background:var(--amber-soft);border-color:var(--amber)}
+#notegrid .ncell.curcol{box-shadow:0 0 0 1px var(--lcd) inset}
+#notegrid .nlbl{height:22px;font-size:8px;color:var(--txt-dim);display:flex;align-items:center;justify-content:flex-end;padding-right:3px}
+#bpmbox{display:flex;align-items:center;gap:3px}
+#bpmbox button{padding:6px 7px;font-size:11px}
+#bpmbox #bpmRev.on{background:var(--red);border-color:var(--red);color:#fff}
+#bpmbox button{width:30px;height:26px;padding:0;font-size:14px;background:transparent;border-color:var(--lcd-dim);color:var(--lcd)}
+#bpmval{min-width:52px;text-align:center;font-size:14px;font-weight:700}
+
+/* tabs */
+#tabs{display:flex;border-bottom:1px solid var(--line);background:var(--panel)}
+#tabs button{flex:1;border:none;border-radius:0;border-right:1px solid var(--line);padding:11px 0;font-size:10px;letter-spacing:0.5px;background:var(--panel)}
+#tabs button.on{background:var(--chassis);color:var(--amber);font-weight:700;border-bottom:2px solid var(--amber)}
+.view{display:none;flex:1;overflow-y:auto;padding:10px;-webkit-overflow-scrolling:touch}
+.view.on{display:block}
+.row{display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.lbl{font-size:10px;color:var(--txt-dim);letter-spacing:1px;min-width:52px}
+.grow{flex:1}
+h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;border-bottom:1px solid var(--line);padding-bottom:4px}
+
+/* pads */
+#bankrow button{flex:1}
+#padgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0}
+.pad{aspect-ratio:1;background:var(--pad);border:1px solid var(--line);border-radius:10px;
+  position:relative;touch-action:none;user-select:none;-webkit-user-select:none;
+  display:flex;flex-direction:column;justify-content:flex-end;padding:6px;overflow:hidden}
+.pad .pn{position:absolute;top:5px;left:7px;font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--txt-dim)}
+.pad.loaded .pn{color:var(--txt)}
+.pad .pname{font-size:9px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pad.loaded{border-color:#4a5262}
+/* status LED: dark = empty · green = sample loaded · amber = playing in this pattern */
+.pad .led{position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;
+  background:#191d24;border:1px solid #000;box-shadow:inset 0 1px 2px #000}
+.pad.loaded .led{background:var(--green);border-color:#2a5c2e;box-shadow:0 0 4px rgba(99,199,106,.7)}
+.pad.inseq .led{background:var(--amber);border-color:#7a4a16;box-shadow:0 0 6px rgba(255,140,46,.9)}
+.pad.hit{background:var(--amber-soft);border-color:var(--amber)}
+.pad.hit .pn,.pad.hit .pname{color:#120d04}
+/* SELECTED pad — blue, distinct from the green/amber status LEDs, so it reads
+   on an empty pad too. A blue "SEL" tag names it; the ring shows where audio
+   (KEEP / take → PAD / JAM) will land. */
+.pad.sel{border:2px solid var(--sel);box-shadow:0 0 0 1px var(--sel),0 0 12px rgba(74,163,255,.55)}
+.pad.sel .pn{color:var(--sel)}
+.pad.sel::before{content:'SEL';position:absolute;top:5px;left:50%;transform:translateX(-50%);
+  font-size:8px;font-weight:700;letter-spacing:.5px;color:var(--sel);text-shadow:0 0 6px rgba(74,163,255,.8)}
+.pad.fx::after{content:'';position:absolute;top:8px;right:19px;width:5px;height:5px;border-radius:50%;
+  background:var(--amber);box-shadow:0 0 4px var(--amber)}
+#editpanel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px}
+.pslider{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+.pslider .lbl{min-width:44px}
+.pslider .val{min-width:44px;text-align:right;font-size:11px;color:var(--lcd)}
+
+
+/* sampler */
+#tour{position:fixed;inset:0;z-index:9000;display:none}
+#tour.on{display:block}
+#tourDim{position:absolute;inset:0;background:rgba(0,0,0,.72)}
+#tourSpot{position:absolute;border:2px solid var(--sel);border-radius:10px;pointer-events:none;
+  box-shadow:0 0 0 9999px rgba(0,0,0,.72),0 0 18px rgba(74,163,255,.8);transition:all .22s ease;display:none}
+#tourSpot.on{display:block}
+#tourCard{position:absolute;left:10px;right:10px;background:var(--panel);border:1px solid var(--sel);
+  border-radius:12px;padding:12px;box-shadow:0 10px 40px rgba(0,0,0,.7);max-width:420px;margin:0 auto}
+#tourStep{font-size:10px;color:var(--sel);letter-spacing:1px;margin-bottom:2px}
+#tourCard h3{margin:0 0 6px;font-size:14px;color:var(--lcd);letter-spacing:.5px}
+#tourBody{font-size:12px;line-height:1.55;color:var(--txt)}
+#tourBody b{color:var(--amber)}
+#wavewrap{background:var(--lcd-bg);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:8px}
+.packrow{display:flex;align-items:center;gap:6px;padding:5px 6px;border-bottom:1px solid var(--line);font-size:11px}
+.packrow .pcat{font-size:8px;color:var(--txt-dim);min-width:36px}
+.packrow .pnm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.packrow button{padding:5px 8px;font-size:10px}
+.packrow.have .pnm{color:var(--lcd)}
+.packhdr{font-size:9px;letter-spacing:1px;color:var(--txt-dim);padding:6px 6px 2px}
+#wave{width:100%;height:130px;display:block;touch-action:none}
+#miclvl{height:6px;background:var(--line);border-radius:3px;overflow:hidden;flex:1}
+#miclvl>div{height:100%;width:0%;background:var(--green)}
+
+/* sequencer */
+#stepgrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:8px 0}
+.step{aspect-ratio:1;background:var(--pad);border:1px solid var(--line);border-radius:7px;position:relative;touch-action:manipulation}
+.step.q2{border-left:2px solid #4a5262}
+.step.on{background:var(--amber-soft);border-color:var(--amber)}
+.step.cur{outline:2px solid var(--lcd);outline-offset:-2px}
+#silrow{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:6px 0}
+#silrow .step{aspect-ratio:auto;height:26px}
+#silrow .step.on{background:var(--red);border-color:var(--red)}
+#docText{width:100%;height:110px;background:var(--lcd-bg);color:var(--lcd);border:1px solid var(--line);
+  border-radius:6px;font-family:inherit;font-size:10px;padding:7px 8px;resize:vertical;margin:4px 0}
+.step.lockmark::after{content:'';position:absolute;top:3px;right:3px;width:5px;height:5px;border-radius:50%;background:var(--lcd);box-shadow:0 0 3px var(--lcd)}
+.step.selstep{box-shadow:inset 0 0 0 2px var(--amber)}
+#seqpadstrip{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin:6px 0}
+#seqpadstrip button{padding:8px 0;font-size:10px}
+#seqpadstrip button.hit{background:var(--amber-soft);border-color:var(--amber);color:#120d04}
+#patrow button,#chainrow button{min-width:36px}
+#chainview{font-size:11px;color:var(--lcd);background:var(--lcd-bg);border:1px solid var(--line);
+  border-radius:5px;padding:7px 8px;flex:1;min-height:32px}
+
+/* midi */
+#mididlog{background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;color:var(--lcd);
+  font-size:10px;padding:8px;height:120px;overflow-y:auto;white-space:pre-wrap}
+.maprow{font-size:11px;color:var(--txt);padding:4px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+
+/* dj deck */
+#djdeck{display:flex;gap:14px;margin:10px 0}
+#fadercol{width:96px;display:flex;flex-direction:column;gap:8px;align-items:stretch}
+#pfader{position:relative;height:250px;background:var(--lcd-bg);border:1px solid var(--line);
+  border-radius:10px;touch-action:none;overflow:hidden}
+#pfaderdetent{position:absolute;left:0;right:0;top:50%;height:1px;background:var(--lcd-dim)}
+#pfaderthumb{position:absolute;left:8px;right:8px;height:34px;top:calc(50% - 17px);
+  background:var(--panel2);border:2px solid var(--amber);border-radius:8px}
+#pfaderval,#wheelval{text-align:center;font-size:13px;color:var(--lcd)}
+#wheelcol{flex:1;display:flex;flex-direction:column;gap:8px}
+#wheel{width:150px;height:150px;margin:6px auto;border-radius:50%;position:relative;touch-action:none;
+  background:radial-gradient(circle at 50% 42%, #2c313c 0%, #1a1d24 65%, #101216 100%);
+  border:2px solid var(--line);box-shadow:inset 0 0 24px rgba(0,0,0,0.6)}
+#wheelgrip{position:absolute;left:50%;top:12px;width:10px;height:10px;margin-left:-5px;border-radius:50%;
+  background:var(--amber);box-shadow:0 0 8px var(--amber)}
+
+/* live instruments */
+#liveSurf{width:100%;height:230px;display:block;background:var(--lcd-bg);border:1px solid var(--line);border-radius:8px;touch-action:none;margin:8px 0}
+#chordgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0}
+#chordgrid button{min-height:62px;font-size:13px}
+#keysgrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:8px 0}
+#keysgrid button{min-height:52px;font-size:10px;padding:4px 0}
+
+/* project */
+#projlog{font-size:11px;color:var(--txt-dim);margin-top:8px;white-space:pre-wrap}
+footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-height:1.5}
+.hint{font-size:10px;color:var(--txt-dim);line-height:1.45;margin:0 0 8px;padding:6px 8px;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.hint b{color:var(--amber)}
+/* keyboard / switch-control focus. -webkit-tap-highlight-color is off for touch,
+   which left no focus indication at all for anyone driving this from a keyboard. */
+:focus-visible{outline:2px solid var(--sel);outline-offset:2px;border-radius:4px}
+.pad:focus-visible,.step:focus-visible{outline:3px solid var(--sel);outline-offset:-3px}
+@media (prefers-reduced-motion:reduce){
+  #tourSpot{transition:none}
+  #masterMeter .mbar>div{transition:none}
+}
+
+/* ---------------- wide screens: iPad, and any phone turned sideways ----------
+   The whole app was one phone-width column, so a tablet or a landscape phone
+   got the same layout stretched across twice the space — rows a metre wide and
+   a circle sequencer taller than the screen.
+
+   Above 760px (iPad portrait and up) each view becomes a two-column grid. Only
+   .row and .pslider pair up; everything else — headings, hints, grids,
+   canvases, lists — still spans the full width, because those are the things
+   that need room. The result halves the scrolling without reflowing any of the
+   markup, and it degrades to the original single column below the breakpoint. */
+@media (min-width:760px){
+  /* align-items:start matters — a grid item defaults to stretching to its row,
+     and an overflow:hidden box has a min-content height of 0, so the clamped
+     hint got squashed instead of showing its two lines. */
+  .view{grid-template-columns:1fr 1fr;gap:0 16px;align-content:start;align-items:start}
+  .view.on{display:grid}
+  .view > *{grid-column:1 / -1;min-width:0}
+  .view > .row,.view > .pslider{grid-column:auto}
+  /* rows that carry a whole control set stay full width */
+  #bankrow,#patrow,#chainrow,#songrow,#kitRow,#packUrlRow{grid-column:1 / -1}
+  /* 16 pads as 8x2 — the hardware layout, and both thumbs can reach it */
+  #padgrid{grid-template-columns:repeat(8,1fr)}
+  /* a whole bar on one line instead of two */
+  #stepgrid,#silrow{grid-template-columns:repeat(16,1fr)}
+  /* the circle is square: bound it by HEIGHT so it never outgrows the viewport */
+  #circlewrap{max-width:min(100%,66vh);margin:0 auto}
+  /* lists of uniform rows pair up too, instead of leaving half the screen bare */
+  #songlist,#traxlist,#projList,#rewindList,#stemlist{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;align-content:start}
+}
+@media (min-width:1180px){          /* iPad Pro: stop rows growing without limit */
+  .view{max-width:1120px;margin:0 auto}
+}
+/* short viewports (a phone on its side) — claw back vertical chrome */
+@media (max-height:560px){
+  #hdr{padding:5px 10px}
+  #logo{font-size:13px;letter-spacing:1.5px}
+  #build{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+  #transport button{height:32px;width:40px}
+  #btnUndo,#btnRedo,#btnTour{width:30px}
+  #lcdstrip{padding:4px 10px;min-height:26px}
+  #masterMeter{padding:2px 10px 3px}
+  #tabs button{padding:8px 0}
+  .view{padding:8px}
+  /* clamp to exactly two lines — tap to read the rest. box-sizing is border-box,
+     so the cap has to carry the padding or it cuts through the middle of a line. */
+  .hint{max-height:calc(2.9em + 10px);overflow:hidden;padding:5px 8px;cursor:pointer}
+  .hint.open{max-height:none}
+  /* the tour card has to leave room for what it is pointing at */
+  #tourCard{padding:9px 11px;max-height:40vh;overflow-y:auto}
+  #tourCard h3{font-size:12px;margin:0 0 4px}
+  #tourBody{font-size:11px;line-height:1.42}
+  #tourCard .row{margin-top:6px}
+  #tourCard button{padding:6px 9px;font-size:11px}
+  h3{margin:9px 0 5px}
+}
