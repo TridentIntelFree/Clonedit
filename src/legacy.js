@@ -844,26 +844,45 @@
      Samples and icons are deliberately left on normal caching — they are large,
      they almost never change, and re-downloading a 14 MB pack every launch
      would be worse than the bug.
+   - R99: LOGIC OUT OF THE ENGINE, INTO TESTS. First real step of the migration:
+     the parts with no DOM, no Web Audio and no app state now live in src/pure/
+     as ES modules — euclid, the groove tables, the pattern model, scale
+     snapping, the morph maths, impulse-response sizing and the numeric helpers.
+     They are imported straight into Node, so 46 unit tests run in a quarter of
+     a second instead of driving a browser for a minute.
+     The engine is a classic script that runs before any module would, and it
+     calls euclid() and morphPattern() as bare names, so the pure code is
+     bundled to a classic IIFE and injected AHEAD of it, publishing each export
+     as a global. One definition of each function, and the tests import the real
+     thing rather than a copy. Sixteen browser suites still pass and the global
+     name set lost nothing; eleven names were GAINED, because consts like SCALES
+     and GROOVES used to be lexical globals invisible on window and are now
+     inspectable from the console.
+     Two things the fast tests found that browser testing had not. (1) trackLen
+     treated a zero and a negative length differently — 0 is falsy so it fell
+     back to the full pattern, but -4 clamped to 1, a track firing on every
+     single step. Unreachable from the UI, reachable from a damaged save; junk
+     now consistently means "as long as the pattern". (2) The preset labelled
+     "Son clave · 5 in 16" was not playing son clave. Traditional son clave has
+     gaps 3,3,4,2,4 — not maximally even, so NO (hits, steps) pair produces it.
+     E(5,16) is the 4,3,3,3,3 pattern Toussaint names bossa nova, and the preset
+     is relabelled to match what it actually plays. Tresillo, cinquillo and the
+     West African bell really are Euclidean and are asserted up to rotation,
+     since this implementation deliberately phases every pattern so step 0 is a
+     hit.
    ================================================================ */
-const BUILD = 'JBH-88 · R98 · 2026-07-25 · verified builds + reliable updates';
+const BUILD = 'JBH-88 · R99 · 2026-07-25 · logic extracted + unit tested';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
 
 const $ = id => document.getElementById(id);
 const lcd = m => { $('lcdmsg').textContent = m; };
-const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
-const posMod = (n,m)=>((n%m)+m)%m;
-/* BPM is signed: negative = the sequencer runs BACKWARDS. Time math always
-   uses the magnitude (BPS); direction only affects step order. */
-function clampBpm(b){ const sg=b<0?-1:1; return sg*clamp(Math.abs(b),1,999); }
+/* clamp, posMod, clampBpm, mulberry32 → src/pure/math.js */
 function bpmAbs(){ return Math.abs(S.bpm); }
 
 /* ---------------- state ---------------- */
-const NPADS = 64, NSTEPS = 16, NPAT = 8;   // NSTEPS = steps per BAR (timing constant)
-const MAXSTEPS = 64;                        // capacity: a pattern may be 16/32/48/64 steps
-const PATLENS = [16,32,48,64];
-function patLen(pat){ const n=pat&&pat.plen; return PATLENS.indexOf(n)>=0 ? n : NSTEPS; }
+/* NPADS/NSTEPS/NPAT/MAXSTEPS/PATLENS, patLen → src/pure/pattern.js */
 function curPatLen(){ return patLen(typeof curPat==='function' ? curPat() : S.patterns[S.pattern]); }
 function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   gain:0.9, pitch:0, fine:0, speed:1, keepPitch:false, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
@@ -873,14 +892,7 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   eqLo:0, eqMid:0, eqHi:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
   warpBeats:4, warpBpm:0, mute:false, solo:false }; }
-function newPattern(len){ const n=PATLENS.indexOf(len)>=0?len:NSTEPS, s=[];
-  for(let p=0;p<NPADS;p++) s.push(new Array(MAXSTEPS).fill(0));
-  return { steps:s, bpm:null, plen:n, len:new Array(NPADS).fill(n), locks:{}, sil:new Array(MAXSTEPS).fill(0) }; }
-function trackLen(pat,p){ const L=patLen(pat); return clamp((pat.len&&pat.len[p])||L,1,L); }
-function rowUsed(pat,p){ const r=pat&&pat.steps&&pat.steps[p]; if(!r) return false;
-  for(let i=0;i<r.length;i++) if(r[i]>0) return true; return false; }
-function stepLock(pat,p,st){ return pat.locks&&pat.locks[p+':'+st]; }
-function stepHasLock(lk){ return !!(lk && (lk.pitch||(lk.prob!=null)||lk.rat>1||lk.nudge)); }
+/* newPattern, trackLen, rowUsed, stepLock, stepHasLock → src/pure/pattern.js */
 
 const S = {
   pads: Array.from({length:NPADS},(_,i)=>newPad(i)),
@@ -907,16 +919,8 @@ const revCache = {};      // bufId -> reversed AudioBuffer
 let AC=null, LIVE=null;      // LIVE = {master,comp,revIn,dlyIn,dlyFb,dlyNode,pads:[...]}
 // IR generated per-graph from S.revSize (deterministic seed)
 
-function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 
-function irDur(size, type){       // ROOM/GATED/SPRING/CATH override the size you ask for
-  const t=type||'hall'; let dur=size||3;
-  if(t==='room') dur=Math.min(dur,1.2);
-  else if(t==='gated') dur=0.55;
-  else if(t==='spring') dur=Math.min(dur,2.2);
-  else if(t==='cath') dur=Math.max(dur,4.5);
-  return Math.max(0.25,dur);
-}
+/* irDur → src/pure/ir.js */
 function makeIR(ctx, size, type){ // deterministic IR family — identical live and offline
   const t=type||'hall', sr=ctx.sampleRate;
   const dur=irDur(size,t);
@@ -2092,55 +2096,8 @@ document.querySelectorAll('#bankrow [data-b]').forEach(b=>b.addEventListener('cl
    reads B modulo its own, so a 16-step B tiles into a 32-step A. Automation
    lanes are not interpolated; they come from whichever side is more than half
    present. ---- */
-function morphRanker(curve, L, pads){
-  if(curve==='scatter'){
-    return (p,st)=>{ let h=(((p+3)*73856093)^((st+1)*19349663))>>>0;
-      h^=h>>>13; h=(h*1274126177)>>>0; h^=h>>>16; return (h%100003)/100003; };
-  }
-  if(curve==='track'){
-    const n=Math.max(1,pads.length);
-    return (p,st)=>{ let i=pads.indexOf(p); if(i<0) i=n-1;       // the silencer row rides with the last pad
-      return (i + (st%L)/L)/n; };
-  }
-  if(curve==='sweep'){ return (p,st)=>(st%L)/L; }
-  // metric weight: class 0 = odd steps (weakest) … class C-1 = step 0 (strongest)
-  const order=[];
-  for(let st=0;st<L;st++){ const v = st===0 ? L : (st & -st); order.push({st, cls:Math.round(Math.log2(v))}); }
-  order.sort((a,b)=> (curve==='strong' ? b.cls-a.cls : a.cls-b.cls) || a.st-b.st);
-  const pos=new Array(L);
-  order.forEach((o,i)=>{ pos[o.st]=i/L; });
-  return (p,st)=>pos[st%L];
-}
-function morphPattern(A, B, t, curve, velX){
-  if(!A||!B) return A||B;
-  if(!(t>0)) return A;
-  if(t>=1)   return B;
-  const L=patLen(A), LB=patLen(B);
-  const out=newPattern(L);
-  out.bpm=A.bpm;
-  out.len=(Array.isArray(A.len)?A.len.slice():new Array(NPADS).fill(L));
-  out.autom=(t<0.5?A:B).autom;
-  const pads=[]; for(let p=0;p<NPADS;p++) if(rowUsed(A,p)||rowUsed(B,p)) pads.push(p);
-  const rank=morphRanker(curve,L,pads);
-  const alk=A.locks||{}, blk=B.locks||{};
-  for(let p=0;p<NPADS;p++){
-    const la=trackLen(A,p), lb=trackLen(B,p);
-    for(let st=0;st<la;st++){
-      const useB = t > rank(p,st);
-      const bi=st%lb;
-      const av=A.steps[p][st]||0, bv=B.steps[p][bi]||0;
-      let v = useB ? bv : av;
-      if(velX && av>0 && bv>0) v = av+(bv-av)*t;       // both sides hit: ride the level across
-      out.steps[p][st]=v;
-      if(v>0){ const lk = useB ? blk[p+':'+bi] : alk[p+':'+st]; if(lk) out.locks[p+':'+st]=lk; }
-    }
-  }
-  for(let st=0;st<L;st++){                              // the silencer row morphs on the same schedule
-    const useB = t > rank(-1,st);
-    out.sil[st] = useB ? ((B.sil&&B.sil[st%LB])||0) : ((A.sil&&A.sil[st])||0);
-  }
-  return out;
-}
+/* morphRanker, morphPattern → src/pure/morph.js */
+
 let morphBuf=null;
 function morphActive(){ return !!(S.morph && S.morph.on); }
 function curPat(){ return (morphActive() && morphBuf) ? morphBuf : S.patterns[S.pattern]; }
@@ -4914,8 +4871,7 @@ function traxCommit(){
 }
 
 /* ---------------- LIVE — playable instruments ---------------- */
-const SCALES={major:[0,2,4,5,7,9,11],minor:[0,2,3,5,7,8,10],dorian:[0,2,3,5,7,9,10],
-  mixo:[0,2,4,5,7,9,10],pmaj:[0,2,4,7,9],pmin:[0,3,5,7,10],blues:[0,3,5,6,7,10]};
+/* SCALES, NOTE_NAMES, snapSemitone → src/pure/scale.js */
 const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker'};
 S.inst=Object.assign({},INSTDEF);
 const instVoices=new Set();
@@ -5878,16 +5834,9 @@ $('btnKitBuild').addEventListener('click',async ()=>{
    offset 0 is that pad's tonic. Locking snaps every written or played offset
    to the nearest degree of the chosen scale — you can still play anything, it
    just lands in key. Off by default; nothing is rewritten unless you ask. */
-function snapToScale(semi){
-  if(!S.scaleLock) return semi;
-  const sc=SCALES[S.scaleName]||SCALES.minor;
-  const oct=Math.floor(semi/12), rem=semi-oct*12;
-  let best=sc[0], bd=Infinity;
-  for(const d of sc){ const dist=Math.abs(d-rem); if(dist<bd){ bd=dist; best=d; } }
-  if(Math.abs(12-rem)<bd) return (oct+1)*12;      // nearer the octave above
-  return oct*12+best;
-}
-const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+/* The snap itself is pure and lives in src/pure/scale.js; this is the thin
+   wrapper that knows about app state — whether the lock is even on. */
+function snapToScale(semi){ return S.scaleLock ? snapSemitone(semi, S.scaleName) : semi; }
 (function(){ const r=$('scaleRoot');
   NOTE_NAMES.forEach((n,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=n; r.appendChild(o); });
   r.value='0';
@@ -5937,17 +5886,7 @@ drawScaleLock();
    Bjorklund's algorithm: the pattern behind tresillo, clave, and most
    Afro-Latin/Balkan rhythms. Pairs with per-track LEN (polymeter): a 5-in-7
    track against a 16-step kick phrases for bars before it repeats. */
-function euclid(hits,steps,rot){
-  steps=Math.max(1,steps|0); hits=clamp(hits|0,0,steps);
-  const out=new Array(steps).fill(false);
-  if(hits===0) return out;
-  if(hits===steps){ out.fill(true); return out; }
-  // maximally-even distribution, phased so step 0 is always a hit (so "1 in 4"
-  // lands on the downbeat rather than the last step)
-  for(let i=0;i<steps;i++) out[i]=((i*hits)%steps)<hits;
-  if(rot){ const r=((rot|0)%steps+steps)%steps; return out.slice(r).concat(out.slice(0,r)); }
-  return out;
-}
+/* euclid → src/pure/euclid.js */
 function euParams(){ return { hits:+$('euHits').value, steps:+$('euSteps').value, rot:+$('euRot').value }; }
 function euRefresh(){
   const {hits,steps,rot}=euParams();
@@ -6000,26 +5939,8 @@ $('btnEuAll').addEventListener('click',()=>{
    + = late/behind, − = early/ahead) and a velocity multiplier. Written into the
    pattern as nudge locks + step velocities, so it bounces and exports exactly
    as heard. STRAIGHT clears them. */
-const GROOVES={
-  straight:{name:'STRAIGHT', t:new Array(16).fill(0), v:new Array(16).fill(1)},
-  mpc54:{name:'SWING 54%', t:[0,.08,0,.08,0,.08,0,.08,0,.08,0,.08,0,.08,0,.08], v:[1,.92,1,.92,1,.92,1,.92,1,.92,1,.92,1,.92,1,.92]},
-  mpc58:{name:'SWING 58%', t:[0,.16,0,.16,0,.16,0,.16,0,.16,0,.16,0,.16,0,.16], v:[1,.9,1,.9,1,.9,1,.9,1,.9,1,.9,1,.9,1,.9]},
-  mpc62:{name:'SWING 62%', t:[0,.24,0,.24,0,.24,0,.24,0,.24,0,.24,0,.24,0,.24], v:[1,.88,1,.88,1,.88,1,.88,1,.88,1,.88,1,.88,1,.88]},
-  mpc66:{name:'SWING 66%', t:[0,.32,0,.32,0,.32,0,.32,0,.32,0,.32,0,.32,0,.32], v:[1,.86,1,.86,1,.86,1,.86,1,.86,1,.86,1,.86,1,.86]},
-  // deliberately uneven — snare late, some hats early, kick a touch behind
-  dilla:{name:'OFF-GRID', t:[0,.19,-.04,.13,.06,.21,-.03,.15,.02,.18,-.05,.12,.07,.23,-.02,.16],
-         v:[1,.82,.9,.86,1,.8,.94,.84,.98,.82,.9,.88,1,.78,.92,.85]},
-  push:{name:'LATIN PUSH', t:[0,-.05,-.02,-.07,0,-.05,-.02,-.08,0,-.05,-.02,-.07,0,-.06,-.03,-.09],
-        v:[1,.88,.95,.85,1,.88,.95,.85,1,.88,.95,.85,1,.9,.95,.9]},
-  drag:{name:'REGGAE DRAG', t:[.02,.1,.05,.12,.06,.12,.05,.14,.02,.1,.05,.12,.07,.13,.06,.15],
-        v:[.9,.85,.95,.85,1,.85,.95,.85,.9,.85,.95,.85,1,.85,.95,.88]},
-  shuffle:{name:'TRIPLET SHUFFLE', t:[0,.33,-.02,.31,0,.33,-.02,.31,0,.33,-.02,.31,0,.33,-.02,.31],
-           v:[1,.84,.92,.84,1,.84,.92,.84,1,.84,.92,.84,1,.84,.92,.84]},
-  halftime:{name:'HALF-TIME LEAN', t:[0,.06,.03,.09,.08,.12,.05,.11,.02,.07,.04,.1,.09,.14,.06,.12],
-            v:[1,.8,.88,.8,.98,.8,.88,.8,1,.8,.88,.8,.96,.8,.88,.82]},
-  loose:{name:'HUMAN LOOSE', t:[0,.04,-.03,.05,.02,-.04,.03,.06,-.02,.05,.03,-.03,.04,.06,-.02,.04],
-         v:[1,.93,.96,.92,.99,.94,.95,.9,1,.92,.96,.93,.98,.91,.95,.94]},
-};
+/* GROOVES → src/pure/groove.js */
+
 $('grvAmt').addEventListener('input',e=>{ $('grvAmtV').textContent=Math.round(parseFloat(e.target.value)*100)+'%'; });
 function grooveApply(pad){
   const g=GROOVES[$('grvSel').value]||GROOVES.straight;
