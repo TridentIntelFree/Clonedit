@@ -419,6 +419,23 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnNorm">NORMALIZE</button>
     <button id="btnTrim">TRIM SILENCE</button>
   </div>
+  <h3>SCULPT <span style="color:var(--txt-dim);letter-spacing:0">— reshape the sound on the waveform itself</span></h3>
+  <div class="row">
+    <button id="btnShape">&#9998; DRAW GAIN</button>
+    <button id="btnTame">TAME PEAKS</button>
+    <button id="btnShapeFlat">RESET CURVE</button>
+    <button id="btnShapeApply">APPLY</button>
+  </div>
+  <div id="shapeHint" style="font-size:10px;color:var(--txt-dim);margin:2px 0 4px">
+    <b>DRAW GAIN</b>: drag across the wave to draw a volume curve — pull a loud hit down, lift a quiet tail. <b>TAME PEAKS</b> evens out spikes automatically. <b>APPLY</b> bakes it in (undoable).
+  </div>
+  <div class="pslider"><span class="lbl">LENGTH</span><input type="range" id="shapeLen" min="0.25" max="4" step="0.01" value="1"><span class="val" id="shapeLenV">1.00&times;</span></div>
+  <div class="row">
+    <span id="shapeLenInfo" style="font-size:10px;color:var(--lcd);flex:1">—</span>
+    <button id="btnLenHalf">&#189;</button>
+    <button id="btnLenDbl">&times;2</button>
+    <button id="btnLenApply">STRETCH / SHRINK</button>
+  </div>
   <h3>CHOP <span style="color:var(--txt-dim);letter-spacing:0">— tap wave to select &amp; audition a slice</span></h3>
   <div class="row">
     <span class="lbl">SLICES</span>
@@ -1466,8 +1483,18 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      — you must type DELETE, so stray taps can't do it. Any cancel, dismissal
      or wrong word leaves every project intact and says so. The button is
      styled red; an empty library is a no-op with no dialogs at all.
+   - R83: SCULPT — reshape a sample ON the waveform (requested). (1) DRAW GAIN:
+     drag across the wave to draw a volume curve (192 points, 0…2×) — pull a
+     loud hit down, lift a quiet tail. The curve is drawn over the wave with a
+     green ghost preview of the result and a unity reference line; nothing is
+     destructive until APPLY, which bakes it into a NEW buffer (so UNDO works).
+     (2) TAME PEAKS builds that curve automatically from a smoothed peak
+     envelope, pulling only the loudest parts toward 60% and gliding rather
+     than stepping. (3) LENGTH (0.25×–4×, with ½ and ×2) stretches or shrinks
+     the sample with PITCH PRESERVED, reusing the WARP granular engine — the
+     readout shows the before → after duration live.
    ================================================================ */
-const BUILD = 'JBH-88 · R82 · 2026-07-25 · triple-gated DELETE ALL projects (typed confirmation)';
+const BUILD = 'JBH-88 · R83 · 2026-07-25 · SCULPT — draw gain on the wave, tame peaks, stretch/shrink';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2735,8 +2762,29 @@ function drawWave(){
     cx.beginPath(); cx.moveTo(x,0); cx.lineTo(x,H); cx.stroke();
   });
   cx.lineWidth=1;
+  // SCULPT: show the gain curve over the wave (and a preview of the result)
+  if(shapeMode || shapeTouched){
+    const gy=g=>H-(g/SHAPE_MAX)*H;   // top = SHAPE_MAX, middle = 1.0
+    if(shapeTouched){                 // ghost of what APPLY will produce
+      cx.strokeStyle='rgba(99,199,106,0.55)'; cx.beginPath();
+      for(let x=0;x<W;x++){
+        let mn=1,mx=-1; const o=x*spp, e=Math.min(d.length,o+spp);
+        for(let i=o;i<e;i++){ const v=d[i]; if(v<mn)mn=v; if(v>mx)mx=v; }
+        const g=shapeAt(x/W);
+        cx.moveTo(x,mid+clamp(mn*g,-1,1)*mid*0.92); cx.lineTo(x,mid+clamp(mx*g,-1,1)*mid*0.92);
+      }
+      cx.stroke();
+    }
+    cx.strokeStyle='rgba(255,255,255,0.22)'; cx.beginPath();   // unity (1.0) reference
+    cx.moveTo(0,gy(1)); cx.lineTo(W,gy(1)); cx.stroke();
+    cx.strokeStyle=shapeMode?'#4aa3ff':'rgba(74,163,255,0.6)'; cx.lineWidth=2; cx.beginPath();
+    for(let x=0;x<W;x++){ const y=gy(shapeAt(x/W)); if(x===0) cx.moveTo(x,y); else cx.lineTo(x,y); }
+    cx.stroke(); cx.lineWidth=1;
+    if(shapeMode){ cx.fillStyle='#4aa3ff'; cx.font='16px ui-monospace'; cx.fillText('DRAW GAIN',10,22); }
+  }
   $('selInfo').textContent = selSlice>=0 && slices[selSlice]
     ? (selSlice+1)+'/'+slices.length+' · '+((slices[selSlice].e-slices[selSlice].s)*workBuf.duration).toFixed(2)+'s' : '—';
+  try{ shapeLenInfo(); }catch(e){}
 }
 function auditionRegion(s,e){
   if(!workBuf) return;
@@ -2759,8 +2807,147 @@ function waveTap(clientX){
   }
   drawWave();
 }
-$('wave').addEventListener('touchstart',e=>{ e.preventDefault(); waveTap(e.changedTouches[0].clientX); },{passive:false});
-$('wave').addEventListener('mousedown',e=>waveTap(e.clientX));
+/* ---------------- SCULPT — reshape the sample on the waveform ----------------
+   DRAW GAIN: drag across the wave to draw a volume curve (SHAPE_N control
+   points, 1.0 = unchanged, top of the display = SHAPE_MAX). Nothing is
+   destructive until APPLY, which bakes the curve into a NEW buffer on the pad
+   (so undo still works). TAME PEAKS computes a smoothed peak envelope and
+   pulls only the loud parts down. LENGTH stretches/shrinks with pitch
+   preserved, reusing the WARP granular engine. */
+const SHAPE_N=192, SHAPE_MAX=2.0;
+let shapeMode=false, shapeCurve=null, shapeDrag=false, shapeTouched=false;
+function shapeReset(){ shapeCurve=new Float32Array(SHAPE_N).fill(1); shapeTouched=false; }
+shapeReset();
+function shapeAt(norm){   // interpolated gain at a normalized position
+  if(!shapeCurve) return 1;
+  const x=clamp(norm,0,1)*(SHAPE_N-1), i=Math.floor(x), f=x-i;
+  const a=shapeCurve[i], b=shapeCurve[Math.min(SHAPE_N-1,i+1)];
+  return a+(b-a)*f;
+}
+function shapePaint(clientX,clientY){
+  const cv=$('wave'), r=cv.getBoundingClientRect();
+  const nx=clamp((clientX-r.left)/r.width,0,1);
+  const ny=clamp((clientY-r.top)/r.height,0,1);
+  // top of the canvas = SHAPE_MAX, middle = 1.0, bottom = 0
+  const g=clamp((1-ny)*SHAPE_MAX,0,SHAPE_MAX);
+  const i=Math.round(nx*(SHAPE_N-1));
+  const w=3;   // brush width so a finger drag paints smoothly
+  for(let k=-w;k<=w;k++){
+    const j=i+k; if(j<0||j>=SHAPE_N) continue;
+    const t=1-Math.abs(k)/(w+1);
+    shapeCurve[j]=shapeCurve[j]*(1-t)+g*t;
+  }
+  shapeTouched=true;
+  drawWave();
+}
+function shapeSummary(){
+  if(!shapeTouched) return 'curve flat — drag on the wave to shape it';
+  let lo=99,hi=0; for(let i=0;i<SHAPE_N;i++){ lo=Math.min(lo,shapeCurve[i]); hi=Math.max(hi,shapeCurve[i]); }
+  return 'curve '+lo.toFixed(2)+'× … '+hi.toFixed(2)+'× — tap APPLY to bake it in';
+}
+$('btnShape').addEventListener('click',()=>{
+  shapeMode=!shapeMode;
+  $('btnShape').classList.toggle('on',shapeMode);
+  drawWave();
+  lcd(shapeMode?'DRAW GAIN ON — drag across the wave. Above the middle = louder, below = quieter.':'DRAW GAIN OFF — tapping the wave auditions slices again.');
+});
+$('btnShapeFlat').addEventListener('click',()=>{ shapeReset(); drawWave(); lcd('CURVE RESET — flat (no change).'); });
+$('btnShapeApply').addEventListener('click',()=>{
+  if(!workBuf){ lcd('NO SAMPLE.'); return; }
+  if(!shapeTouched){ lcd('Nothing to apply — draw a curve first (or use TAME PEAKS).'); return; }
+  const nch=workBuf.numberOfChannels, n=workBuf.length;
+  const nb=mkAudioBuf(n,workBuf.sampleRate,nch);
+  for(let c=0;c<nch;c++){
+    const src=workBuf.getChannelData(c), dst=nb.getChannelData(c);
+    for(let i=0;i<n;i++) dst[i]=clamp(src[i]*shapeAt(i/n),-1,1);
+  }
+  S.buffers.push(nb);
+  const p=S.pads[S.editPad];
+  p.bufId=S.buffers.length-1; p.start=0; p.end=1; p.warped=false;
+  delete warpOrig[S.editPad];
+  workBuf=nb; slices=[]; selSlice=-1; shapeReset();
+  drawPads(); drawEdit(); drawWave(); dirty();
+  lcd('SHAPE APPLIED → '+padName(S.editPad)+' (UNDO restores the original).');
+});
+$('btnTame').addEventListener('click',()=>{
+  if(!workBuf){ lcd('NO SAMPLE.'); return; }
+  // build a gain curve that pulls only the loud parts down toward the average
+  const d=workBuf.getChannelData(0), n=d.length, seg=Math.max(1,Math.floor(n/SHAPE_N));
+  const env=new Float32Array(SHAPE_N);
+  for(let i=0;i<SHAPE_N;i++){
+    let pk=0; const o=i*seg, e=Math.min(n,o+seg);
+    for(let k=o;k<e;k++){ const a=Math.abs(d[k]); if(a>pk) pk=a; }
+    env[i]=pk;
+  }
+  let mx=0; for(let i=0;i<SHAPE_N;i++) mx=Math.max(mx,env[i]);
+  if(mx<1e-5){ lcd('SILENT SAMPLE — nothing to tame.'); return; }
+  // Level toward a target instead of only cutting the loud bits: pulling the
+  // peaks down ALONE drops the average more than the peak, which makes the
+  // sample less even, not more. Aiming every audible part at the target (at a
+  // partial ratio) brings peaks down AND quiet parts up.
+  const target=mx*0.6, floor=mx*0.06, ratio=0.7;
+  // widen the loud regions first so a burst's EDGES get reduced too — otherwise
+  // smoothing leaves them at full level and the peak just moves to the edge.
+  const wide=new Float32Array(SHAPE_N);
+  for(let i=0;i<SHAPE_N;i++){
+    let pk=0; for(let k=-4;k<=4;k++){ const j=i+k; if(j>=0&&j<SHAPE_N) pk=Math.max(pk,env[j]); }
+    wide[i]=pk;
+  }
+  const raw=new Float32Array(SHAPE_N);
+  for(let i=0;i<SHAPE_N;i++)
+    raw[i]= wide[i]>floor ? clamp(Math.pow(target/wide[i],ratio),0.25,2.5) : 1;
+  // smooth so the move glides instead of stepping
+  for(let i=0;i<SHAPE_N;i++){
+    let s=0,w=0;
+    for(let k=-6;k<=6;k++){ const j=i+k; if(j<0||j>=SHAPE_N) continue; const t=1-Math.abs(k)/7; s+=raw[j]*t; w+=t; }
+    shapeCurve[i]=s/w;
+  }
+  shapeTouched=true; drawWave();
+  let lo=9,hi=0; for(let i=0;i<SHAPE_N;i++){ lo=Math.min(lo,shapeCurve[i]); hi=Math.max(hi,shapeCurve[i]); }
+  lcd('PEAKS TAMED — loud parts to '+Math.round(lo*100)+'%, quiet parts to '+Math.round(hi*100)+'%. Preview, then APPLY (NORMALIZE after to bring it back up).');
+});
+function shapeLenInfo(){
+  const r=parseFloat($('shapeLen').value)||1;
+  $('shapeLenV').textContent=r.toFixed(2)+'×';
+  $('shapeLenInfo').textContent = workBuf
+    ? workBuf.duration.toFixed(2)+'s → '+(workBuf.duration*r).toFixed(2)+'s (pitch stays the same)'
+    : 'load a sample first';
+}
+$('shapeLen').addEventListener('input',shapeLenInfo);
+$('btnLenHalf').addEventListener('click',()=>{ $('shapeLen').value=clamp((parseFloat($('shapeLen').value)||1)/2,0.25,4); shapeLenInfo(); });
+$('btnLenDbl').addEventListener('click',()=>{ $('shapeLen').value=clamp((parseFloat($('shapeLen').value)||1)*2,0.25,4); shapeLenInfo(); });
+$('btnLenApply').addEventListener('click',()=>{
+  if(!workBuf){ lcd('NO SAMPLE.'); return; }
+  const r=clamp(parseFloat($('shapeLen').value)||1,0.25,4);
+  if(Math.abs(r-1)<0.01){ lcd('LENGTH is 1.00× — move the slider first.'); return; }
+  const before=workBuf.duration;
+  lcd('STRETCHING '+before.toFixed(2)+'s → '+(before*r).toFixed(2)+'s …');
+  setTimeout(()=>{
+    try{
+      const out=timeStretch(workBuf,r);
+      S.buffers.push(out);
+      const p=S.pads[S.editPad];
+      p.bufId=S.buffers.length-1; p.start=0; p.end=1; p.warped=false;
+      delete warpOrig[S.editPad];
+      workBuf=out; slices=[]; selSlice=-1; shapeReset();
+      $('shapeLen').value=1;
+      drawPads(); drawEdit(); drawWave(); shapeLenInfo(); dirty();
+      lcd((r<1?'SHRUNK':'STRETCHED')+' '+before.toFixed(2)+'s → '+out.duration.toFixed(2)+'s · pitch unchanged (UNDO restores).');
+    }catch(err){ lcd('STRETCH FAILED: '+(err.message||'error')); }
+  },30);
+});
+$('wave').addEventListener('touchstart',e=>{ e.preventDefault();
+  const t=e.changedTouches[0];
+  if(shapeMode){ shapeDrag=true; shapePaint(t.clientX,t.clientY); return; }
+  waveTap(t.clientX); },{passive:false});
+$('wave').addEventListener('touchmove',e=>{ if(!shapeMode||!shapeDrag) return; e.preventDefault();
+  const t=e.changedTouches[0]; shapePaint(t.clientX,t.clientY); },{passive:false});
+$('wave').addEventListener('touchend',()=>{ if(shapeDrag){ shapeDrag=false; lcd(shapeSummary()); } });
+$('wave').addEventListener('mousedown',e=>{
+  if(shapeMode){ shapeDrag=true; shapePaint(e.clientX,e.clientY); return; }
+  waveTap(e.clientX); });
+$('wave').addEventListener('mousemove',e=>{ if(shapeMode&&shapeDrag) shapePaint(e.clientX,e.clientY); });
+window.addEventListener('mouseup',()=>{ if(shapeDrag){ shapeDrag=false; lcd(shapeSummary()); } });
 
 $('btnPrev').addEventListener('click',()=>auditionRegion(0,1));
 $('btnZero').addEventListener('click',()=>{ zeroSnap=!zeroSnap; $('btnZero').classList.toggle('on',zeroSnap); });
