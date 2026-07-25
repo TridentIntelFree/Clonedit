@@ -221,6 +221,15 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
 footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-height:1.5}
 .hint{font-size:10px;color:var(--txt-dim);line-height:1.45;margin:0 0 8px;padding:6px 8px;background:var(--panel);border:1px solid var(--line);border-radius:6px}
 .hint b{color:var(--amber)}
+/* keyboard / switch-control focus. -webkit-tap-highlight-color is off for touch,
+   which left no focus indication at all for anyone driving this from a keyboard. */
+:focus-visible{outline:2px solid var(--sel);outline-offset:2px;border-radius:4px}
+.pad:focus-visible,.step:focus-visible{outline:3px solid var(--sel);outline-offset:-3px}
+@media (prefers-reduced-motion:reduce){
+  #tourSpot{transition:none}
+  #masterMeter .mbar>div{transition:none}
+}
+
 /* ---------------- wide screens: iPad, and any phone turned sideways ----------
    The whole app was one phone-width column, so a tablet or a landscape phone
    got the same layout stretched across twice the space — rows a metre wide and
@@ -302,23 +311,23 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <div id="build"></div>
   </div>
   <div id="transport">
-    <button id="btnTour" title="show me around">?</button>
-    <button id="btnUndo" title="undo">&#8630;</button>
-    <button id="btnRedo" title="redo">&#8631;</button>
-    <button id="btnPlay">&#9654;</button>
-    <button id="btnStop">&#9632;</button>
-    <button id="btnRec" class="rec">&#9679;</button>
+    <button aria-label="Show me around — replay the guided tour" id="btnTour" title="show me around">?</button>
+    <button aria-label="Undo" id="btnUndo" title="undo">&#8630;</button>
+    <button aria-label="Redo" id="btnRedo" title="redo">&#8631;</button>
+    <button aria-label="Play" id="btnPlay">&#9654;</button>
+    <button aria-label="Stop" id="btnStop">&#9632;</button>
+    <button aria-label="Record steps into the pattern" id="btnRec" class="rec">&#9679;</button>
   </div>
 </div>
 
 <div id="lcdstrip">
-  <div id="lcdmsg">READY.</div>
+  <div id="lcdmsg" role="status" aria-live="polite" aria-atomic="true">READY.</div>
   <div id="bpmbox">
-    <button id="bpmDown">&#8722;</button>
+    <button aria-label="Tempo down" id="bpmDown">&#8722;</button>
     <input type="number" id="bpmval" min="-999" max="999" step="0.1" inputmode="decimal"
       style="width:58px;text-align:center;font-size:14px;font-weight:700;background:transparent;border:none;color:var(--lcd)">
-    <button id="bpmUp">+</button>
-    <button id="bpmHalf" title="half time">&#189;</button>
+    <button aria-label="Tempo up" id="bpmUp">+</button>
+    <button aria-label="Half tempo" id="bpmHalf" title="half time">&#189;</button>
     <button id="bpmDbl" title="double time">&#215;2</button>
     <button id="bpmRev" title="negative BPM = sequencer runs backwards">REV</button>
   </div>
@@ -337,33 +346,33 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <span style="color:var(--amber)">&#9209; LAST SESSION</span>
   <span id="restoreAge" style="color:var(--txt-dim);flex:1"></span>
   <button id="btnRestore" class="on">RESTORE</button>
-  <button id="btnRestoreX">&#215;</button>
+  <button aria-label="Dismiss the restore prompt" id="btnRestoreX">&#215;</button>
 </div>
 
-<div id="tabs">
-  <button data-v="pads" class="on">PADS</button>
-  <button data-v="smpl">SMPL</button>
-  <button data-v="seq">SEQ</button>
-  <button data-v="trax">TRAX</button>
-  <button data-v="live">LIVE</button>
-  <button data-v="amp">AMP</button>
-  <button data-v="dj">DJ</button>
-  <button data-v="mix">MIX</button>
-  <button data-v="midi">MIDI</button>
-  <button data-v="proj">PROJ</button>
+<div id="tabs" role="tablist" aria-label="Sections">
+  <button role="tab" aria-label="Pads" data-v="pads" class="on">PADS</button>
+  <button role="tab" aria-label="Sampler" data-v="smpl">SMPL</button>
+  <button role="tab" aria-label="Sequencer" data-v="seq">SEQ</button>
+  <button role="tab" aria-label="Tape tracks" data-v="trax">TRAX</button>
+  <button role="tab" aria-label="Live instruments" data-v="live">LIVE</button>
+  <button role="tab" aria-label="Amp and guitar input" data-v="amp">AMP</button>
+  <button role="tab" aria-label="DJ decks" data-v="dj">DJ</button>
+  <button role="tab" aria-label="Mixer" data-v="mix">MIX</button>
+  <button role="tab" aria-label="MIDI" data-v="midi">MIDI</button>
+  <button role="tab" aria-label="Projects and export" data-v="proj">PROJ</button>
 </div>
 
 <!-- PADS -->
-<div class="view on" id="v-pads">
+<div class="view on" role="tabpanel" aria-label="Pads" id="v-pads">
   <div class="hint"><b>PADS</b> — tap to play (higher = louder). Tap <b>EDIT</b> then a pad to shape it (gain / pitch / FX). Record pad hits into the grid with the top-right <b>&#9679;</b>, or capture audio to a lane in <b>TRAX</b>.</div>
   <div class="row" id="bankrow">
-    <button data-b="0" class="on">BANK A</button><button data-b="1">B</button>
-    <button data-b="2">C</button><button data-b="3">D</button>
+    <button aria-label="Bank A" data-b="0" class="on">BANK A</button><button aria-label="Bank B" data-b="1">B</button>
+    <button aria-label="Bank C" data-b="2">C</button><button aria-label="Bank D" data-b="3">D</button>
     <button id="btnEdit">EDIT</button>
   </div>
   <div class="row">
     <button id="btnRepeat">REPEAT</button>
-    <select id="repRate"><option value="1">1/4</option><option value="2">1/8</option><option value="4" selected>1/16</option><option value="6">1/16T</option><option value="8">1/32</option></select>
+    <select aria-label="Repeat rate" id="repRate"><option value="1">1/4</option><option value="2">1/8</option><option value="4" selected>1/16</option><option value="6">1/16T</option><option value="8">1/32</option></select>
     <span style="font-size:10px;color:var(--txt-dim)">hold a pad &#8594; BPM-synced roll (writes steps when &#9679; REC is on)</span>
   </div>
   <div id="padgrid"></div>
@@ -441,7 +450,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 </div>
 
 <!-- SAMPLER -->
-<div class="view" id="v-smpl">
+<div class="view" role="tabpanel" aria-label="Sampler" id="v-smpl">
   <div class="hint"><b>GET A SOUND ONTO THE TARGET PAD</b> — IMPORT FILE, REC MIC, pick a PRESET, or GET a PACK sample then tap <b>&#8594; PAD</b>. Then CHOP and <b>ASSIGN SLICES</b> to spread one sample across pads.</div>
   <div class="row">
     <span class="lbl">TARGET</span><span id="smTarget" style="color:var(--amber)">A01</span>
@@ -474,8 +483,8 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div class="row"><span class="lbl">MIC LVL</span><div id="miclvl"><div></div></div></div>
   <h3>PRESETS <span style="color:var(--txt-dim);letter-spacing:0">— synth-rendered into the TARGET pad</span></h3>
   <div class="row">
-    <select id="presetSel" class="grow"></select>
-    <select id="presetNote"></select>
+    <select aria-label="Synth preset" id="presetSel" class="grow"></select>
+    <select aria-label="Preset pitch" id="presetNote"></select>
     <button id="btnPresetLoad">RENDER &#8594; PAD</button>
   </div>
   <h3>KITS <span style="color:var(--txt-dim);letter-spacing:0">— one tap fills bank A with sounds + a starter beat</span></h3>
@@ -485,7 +494,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </label>
   <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">— download online, stored on-device, used offline</span></h3>
   <div class="row">
-    <select id="packPick" class="grow">
+    <select aria-label="Sample pack" id="packPick" class="grow">
       <option value="samples/vsco-real.json">★ REAL Cello + Acoustic Drums (CC0)</option>
       <option value="samples/jbh-drums.json">JBH Drums — Kit One (synth, CC0)</option>
       <option value="samples/real-cc0-full.json">Full Kit — Drums + Real (CC0)</option>
@@ -511,7 +520,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnDlClear">DELETE ALL</button>
   </div>
   <div id="dlList" style="max-height:230px;overflow-y:auto;margin:6px 0"></div>
-  <div id="wavewrap"><canvas id="wave" width="800" height="260"></canvas></div>
+  <div id="wavewrap"><canvas id="wave" role="img" aria-label="Waveform of the loaded sample. The controls below edit it without needing the picture." width="800" height="260"></canvas></div>
   <div class="row">
     <button id="btnPrev">&#9654; PREVIEW</button>
     <button id="btnNorm">NORMALIZE</button>
@@ -530,15 +539,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div class="pslider"><span class="lbl">LENGTH</span><input type="range" id="shapeLen" min="0.25" max="4" step="0.01" value="1"><span class="val" id="shapeLenV">1.00&times;</span></div>
   <div class="row">
     <span id="shapeLenInfo" style="font-size:10px;color:var(--lcd);flex:1">—</span>
-    <button id="btnLenHalf">&#189;</button>
-    <button id="btnLenDbl">&times;2</button>
+    <button aria-label="Halve the sample length" id="btnLenHalf">&#189;</button>
+    <button aria-label="Double the sample length" id="btnLenDbl">&times;2</button>
     <button id="btnLenApply">STRETCH / SHRINK</button>
   </div>
 
   <h3>PRE-VERB <span style="color:var(--txt-dim);letter-spacing:0">&mdash; reverse reverb: a swell that arrives into the hit</span></h3>
   <div class="row">
     <span class="lbl">MODE</span>
-    <select id="pvMode" class="grow">
+    <select aria-label="Pre-verb mode" id="pvMode" class="grow">
       <option value="pre">PRE-VERB &mdash; swell &#8594; dry hit</option>
       <option value="only">SWELL ONLY &mdash; just the riser</option>
       <option value="boom">BOOMERANG &mdash; swell &#8594; hit &#8594; bloom</option>
@@ -546,16 +555,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <div class="row">
     <span class="lbl">SPACE</span>
-    <select id="pvType">
+    <select aria-label="Pre-verb space" id="pvType">
       <option value="hall">HALL</option><option value="room">ROOM</option>
       <option value="plate">PLATE</option><option value="spring">SPRING</option>
       <option value="cath">CATHEDRAL</option><option value="gated">GATED</option>
     </select>
     <span class="lbl">FROM</span>
-    <select id="pvSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select>
+    <select aria-label="Pre-verb source" id="pvSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select>
   </div>
-  <div class="pslider"><span class="lbl">LENGTH</span><input type="range" id="pvLen" min="0.2" max="4" step="0.05" value="1.5"><span class="val" id="pvLenV">1.50s</span></div>
-  <div class="pslider"><span class="lbl">AMOUNT</span><input type="range" id="pvMix" min="0.05" max="1.5" step="0.05" value="0.85"><span class="val" id="pvMixV">85%</span></div>
+  <div class="pslider"><span class="lbl">LENGTH</span><input aria-label="Pre-verb swell length" type="range" id="pvLen" min="0.2" max="4" step="0.05" value="1.5"><span class="val" id="pvLenV">1.50s</span></div>
+  <div class="pslider"><span class="lbl">AMOUNT</span><input aria-label="Pre-verb amount" type="range" id="pvMix" min="0.05" max="1.5" step="0.05" value="0.85"><span class="val" id="pvMixV">85%</span></div>
   <div class="row">
     <button id="btnPreverb">&#9204; RENDER PRE-VERB</button>
     <span id="pvInfo" style="font-size:10px;color:var(--txt-dim);flex:1">&mdash;</span>
@@ -576,7 +585,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <option value="12">12 · + sub, crash, ride, fx</option>
     </select>
     <span class="lbl">FROM</span>
-    <select id="kbSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select>
+    <select aria-label="Build the kit from" id="kbSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select>
   </div>
   <div class="pslider"><span class="lbl">TUNE</span><input type="range" id="kbTune" min="-12" max="12" step="1" value="0"><span class="val" id="kbTuneV">0 st</span></div>
   <div class="pslider"><span class="lbl">DECAY</span><input type="range" id="kbDecay" min="0.4" max="2.2" step="0.05" value="1"><span class="val" id="kbDecayV">1.00×</span></div>
@@ -604,9 +613,9 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <div class="row">
     <span class="lbl">START</span>
-    <button id="btnSm">&#8722;</button><button id="btnSp">+</button>
+    <button aria-label="Slice start earlier" id="btnSm">&#8722;</button><button aria-label="Slice start later" id="btnSp">+</button>
     <span class="lbl">END</span>
-    <button id="btnEm">&#8722;</button><button id="btnEp">+</button>
+    <button aria-label="Slice end earlier" id="btnEm">&#8722;</button><button aria-label="Slice end later" id="btnEp">+</button>
     <span style="font-size:10px;color:var(--txt-dim)">10ms steps</span>
   </div>
   <div class="row">
@@ -617,14 +626,14 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 </div>
 
 <!-- SEQ -->
-<div class="view" id="v-seq">
+<div class="view" role="tabpanel" aria-label="Sequencer" id="v-seq">
   <div class="hint"><b>PROGRAM</b> — tap steps for the shown TRACK. <b>NOTES</b> opens a scale grid to write melodies on this pad. <b>LIVE REC</b> records pad taps quantized to the grid. <b>LOCK</b> + a step sets pitch / probability / ratchet / nudge. <b>HUMAN</b> adds timing + velocity drift.</div>
   <div class="row" id="patrow"><span class="lbl">PTN</span></div>
   <div class="row" id="chainrow">
     <span class="lbl">CHAIN</span>
     <div id="chainview">—</div>
     <button id="btnChainAdd">+PTN</button>
-    <button id="btnChainClr">CLR</button>
+    <button id="btnChainClr" aria-label="Clear the chain">CLR</button>
     <button id="btnChainOn">CHAIN</button>
   </div>
   <div class="row" id="songrow">
@@ -632,21 +641,21 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnSongAdd">+SEC</button>
     <button id="btnSongOn">SONG</button>
     <button id="btnSongLoop">LOOP</button>
-    <button id="btnSongClr">CLR</button>
+    <button id="btnSongClr" aria-label="Clear the song">CLR</button>
     <span id="songInfo" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
   </div>
   <div id="songlist"></div>
 
   <h3>MORPH <span style="color:var(--txt-dim);letter-spacing:0">&mdash; melt one pattern into another</span></h3>
   <div class="row">
-    <span class="lbl">FROM</span><select id="mfFrom"></select>
-    <span class="lbl">TO</span><select id="mfTo"></select>
+    <span class="lbl">FROM</span><select aria-label="Morph from pattern" id="mfFrom"></select>
+    <span class="lbl">TO</span><select aria-label="Morph to pattern" id="mfTo"></select>
     <span class="lbl">BARS</span>
-    <select id="mfBars"><option>2</option><option>4</option><option selected>8</option><option>16</option><option>32</option><option>64</option></select>
+    <select aria-label="Morph length in bars" id="mfBars"><option>2</option><option>4</option><option selected>8</option><option>16</option><option>32</option><option>64</option></select>
   </div>
   <div class="row">
     <span class="lbl">ORDER</span>
-    <select id="mfCurve" class="grow">
+    <select aria-label="Morph order" id="mfCurve" class="grow">
       <option value="weight">METRIC &mdash; offbeats change first</option>
       <option value="strong">METRIC &mdash; downbeats change first</option>
       <option value="sweep">SWEEP &mdash; left to right</option>
@@ -656,7 +665,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <div class="row">
     <span class="lbl">END</span>
-    <select id="mfMode">
+    <select aria-label="What happens when the morph arrives" id="mfMode">
       <option value="once">LAND ON B</option>
       <option value="loop">LOOP A&#8594;B</option>
       <option value="ping">PING-PONG</option>
@@ -664,12 +673,12 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     </select>
     <label style="font-size:10px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="mfVel" checked> blend velocities</label>
   </div>
-  <div class="pslider"><span class="lbl">AMOUNT</span><input type="range" id="mfAmt" min="0" max="1" step="0.005" value="0"><span class="val" id="mfAmtV">0%</span></div>
+  <div class="pslider"><span class="lbl">AMOUNT</span><input aria-label="Morph amount" type="range" id="mfAmt" min="0" max="1" step="0.005" value="0"><span class="val" id="mfAmtV">0%</span></div>
   <div id="mfPreview" style="font-family:ui-monospace;font-size:15px;color:var(--lcd);letter-spacing:2px;margin:2px 0 4px;overflow-x:auto;white-space:nowrap">&mdash;</div>
   <div class="row">
     <button id="btnMorphOn">MORPH</button>
     <button id="btnMorphPrint">PRINT &#8594;</button>
-    <select id="mfPrint"></select>
+    <select aria-label="Print the blend into this pattern" id="mfPrint"></select>
     <span id="mfInfo" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
   </div>
   <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">
@@ -690,7 +699,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <span class="lbl">PTN</span>
     <select id="patLenSel"><option value="16">16</option><option value="32">32</option><option value="48">48</option><option value="64">64</option></select>
     <span class="lbl">LEN</span>
-    <button id="btnLenDn">&#8722;</button><span id="seqLenV" style="min-width:30px;text-align:center;color:var(--lcd);font-size:12px">16</span><button id="btnLenUp">+</button>
+    <button aria-label="Shorten this track (polymeter)" id="btnLenDn">&#8722;</button><span id="seqLenV" style="min-width:30px;text-align:center;color:var(--lcd);font-size:12px">16</span><button aria-label="Lengthen this track (polymeter)" id="btnLenUp">+</button>
     <button id="btnStepLock">LOCK</button>
     <button id="btnNotes">NOTES</button>
     <span id="lockHint" style="font-size:10px;color:var(--txt-dim)">tap step to toggle</span>
@@ -703,8 +712,8 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <div class="row">
     <button id="btnScaleLock">&#128274; SCALE</button>
-    <select id="scaleRoot"></select>
-    <select id="scaleName">
+    <select aria-label="Scale root note" id="scaleRoot"></select>
+    <select aria-label="Scale type" id="scaleName">
       <option value="major">MAJOR</option><option value="minor" selected>MINOR</option>
       <option value="dorian">DORIAN</option><option value="mixo">MIXOLYD</option>
       <option value="pmaj">PENT MAJ</option><option value="pmin">PENT MIN</option><option value="blues">BLUES</option>
@@ -714,7 +723,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div id="scaleHint" style="font-size:10px;color:var(--txt-dim);margin:0 0 4px">Off — pitches are chromatic (any semitone).</div>
   <div id="stepgrid"></div>
   <div id="circlewrap" style="display:none">
-    <canvas id="circle" width="760" height="760" style="width:100%;height:auto;display:block;background:var(--lcd-bg);border:1px solid var(--line);border-radius:10px;touch-action:none"></canvas>
+    <canvas id="circle" role="img" aria-label="Circular view of the pattern. Switch VIEW to GRID for the same pattern as a list of step buttons." width="760" height="760" style="width:100%;height:auto;display:block;background:var(--lcd-bg);border:1px solid var(--line);border-radius:10px;touch-action:none"></canvas>
     <div style="font-size:10px;color:var(--txt-dim);margin:4px 0 6px">Outer ring = the selected track — tap its segments to place hits. Inner rings are the other tracks; <b>tap one to select it</b>. Each ring turns at its own LEN, so polymeter is something you can watch.</div>
   </div>
   <div class="row">
@@ -766,7 +775,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <h3>GROOVE <span style="color:var(--txt-dim);letter-spacing:0">— feel templates: timing push/pull + accents</span></h3>
   <div class="row">
     <span class="lbl">FEEL</span>
-    <select id="grvSel" class="grow">
+    <select aria-label="Groove feel" id="grvSel" class="grow">
       <option value="straight">STRAIGHT (reset)</option>
       <option value="mpc54">SWING 54% · subtle</option>
       <option value="mpc58">SWING 58% · classic</option>
@@ -780,7 +789,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <option value="loose">HUMAN LOOSE · light drift</option>
     </select>
   </div>
-  <div class="pslider"><span class="lbl">AMOUNT</span><input type="range" id="grvAmt" min="0" max="1" step="0.05" value="1"><span class="val" id="grvAmtV">100%</span></div>
+  <div class="pslider"><span class="lbl">AMOUNT</span><input aria-label="Groove amount" type="range" id="grvAmt" min="0" max="1" step="0.05" value="1"><span class="val" id="grvAmtV">100%</span></div>
   <div class="row">
     <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="grvVel" checked style="width:auto"> apply accents (velocity)</label>
     <span class="grow"></span>
@@ -793,7 +802,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <span class="lbl">SCALE</span>
       <select id="noteScale"><option value="major">MAJOR</option><option value="minor">MINOR</option><option value="dorian">DORIAN</option><option value="mixo">MIXOLYD</option><option value="pmaj">PENT MAJ</option><option value="pmin">PENT MIN</option><option value="blues">BLUES</option></select>
       <span class="lbl">OCT</span>
-      <button id="noteOctDn">&#8722;</button><span id="noteOctV" style="min-width:24px;text-align:center;color:var(--lcd);font-size:12px">0</span><button id="noteOctUp">+</button>
+      <button aria-label="Octave down" id="noteOctDn">&#8722;</button><span id="noteOctV" style="min-width:24px;text-align:center;color:var(--lcd);font-size:12px">0</span><button aria-label="Octave up" id="noteOctUp">+</button>
     </div>
     <div id="notegrid"></div>
     <div style="font-size:10px;color:var(--txt-dim);margin-top:4px">Rows are scale notes for THIS pad (root = the sample's own pitch). Tap to place, tap again to remove. <b>Stack several notes in the same column for a chord</b> — they fire together as harmony. Written as pitch locks, so chords bounce + export to MIDI.</div>
@@ -824,7 +833,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 </div>
 
 <!-- TRAX -->
-<div class="view" id="v-trax">
+<div class="view" role="tabpanel" aria-label="Tape tracks" id="v-trax">
   <div class="hint"><b>RECORD AUDIO TO A LANE:</b> 1) pick <b>SOURCE</b> — <b>MASTER BUS</b> = everything you hear &middot; <b>LIVE ONLY</b> = just what YOU play (live instruments, AMP guitar, pads you hit) with the sequencer as silent backing &middot; <b>MIC</b>. 2) tap <b>&#9679;</b> on a lane to arm. 3) press <b>PLAY</b> to record, <b>STOP</b> to commit. <b>PUT A TAKE ON A PAD:</b> tap that lane&rsquo;s <b>FX</b> button &rarr; <b>TO PAD</b>. &#8734; = loop &middot; M / S = mute / solo.</div>
   <div class="row">
     <span class="lbl">SOURCE</span>
@@ -855,13 +864,13 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 </div>
 
 <!-- LIVE -->
-<div class="view" id="v-live">
+<div class="view" role="tabpanel" aria-label="Live instruments" id="v-live">
   <div class="hint"><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records <b>only what you play</b> (not the backing beat) to the next empty tape lane &mdash; open <b>TRAX</b> to hear, loop, FX, or send it to a pad. To capture the whole mix instead, arm a lane in <b>TRAX</b> and set the source to MASTER BUS.</div>
   <div class="row">
     <button id="btnPerfRec" class="rec grow">&#9679; REC PERFORMANCE &#8594; TRACK</button>
   </div>
   <div class="row">
-    <select id="instSel" class="grow">
+    <select aria-label="Live instrument" id="instSel" class="grow">
       <option value="ther">THEREMIN</option>
       <option value="chord">CHORD PADS</option>
       <option value="harp">STRUM HARP</option>
@@ -870,7 +879,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <option value="flute">BREATH FLUTE</option>
       <option value="perc">SHAKE PERC</option>
     </select>
-    <select id="instVoiceSel">
+    <select aria-label="Instrument voice" id="instVoiceSel">
       <option value="glass">GLASS</option>
       <option value="saw">SAW PAD</option>
       <option value="ep">FM KEYS</option>
@@ -879,8 +888,8 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <div class="row">
     <span class="lbl">KEY</span>
-    <select id="instKey"></select>
-    <select id="instScale">
+    <select aria-label="Instrument key" id="instKey"></select>
+    <select aria-label="Instrument scale" id="instScale">
       <option value="minor">MINOR</option>
       <option value="major">MAJOR</option>
       <option value="dorian">DORIAN</option>
@@ -923,7 +932,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 </div>
 
 <!-- AMP -->
-<div class="view" id="v-amp">
+<div class="view" role="tabpanel" aria-label="Amp and guitar input" id="v-amp">
   <div class="hint"><b>GUITAR / LINE / MIC IN</b> — ENABLE INPUT, then play through the amp. <b>Use headphones</b> (feedback!). Record the processed tone with <b>TRAX</b> (SOURCE: MASTER BUS) or <b>DJ &#9679; REC OUT</b>.</div>
   <div class="row">
     <button id="btnAmpOn" class="rec grow">&#9673; ENABLE INPUT (guitar / line / mic)</button>
@@ -936,8 +945,8 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <div class="row">
     <span class="lbl">AMP</span>
-    <select id="ampModel"><option value="clean">CLEAN</option><option value="crunch">CRUNCH</option><option value="lead">LEAD</option><option value="fuzz">FUZZ</option></select>
-    <select id="ampPreset" class="grow">
+    <select aria-label="Amp model" id="ampModel"><option value="clean">CLEAN</option><option value="crunch">CRUNCH</option><option value="lead">LEAD</option><option value="fuzz">FUZZ</option></select>
+    <select aria-label="Amp preset" id="ampPreset" class="grow">
       <option value="">— PRESET —</option>
       <option value="clean">Clean Combo</option>
       <option value="blues">Blues Crunch</option>
@@ -967,7 +976,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 </div>
 
 <!-- DJ -->
-<div class="view" id="v-dj">
+<div class="view" role="tabpanel" aria-label="DJ decks" id="v-dj">
   <div class="hint"><b>&#9679; REC OUT</b> records the master (everything you hear) &mdash; no transport needed. Then <b>SAVE</b> = WAV file, or <b>TO PAD</b> = load the capture onto the target pad. Fader / wheel bend live pitch.</div>
   <div class="row">
     <button id="btnJam" class="rec grow">&#9679; REC OUT</button>
@@ -1007,7 +1016,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 </div>
 
 <!-- MIX -->
-<div class="view" id="v-mix">
+<div class="view" role="tabpanel" aria-label="Mixer" id="v-mix">
   <div class="hint"><b>MIXER</b> — one strip per in-use pad: live meter, fader, pan, <b>M</b>ute / <b>S</b>olo, and REV/DLY sends. Tap a strip's name to edit that pad. Master + global FX below. Everything bakes into the bounce.</div>
   <h3>CHANNELS <span id="mixCount" style="color:var(--txt-dim);letter-spacing:0"></span></h3>
   <div id="mixStrips"></div>
@@ -1047,7 +1056,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <option value="1">1/4</option>
       <option value="1.5">1/4.</option>
     </select>
-    <select id="mxDlyMode">
+    <select aria-label="Delay mode" id="mxDlyMode">
       <option value="digital">DIGITAL</option>
       <option value="pingpong">PING-PONG</option>
       <option value="tape">TAPE</option>
@@ -1063,7 +1072,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 </div>
 
 <!-- MIDI -->
-<div class="view" id="v-midi">
+<div class="view" role="tabpanel" aria-label="MIDI" id="v-midi">
   <div class="hint"><b>Turn an old phone into a MIDI sound module.</b> Tap <b>ENABLE MIDI</b>, plug a controller in (USB-OTG or Bluetooth), and play. Notes trigger mapped pads; turn on <b>CHROMATIC</b> to play the selected pad melodically across the keyboard with zero setup.</div>
   <div class="row" style="align-items:center;gap:8px">
     <span id="midiDot" style="width:12px;height:12px;border-radius:50%;background:#444;flex:none;box-shadow:0 0 0 1px #000 inset"></span>
@@ -1077,12 +1086,12 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnNotesOut">NOTES OUT</button>
     <button id="btnClkOut">CLOCK OUT</button>
     <span class="lbl">CH</span>
-    <select id="midiOutCh"></select>
+    <select aria-label="MIDI output channel" id="midiOutCh"></select>
   </div>
   <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">NOTES OUT sends every sequencer step and pad hit (pad's NOTE + step pitch). CLOCK OUT sends 24&nbsp;PPQN clock with START/STOP so drum machines &amp; synth arps follow this tempo.</div>
   <div class="row">
     <span class="lbl">CHAN</span>
-    <select id="midiCh"><option value="-1">OMNI</option></select>
+    <select aria-label="MIDI input channel" id="midiCh"><option value="-1">OMNI</option></select>
     <span class="lbl">VCURVE</span>
     <select id="vcurve"><option value="linear">LINEAR</option><option value="soft">SOFT</option><option value="hard">HARD</option><option value="fixed">FIXED</option></select>
   </div>
@@ -1101,7 +1110,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   </div>
   <h3>CC LEARN</h3>
   <div class="row">
-    <select id="ccTarget" class="grow">
+    <select aria-label="CC learn target" id="ccTarget" class="grow">
       <option value="m:vol">MASTER VOLUME</option>
       <option value="m:bpm">BPM</option>
       <option value="m:swing">SWING</option>
@@ -1121,7 +1130,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 </div>
 
 <!-- PROJECT -->
-<div class="view" id="v-proj">
+<div class="view" role="tabpanel" aria-label="Projects and export" id="v-proj">
   <div class="hint"><b>PROJECT LIBRARY</b> — keep as many beats as you like on the device. <b>SAVE</b> updates the open project (shown below the NAME); <b>rename first</b> and SAVE keeps the original and stores a new one. <b>SAVE AS NEW</b> always makes a copy, <b>NEW</b> starts fresh. Below: bounce to WAV/stems/MIDI, or export the session as a JSON file.</div>
   <div class="row"><span class="lbl">NAME</span><input type="text" id="projName" class="grow" value="untitled"><span id="projCur" style="font-size:9px;color:var(--txt-dim)"></span></div>
   <h3>PROJECT LIBRARY <span id="projLibInfo" style="color:var(--txt-dim);letter-spacing:0"></span></h3>
@@ -1950,8 +1959,41 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      and placement tries under the highlight, over it, under a highlight
      trimmed to fit, and only then pins low. The manifest no longer locks the
      installed app to portrait.
+   - R96: SCREEN READERS AND KEYBOARDS. The UI leans on glyphs (▶ ● ∞ ×), on
+     colour (green LED = loaded, amber = playing in this pattern) and on a
+     couple of canvases — none of which a screen reader can see. 75 sliders
+     and 55 menus shipped with no accessible name at all, there were no live
+     regions, no pressed state, and no focus outline anywhere, so a keyboard
+     user could not see where they were.
+     Rather than hand-tag ~300 controls — which drifts the moment anything is
+     added — names are DERIVED at runtime from the text already on screen
+     beside each control (its row's .lbl, else the section heading), and
+     a11yPass() re-runs after anything rebuilds the DOM. It is idempotent and
+     an explicit aria-label in the markup always wins, so the derivation is a
+     floor, not a ceiling. An audit pass then flagged 20 names that were
+     ambiguous rather than missing — duplicated within a view, under three
+     characters, or fallen through to a section heading — and those got
+     written by hand.
+     Sliders speak their readout rather than their raw number (aria-valuetext
+     mirrors the .val span and tracks while you drag). Toggle state lives in a
+     CSS class, which is invisible to a reader, so a MutationObserver mirrors
+     .on onto aria-pressed — but only for buttons seen lit at least once, so
+     momentary ones (NORMALIZE, BOUNCE) are not mis-announced as switches; the
+     step, pad and note grids are excluded because the playhead class-toggles
+     them many times a second and they are labelled by their own draw
+     routines. Buttons built already-lit need a sweep in every pass, because
+     mutations on a detached node are never observed.
+     Also: the tab bar became a real tablist/tab/tabpanel with aria-selected;
+     the LCD became a polite live region so state changes are announced; pads
+     name their sample, selection and whether they play in this pattern; steps
+     name their position and track and carry aria-pressed; both canvases got
+     text alternatives that point at the equivalent non-visual control; and a
+     :focus-visible outline now exists. Pads stay <div> (the touch path reads
+     velocity off the Y position) but gained role=button, tabindex and
+     Enter/Space handling, so they are finally reachable without a touchscreen
+     — they were completely unusable by keyboard before.
    ================================================================ */
-const BUILD = 'JBH-88 · R95 · 2026-07-25 · iPad + landscape layout';
+const BUILD = 'JBH-88 · R96 · 2026-07-25 · screen readers + keyboard';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2718,7 +2760,17 @@ function buildPads(){
   padEls.length=0;   // rebuilds must not leave drawPads/flashPad writing to detached elements
   for(let i=0;i<16;i++){
     const el=document.createElement('div'); el.className='pad';
+    el.setAttribute('role','button'); el.tabIndex=0;
     el.innerHTML='<div class="pn"></div><div class="led"></div><div class="pname"></div>';
+    el.addEventListener('keydown',e=>{
+      if(e.key!==' ' && e.key!=='Enter' && e.key!=='Spacebar') return;
+      e.preventDefault(); padPress(i,0.85);          // no Y position to read from
+    });
+    el.addEventListener('keyup',e=>{
+      if(e.key!==' ' && e.key!=='Enter' && e.key!=='Spacebar') return;
+      e.preventDefault();
+      if(!S.edit) padRelease(padIndex(i));   // padRelease takes a PAD index, not a slot
+    });
     el.addEventListener('touchstart',e=>{
       e.preventDefault();
       const t=e.changedTouches[0], r=el.getBoundingClientRect();
@@ -2795,6 +2847,10 @@ function drawPads(){
     el.classList.toggle('fx',hasFx(p));
     el.querySelector('.pn').textContent=padName(idx);
     el.querySelector('.pname').textContent=p.name||'';
+    el.setAttribute('aria-label', 'Pad '+padName(idx)
+      + (p.name?', '+p.name:', empty')
+      + (idx===S.editPad?', selected':'')
+      + (p.bufId>=0 && pat.steps[idx].some(v=>v>0) ? ', plays in this pattern':''));
   }
 }
 function flashPad(idx,vel){
@@ -3089,6 +3145,9 @@ function drawMixer(){
     const mtr=document.createElement('div'); mtr.className='mmtr'; const fill=document.createElement('div'); mtr.appendChild(fill);
     const fader=document.createElement('input'); fader.type='range'; fader.className='vf';
     fader.min=0; fader.max=1.2; fader.step=0.01; fader.value= idx<0?S.masterVol:p.gain;
+    const chan = idx<0 ? 'master' : (padName(idx)+(p.name?' '+p.name:''));
+    fader.setAttribute('aria-label','Level, '+chan);
+    el.setAttribute('role','group'); el.setAttribute('aria-label','Channel strip, '+chan);
     fader.addEventListener('input',e=>{ const v=parseFloat(e.target.value);
       if(idx<0){ S.masterVol=v; if(LIVE) LIVE.master.gain.setTargetAtTime(v,AC.currentTime,0.02); if($('mxVol')){ $('mxVol').value=v; $('mxVolV').textContent=pct(v);} }
       else{ p.gain=v; logGain(idx,v,'MIXER fader'); if(LIVE) LIVE.pads[idx].ch.gain.setTargetAtTime(v,AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); }
@@ -3098,23 +3157,28 @@ function drawMixer(){
     if(idx>=0){
       const pan=document.createElement('div'); pan.className='mpan';
       const pr=document.createElement('input'); pr.type='range'; pr.min=-1; pr.max=1; pr.step=0.05; pr.value=p.pan; pr.title='pan';
+      pr.setAttribute('aria-label','Pan, '+chan);
       pr.addEventListener('input',e=>{ p.pan=parseFloat(e.target.value); if(LIVE&&LIVE.pads[idx].pan) LIVE.pads[idx].pan.pan.setTargetAtTime(p.pan,AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); dirty(); });
       pan.appendChild(pr); el.appendChild(pan);
       const btns=document.createElement('div'); btns.className='mbtns';
-      const mb=document.createElement('button'); mb.textContent='M'; mb.classList.toggle('on',p.mute);
+      const mb=document.createElement('button'); mb.textContent='M';
+      mb.setAttribute('aria-label','Mute '+chan); mb.classList.toggle('on',p.mute);
       mb.addEventListener('click',()=>{ p.mute=!p.mute; mb.classList.toggle('on',p.mute); applyMixMutes(); dirty(); });
-      const sb=document.createElement('button'); sb.textContent='S'; sb.classList.toggle('on',p.solo);
+      const sb=document.createElement('button'); sb.textContent='S';
+      sb.setAttribute('aria-label','Solo '+chan); sb.classList.toggle('on',p.solo);
       sb.addEventListener('click',()=>{ p.solo=!p.solo; drawMixer(); applyMixMutes(); dirty(); });
       btns.append(mb,sb); el.appendChild(btns);
       const mkSend=(lbl,key)=>{ const r=document.createElement('div'); r.className='msend';
         const s=document.createElement('span'); s.textContent=lbl;
         const inp=document.createElement('input'); inp.type='range'; inp.min=0; inp.max=1; inp.step=0.01; inp.value=p[key]; inp.title=(key==='rev'?'reverb':'delay')+' send';
+        inp.setAttribute('aria-label',(key==='rev'?'Reverb':'Delay')+' send, '+chan);
         inp.addEventListener('input',e=>{ p[key]=parseFloat(e.target.value); if(LIVE) LIVE.pads[idx][key].gain.setTargetAtTime(p[key],AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); dirty(); });
         r.append(s,inp); return r; };
       el.appendChild(mkSend('R','rev')); el.appendChild(mkSend('D','dly'));
       const mkEq=(lbl,key)=>{ const r=document.createElement('div'); r.className='msend';
         const s=document.createElement('span'); s.textContent=lbl;
         const inp=document.createElement('input'); inp.type='range'; inp.min=-12; inp.max=12; inp.step=0.5; inp.value=p[key]||0; inp.title='EQ '+lbl+' (±12dB)';
+        inp.setAttribute('aria-label','EQ '+({L:'low',M:'mid',H:'high'}[lbl]||lbl)+', '+chan);
         inp.addEventListener('input',e=>{ p[key]=parseFloat(e.target.value); if(LIVE) applyPadFx(LIVE.pads[idx],p,AC); if(idx===S.editPad) drawEdit(); dirty(); });
         r.append(s,inp); return r; };
       el.appendChild(mkEq('L','eqLo')); el.appendChild(mkEq('M','eqMid')); el.appendChild(mkEq('H','eqHi'));
@@ -3325,6 +3389,94 @@ $('btnMorphPrint').addEventListener('click',()=>{
   plog('MORPH printed PTN '+(m.from+1)+' → PTN '+(m.to+1)+' at '+Math.round(m.amt*100)+'% ('+m.curve+') into PTN '+(dst+1)+'.');
 });
 
+
+/* ---------------- SCREEN READERS -----------------------------------------
+   The UI leans on glyphs (▶ ● ∞ ×), on colour (green pad = loaded, amber =
+   playing) and on a canvas or two, none of which a screen reader can see, and
+   75 sliders and 55 menus shipped with no accessible name at all. Rather than
+   hand-tag every control — which drifts the moment anything is added — the
+   labels are derived at runtime from the text already on screen next to each
+   control, and a11yPass() is re-run after anything rebuilds the DOM. It is
+   idempotent: an explicit aria-label written in the markup always wins. */
+function a11yName(el){
+  // the visible label sitting in the same row is the name a sighted user reads
+  let n=el.previousElementSibling;
+  while(n){ if(n.classList && n.classList.contains('lbl') && n.textContent.trim()) return n.textContent.trim(); n=n.previousElementSibling; }
+  const row=el.closest('.row,.pslider');
+  if(row){ const l=row.querySelector('.lbl'); if(l && l.textContent.trim()) return l.textContent.trim(); }
+  // otherwise fall back to the section heading it lives under
+  let h=(row||el).previousElementSibling;
+  while(h){ if(h.tagName==='H3') return h.firstChild ? String(h.firstChild.textContent||'').trim() : ''; h=h.previousElementSibling; }
+  return '';
+}
+function a11ySliderText(el){
+  const row=el.closest('.pslider,.row');
+  const v=row && row.querySelector('.val');
+  return v && v.textContent.trim() ? v.textContent.trim() : null;
+}
+function a11ySync(el){                     // keep the spoken value matching the readout
+  const t=a11ySliderText(el);
+  if(t) el.setAttribute('aria-valuetext',t); else el.removeAttribute('aria-valuetext');
+}
+function a11yPass(root){
+  const r=root||document;
+  r.querySelectorAll('input[type=range],select,input[type=text],input[type=number],input[type=file]').forEach(el=>{
+    if(!el.getAttribute('aria-label')){
+      const n=a11yName(el);
+      if(n) el.setAttribute('aria-label', n.replace(/\s+/g,' '));
+    }
+    if(el.type==='range'){
+      a11ySync(el);
+      if(!el._a11y){ el._a11y=1; el.addEventListener('input',()=>a11ySync(el)); }
+    }
+  });
+  r.querySelectorAll('input[type=checkbox]').forEach(el=>{
+    if(el.getAttribute('aria-label')) return;
+    const lab=el.closest('label');
+    const t=lab ? lab.textContent.trim() : a11yName(el);
+    if(t) el.setAttribute('aria-label', t.replace(/\s+/g,' '));
+  });
+  // buttons whose face is a glyph: name them from their title, else their row label
+  r.querySelectorAll('button').forEach(b=>{
+    if(b.getAttribute('aria-label')) return;
+    const face=(b.textContent||'').trim();
+    if(/[A-Za-z0-9]/.test(face)) return;               // already speaks for itself
+    const t=b.getAttribute('title');
+    if(t){ b.setAttribute('aria-label',t); return; }
+    const n=a11yName(b);
+    if(n) b.setAttribute('aria-label',n+' '+face);
+  });
+  r.querySelectorAll('button.on').forEach(a11yPressed);
+  a11yTabs();
+}
+function a11yTabs(){
+  document.querySelectorAll('#tabs button').forEach(b=>
+    b.setAttribute('aria-selected', b.classList.contains('on') ? 'true' : 'false'));
+}
+/* Toggle buttons carry their state in a CSS class, which is invisible to a
+   reader. Mirror it onto aria-pressed — but only for buttons that actually
+   turn on, so momentary ones (NORMALIZE, BOUNCE) are not mis-announced as
+   switches. A button opts in the first time it is seen lit. */
+function a11yPressed(b){
+  if(b.classList.contains('on')){ b.dataset.tgl='1'; b.setAttribute('aria-pressed','true'); }
+  else if(b.dataset.tgl) b.setAttribute('aria-pressed','false');
+}
+function a11yWatch(){
+  document.querySelectorAll('button.on').forEach(a11yPressed);
+  if(!window.MutationObserver) return;
+  new MutationObserver(ms=>{
+    for(const m of ms){
+      const t=m.target;
+      if(!t.classList || t.tagName!=='BUTTON') continue;
+      // step / pad / note cells are relabelled by their own draw routines and
+      // are class-toggled many times a second by the playhead — skip them here
+      if(t.classList.contains('step')||t.classList.contains('pad')||t.classList.contains('ncell')) continue;
+      if(t.parentElement && t.parentElement.id==='tabs'){ a11yTabs(); continue; }
+      a11yPressed(t);
+    }
+  }).observe(document.body,{subtree:true,attributes:true,attributeFilter:['class']});
+}
+
 /* ---------------- tabs ---------------- */
 document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));
@@ -3342,6 +3494,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
   if(b.dataset.v==='trax'){ drawTrax(); }
   if(b.dataset.v==='live'){ drawLive(); }
   if(b.dataset.v==='amp'){ ampListDevices(); }
+  a11yPass($('v-'+b.dataset.v));
 }));
 
 /* ---------------- sampler ---------------- */
@@ -5635,24 +5788,31 @@ function drawTrax(){
     const row=document.createElement('div'); row.className='row';
     const num=document.createElement('span'); num.className='lbl'; num.style.minWidth='22px'; num.textContent='T'+(i+1);
     const rec=document.createElement('button'); rec.className='rec'; rec.innerHTML='&#9679;';
+    rec.setAttribute('aria-label','Arm track '+(i+1)+' to record');
     rec.classList.toggle('on',traxArm===i);
     rec.addEventListener('click',()=>armTrack(i));
-    const mu=document.createElement('button'); mu.textContent='M'; mu.classList.toggle('on',tr.mute);
+    const mu=document.createElement('button'); mu.textContent='M';
+    mu.setAttribute('aria-label','Mute track '+(i+1)); mu.classList.toggle('on',tr.mute);
     mu.addEventListener('click',()=>{ tr.mute=!tr.mute; applyTraxMix(); drawTrax(); dirty(); });
-    const so=document.createElement('button'); so.textContent='S'; so.classList.toggle('on',traxSolo===i);
+    const so=document.createElement('button'); so.textContent='S';
+    so.setAttribute('aria-label','Solo track '+(i+1)); so.classList.toggle('on',traxSolo===i);
     so.addEventListener('click',()=>{ traxSolo=traxSolo===i?-1:i; applyTraxMix(); drawTrax(); });
     const b=tr.bufId>=0?S.buffers[tr.bufId]:null;
     const nm=document.createElement('span');
     nm.style.cssText='font-size:10px;min-width:64px;color:'+(b?'var(--lcd)':'var(--txt-dim)');
     nm.textContent=b?(tr.name||'take')+' '+b.duration.toFixed(1)+'s':'— empty —';
+    row.setAttribute('aria-label','Tape track '+(i+1)+': '+(b?((tr.name||'take')+', '+b.duration.toFixed(1)+' seconds'):'empty'));
     const vol=document.createElement('input'); vol.type='range'; vol.min='0'; vol.max='1.2'; vol.step='0.01';
     vol.value=tr.gain; vol.style.flex='1'; vol.style.minWidth='60px';
+    vol.setAttribute('aria-label','Volume, track '+(i+1));
     vol.addEventListener('input',e=>{ tr.gain=parseFloat(e.target.value); applyTraxMix(); dirty(); });
     const lp=document.createElement('button'); lp.innerHTML='&#8734;';
+    lp.setAttribute('aria-label','Loop track '+(i+1));
     lp.classList.toggle('on',tr.loop);
     lp.addEventListener('click',()=>{ tr.loop=!tr.loop; drawTrax(); dirty();
       lcd('TRACK '+(i+1)+(tr.loop?' LOOPS at the nearest bar':' plays once')); });
     const fx=document.createElement('button'); fx.textContent='FX';
+    fx.setAttribute('aria-label','Effects for track '+(i+1));
     fx.classList.toggle('on',traxFxSel===i && $('traxfx').style.display!=='none');
     fx.addEventListener('click',()=>{
       if(traxFxSel===i && $('traxfx').style.display!=='none'){ $('traxfx').style.display='none'; }
@@ -5660,12 +5820,14 @@ function drawTrax(){
       drawTrax();
     });
     const clr=document.createElement('button'); clr.innerHTML='&#215;'; clr.title='clear this take';
+    clr.setAttribute('aria-label','Clear the take on track '+(i+1));
     clr.addEventListener('click',()=>{ if(tr.bufId<0){ lcd('TRACK '+(i+1)+' is already empty.'); return; }
       if(confirm('Clear the take on TRACK '+(i+1)+'?')) clearTrack(i); });
     row.append(num,rec,mu,so,lp,nm,vol,fx,clr);
     el.appendChild(row);
   });
   if($('traxfx').style.display!=='none') drawTraxFx();
+  a11yPass(el);
 }
 let traxFxSel=0;
 function drawTraxFx(){
@@ -6479,6 +6641,7 @@ function drawSeq(){
   pr.querySelectorAll('button').forEach(b=>b.remove());
   for(let i=0;i<NPAT;i++){
     const b=document.createElement('button'); b.textContent=i+1;
+    b.setAttribute('aria-label','Pattern '+(i+1));
     if(i===S.pattern) b.classList.add('on');
     b.addEventListener('click',()=>{ selectPattern(i); drawSeq(); lcd('PTN '+(i+1)+(S.ptnBpm&&S.patterns[i].bpm?' · '+S.patterns[i].bpm.toFixed(1)+' BPM':'')); });
     pr.appendChild(b);
@@ -6490,6 +6653,7 @@ function drawSeq(){
   for(let s=0;s<16;s++){
     const idx=padIndex(s);
     const b=document.createElement('button'); b.textContent=padName(idx).slice(1);
+    b.setAttribute('aria-label','Edit track '+padName(idx)+(S.pads[idx].name?', '+S.pads[idx].name:''));
     if(idx===S.seqPad) b.classList.add('on');
     b.addEventListener('click',()=>{ S.seqPad=idx; S.editPad=idx; manualPad=true; seqSelStep=-1; drawSeq(); drawStepLock(); drawPads(); });
     st.appendChild(b);
@@ -6507,6 +6671,8 @@ function drawSteps(){
     const el=document.createElement('button'); el.className='step'+(i%4===0?' q2':'');
     const v=row[i];
     if(v>0){ el.classList.add('on'); el.style.opacity=String(0.45+v*0.55); }
+    el.setAttribute('aria-label','Step '+(i+1)+' of '+L+', '+padName(S.seqPad));
+    el.setAttribute('aria-pressed', v>0?'true':'false');
     if(pat.locks && stepHasLock(pat.locks[S.seqPad+':'+i])) el.classList.add('lockmark');
     if(seqLockMode && i===seqSelStep) el.classList.add('selstep');
     el.addEventListener('click',()=>{
@@ -6526,6 +6692,7 @@ function drawSteps(){
   drawSil();     // silencer row belongs to the pattern too
   drawMorph();   // and the morph preview follows the selected track
   if(seqView==='circle') drawCircle();   // both views show the same pattern
+  a11yPass($('stepgrid').parentElement===document.body?document:$('v-seq'));
 }
 function setTrackLen(d){
   if(morphGuard()) return;
@@ -6681,6 +6848,8 @@ function drawSil(){
   for(let i=0;i<patLen(pat);i++){
     const el=document.createElement('button'); el.className='step'+(i%4===0?' q2':'');
     if(pat.sil[i]) el.classList.add('on');
+    el.setAttribute('aria-label','Silencer, step '+(i+1));
+    el.setAttribute('aria-pressed', pat.sil[i]?'true':'false');
     el.addEventListener('click',()=>{ if(morphGuard()) return; pat.sil[i]=pat.sil[i]?0:1; drawSil(); dirty();
       lcd(pat.sil[i]?'SILENCER on step '+(i+1)+' — cut, then sound returns on the next hit':'silencer step cleared'); });
     gr.appendChild(el);
@@ -7153,14 +7322,27 @@ function drawSong(){
     const psel=document.createElement('select');
     for(let pp=0;pp<NPAT;pp++){ const o=document.createElement('option'); o.value=pp; o.textContent='PTN '+(pp+1); psel.appendChild(o); }
     psel.value=String(sec.pat); psel.addEventListener('change',e=>{ sec.pat=parseInt(e.target.value,10); dirty(); });
-    const dn=document.createElement('button'); dn.textContent='−'; dn.addEventListener('click',()=>{ sec.reps=Math.max(1,(sec.reps||1)-1); drawSong(); dirty(); });
+    const S_='section '+(i+1);
+    psel.setAttribute('aria-label','Pattern for '+S_);
+    row.setAttribute('role','group');
+    row.setAttribute('aria-label','Song '+S_+': pattern '+(sec.pat+1)+', '+(sec.reps||1)+' bars');
+    const dn=document.createElement('button'); dn.textContent='−';
+    dn.setAttribute('aria-label','Fewer repeats, '+S_);
+    dn.addEventListener('click',()=>{ sec.reps=Math.max(1,(sec.reps||1)-1); drawSong(); dirty(); });
     const rv=document.createElement('span'); rv.style.cssText='min-width:36px;text-align:center;font-size:11px;color:var(--lcd)'; rv.textContent=(sec.reps||1)+'×';
-    const up=document.createElement('button'); up.textContent='+'; up.addEventListener('click',()=>{ sec.reps=Math.min(64,(sec.reps||1)+1); drawSong(); dirty(); });
-    const mv=document.createElement('button'); mv.innerHTML='&#9650;'; mv.addEventListener('click',()=>{ if(i>0){ const t=S.song[i-1]; S.song[i-1]=S.song[i]; S.song[i]=t; drawSong(); dirty(); } });
-    const rm=document.createElement('button'); rm.innerHTML='&#215;'; rm.addEventListener('click',()=>{ S.song.splice(i,1); if(songPos>=S.song.length) songPos=0; drawSong(); dirty(); });
+    const up=document.createElement('button'); up.textContent='+';
+    up.setAttribute('aria-label','More repeats, '+S_);
+    up.addEventListener('click',()=>{ sec.reps=Math.min(64,(sec.reps||1)+1); drawSong(); dirty(); });
+    const mv=document.createElement('button'); mv.innerHTML='&#9650;';
+    mv.setAttribute('aria-label','Move '+S_+' earlier');
+    mv.addEventListener('click',()=>{ if(i>0){ const t=S.song[i-1]; S.song[i-1]=S.song[i]; S.song[i]=t; drawSong(); dirty(); } });
+    const rm=document.createElement('button'); rm.innerHTML='&#215;';
+    rm.setAttribute('aria-label','Delete '+S_);
+    rm.addEventListener('click',()=>{ S.song.splice(i,1); if(songPos>=S.song.length) songPos=0; drawSong(); dirty(); });
     row.append(num,psel,dn,rv,up,mv,rm);
     el.appendChild(row);
   });
+  a11yPass(el);
 }
 $('btnSongAdd').addEventListener('click',()=>{ S.song.push({pat:S.pattern,reps:4}); drawSong(); dirty(); lcd('SECTION ADDED · PTN '+(S.pattern+1)+' ×4'); });
 $('btnSongClr').addEventListener('click',()=>{ S.song=[]; S.songOn=false; songPos=0; songRep=0; drawSong(); dirty(); lcd('SONG CLEARED'); });
@@ -8898,6 +9080,7 @@ if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
 }
 document.body.addEventListener('touchstart',function once(){ ensureAudio(); document.body.removeEventListener('touchstart',once); },{passive:true});
 drawSong(); undoInit(); drawProjects(); drawRewind();
+a11yPass(); a11yWatch();
 lcd('READY · load a sample into a pad (SMPL tab).');
 offerRestore().then(tourMaybeAutoStart, tourMaybeAutoStart);
 
