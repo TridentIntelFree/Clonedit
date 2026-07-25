@@ -843,7 +843,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div class="row">
     <button id="btnLibBackup" class="grow">BACKUP ALL &#11015; .JSON</button>
     <button id="btnLibImport" class="grow">IMPORT BACKUP</button>
-    <button id="btnLibClear">DELETE ALL</button>
+    <button id="btnLibClear" style="color:var(--red);border-color:#5a2a2c" title="permanently erase every saved project">DELETE ALL</button>
   </div>
   <input type="file" id="libIn" style="display:none">
   <h3>REWIND <span style="color:var(--txt-dim);letter-spacing:0">— automatic checkpoints, every 3 min while you work</span></h3>
@@ -1459,8 +1459,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      and DELETE ALL. Before this, a sample downloaded from one pack became
      invisible and undeletable once you switched packs. PROJ gains DELETE ALL
      for the saved-project library (backup first; the open project is kept).
+   - R82: SAFETY ON "DELETE ALL PROJECTS". Erasing the whole library now takes
+     three separate gates: (1) a warning that names the projects and says
+     plainly that every saved song is permanently erased, (2) a CANNOT-BE-UNDONE
+     step pointing at BACKUP ALL as the escape hatch, (3) a TYPED confirmation
+     — you must type DELETE, so stray taps can't do it. Any cancel, dismissal
+     or wrong word leaves every project intact and says so. The button is
+     styled red; an empty library is a no-op with no dialogs at all.
    ================================================================ */
-const BUILD = 'JBH-88 · R81 · 2026-07-25 · 75 real CC0 samples + full control of what is stored';
+const BUILD = 'JBH-88 · R82 · 2026-07-25 · triple-gated DELETE ALL projects (typed confirmation)';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -6737,16 +6744,46 @@ $('btnLibBackup').addEventListener('click',async ()=>{
   lcd('BACKUP SAVED · '+out.length+' projects');
 });
 $('btnLibImport').addEventListener('click',()=>{ $('libIn').value=''; $('libIn').click(); });
+/* DELETE ALL PROJECTS — deliberately hard to do by accident: three separate
+   gates, the last one typed. This erases every saved song permanently. */
 $('btnLibClear').addEventListener('click',async ()=>{
   const idx=await projIndexGet();
-  if(!idx.length){ lcd('LIBRARY ALREADY EMPTY.'); return; }
-  if(!confirm('Delete ALL '+idx.length+' saved project'+(idx.length>1?'s':'')+'?\n\nThis cannot be undone. Tap BACKUP ALL first if you want a copy.\n\nThe project you have OPEN stays loaded — only the saved library is cleared.')) return;
+  if(!idx.length){ lcd('LIBRARY ALREADY EMPTY — nothing to delete.'); return; }
+  const n=idx.length, plural=n>1?'s':'';
+  const names=idx.slice(0,6).map(m=>' • '+(m.name||'untitled')).join('\n')+(n>6?'\n • …and '+(n-6)+' more':'');
+
+  // GATE 1 — what this actually does
+  if(!confirm(
+    '⚠️ DELETE ALL PROJECTS\n\n'+
+    'This permanently erases EVERY saved song in your library — all '+n+' of them:\n\n'+
+    names+'\n\n'+
+    'Your beats, patterns, samples and arrangements in those projects will be GONE.\n\n'+
+    'Continue?')) { lcd('Cancelled — nothing was deleted.'); return; }
+
+  // GATE 2 — the escape hatch
+  if(!confirm(
+    '⚠️ STILL SURE?  (2 of 3)\n\n'+
+    'THIS CANNOT BE UNDONE. There is no trash, no rewind, no recovery.\n\n'+
+    'If you have not backed up, tap CANCEL now and use “BACKUP ALL ⬇ .JSON” first —\n'+
+    'it saves all '+n+' project'+plural+' to one file you can re-import later.\n\n'+
+    'Cancel = keep my projects.\nOK = continue to the final step.')) {
+    lcd('Cancelled — your '+n+' project'+plural+' are safe. Tip: BACKUP ALL saves them to a file.'); return; }
+
+  // GATE 3 — typed confirmation, so it can't happen from stray taps
+  const word='DELETE';
+  let typed=null;
+  try{ typed=prompt('FINAL STEP (3 of 3)\n\nTo permanently delete all '+n+' project'+plural+', type:\n\n'+word+'\n\n(Anything else cancels.)',''); }
+  catch(e){ typed=confirm('FINAL STEP (3 of 3)\n\nPermanently delete all '+n+' project'+plural+' now?')?word:null; }
+  if(typed===null){ lcd('Cancelled — nothing was deleted.'); return; }
+  if(String(typed).trim().toUpperCase()!==word){
+    lcd('Cancelled — you typed “'+String(typed).slice(0,20)+'”, not '+word+'. Nothing was deleted.'); return; }
+
   for(const m of idx){ try{ await idbDelS(IDB_STORE,'proj:'+m.id); }catch(e){} }
   try{ await idbPut('projIndex',[]); }catch(e){}
   curProjId=null;
   await drawProjects();
-  plog('Deleted all '+idx.length+' saved project(s).');
-  lcd('LIBRARY CLEARED · '+idx.length+' project'+(idx.length>1?'s':'')+' deleted.');
+  plog('DELETED ALL '+n+' saved project(s) — confirmed through three gates.');
+  lcd('LIBRARY CLEARED · all '+n+' project'+plural+' permanently deleted. (The project open right now is still loaded — SAVE AS NEW to keep it.)');
 });
 $('btnDocLoad').addEventListener('click',async ()=>{
   const t=$('docText').value.trim();
