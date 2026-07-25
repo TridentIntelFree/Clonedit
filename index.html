@@ -436,6 +436,27 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnLenDbl">&times;2</button>
     <button id="btnLenApply">STRETCH / SHRINK</button>
   </div>
+
+  <h3>BUILD A KIT <span style="color:var(--txt-dim);letter-spacing:0">— turn ANY sound into a full drum kit</span></h3>
+  <div class="row">
+    <span class="lbl">PIECES</span>
+    <select id="kbSize">
+      <option value="4">4 · kick snare hat perc</option>
+      <option value="8" selected>8 · + open hat, clap, tom, rim</option>
+      <option value="12">12 · + sub, crash, ride, fx</option>
+    </select>
+    <span class="lbl">FROM</span>
+    <select id="kbSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select>
+  </div>
+  <div class="pslider"><span class="lbl">TUNE</span><input type="range" id="kbTune" min="-12" max="12" step="1" value="0"><span class="val" id="kbTuneV">0 st</span></div>
+  <div class="pslider"><span class="lbl">DECAY</span><input type="range" id="kbDecay" min="0.4" max="2.2" step="0.05" value="1"><span class="val" id="kbDecayV">1.00×</span></div>
+  <div class="pslider"><span class="lbl">SNAP</span><input type="range" id="kbSnap" min="0" max="1" step="0.05" value="0.5"><span class="val" id="kbSnapV">50%</span></div>
+  <div class="row">
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="kbBeat" checked style="width:auto"> lay a starter beat too</label>
+    <span class="grow"></span>
+    <button id="btnKitBuild" class="grow">&#9881; BUILD KIT &#8594; PADS</button>
+  </div>
+  <div id="kbInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">Load any sound (import, pack, mic, or a TRAX take), then BUILD. Each piece is derived from your sample — filtered, pitched and enveloped — so the whole kit shares its character. Fills pads from the TARGET onward. Undoable.</div>
   <h3>CHOP <span style="color:var(--txt-dim);letter-spacing:0">— tap wave to select &amp; audition a slice</span></h3>
   <div class="row">
     <span class="lbl">SLICES</span>
@@ -1568,8 +1589,20 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      human loose — as per-step timing nudges plus optional velocity accents,
      with an AMOUNT blend and per-track or all-tracks scope. Both write into
      the pattern, so they bounce and export exactly as heard; STRAIGHT clears.
+   - R85: BUILD A KIT — turn ANY sound into a full drum kit (SMPL). Takes the
+     loaded sample (import, pack, mic, or a TRAX take) and re-voices it into
+     4, 8 or 12 pieces: kick, snare, hat, perc, open hat, clap, tom, rim, sub,
+     crash, ride, fx. Each piece is the SAME audio pitched, band-limited and
+     re-enveloped, with a synthesized sub under the low pieces, a matched
+     noise layer on the snare, and multi-tap bursts for the clap — so the kit
+     is coherent because it all came from one recording. Controls: piece
+     count, source (whole sample or the selected chop slice), TUNE ±12st,
+     DECAY 0.4–2.2×, SNAP (attack/decay sharpness), and an optional starter
+     beat. It auto-finds the sample's strongest onset to use as attack
+     material, trims and normalises each piece, fills pads from the TARGET
+     onward, and warns before replacing loaded pads. Undoable.
    ================================================================ */
-const BUILD = 'JBH-88 · R84 · 2026-07-25 · EUCLID rhythm generator + GROOVE feel templates';
+const BUILD = 'JBH-88 · R85 · 2026-07-25 · BUILD A KIT — any sound becomes a drum kit';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -5639,6 +5672,152 @@ $('btnPtnBpm').addEventListener('click',()=>{
   }else lcd('PTN TEMPO OFF · global BPM');
 });
 $('btnPatClr').addEventListener('click',()=>{ panicVoices(); S.patterns[S.pattern]=newPattern(); drawSteps(); dirty(); lcd('PTN '+(S.pattern+1)+' CLEARED'); });
+
+/* ---------------- BUILD A KIT — derive a drum kit from one sample -------------
+   Every piece is the SAME source audio, re-voiced: pitched (playbackRate),
+   band-limited (biquad), re-enveloped, and for some pieces layered with a
+   synthesized sub or a noise burst taken through the same filter. Because it
+   all comes from one recording, the kit sounds coherent — and any sound works:
+   a field recording, a vocal, a door slam, a Pixabay grab. */
+const KIT_PIECES=[
+  {id:'KICK', len:0.50, semi:-24, filt:['lowpass',115,1.1], att:0.002, dec:0.34, sub:{hz:52,g:0.75,dec:0.30}, drive:1.5},
+  {id:'SNARE',len:0.30, semi:-4,  filt:['bandpass',950,0.9], att:0.002, dec:0.17, noise:{hz:2400,q:0.7,g:0.5,dec:0.13}},
+  {id:'HAT',  len:0.11, semi:8,   filt:['highpass',6800,0.7],att:0.001, dec:0.045},
+  {id:'PERC', len:0.22, semi:2,   filt:['bandpass',1250,1.5],att:0.002, dec:0.13},
+  {id:'OHAT', len:0.45, semi:8,   filt:['highpass',6000,0.7],att:0.001, dec:0.32},
+  {id:'CLAP', len:0.34, semi:-2,  filt:['bandpass',1600,0.8],att:0.002, dec:0.15, bursts:[0,0.012,0.023,0.034]},
+  {id:'TOM',  len:0.42, semi:-14, filt:['lowpass',430,1.0],  att:0.002, dec:0.30, sub:{hz:110,g:0.4,dec:0.26}},
+  {id:'RIM',  len:0.10, semi:4,   filt:['bandpass',2600,2.6],att:0.001, dec:0.05},
+  {id:'SUB',  len:0.95, semi:-31, filt:['lowpass',95,1.0],   att:0.005, dec:0.75, sub:{hz:41,g:0.8,dec:0.70}},
+  {id:'CRASH',len:1.50, semi:6,   filt:['highpass',3600,0.6],att:0.003, dec:1.15},
+  {id:'RIDE', len:1.05, semi:10,  filt:['bandpass',5400,0.8],att:0.002, dec:0.80},
+  {id:'FX',   len:0.85, semi:-9,  filt:['bandpass',720,1.2], att:0.06,  dec:0.62, rev:true},
+];
+function loudestOffset(buf){   // the strongest onset — the most useful attack material
+  const d=buf.getChannelData(0), sr=buf.sampleRate, win=Math.max(1,Math.floor(sr*0.01));
+  let best=0,bi=0;
+  for(let o=0;o+win<d.length;o+=win){
+    let e=0; for(let i=o;i<o+win;i+=2) e+=d[i]*d[i];
+    if(e>best){ best=e; bi=o; }
+  }
+  return Math.max(0,(bi-Math.floor(sr*0.004))/sr);   // back off slightly so the attack isn't clipped
+}
+async function renderKitPiece(src, def, opts){
+  const sr=44100, len=Math.max(0.05,def.len*opts.decay);
+  const oc=new OfflineAudioContext(1,Math.ceil(sr*len),sr);
+  const rate=Math.pow(2,(def.semi+opts.tune)/12);
+  const s=oc.createBufferSource(); s.buffer=src; s.playbackRate.value=rate;
+  const f=oc.createBiquadFilter(); f.type=def.filt[0]; f.frequency.value=def.filt[1]; f.Q.value=def.filt[2];
+  const env=oc.createGain();
+  let node=s; node.connect(f); node=f;
+  if(def.drive){ const ws=oc.createWaveShaper(); const c=new Float32Array(1024);
+    for(let i=0;i<1024;i++){ const x=i/511.5-1; c[i]=Math.tanh(x*def.drive); }
+    ws.curve=c; ws.oversample='2x'; node.connect(ws); node=ws; }
+  node.connect(env); env.connect(oc.destination);
+  // amp envelope — SNAP shortens the attack and sharpens the decay curve
+  const att=Math.max(0.0005,def.att*(1.4-opts.snap)), dec=Math.max(0.02,def.dec*opts.decay);
+  env.gain.setValueAtTime(0,0);
+  env.gain.linearRampToValueAtTime(1,att);
+  env.gain.setTargetAtTime(0,att,dec/(2.2+opts.snap*2.5));
+  const off=Math.min(Math.max(0,opts.offset), Math.max(0,src.duration-0.02));
+  if(def.bursts){ // clap: several short taps of the same material
+    def.bursts.forEach((b,k)=>{
+      const bs=oc.createBufferSource(); bs.buffer=src; bs.playbackRate.value=rate;
+      const bg=oc.createGain(); bg.gain.value=(1-k*0.16);
+      bs.connect(f); bs.connect(bg); bg.connect(f);
+      try{ bs.start(b,off,Math.min(0.05,src.duration-off)); }catch(e){}
+    });
+  }
+  try{ s.start(0,off,Math.min(src.duration-off,len*rate+0.05)); }catch(e){ try{ s.start(0); }catch(e2){} }
+  if(def.sub){   // synthesized body so low pieces have real weight
+    const o=oc.createOscillator(), g=oc.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(def.sub.hz*2.2*Math.pow(2,opts.tune/12),0);
+    o.frequency.exponentialRampToValueAtTime(def.sub.hz*Math.pow(2,opts.tune/12),Math.min(0.09,def.sub.dec));
+    g.gain.setValueAtTime(0,0); g.gain.linearRampToValueAtTime(def.sub.g,0.004);
+    g.gain.setTargetAtTime(0,0.004,def.sub.dec*opts.decay/2.4);
+    o.connect(g); g.connect(oc.destination); o.start(0); o.stop(len);
+  }
+  if(def.noise){ // noise layer through the same band = snare "sizzle" that matches the source
+    const nb=oc.createBuffer(1,Math.ceil(sr*Math.min(len,0.4)),sr), nd=nb.getChannelData(0);
+    for(let i=0;i<nd.length;i++) nd[i]=Math.random()*2-1;
+    const ns=oc.createBufferSource(); ns.buffer=nb;
+    const nf=oc.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=def.noise.hz; nf.Q.value=def.noise.q;
+    const ng=oc.createGain();
+    ng.gain.setValueAtTime(0,0); ng.gain.linearRampToValueAtTime(def.noise.g,0.002);
+    ng.gain.setTargetAtTime(0,0.002,def.noise.dec*opts.decay/2.4);
+    ns.connect(nf); nf.connect(ng); ng.connect(oc.destination); ns.start(0);
+  }
+  const out=await oc.startRendering();
+  // trim trailing silence + normalize
+  const d=out.getChannelData(0); let pk=0, last=0;
+  for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>pk) pk=a; }
+  if(pk<1e-5) return out;
+  for(let i=0;i<d.length;i++) if(Math.abs(d[i])>pk*0.005) last=i;
+  const n=Math.max(Math.floor(sr*0.03),last+Math.floor(sr*0.01));
+  const fin=mkAudioBuf(Math.min(n,d.length),sr,1), fd=fin.getChannelData(0);
+  const k=0.95/pk;
+  for(let i=0;i<fd.length;i++) fd[i]=d[i]*k;
+  const fade=Math.min(fd.length,Math.floor(sr*0.006));
+  for(let i=0;i<fade;i++) fd[fd.length-1-i]*=i/fade;
+  return fin;
+}
+['kbTune','kbDecay','kbSnap'].forEach(id=>$(id).addEventListener('input',()=>{
+  $('kbTuneV').textContent=(+$('kbTune').value>0?'+':'')+$('kbTune').value+' st';
+  $('kbDecayV').textContent=(+$('kbDecay').value).toFixed(2)+'×';
+  $('kbSnapV').textContent=Math.round(+$('kbSnap').value*100)+'%';
+}));
+let kitBuilding=false;
+$('btnKitBuild').addEventListener('click',async ()=>{
+  if(kitBuilding) return;
+  if(!workBuf){ lcd('Load a sound first (IMPORT FILE, a pack sample, REC MIC, or a TRAX take).'); return; }
+  ensureAudio();
+  const count=parseInt($('kbSize').value,10);
+  const start=S.editPad;
+  const used=[]; for(let i=0;i<count;i++){ const p=(start+i)%NPADS; if(S.pads[p].bufId>=0) used.push(padName(p)); }
+  if(used.length && !confirm('BUILD KIT will fill '+count+' pads starting at '+padName(start)+'.\n\n'+used.length+' of them already have sounds ('+used.slice(0,6).join(', ')+(used.length>6?'…':'')+') and will be REPLACED.\n\nUndo restores them. Continue?')) return;
+  // source region: whole sample, or the selected chop slice
+  let src=workBuf, offset=loudestOffset(workBuf);
+  if($('kbSrc').value==='slice' && selSlice>=0 && slices[selSlice]){
+    const sl=slices[selSlice], sr=workBuf.sampleRate;
+    const a=Math.floor(sl.s*workBuf.length), b=Math.floor(sl.e*workBuf.length);
+    const nb=mkAudioBuf(Math.max(64,b-a),sr,workBuf.numberOfChannels);
+    for(let c=0;c<workBuf.numberOfChannels;c++) nb.copyToChannel(workBuf.getChannelData(c).subarray(a,b),c);
+    src=nb; offset=loudestOffset(nb);
+  }
+  const opts={ tune:+$('kbTune').value, decay:+$('kbDecay').value, snap:+$('kbSnap').value, offset };
+  kitBuilding=true; $('btnKitBuild').disabled=true;
+  try{
+    const made=[];
+    for(let i=0;i<count;i++){
+      const def=KIT_PIECES[i];
+      lcd('BUILDING '+(i+1)+'/'+count+' · '+def.id+' …');
+      await new Promise(r=>setTimeout(r,0));
+      const buf=await renderKitPiece(src,def,opts);
+      const pad=(start+i)%NPADS;
+      S.buffers.push(buf);
+      const p=S.pads[pad];
+      p.bufId=S.buffers.length-1; p.start=0; p.end=1; p.name=def.id; p.warped=false;
+      p.gain=0.9; p.pitch=0; p.fine=0; p.reverse=false; p.mode='one'; p.speed=1; p.keepPitch=false;
+      delete warpOrig[pad]; delete p.srcPreset; delete p.srcNote;
+      made.push(pad);
+    }
+    if($('kbBeat').checked){   // a simple, musical starter pattern using the new pads
+      const pat=S.patterns[S.pattern];
+      made.forEach(p=>{ pat.steps[p].fill(0); for(let s=0;s<NSTEPS;s++) delete pat.locks[p+':'+s]; });
+      const put=(i,steps,v)=>{ if(i>=made.length) return; steps.forEach(s=>{ if(s<NSTEPS) pat.steps[made[i]][s]=v; }); };
+      put(0,[0,4,8,12],1.0);              // KICK
+      put(1,[4,12],0.9);                  // SNARE
+      put(2,[2,6,10,14],0.55);            // HAT
+      put(3,[7,15],0.6);                  // PERC
+      if(made.length>=8){ put(4,[14],0.5); put(5,[12],0.7); put(6,[9],0.6); put(7,[3,11],0.45); }
+      drawSeq();
+    }
+    workBuf=S.buffers[S.pads[start].bufId]; slices=[]; selSlice=-1;
+    buildPads(); drawPads(); drawEdit(); drawWave(); drawMixer(); dirty();
+    lcd('KIT BUILT · '+count+' pieces → '+padName(made[0])+'–'+padName(made[made.length-1])+(($('kbBeat').checked)?' + starter beat — press PLAY':' — tap the pads'));
+  }catch(err){ lcd('KIT BUILD FAILED: '+(err&&err.message||'error')); }
+  finally{ kitBuilding=false; $('btnKitBuild').disabled=false; }
+});
 
 /* ---------------- EUCLID — spread N hits as evenly as possible over K steps ----
    Bjorklund's algorithm: the pattern behind tresillo, clave, and most
