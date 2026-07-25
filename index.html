@@ -548,6 +548,48 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <span id="songInfo" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
   </div>
   <div id="songlist"></div>
+
+  <h3>MORPH <span style="color:var(--txt-dim);letter-spacing:0">&mdash; melt one pattern into another</span></h3>
+  <div class="row">
+    <span class="lbl">FROM</span><select id="mfFrom"></select>
+    <span class="lbl">TO</span><select id="mfTo"></select>
+    <span class="lbl">BARS</span>
+    <select id="mfBars"><option>2</option><option>4</option><option selected>8</option><option>16</option><option>32</option><option>64</option></select>
+  </div>
+  <div class="row">
+    <span class="lbl">ORDER</span>
+    <select id="mfCurve" class="grow">
+      <option value="weight">METRIC &mdash; offbeats change first</option>
+      <option value="strong">METRIC &mdash; downbeats change first</option>
+      <option value="sweep">SWEEP &mdash; left to right</option>
+      <option value="scatter">SCATTER &mdash; shuffled, repeatable</option>
+      <option value="track">TRACK &mdash; one instrument at a time</option>
+    </select>
+  </div>
+  <div class="row">
+    <span class="lbl">END</span>
+    <select id="mfMode">
+      <option value="once">LAND ON B</option>
+      <option value="loop">LOOP A&#8594;B</option>
+      <option value="ping">PING-PONG</option>
+      <option value="hold">HOLD &mdash; slider only</option>
+    </select>
+    <label style="font-size:10px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="mfVel" checked> blend velocities</label>
+  </div>
+  <div class="pslider"><span class="lbl">AMOUNT</span><input type="range" id="mfAmt" min="0" max="1" step="0.005" value="0"><span class="val" id="mfAmtV">0%</span></div>
+  <div id="mfPreview" style="font-family:ui-monospace;font-size:15px;color:var(--lcd);letter-spacing:2px;margin:2px 0 4px;overflow-x:auto;white-space:nowrap">&mdash;</div>
+  <div class="row">
+    <button id="btnMorphOn">MORPH</button>
+    <button id="btnMorphPrint">PRINT &#8594;</button>
+    <select id="mfPrint"></select>
+    <span id="mfInfo" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
+  </div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">
+    MORPH advances one notch per bar and takes over from CHAIN / SONG while it runs. The step grid shows what
+    you are hearing, so editing is locked until you stop it &mdash; <b>PRINT</b> freezes the blend you like into a
+    pattern slot. AMOUNT scrubs by hand; set END to HOLD to stay put. It bounces and exports too (source: MORPH).
+  </div>
+
   <div class="pslider"><span class="lbl">SWING</span><input type="range" id="swing" min="0" max="0.6" step="0.01" value="0"><span class="val" id="swingV">0%</span></div>
   <div class="pslider"><span class="lbl">HUMAN</span><input type="range" id="human" min="0" max="1" step="0.01" value="0"><span class="val" id="humanV">0%</span></div>
   <div class="row">
@@ -1041,7 +1083,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <h3>MASTER OUT (WAV)</h3>
   <div class="row">
     <span class="lbl">SOURCE</span>
-    <select id="bSrc"><option value="pat">CURRENT PATTERN</option><option value="chain">CHAIN</option><option value="song">SONG</option></select>
+    <select id="bSrc"><option value="pat">CURRENT PATTERN</option><option value="chain">CHAIN</option><option value="song">SONG</option><option value="morph">MORPH A&#8594;B</option></select>
     <span class="lbl">LOOPS</span>
     <select id="bLoops"><option>1</option><option selected>2</option><option>4</option><option>8</option></select>
   </div>
@@ -1741,8 +1783,34 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      never reappears, and the new ? button in the transport bar replays it
      on demand. It stays out of the way of the crash-recovery prompt — if
      there is a session to restore, that wins and the tour does not open.
+   - R93: PATTERN MORPH (SEQ). Patterns could only be cut between — chain or
+     song jumped from A to B on a bar line and that was the only transition
+     the box could make. MORPH melts one pattern into another over N bars by
+     giving every cell (track + step, plus the silencer row) a rank and
+     crossing it over when the morph amount passes that rank. ORDER is what
+     makes it musical: METRIC ranks by metric weight, so the 16ths mutate
+     first, then the 8ths, then the beats, and the downbeat is the last thing
+     to go — the groove keeps its backbone until the end. The same ranking
+     inverted changes the skeleton first. SWEEP wipes left to right, SCATTER
+     is a hash of (track, step) so it is scattered but repeats identically
+     every time, and TRACK brings the instruments over one at a time. Where
+     both patterns hit the same cell, velocities ride across instead of
+     jumping. The endpoints are exact — t=0 IS A and t=1 IS B, returned by
+     reference, so an arrived morph carries B's own length and polymeter,
+     which an interpolated buffer cannot. In between, the blend keeps A's
+     shape and reads B modulo its own track lengths, so a 16-step B tiles
+     into a 32-step A. END picks what happens on arrival: land on B, loop,
+     ping-pong the endpoints, or HOLD for hand-scrubbing with the AMOUNT
+     slider. MORPH stands CHAIN and SONG down while it runs and they stand it
+     down when re-armed. The step grid, notes lane, silencer row, circle view
+     and pad LEDs all show the blend you are hearing, so pattern editing is
+     locked with an explanation until you stop — PRINT freezes the blend you
+     like into a pattern slot (deep-copied, defaulting to a free one). The
+     bounce and MIDI export gained a MORPH source: renders and exports now
+     walk a list of pattern OBJECTS rather than slot indices, so a morph bar
+     that lives in no slot goes through exactly the same path as a chain.
    ================================================================ */
-const BUILD = 'JBH-88 · R92 · 2026-07-25 · first-run guided tour';
+const BUILD = 'JBH-88 · R93 · 2026-07-25 · pattern morph';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1761,7 +1829,7 @@ const NPADS = 64, NSTEPS = 16, NPAT = 8;   // NSTEPS = steps per BAR (timing con
 const MAXSTEPS = 64;                        // capacity: a pattern may be 16/32/48/64 steps
 const PATLENS = [16,32,48,64];
 function patLen(pat){ const n=pat&&pat.plen; return PATLENS.indexOf(n)>=0 ? n : NSTEPS; }
-function curPatLen(){ return patLen(S.patterns[S.pattern]); }
+function curPatLen(){ return patLen(typeof curPat==='function' ? curPat() : S.patterns[S.pattern]); }
 function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   gain:0.9, pitch:0, fine:0, speed:1, keepPitch:false, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
   grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grPos:0, grBurst:0.45,
@@ -1774,6 +1842,8 @@ function newPattern(len){ const n=PATLENS.indexOf(len)>=0?len:NSTEPS, s=[];
   for(let p=0;p<NPADS;p++) s.push(new Array(MAXSTEPS).fill(0));
   return { steps:s, bpm:null, plen:n, len:new Array(NPADS).fill(n), locks:{}, sil:new Array(MAXSTEPS).fill(0) }; }
 function trackLen(pat,p){ const L=patLen(pat); return clamp((pat.len&&pat.len[p])||L,1,L); }
+function rowUsed(pat,p){ const r=pat&&pat.steps&&pat.steps[p]; if(!r) return false;
+  for(let i=0;i<r.length;i++) if(r[i]>0) return true; return false; }
 function stepLock(pat,p,st){ return pat.locks&&pat.locks[p+':'+st]; }
 function stepHasLock(lk){ return !!(lk && (lk.pitch||(lk.prob!=null)||lk.rat>1||lk.nudge)); }
 
@@ -1793,7 +1863,8 @@ const S = {
   edit:false, liveRec:false, ptnBpm:false,
   scOn:false, scTrig:0, scDepth:0.6, scRel:0.25,
   autoTarget:'mfilt',
-  song:[], songOn:false, songLoop:true
+  song:[], songOn:false, songLoop:true,
+  morph:{ on:false, from:0, to:1, bars:8, curve:'weight', mode:'once', vel:true, amt:0, pos:0 }
 };
 const revCache = {};      // bufId -> reversed AudioBuffer
 
@@ -2463,6 +2534,7 @@ document.getElementById('logo').addEventListener('click',()=>{
 
 function writeLiveStep(idx, vel, when){ // quantize a live hit onto the grid (LIVE REC)
   if(!(S.liveRec && playing)) return;
+  if(morphActive()) return;              // a morph is a performance, not a take
   const sd=stepDur(), pat=S.patterns[S.pattern], L=trackLen(pat,idx);
   const pos=(posMod(curAbsStep,L) + ((when!=null?when:AC.currentTime)-lastStepTime)/sd) % L;
   const st=posMod(Math.round(pos),L);
@@ -2569,7 +2641,7 @@ function padPress(slot,vel){
   hitLive(idx,vel); drawEditTitleOnly(); if(seqChanged) drawSeq();
 }
 function drawPads(){
-  const pat=S.patterns[S.pattern];
+  const pat=curPat();
   for(let s=0;s<16;s++){
     const idx=padIndex(s), p=S.pads[idx], el=padEls[s];
     el.classList.toggle('loaded',p.bufId>=0);
@@ -2934,6 +3006,179 @@ document.querySelectorAll('#bankrow [data-b]').forEach(b=>b.addEventListener('cl
   document.querySelectorAll('#bankrow [data-b]').forEach(x=>x.classList.toggle('on',x===b));
   drawPads();
 }));
+
+
+/* ---------------- PATTERN MORPH — melt pattern A into pattern B ----------------
+   Every cell (track + step, plus the silencer row) is given a rank in [0,1)
+   by the chosen ORDER. At morph amount t the cell shows B when t > rank and A
+   otherwise, so the pattern crosses over one cell at a time instead of
+   switching in one jump. ORDER is what makes it musical rather than random:
+
+     weight   metric weight, weakest first — the 16ths mutate, then the 8ths,
+              then the beats, and the downbeat is the last thing to go. The
+              groove keeps its backbone until the very end.
+     strong   the same ranking inverted: the skeleton changes first and the
+              decoration follows, which reads as a sudden lurch that settles.
+     sweep    straight left-to-right through the bar — a wipe.
+     scatter  a hash of (track, step): scattered but deterministic, so the same
+              morph sounds identical every time and bounces the same way.
+     track    one instrument at a time, in pad order.
+
+   The endpoints are exact: t<=0 IS pattern A and t>=1 IS pattern B, returned by
+   reference, so a completed morph is bit-identical to selecting B — including
+   its own length and per-track polymeter, which an interpolated buffer cannot
+   carry. In between, the blend keeps A's length and A's track lengths and
+   reads B modulo its own, so a 16-step B tiles into a 32-step A. Automation
+   lanes are not interpolated; they come from whichever side is more than half
+   present. ---- */
+function morphRanker(curve, L, pads){
+  if(curve==='scatter'){
+    return (p,st)=>{ let h=(((p+3)*73856093)^((st+1)*19349663))>>>0;
+      h^=h>>>13; h=(h*1274126177)>>>0; h^=h>>>16; return (h%100003)/100003; };
+  }
+  if(curve==='track'){
+    const n=Math.max(1,pads.length);
+    return (p,st)=>{ let i=pads.indexOf(p); if(i<0) i=n-1;       // the silencer row rides with the last pad
+      return (i + (st%L)/L)/n; };
+  }
+  if(curve==='sweep'){ return (p,st)=>(st%L)/L; }
+  // metric weight: class 0 = odd steps (weakest) … class C-1 = step 0 (strongest)
+  const order=[];
+  for(let st=0;st<L;st++){ const v = st===0 ? L : (st & -st); order.push({st, cls:Math.round(Math.log2(v))}); }
+  order.sort((a,b)=> (curve==='strong' ? b.cls-a.cls : a.cls-b.cls) || a.st-b.st);
+  const pos=new Array(L);
+  order.forEach((o,i)=>{ pos[o.st]=i/L; });
+  return (p,st)=>pos[st%L];
+}
+function morphPattern(A, B, t, curve, velX){
+  if(!A||!B) return A||B;
+  if(!(t>0)) return A;
+  if(t>=1)   return B;
+  const L=patLen(A), LB=patLen(B);
+  const out=newPattern(L);
+  out.bpm=A.bpm;
+  out.len=(Array.isArray(A.len)?A.len.slice():new Array(NPADS).fill(L));
+  out.autom=(t<0.5?A:B).autom;
+  const pads=[]; for(let p=0;p<NPADS;p++) if(rowUsed(A,p)||rowUsed(B,p)) pads.push(p);
+  const rank=morphRanker(curve,L,pads);
+  const alk=A.locks||{}, blk=B.locks||{};
+  for(let p=0;p<NPADS;p++){
+    const la=trackLen(A,p), lb=trackLen(B,p);
+    for(let st=0;st<la;st++){
+      const useB = t > rank(p,st);
+      const bi=st%lb;
+      const av=A.steps[p][st]||0, bv=B.steps[p][bi]||0;
+      let v = useB ? bv : av;
+      if(velX && av>0 && bv>0) v = av+(bv-av)*t;       // both sides hit: ride the level across
+      out.steps[p][st]=v;
+      if(v>0){ const lk = useB ? blk[p+':'+bi] : alk[p+':'+st]; if(lk) out.locks[p+':'+st]=lk; }
+    }
+  }
+  for(let st=0;st<L;st++){                              // the silencer row morphs on the same schedule
+    const useB = t > rank(-1,st);
+    out.sil[st] = useB ? ((B.sil&&B.sil[st%LB])||0) : ((A.sil&&A.sil[st])||0);
+  }
+  return out;
+}
+let morphBuf=null;
+function morphActive(){ return !!(S.morph && S.morph.on); }
+function curPat(){ return (morphActive() && morphBuf) ? morphBuf : S.patterns[S.pattern]; }
+function morphBuild(){
+  const m=S.morph;
+  m.from=clamp(m.from|0,0,NPAT-1); m.to=clamp(m.to|0,0,NPAT-1);
+  morphBuf = morphPattern(S.patterns[m.from], S.patterns[m.to], clamp(m.amt,0,1), m.curve, m.vel);
+}
+function morphStart(){
+  const m=S.morph;
+  if(m.from===m.to){ lcd('MORPH needs two different patterns — FROM and TO are both PTN '+(m.from+1)+'.'); return; }
+  m.on=true; m.pos=0; m.amt=0;
+  S.chainOn=false; S.songOn=false;               // the morph owns the arrangement while it runs
+  selectPattern(m.from);
+  morphBuild(); drawSeq(); dirty();
+  lcd('MORPH ARMED · PTN '+(m.from+1)+' → PTN '+(m.to+1)+' over '+m.bars+' bar'+(m.bars>1?'s':''));
+}
+function morphStop(msg){
+  S.morph.on=false; morphBuf=null;
+  drawSeq(); dirty();
+  if(msg) lcd(msg);
+}
+function morphBar(){          // one notch per bar, called from the bar-boundary hook
+  const m=S.morph;
+  if(!m.on || m.mode==='hold') return;
+  m.pos++;
+  if(m.pos>=m.bars){
+    if(m.mode==='loop'){ m.pos=0; m.amt=0; morphBuild(); drawSteps(); return; }
+    if(m.mode==='ping'){ const f=m.from; m.from=m.to; m.to=f; m.pos=0; m.amt=0;
+      selectPattern(m.from); morphBuild(); drawSeq();
+      lcd('MORPH PING-PONG · now PTN '+(m.from+1)+' → PTN '+(m.to+1)); return; }
+    m.on=false; morphBuf=null; m.amt=1;
+    selectPattern(m.to); drawSeq();
+    lcd('MORPH COMPLETE · PTN '+(m.to+1)); return;
+  }
+  m.amt=m.pos/m.bars;
+  morphBuild(); drawSteps();
+}
+function morphSetAmt(v){
+  const m=S.morph;
+  m.amt=clamp(v,0,1);
+  m.pos=Math.round(m.amt*m.bars);
+  const engaged=m.on;
+  if(!m.on){ if(m.from===m.to){ lcd('MORPH needs two different patterns.'); return; } m.on=true; S.chainOn=false; S.songOn=false; selectPattern(m.from); }
+  morphBuild(); if(engaged) drawSteps(); else drawSeq(); dirty();
+}
+function morphGuard(){        // shared by every pattern-editing handler
+  if(!morphActive()) return false;
+  lcd('MORPH IS RUNNING — the grid shows the blend. Stop MORPH to edit the pattern.');
+  return true;
+}
+function drawMorph(){
+  const m=S.morph;
+  ['mfFrom','mfTo','mfPrint'].forEach(id=>{
+    const sel=$(id); if(!sel) return;
+    if(sel.options.length!==NPAT){ sel.innerHTML='';
+      for(let i=0;i<NPAT;i++){ const o=document.createElement('option'); o.value=String(i); o.textContent='PTN '+(i+1); sel.appendChild(o); }
+      if(id==='mfPrint'){        // never default PRINT onto A or B — land on the first free slot
+        let d=NPAT-1;
+        for(let i=0;i<NPAT;i++){ if(i===m.from||i===m.to) continue;
+          let used=false; for(let q=0;q<NPADS&&!used;q++) used=rowUsed(S.patterns[i],q);
+          if(!used){ d=i; break; } }
+        sel.value=String(d);
+      } }
+  });
+  $('mfFrom').value=String(m.from); $('mfTo').value=String(m.to);
+  $('mfBars').value=String(m.bars); $('mfCurve').value=m.curve; $('mfMode').value=m.mode;
+  $('mfVel').checked=!!m.vel;
+  $('mfAmt').value=String(m.amt);
+  $('mfAmtV').textContent=Math.round(m.amt*100)+'%';
+  $('btnMorphOn').classList.toggle('on',m.on);
+  // preview: the selected track, A on the left of the slash, what you get now on the right
+  const A=S.patterns[m.from], B=S.patterns[m.to];
+  const blend=(m.on&&morphBuf)?morphBuf:morphPattern(A,B,m.amt,m.curve,m.vel);
+  const glyph=(pat,p)=>{ const L=trackLen(pat,p); let out=''; for(let i=0;i<L;i++) out+=(pat.steps[p][i]>0?'●':'·'); return out; };
+  $('mfPreview').textContent = glyph(A,S.seqPad)+'  →  '+glyph(blend,S.seqPad)+'  →  '+glyph(B,S.seqPad);
+  const bar=m.on?(' · bar '+Math.min(m.pos+1,m.bars)+'/'+m.bars):'';
+  $('mfInfo').textContent = (m.on?'RUNNING':'idle')+bar+' · '+padName(S.seqPad)+' shown';
+}
+$('mfFrom').addEventListener('change',e=>{ S.morph.from=parseInt(e.target.value,10)|0; if(S.morph.on){ S.morph.pos=0; S.morph.amt=0; selectPattern(S.morph.from); } morphBuild(); drawSeq(); dirty(); });
+$('mfTo').addEventListener('change',e=>{ S.morph.to=parseInt(e.target.value,10)|0; morphBuild(); drawSteps(); dirty(); });
+$('mfBars').addEventListener('change',e=>{ S.morph.bars=clamp(parseInt(e.target.value,10)|0,1,64); S.morph.pos=Math.round(S.morph.amt*S.morph.bars); drawMorph(); dirty(); });
+$('mfCurve').addEventListener('change',e=>{ S.morph.curve=e.target.value; morphBuild(); drawSteps(); dirty(); });
+$('mfMode').addEventListener('change',e=>{ S.morph.mode=e.target.value; drawMorph(); dirty(); });
+$('mfVel').addEventListener('change',e=>{ S.morph.vel=!!e.target.checked; morphBuild(); drawSteps(); dirty(); });
+$('mfAmt').addEventListener('input',e=>morphSetAmt(parseFloat(e.target.value)));
+$('btnMorphOn').addEventListener('click',()=>{ if(S.morph.on) morphStop('MORPH OFF · back to PTN '+(S.pattern+1)); else morphStart(); });
+$('btnMorphPrint').addEventListener('click',()=>{
+  const m=S.morph, dst=parseInt($('mfPrint').value,10)|0;
+  const A=S.patterns[m.from], B=S.patterns[m.to];
+  if(m.from===m.to){ lcd('MORPH needs two different patterns.'); return; }
+  const snap=morphPattern(A,B,clamp(m.amt,0,1),m.curve,m.vel);
+  let over=false; for(let q=0;q<NPADS&&!over;q++) over=rowUsed(S.patterns[dst],q);
+  S.patterns[dst]=JSON.parse(JSON.stringify(snap));   // deep copy: endpoints return A/B by reference
+  if(m.on && (dst===m.from || dst===m.to)) morphBuild();
+  drawSeq(); dirty();
+  lcd('PRINTED the '+Math.round(m.amt*100)+'% blend to PTN '+(dst+1)+(over?' — that slot had a pattern in it (UNDO to get it back)':''));
+  plog('MORPH printed PTN '+(m.from+1)+' → PTN '+(m.to+1)+' at '+Math.round(m.amt*100)+'% ('+m.curve+') into PTN '+(dst+1)+'.');
+});
 
 /* ---------------- tabs ---------------- */
 document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',()=>{
@@ -4210,7 +4455,7 @@ async function loadSongDoc(doc){
     S.patterns=P; S.pattern=0;
     S.song=Array.isArray(doc.song)? doc.song.filter(x=>Array.isArray(x)).map(x=>({pat:clamp(x[0]|0,0,NPAT-1),reps:clamp(x[1]|0,1,64)})) : [];
     S.songOn=S.song.length>0; S.songLoop=doc.loop!==false; songPos=0; songRep=0;
-    S.chain=[]; S.chainOn=false; S.chainPos=0;
+    S.chain=[]; S.chainOn=false; S.chainPos=0; S.morph.on=false; S.morph.amt=0; S.morph.pos=0; morphBuf=null;
     S.ptnBpm=doc.patterns.some(pp=>pp&&pp.bpm!=null); $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
     if(doc.bpm!=null) setBpm(doc.bpm);
     if(doc.swing!=null){ S.swing=clamp(doc.swing,0,0.6); $('swing').value=S.swing; $('swingV').textContent=Math.round(S.swing*100)+'%'; }
@@ -4462,7 +4707,7 @@ async function loadClaudeSong(){
     S.song=[{pat:0,reps:2},{pat:1,reps:2},{pat:2,reps:2},{pat:3,reps:2},{pat:4,reps:2},{pat:5,reps:2},
             {pat:2,reps:1},{pat:3,reps:1},{pat:4,reps:2},{pat:5,reps:2},{pat:6,reps:2},{pat:7,reps:2}];
     S.songOn=true; S.songLoop=true; songPos=0; songRep=0;
-    S.chain=[0,1,2,3,4,5,6,7]; S.chainOn=false; S.chainPos=0;
+    S.chain=[0,1,2,3,4,5,6,7]; S.chainOn=false; S.chainPos=0; S.morph.on=false; S.morph.amt=0; S.morph.pos=0; morphBuf=null;
     // ---- the mix ----
     setBpm(92);
     S.swing=.09; $('swing').value='0.09'; $('swingV').textContent='9%';
@@ -4676,7 +4921,7 @@ let playing=false, curStep=0, nextStepTime=0, lastStepTime=0, seqTimer=0, seqSol
 function stepDur(){ return 60/bpmAbs()/4; }
 
 function schedStep(barStep, absStep, t){
-  const sd=stepDur(), pat=S.patterns[S.pattern], fired=[];
+  const sd=stepDur(), pat=curPat(), fired=[];
   const swing = (barStep%2===1) ? S.swing*sd : 0;
   if(pat.sil && pat.sil[posMod(absStep,patLen(pat))]){ silenceAt(LIVE, t+swing, S.silFade); silGateDown=true; }
   for(let p=0;p<NPADS;p++){
@@ -4726,7 +4971,7 @@ function flashFired(fired){ // visual proof a row actually triggered
 }
 function markStep(absStep){
   curAbsStep=absStep;
-  const cur=posMod(absStep, trackLen(S.patterns[S.pattern],S.seqPad));
+  const cur=posMod(absStep, trackLen(curPat(),S.seqPad));
   curStep=cur; lastStepTime=AC?AC.currentTime:0;
   document.querySelectorAll('#stepgrid .step').forEach((el,i)=>el.classList.toggle('cur',i===cur));
   const cur16=posMod(absStep,curPatLen());
@@ -4743,7 +4988,7 @@ function markStep(absStep){
 let seqView='grid';
 const CIRC={rings:[],cx:0,cy:0};
 function circleTracks(){
-  const pat=S.patterns[S.pattern], list=[S.seqPad];
+  const pat=curPat(), list=[S.seqPad];
   for(let p=0;p<NPADS && list.length<8;p++){
     if(p===S.seqPad) continue;
     if(pat.steps[p].some(v=>v>0)) list.push(p);
@@ -4754,7 +4999,7 @@ function drawCircle(){
   const cv=$('circle'); if(!cv || seqView!=='circle') return;
   const cx=cv.getContext('2d'), W=cv.width, H=cv.height, ccx=W/2, ccy=H/2;
   cx.fillStyle='#120d04'; cx.fillRect(0,0,W,H);
-  const pat=S.patterns[S.pattern], tracks=circleTracks();
+  const pat=curPat(), tracks=circleTracks();
   const outer=Math.min(W,H)*0.46, inner=Math.min(W,H)*0.14;
   const span=(outer-inner)/Math.max(1,tracks.length);
   CIRC.rings=[]; CIRC.cx=ccx; CIRC.cy=ccy;
@@ -4808,6 +5053,7 @@ function circleTap(clientX,clientY){
   let ang=Math.atan2(y,x)+Math.PI/2;            // 0 at top, clockwise
   if(ang<0) ang+=Math.PI*2;
   const i=Math.floor(ang/(Math.PI*2)*ring.len)%ring.len;
+  if(morphGuard()) return;
   const pat=S.patterns[S.pattern], row=pat.steps[ring.p];
   const wasOn=row[i]>0;
   row[i]=wasOn?0:parseFloat($('stepVel').value);
@@ -4844,7 +5090,8 @@ function seqTick(){
     curStepSched=posMod(curStepSched+dir,PL); absStepSched+=dir;
     const barDone = dir>0 ? curStepSched===0 : curStepSched===PL-1;
     if(barDone){                                   // the ARRANGEMENT still advances forward
-      if(S.chainOn && S.chain.length){
+      if(morphActive()){ morphBar(); }
+      else if(S.chainOn && S.chain.length){
         S.chainPos=(S.chainPos+1)%S.chain.length; selectPattern(S.chain[S.chainPos]); drawSeq();
       } else if(S.songOn && S.song.length){ songAdvance(); }
     }
@@ -4855,7 +5102,8 @@ function startSeq(){
   ensureAudio();
   if(playing) return;
   playing=true;
-  if(S.chainOn && S.chain.length){ S.chainPos=0; selectPattern(S.chain[0]); drawSeq(); }
+  if(morphActive()){ S.morph.pos=Math.round(clamp(S.morph.amt,0,1)*S.morph.bars); selectPattern(S.morph.from); morphBuild(); drawSeq(); }
+  else if(S.chainOn && S.chain.length){ S.chainPos=0; selectPattern(S.chain[0]); drawSeq(); }
   else if(S.songOn && S.song.length){ songPos=0; songRep=0; selectPattern(S.song[0].pat); drawSeq(); drawSong(); }
   else selectPattern(S.pattern);   // re-apply this pattern's own tempo before the clock is read
   curStepSched=0; curStep=0; absStepSched=0;
@@ -5944,7 +6192,7 @@ function drawSeq(){
 let seqLockMode=false, seqSelStep=-1;
 function drawSteps(){
   const gr=$('stepgrid'); gr.innerHTML='';
-  const pat=S.patterns[S.pattern], row=pat.steps[S.seqPad], L=trackLen(pat,S.seqPad);
+  const pat=curPat(), row=pat.steps[S.seqPad], L=trackLen(pat,S.seqPad);
   $('seqLenV').textContent=L;
   for(let i=0;i<L;i++){
     const el=document.createElement('button'); el.className='step'+(i%4===0?' q2':'');
@@ -5953,6 +6201,7 @@ function drawSteps(){
     if(pat.locks && stepHasLock(pat.locks[S.seqPad+':'+i])) el.classList.add('lockmark');
     if(seqLockMode && i===seqSelStep) el.classList.add('selstep');
     el.addEventListener('click',()=>{
+      if(morphGuard()) return;
       if(seqLockMode){ seqSelStep=i; drawSteps(); drawStepLock(); }
       else {
         const wasOn=row[i]>0;
@@ -5966,9 +6215,11 @@ function drawSteps(){
   drawNotes();   // keep the melodic lane in step with the velocity grid
   drawPads();    // pad LEDs mirror the current pattern's usage
   drawSil();     // silencer row belongs to the pattern too
+  drawMorph();   // and the morph preview follows the selected track
   if(seqView==='circle') drawCircle();   // both views show the same pattern
 }
 function setTrackLen(d){
+  if(morphGuard()) return;
   const pat=S.patterns[S.pattern];
   const PL=patLen(pat);
   if(!Array.isArray(pat.len)) pat.len=new Array(NPADS).fill(PL);
@@ -5979,6 +6230,7 @@ function setTrackLen(d){
 }
 function setPatLen(n){
   if(PATLENS.indexOf(n)<0) return;
+  if(morphGuard()) return;
   const pat=S.patterns[S.pattern], old=patLen(pat);
   if(n===old){ drawSteps(); return; }
   pat.plen=n;
@@ -6018,6 +6270,7 @@ function drawStepLock(){
 }
 function setLock(field,val,def){
   if(seqSelStep<0) return;
+  if(morphGuard()) return;
   const pat=S.patterns[S.pattern], k=S.seqPad+':'+seqSelStep, lk=pat.locks[k]||{};
   if(field==='pitch'){ delete lk.pitches;   // the step-lock pitch control edits a single note — collapse any chord here
     val=snapToScale(val); }                  // SCALE LOCK: land in key
@@ -6027,6 +6280,7 @@ function setLock(field,val,def){
 }
 $('slVel').addEventListener('input',e=>{
   if(seqSelStep<0) return;
+  if(morphGuard()) return;
   S.patterns[S.pattern].steps[S.seqPad][seqSelStep]=parseFloat(e.target.value);
   drawSteps(); drawStepLock(); dirty();
 });
@@ -6034,7 +6288,7 @@ $('slPitch').addEventListener('input',e=>setLock('pitch',parseInt(e.target.value
 $('slProb').addEventListener('input',e=>setLock('prob',parseFloat(e.target.value),1));
 $('slRat').addEventListener('input',e=>setLock('rat',parseInt(e.target.value,10),1));
 $('slNudge').addEventListener('input',e=>setLock('nudge',parseFloat(e.target.value),0));
-$('slClr').addEventListener('click',()=>{ delete S.patterns[S.pattern].locks[S.seqPad+':'+seqSelStep]; drawSteps(); drawStepLock(); dirty(); });
+$('slClr').addEventListener('click',()=>{ if(morphGuard()) return; delete S.patterns[S.pattern].locks[S.seqPad+':'+seqSelStep]; drawSteps(); drawStepLock(); dirty(); });
 
 /* ---- melodic NOTES lane: a scale grid that writes per-step pitch locks.
    Rows are scale notes relative to the pad's own root (a sample plays at
@@ -6054,7 +6308,7 @@ function noteOffsets(){ // semitone offset per row, TOP row first
 function drawNotes(){
   const panel=$('notesPanel'); if(!panel || panel.style.display==='none') return;
   const gr=$('notegrid'); gr.innerHTML='';
-  const pat=S.patterns[S.pattern], row=pat.steps[S.seqPad], L=trackLen(pat,S.seqPad);
+  const pat=curPat(), row=pat.steps[S.seqPad], L=trackLen(pat,S.seqPad);
   gr.style.gridTemplateColumns='30px repeat('+L+',1fr)';
   $('noteScale').value=S.scaleName in SCALES ? S.scaleName : 'minor';
   $('noteOctV').textContent=(noteOct>0?'+':'')+noteOct;
@@ -6092,6 +6346,7 @@ function setNotePitches(pat,k,row,i,set){   // write a column's chord back; keep
 function toggleNote(i,off){
   // Polyphonic: tapping adds/removes a note in the column, so several pitches
   // can stack into a chord (harmony). Tapping a lit note removes just that one.
+  if(morphGuard()) return;
   const pat=S.patterns[S.pattern], k=S.seqPad+':'+i, row=pat.steps[S.seqPad];
   let set=notePitches(pat.locks[k],row[i]);
   const had=set.includes(off);
@@ -6112,12 +6367,12 @@ $('noteOctDn').addEventListener('click',()=>{ noteOct=clamp(noteOct-1,-3,3); dra
 $('noteOctUp').addEventListener('click',()=>{ noteOct=clamp(noteOct+1,-3,3); drawNotes(); });
 function drawSil(){
   const gr=$('silrow'); if(!gr) return; gr.innerHTML='';
-  const pat=S.patterns[S.pattern];
+  const pat=curPat();
   if(!Array.isArray(pat.sil)) pat.sil=new Array(MAXSTEPS).fill(0);
   for(let i=0;i<patLen(pat);i++){
     const el=document.createElement('button'); el.className='step'+(i%4===0?' q2':'');
     if(pat.sil[i]) el.classList.add('on');
-    el.addEventListener('click',()=>{ pat.sil[i]=pat.sil[i]?0:1; drawSil(); dirty();
+    el.addEventListener('click',()=>{ if(morphGuard()) return; pat.sil[i]=pat.sil[i]?0:1; drawSil(); dirty();
       lcd(pat.sil[i]?'SILENCER on step '+(i+1)+' — cut, then sound returns on the next hit':'silencer step cleared'); });
     gr.appendChild(el);
   }
@@ -6126,12 +6381,12 @@ $('silFade').addEventListener('input',e=>{ S.silFade=parseFloat(e.target.value);
   $('silFadeV').textContent=Math.round(S.silFade*1000)+'ms'; dirty(); });
 $('btnChainAdd').addEventListener('click',()=>{ S.chain.push(S.pattern); drawSeq(); dirty(); });
 $('btnChainClr').addEventListener('click',()=>{ S.chain=[]; S.chainPos=0; drawSeq(); dirty(); });
-$('btnChainOn').addEventListener('click',()=>{ S.chainOn=!S.chainOn; drawSeq(); dirty(); });
+$('btnChainOn').addEventListener('click',()=>{ S.chainOn=!S.chainOn; if(S.chainOn && morphActive()) morphStop('MORPH OFF — CHAIN takes over.'); drawSeq(); dirty(); });
 $('btnSolo').addEventListener('click',()=>{
   seqSolo=!seqSolo; $('btnSolo').classList.toggle('on',seqSolo);
   lcd(seqSolo?'SOLO: only '+padName(S.seqPad)+' plays — tap SOLO again to unmute all':'SOLO OFF — all tracks play');
 });
-$('btnRowClr').addEventListener('click',()=>{ const pat=S.patterns[S.pattern]; stopPadVoices(S.seqPad); pat.steps[S.seqPad].fill(0); for(let i=0;i<MAXSTEPS;i++) delete pat.locks[S.seqPad+':'+i]; drawSteps(); drawStepLock(); dirty(); });
+$('btnRowClr').addEventListener('click',()=>{ if(morphGuard()) return; const pat=S.patterns[S.pattern]; stopPadVoices(S.seqPad); pat.steps[S.seqPad].fill(0); for(let i=0;i<MAXSTEPS;i++) delete pat.locks[S.seqPad+':'+i]; drawSteps(); drawStepLock(); dirty(); });
 $('btnPtnBpm').addEventListener('click',()=>{
   S.ptnBpm=!S.ptnBpm; dirty();
   $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
@@ -6140,7 +6395,7 @@ $('btnPtnBpm').addEventListener('click',()=>{
     lcd('PTN TEMPO ON · PTN '+(S.pattern+1)+' @ '+S.bpm.toFixed(1)+' BPM');
   }else lcd('PTN TEMPO OFF · global BPM');
 });
-$('btnPatClr').addEventListener('click',()=>{ panicVoices(); S.patterns[S.pattern]=newPattern(); drawSteps(); dirty(); lcd('PTN '+(S.pattern+1)+' CLEARED'); });
+$('btnPatClr').addEventListener('click',()=>{ if(morphGuard()) return; panicVoices(); S.patterns[S.pattern]=newPattern(); drawSteps(); dirty(); lcd('PTN '+(S.pattern+1)+' CLEARED'); });
 
 /* ---------------- BUILD A KIT — derive a drum kit from one sample -------------
    Every piece is the SAME source audio, re-voiced: pitched (playbackRate),
@@ -6326,6 +6581,7 @@ $('btnScaleLock').addEventListener('click',()=>{
 $('scaleRoot').addEventListener('change',e=>{ S.scaleRoot=parseInt(e.target.value,10)||0; drawScaleLock(); dirty(); lcd('KEY '+scaleLabel()); });
 $('scaleName').addEventListener('change',e=>{ S.scaleName=e.target.value; $('noteScale').value=e.target.value; drawScaleLock(); drawNotes(); dirty(); lcd('SCALE '+scaleLabel()); });
 $('btnScaleFix').addEventListener('click',()=>{
+  if(morphGuard()) return;
   if(!S.scaleLock){ lcd('Turn SCALE LOCK on first, then FIX PTN retunes this pattern into key.'); return; }
   const pat=S.patterns[S.pattern]; let n=0;
   for(const k in pat.locks){
@@ -6379,6 +6635,7 @@ $('euPreset').addEventListener('change',e=>{
   euRefresh();
 });
 function euApplyTo(pad){
+  if(morphGuard()) return;
   const pat=S.patterns[S.pattern], {rot}=euParams();
   const steps=+$('euSteps').value, hits=+$('euHits').value, mode=$('euMode').value;
   const vel=parseFloat($('stepVel').value)||0.85;
@@ -6436,6 +6693,7 @@ const GROOVES={
 $('grvAmt').addEventListener('input',e=>{ $('grvAmtV').textContent=Math.round(parseFloat(e.target.value)*100)+'%'; });
 function grooveApply(pad){
   const g=GROOVES[$('grvSel').value]||GROOVES.straight;
+  if(morphGuard()) return;
   const amt=clamp(parseFloat($('grvAmt').value),0,1);
   const useVel=$('grvVel').checked;
   const pat=S.patterns[S.pattern], row=pat.steps[pad], PL=patLen(pat);
@@ -6600,7 +6858,7 @@ $('btnSongClr').addEventListener('click',()=>{ S.song=[]; S.songOn=false; songPo
 $('btnSongLoop').addEventListener('click',()=>{ S.songLoop=!S.songLoop; drawSong(); dirty(); lcd(S.songLoop?'SONG LOOPS':'SONG PLAYS ONCE then stops'); });
 $('btnSongOn').addEventListener('click',()=>{
   if(!S.song.length){ lcd('ADD SECTIONS FIRST (+SEC)'); return; }
-  S.songOn=!S.songOn; if(S.songOn){ S.chainOn=false; }
+  S.songOn=!S.songOn; if(S.songOn){ S.chainOn=false; if(morphActive()) morphStop('MORPH OFF — SONG takes over.'); }
   drawSong(); drawSeq(); dirty();
   lcd(S.songOn?'SONG MODE ON — PLAY runs the arrangement':'SONG MODE OFF');
 });
@@ -7006,7 +7264,8 @@ function onClockTick(){
       curStepSched=posMod(curStepSched+dir,PL); absStepSched+=dir;
       const barDone = dir>0 ? curStepSched===0 : curStepSched===PL-1;
       if(barDone){
-        if(S.chainOn && S.chain.length){ S.chainPos=(S.chainPos+1)%S.chain.length; selectPattern(S.chain[S.chainPos]); drawSeq(); }
+        if(morphActive()){ morphBar(); }
+        else if(S.chainOn && S.chain.length){ S.chainPos=(S.chainPos+1)%S.chain.length; selectPattern(S.chain[S.chainPos]); drawSeq(); }
         else if(S.songOn && S.song.length){ songAdvance(); }
       }
     }
@@ -7082,7 +7341,7 @@ $('btnSave').addEventListener('click',()=>{
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
-    song:S.song, songOn:S.songOn, songLoop:S.songLoop,
+    song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
   const blob=new Blob([JSON.stringify(doc)],{type:'application/json'});
   download(blob, ($('projName').value||'mvx-session')+'.json');
@@ -7127,6 +7386,12 @@ function applySessionDoc(doc, bufs){
   // playback position — without these a restore lands on PTN 1 / BANK A with chain off
   S.chainOn=!!doc.chainOn;
   S.chainPos=clamp(doc.chainPos|0,0,Math.max(0,S.chain.length-1));
+  { const d=doc.morph||{}, m=S.morph;                 // a saved morph restores idle — you re-arm it
+    m.from=clamp(d.from|0,0,NPAT-1); m.to=clamp(d.to|0,0,NPAT-1);
+    m.bars=clamp(d.bars|0||8,1,64);
+    m.curve=['weight','strong','sweep','scatter','track'].indexOf(d.curve)>=0?d.curve:'weight';
+    m.mode=['once','loop','ping','hold'].indexOf(d.mode)>=0?d.mode:'once';
+    m.vel=d.vel!==false; m.amt=clamp(+d.amt||0,0,1); m.pos=0; m.on=false; morphBuf=null; }
   S.pattern=clamp(doc.pattern|0,0,NPAT-1);
   S.bank=clamp(doc.bank|0,0,3);
   S.editPad=clamp(doc.editPad|0,0,NPADS-1);
@@ -7323,7 +7588,7 @@ function snapshotSession(){
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
-    song:S.song, songOn:S.songOn, songLoop:S.songLoop,
+    song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
 }
 let autosaving=false;
@@ -7351,7 +7616,7 @@ function undoSnap(){
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
-    song:S.song, songOn:S.songOn, songLoop:S.songLoop,
+    song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns };
 }
 function cloneSnap(x){ return JSON.parse(JSON.stringify(x)); }
@@ -7519,7 +7784,7 @@ function projNew(){
   S.pads=Array.from({length:NPADS},(_,i)=>newPad(i));
   S.patterns=Array.from({length:NPAT},()=>newPattern());
   S.buffers=[]; S.trax=Array.from({length:NTRAX},()=>newTrack());
-  S.song=[]; S.songOn=false; S.chain=[]; S.chainOn=false; S.chainPos=0;
+  S.song=[]; S.songOn=false; S.chain=[]; S.chainOn=false; S.chainPos=0; S.morph.on=false; S.morph.amt=0; S.morph.pos=0; morphBuf=null;
   S.pattern=0; S.bank=0; S.editPad=0; S.seqPad=0;
   S.scOn=false; workBuf=null; slices=[]; selSlice=-1;
   Object.keys(warpOrig).forEach(k=>delete warpOrig[k]);
@@ -7656,13 +7921,10 @@ function midiTrack(evs){ // evs: [{tick, msg:[...]}], sorted; returns full MTrk 
 }
 function exportMidi(){
   const src=$('bSrc').value, PPQ=480, TPS=PPQ/4;   // ticks per 16th step
-  let seq;
-  if(src==='song' && S.song.length) seq=S.song.reduce((a,x)=>{ for(let r=0;r<Math.max(1,x.reps||1);r++) a.push(x.pat); return a; },[]);
-  else if(src==='chain' && S.chain.length>0) seq=S.chain;
-  else seq=[S.pattern];
+  const seq=bounceSeq(src);
   const perPad={}, tempoEvs=[]; let absStepExp=0, lastBpm=-1, barTick=0;
-  seq.forEach(pi=>{
-    const pat=S.patterns[pi], PL=patLen(pat);
+  seq.forEach(sq=>{
+    const pat=sq.pat, PL=patLen(pat);
     const bpm=(S.ptnBpm && pat.bpm)? clampBpm(pat.bpm) : S.bpm;
     if(bpm!==lastBpm){ const upq=Math.round(60000000/Math.abs(bpm));
       tempoEvs.push({tick:barTick,ord:0,msg:[0xFF,0x51,0x03,(upq>>>16)&255,(upq>>>8)&255,upq&255]}); lastBpm=bpm; }
@@ -7706,20 +7968,35 @@ function exportMidi(){
 }
 $('btnMidi').addEventListener('click',exportMidi);
 
+/* the arrangement a render/export should walk, one entry per bar. Patterns are
+   handed over as OBJECTS rather than indices so a morph — whose bars are blends
+   that live in no slot — renders through exactly the same code path. */
+function bounceSeq(src){
+  if(src==='morph'){
+    const m=S.morph, A=S.patterns[m.from], B=S.patterns[m.to], out=[];
+    if(m.from===m.to) return [{pat:A, idx:m.from}];
+    const bars=clamp(m.bars|0,1,64);
+    for(let k=0;k<bars;k++) out.push({pat:morphPattern(A,B,k/bars,m.curve,m.vel), idx:m.from});
+    out.push({pat:B, idx:m.to});             // land on B, exactly
+    return out;
+  }
+  if(src==='song' && S.song.length)
+    return S.song.reduce((a,x)=>{ for(let r=0;r<Math.max(1,x.reps||1);r++) a.push({pat:S.patterns[x.pat], idx:x.pat}); return a; },[]);
+  if(src==='chain' && S.chain.length>0) return S.chain.map(i=>({pat:S.patterns[i], idx:i}));
+  return [{pat:S.patterns[S.pattern], idx:S.pattern}];
+}
+
 /* shared offline render — padSet/traxSet null = all; a Set restricts to those
    indices (Set() = none). Used by the master bounce and per-stem export. */
 async function renderMix(padSet, traxSet){
   ensureSpeedCaches();   // bake pitch-locked stretches so the offline render matches what you hear live
   const loops=parseInt($('bLoops').value,10);
   const src=$('bSrc').value;
-  let seq;
-  if(src==='song' && S.song.length) seq=S.song.reduce((a,x)=>{ for(let r=0;r<Math.max(1,x.reps||1);r++) a.push(x.pat); return a; },[]);
-  else if(src==='chain' && S.chain.length>0) seq=S.chain;
-  else seq=[S.pattern];
+  const seq=bounceSeq(src);
   const events=[], tempoSeg=[], autoEvents=[]; let t=0.05, absB=0;
   for(let l=0;l<loops;l++){
-    for(const pi of seq){
-      const pat=S.patterns[pi], PLB=patLen(pat);
+    for(const sq of seq){
+      const pat=sq.pat, PLB=patLen(pat);
       const bpm=(S.ptnBpm && pat.bpm)? clampBpm(pat.bpm) : S.bpm;
       const sd=60/Math.abs(bpm)/4;
       tempoSeg.push({t,bpm});
