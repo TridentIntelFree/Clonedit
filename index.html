@@ -479,6 +479,38 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnLenApply">STRETCH / SHRINK</button>
   </div>
 
+  <h3>PRE-VERB <span style="color:var(--txt-dim);letter-spacing:0">&mdash; reverse reverb: a swell that arrives into the hit</span></h3>
+  <div class="row">
+    <span class="lbl">MODE</span>
+    <select id="pvMode" class="grow">
+      <option value="pre">PRE-VERB &mdash; swell &#8594; dry hit</option>
+      <option value="only">SWELL ONLY &mdash; just the riser</option>
+      <option value="boom">BOOMERANG &mdash; swell &#8594; hit &#8594; bloom</option>
+    </select>
+  </div>
+  <div class="row">
+    <span class="lbl">SPACE</span>
+    <select id="pvType">
+      <option value="hall">HALL</option><option value="room">ROOM</option>
+      <option value="plate">PLATE</option><option value="spring">SPRING</option>
+      <option value="cath">CATHEDRAL</option><option value="gated">GATED</option>
+    </select>
+    <span class="lbl">FROM</span>
+    <select id="pvSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select>
+  </div>
+  <div class="pslider"><span class="lbl">LENGTH</span><input type="range" id="pvLen" min="0.2" max="4" step="0.05" value="1.5"><span class="val" id="pvLenV">1.50s</span></div>
+  <div class="pslider"><span class="lbl">AMOUNT</span><input type="range" id="pvMix" min="0.05" max="1.5" step="0.05" value="0.85"><span class="val" id="pvMixV">85%</span></div>
+  <div class="row">
+    <button id="btnPreverb">&#9204; RENDER PRE-VERB</button>
+    <span id="pvInfo" style="font-size:10px;color:var(--txt-dim);flex:1">&mdash;</span>
+  </div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">
+    The sound is reversed, sent through the reverb, and reversed back &mdash; so the tail runs <b>backwards into</b>
+    the hit instead of away from it. LENGTH is how far ahead the swell starts, so the sample gets longer at the
+    front: put it on a pad and the swell leads into the beat. SPRING and GATED give the hardest arrivals.
+    UNDO restores the original.
+  </div>
+
   <h3>BUILD A KIT <span style="color:var(--txt-dim);letter-spacing:0">— turn ANY sound into a full drum kit</span></h3>
   <div class="row">
     <span class="lbl">PIECES</span>
@@ -1809,8 +1841,34 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      bounce and MIDI export gained a MORPH source: renders and exports now
      walk a list of pattern OBJECTS rather than slot indices, so a morph bar
      that lives in no slot goes through exactly the same path as a chain.
+   - R94: PRE-VERB — reverse reverb (SMPL · SCULPT). A reverb tail decays away
+     from a hit; reverse the sound, send THAT through the reverb, and reverse
+     the result, and the tail runs backwards INTO the hit instead. The sample
+     grows a swell at the front that peaks exactly on the transient, which is
+     the sound of a riser leading into a beat. Rendered offline through the
+     same makeIR() family the mixer send uses, so PLATE here has the character
+     of PLATE there. Three modes: PRE-VERB (swell → dry hit), SWELL ONLY (the
+     riser alone, cut on its peak), BOOMERANG (swell → hit → forward bloom).
+     Source is the whole sample or the chop slice you have selected; the
+     result lands on the pad with trim/warp reset, and UNDO restores.
+     Three things the naive version gets wrong, all fixed here. (1) A
+     convolution's output level depends entirely on the material, so the wash
+     is peak-normalised against the source before AMOUNT is applied —
+     otherwise the same AMOUNT is inaudible on one sample and deafening on
+     the next; it now means "swell peak relative to sample peak" everywhere.
+     (2) The IR's two channels are decorrelated noise, so a short or
+     narrowband source can excite one side several dB harder than the other:
+     under a dry hit that is invisible, but as a bare SWELL it read as
+     lopsided (HALL measured 4.4 dB right-heavy). The channels are now RMS-
+     matched over the wash, which centres the image while leaving the
+     waveforms decorrelated so the width survives. (3) makeIR clamps its own
+     length per type — CATHEDRAL has a 4.5s floor, GATED is fixed at 0.55s —
+     so sizing the offline render from the length the user asked for cut a
+     cathedral tail off at a third of its length. That clamp is now a shared
+     irDur() the render and the readout both use; the IRs themselves are
+     unchanged, bit for bit.
    ================================================================ */
-const BUILD = 'JBH-88 · R93 · 2026-07-25 · pattern morph';
+const BUILD = 'JBH-88 · R94 · 2026-07-25 · pre-verb (reverse reverb)';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1874,14 +1932,18 @@ let AC=null, LIVE=null;      // LIVE = {master,comp,revIn,dlyIn,dlyFb,dlyNode,pa
 
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 
-function makeIR(ctx, size, type){ // deterministic IR family — identical live and offline
-  const t=type||'hall', sr=ctx.sampleRate;
-  let dur=size||3;
+function irDur(size, type){       // ROOM/GATED/SPRING/CATH override the size you ask for
+  const t=type||'hall'; let dur=size||3;
   if(t==='room') dur=Math.min(dur,1.2);
   else if(t==='gated') dur=0.55;
   else if(t==='spring') dur=Math.min(dur,2.2);
   else if(t==='cath') dur=Math.max(dur,4.5);
-  const len=Math.floor(sr*Math.max(0.25,dur)), b=ctx.createBuffer(2,len,sr);
+  return Math.max(0.25,dur);
+}
+function makeIR(ctx, size, type){ // deterministic IR family — identical live and offline
+  const t=type||'hall', sr=ctx.sampleRate;
+  const dur=irDur(size,t);
+  const len=Math.floor(sr*dur), b=ctx.createBuffer(2,len,sr);
   for(let ch=0; ch<2; ch++){
     const d=b.getChannelData(ch), rnd=mulberry32(880+ch+t.length*7);
     let st=0;
@@ -3436,6 +3498,7 @@ function zeroCross(norm){ // snap a normalized position to nearest zero crossing
   return norm;
 }
 function drawWave(){
+  try{ pvInfo(); }catch(e){}
   const cv=$('wave'), cx=cv.getContext('2d');
   cx.fillStyle='#120d04'; cx.fillRect(0,0,cv.width,cv.height);
   if(!workBuf){ cx.fillStyle='#8a6530'; cx.font='20px ui-monospace'; cx.fillText('NO SAMPLE — import or record',20,cv.height/2); return; }
@@ -3632,11 +3695,174 @@ $('btnLenApply').addEventListener('click',()=>{
       delete warpOrig[S.editPad];
       workBuf=out; slices=[]; selSlice=-1; shapeReset();
       $('shapeLen').value=1;
-      drawPads(); drawEdit(); drawWave(); shapeLenInfo(); dirty();
+      drawPads(); drawEdit(); drawWave(); shapeLenInfo(); pvInfo(); dirty();
       lcd((r<1?'SHRUNK':'STRETCHED')+' '+before.toFixed(2)+'s → '+out.duration.toFixed(2)+'s · pitch unchanged (UNDO restores).');
     }catch(err){ lcd('STRETCH FAILED: '+(err.message||'error')); }
   },30);
 });
+
+/* ---------------- PRE-VERB — reverse reverb -----------------------------------
+   A reverb tail decays away from a hit. Reverse the sound, send THAT through the
+   reverb, and reverse the result: the tail now runs backwards into the hit, so
+   the sample grows a swell at the FRONT that arrives exactly on the transient.
+
+   Everything is rendered offline through the same makeIR() family the mixer
+   uses, so a PLATE pre-verb has the same character as PLATE on the send. The
+   wash is peak-normalised against the source before AMOUNT is applied — a
+   convolution's output level depends on the material, and without that step the
+   same AMOUNT would be inaudible on one sample and deafening on the next. ---- */
+function reverseCopy(buf){
+  const n=buf.length, nch=buf.numberOfChannels, out=mkAudioBuf(n,buf.sampleRate,nch);
+  for(let c=0;c<nch;c++){
+    const src=buf.getChannelData(c), dst=out.getChannelData(c);
+    for(let i=0;i<n;i++) dst[i]=src[n-1-i];
+  }
+  return out;
+}
+function balanceGains(buf, a, z){   // per-channel gains that equalise RMS over [a,z)
+  const nch=buf.numberOfChannels, g=new Array(nch).fill(1);
+  if(nch<2) return g;
+  const rms=[];
+  for(let c=0;c<nch;c++){ const d=buf.getChannelData(c); let e=0, n=0;
+    for(let i=a;i<z && i<d.length;i++){ e+=d[i]*d[i]; n++; }
+    rms.push(n?Math.sqrt(e/n):0); }
+  const mean=rms.reduce((x,y)=>x+y,0)/nch;
+  if(mean<1e-9) return g;
+  for(let c=0;c<nch;c++) g[c]= rms[c]>1e-9 ? clamp(mean/rms[c],0.5,2) : 1;
+  return g;
+}
+function bufPeak(buf){
+  let pk=0;
+  for(let c=0;c<buf.numberOfChannels;c++){ const d=buf.getChannelData(c);
+    for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>pk) pk=a; } }
+  return pk;
+}
+async function convolveOffline(src, len, type){   // src → 100% wet, tail included
+  const sr=src.sampleRate;
+  // size the render from the IR's REAL length, not the one asked for: CATHEDRAL
+  // has a 4.5s floor and would otherwise be cut off mid-tail.
+  const d=irDur(len,type);
+  const oc=new OfflineAudioContext(2, Math.ceil((src.duration+d+0.05)*sr), sr);
+  const ir=makeIR(oc,len,type);
+  const s=oc.createBufferSource(); s.buffer=src;
+  const cv=oc.createConvolver(); cv.normalize=true; cv.buffer=ir;
+  s.connect(cv); cv.connect(oc.destination);
+  s.start(0);
+  return { wet: await oc.startRendering(), irDur: ir.duration };
+}
+const PV_MAX=30;   // seconds — a runaway CATHEDRAL on a long take is not a sample
+async function preVerb(src, opt){
+  const sr=src.sampleRate, mode=opt.mode||'pre', mix=clamp(opt.mix,0,2);
+  const srcPk=bufPeak(src);
+  if(srcPk<1e-5) throw new Error('the sample is silent');
+
+  // 1) reverse → reverb → reverse. The tail that was AFTER the sound is now before it.
+  const back=await convolveOffline(reverseCopy(src), opt.len, opt.type);
+  const swell=reverseCopy(back.wet);
+  const wn=Math.min(swell.length, Math.max(1,Math.round(back.irDur*sr)));   // the wash is the part ahead of the sound
+
+  // 2) centre it. The IR's two channels are decorrelated noise, so a short or
+  //    narrowband source can excite one side several dB harder than the other —
+  //    fine under a dry hit, but as a bare swell it reads as lopsided. Match the
+  //    channel RMS (the waveforms stay decorrelated, so the width survives).
+  const wBal=balanceGains(swell,0,wn);
+
+  // 3) level the wash against the source so AMOUNT means the same thing every time
+  let wpk=0;
+  for(let c=0;c<swell.numberOfChannels;c++){ const d=swell.getChannelData(c);
+    for(let i=0;i<wn;i++){ const a=Math.abs(d[i])*wBal[c]; if(a>wpk) wpk=a; } }
+  const wg = wpk>1e-6 ? (srcPk*mix)/wpk : 0;
+
+  // 4) an optional forward bloom for BOOMERANG, balanced the same way
+  let fwd=null, fn=0, fg=0, fBal=[1,1];
+  if(mode==='boom'){
+    const f=await convolveOffline(src, opt.len, opt.type);
+    fwd=f.wet; fn=fwd.length;
+    fBal=balanceGains(fwd,0,fn);
+    let fpk=0;
+    for(let c=0;c<fwd.numberOfChannels;c++){ const d=fwd.getChannelData(c);
+      for(let i=0;i<fn;i++){ const a=Math.abs(d[i])*fBal[c]; if(a>fpk) fpk=a; } }
+    fg = fpk>1e-6 ? (srcPk*mix)/fpk : 0;
+  }
+
+  // 5) lay it out: [wash][dry (+bloom)]
+  const nch=Math.max(1,Math.min(2,Math.max(src.numberOfChannels, swell.numberOfChannels)));
+  const dryN = mode==='only' ? 0 : src.length;
+  const total = Math.min(Math.ceil(PV_MAX*sr), wn + Math.max(dryN, fn));
+  const out=mkAudioBuf(Math.max(64,total), sr, nch);
+  const chOf=(b,c)=>b.getChannelData(Math.min(c,b.numberOfChannels-1));
+  for(let c=0;c<nch;c++){
+    const d=out.getChannelData(c), w=chOf(swell,c);
+    const wgc=wg*wBal[c];
+    for(let i=0;i<wn && i<total;i++) d[i]=w[i]*wgc;
+    if(mode!=='only'){
+      const y=chOf(src,c);
+      for(let i=0;i<src.length && wn+i<total;i++) d[wn+i]+=y[i];
+      if(fwd){ const f=chOf(fwd,c), fgc=fg*fBal[c];
+        for(let i=0;i<fn && wn+i<total;i++) d[wn+i]+=f[i]*fgc; }
+    }
+  }
+  // 6) a short fade at each end, and only pull down if we actually clipped
+  const fade=Math.min(Math.floor(sr*0.004), Math.floor(out.length/8));
+  let pk=bufPeak(out);
+  const k = pk>0.99 ? 0.99/pk : 1;
+  for(let c=0;c<nch;c++){
+    const d=out.getChannelData(c);
+    if(k!==1) for(let i=0;i<d.length;i++) d[i]*=k;
+    for(let i=0;i<fade;i++){ d[i]*=i/fade; d[d.length-1-i]*=i/fade; }
+  }
+  return { buf:out, washSec:wn/sr, gain:k };
+}
+function pvSource(){        // whole sample, or the chop slice you have selected
+  if($('pvSrc').value==='slice' && selSlice>=0 && slices[selSlice]){
+    const sl=slices[selSlice], sr=workBuf.sampleRate;
+    const a=Math.floor(sl.s*workBuf.length), b=Math.floor(sl.e*workBuf.length);
+    const nb=mkAudioBuf(Math.max(64,b-a),sr,workBuf.numberOfChannels);
+    for(let c=0;c<workBuf.numberOfChannels;c++) nb.copyToChannel(workBuf.getChannelData(c).subarray(a,b),c);
+    return nb;
+  }
+  return workBuf;
+}
+function pvInfo(){
+  const el=$('pvInfo'); if(!el) return;
+  if(!workBuf){ el.textContent='load a sample first'; return; }
+  const src=(($('pvSrc').value==='slice' && selSlice>=0 && slices[selSlice]) ? slices[selSlice] : null);
+  const dur=src ? (slices[selSlice].e-slices[selSlice].s)*workBuf.duration : workBuf.duration;
+  const len=irDur(+$('pvLen').value, $('pvType').value), mode=$('pvMode').value;
+  const outDur = mode==='only' ? len : (mode==='boom' ? len+dur+len : len+dur);
+  el.textContent=dur.toFixed(2)+'s → '+Math.min(PV_MAX,outDur).toFixed(2)+'s · '+len.toFixed(2)+'s swell'+(src?' · slice '+(selSlice+1):'');
+}
+['pvLen','pvMix'].forEach(id=>$(id).addEventListener('input',()=>{
+  $('pvLenV').textContent=(+$('pvLen').value).toFixed(2)+'s';
+  $('pvMixV').textContent=Math.round(+$('pvMix').value*100)+'%';
+  pvInfo();
+}));
+['pvMode','pvType','pvSrc'].forEach(id=>$(id).addEventListener('change',pvInfo));
+let pvBusy=false;
+$('btnPreverb').addEventListener('click',async ()=>{
+  if(pvBusy) return;
+  if(!workBuf){ lcd('NO SAMPLE — load one into the editor first.'); return; }
+  const opt={ mode:$('pvMode').value, type:$('pvType').value,
+              len:clamp(parseFloat($('pvLen').value)||1.5,0.2,4),
+              mix:clamp(parseFloat($('pvMix').value)||0.85,0.05,1.5) };
+  pvBusy=true; $('btnPreverb').disabled=true;
+  lcd('RENDERING PRE-VERB · '+opt.type.toUpperCase()+' '+opt.len.toFixed(2)+'s …');
+  try{
+    const src=pvSource();
+    const r=await preVerb(src,opt);
+    S.buffers.push(r.buf);
+    const pd=S.pads[S.editPad];
+    pd.bufId=S.buffers.length-1; pd.start=0; pd.end=1; pd.warped=false;
+    delete warpOrig[S.editPad];
+    workBuf=r.buf; slices=[]; selSlice=-1; shapeReset();
+    drawPads(); drawEdit(); drawWave(); pvInfo(); dirty();
+    const label={pre:'PRE-VERB',only:'SWELL',boom:'BOOMERANG'}[opt.mode];
+    lcd(label+' → '+padName(S.editPad)+' · '+r.washSec.toFixed(2)+'s of swell ahead of the hit'+(r.gain<1?' (trimmed '+Math.round((1-r.gain)*100)+'% to stop clipping)':'')+' · UNDO restores.');
+    plog('PRE-VERB: '+opt.mode+' / '+opt.type+' / '+opt.len.toFixed(2)+'s / '+Math.round(opt.mix*100)+'% → '+r.buf.duration.toFixed(2)+'s on '+padName(S.editPad)+'.');
+  }catch(err){ lcd('PRE-VERB FAILED: '+(err.message||'error')); }
+  finally{ pvBusy=false; $('btnPreverb').disabled=false; }
+});
+
 $('wave').addEventListener('touchstart',e=>{ e.preventDefault();
   const t=e.changedTouches[0];
   if(shapeMode){ shapeDrag=true; shapePaint(t.clientX,t.clientY); return; }
