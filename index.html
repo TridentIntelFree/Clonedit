@@ -144,6 +144,18 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
 .pslider .val{min-width:44px;text-align:right;font-size:11px;color:var(--lcd)}
 
 /* sampler */
+#tour{position:fixed;inset:0;z-index:9000;display:none}
+#tour.on{display:block}
+#tourDim{position:absolute;inset:0;background:rgba(0,0,0,.72)}
+#tourSpot{position:absolute;border:2px solid var(--sel);border-radius:10px;pointer-events:none;
+  box-shadow:0 0 0 9999px rgba(0,0,0,.72),0 0 18px rgba(74,163,255,.8);transition:all .22s ease;display:none}
+#tourSpot.on{display:block}
+#tourCard{position:absolute;left:10px;right:10px;background:var(--panel);border:1px solid var(--sel);
+  border-radius:12px;padding:12px;box-shadow:0 10px 40px rgba(0,0,0,.7);max-width:420px;margin:0 auto}
+#tourStep{font-size:10px;color:var(--sel);letter-spacing:1px;margin-bottom:2px}
+#tourCard h3{margin:0 0 6px;font-size:14px;color:var(--lcd);letter-spacing:.5px}
+#tourBody{font-size:12px;line-height:1.55;color:var(--txt)}
+#tourBody b{color:var(--amber)}
 #wavewrap{background:var(--lcd-bg);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:8px}
 .packrow{display:flex;align-items:center;gap:6px;padding:5px 6px;border-bottom:1px solid var(--line);font-size:11px}
 .packrow .pcat{font-size:8px;color:var(--txt-dim);min-width:36px}
@@ -212,12 +224,29 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 </head>
 <body>
 
+<div id="tour" aria-hidden="true">
+  <div id="tourDim"></div>
+  <div id="tourSpot"></div>
+  <div id="tourCard" role="dialog" aria-label="Guided tour">
+    <div id="tourStep"></div>
+    <h3 id="tourTitle"></h3>
+    <div id="tourBody"></div>
+    <div class="row" style="margin-top:8px">
+      <button id="tourSkip">SKIP</button>
+      <span class="grow"></span>
+      <button id="tourBack">BACK</button>
+      <button id="tourNext" class="on">NEXT</button>
+    </div>
+  </div>
+</div>
+
 <div id="hdr">
   <div>
     <div id="logo">JBH-88</div>
     <div id="build"></div>
   </div>
   <div id="transport">
+    <button id="btnTour" title="show me around">?</button>
     <button id="btnUndo" title="undo">&#8630;</button>
     <button id="btnRedo" title="redo">&#8631;</button>
     <button id="btnPlay">&#9654;</button>
@@ -1698,8 +1727,22 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      512/1024 plus maskable 192/512) drawn as the circle-sequencer motif.
      The service worker caches them and its cache name is bumped so devices
      pick the rename up.
+   - R92: FIRST-RUN GUIDED TOUR. Opening the app cold dropped you into a
+     10-tab groovebox with no idea which tab did what. A nine-step tour now
+     runs the first time only: welcome, the pads, the sound library, BUILD A
+     KIT, the sequencer, euclid + groove, circle view + scale lock, TRAX
+     lanes, then PLAY. Each step switches to the tab it needs, scrolls its
+     target into view and cuts a spotlight hole out of the dimmer, with the
+     card auto-placed above or below the highlight so it never covers what
+     it is pointing at. The sequencer step retargets itself to the circle
+     canvas when circle view is active, and any target that happens to be
+     hidden degrades to a centred card rather than a stray box. SKIP, Escape
+     and arrow keys all work; completion is remembered in localStorage so it
+     never reappears, and the new ? button in the transport bar replays it
+     on demand. It stays out of the way of the crash-recovery prompt — if
+     there is a session to restore, that wins and the tour does not open.
    ================================================================ */
-const BUILD = 'JBH-88 · R91 · 2026-07-25 · neutral preset names + real app icons and manifest';
+const BUILD = 'JBH-88 · R92 · 2026-07-25 · first-run guided tour';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -8125,6 +8168,121 @@ setInterval(()=>{
   }
 },2500);
 
+/* ---------------- guided tour ----------------
+   First-run walkthrough. Nine steps; each one switches to the tab it needs,
+   scrolls its target into view and cuts a spotlight hole out of the dimmer.
+   "Seen" is remembered in localStorage; the ? button in the transport bar
+   replays it any time. */
+const TOUR_KEY='jbh_tour_v1';
+const TOUR=[
+  { title:'WELCOME TO JBH-88',
+    body:'A full groovebox that runs with <b>no connection</b> — sampler, sequencer, mixer and multitrack recorder, all on your device.<br><br>This takes about a minute. You can leave any time with SKIP, and replay it from the <b>?</b> button up top.' },
+
+  { tab:'pads', el:'padgrid', title:'THE PADS',
+    body:'Tap a pad to play its sound. Tap the small label to <b>select</b> it — a blue ring marks the selected pad, and that is where new samples get sent.<br><br>Four banks of 16 give you 64 pads per project.' },
+
+  { tab:'smpl', el:'packPick', title:'GET SOME SOUNDS',
+    body:'Pick a <b>built-in pack</b> and send any sound straight to the selected pad. Everything bundled here is CC0 — free to use in anything you make.<br><br><b>IMPORT</b> loads your own files, and <b>MIC</b> records straight into the app.' },
+
+  { tab:'smpl', el:'btnKitBuild', title:'BUILD A KIT FROM ONE SOUND',
+    body:'Point this at a single sample and it carves out a whole kit — kick, snare, hats, toms and percussion — by filtering, pitching and shaping that one sound.<br><br>Fastest way to fill an empty bank.' },
+
+  { tab:'seq', el:function(){ return seqView==='circle' ? 'circlewrap' : 'stepgrid'; },
+    title:'THE SEQUENCER',
+    body:'Tap steps to turn them on. The row you are editing follows the selected pad, so pick a pad then write its part.<br><br>Patterns run <b>16, 32, 48 or 64</b> steps — set the length with LEN.' },
+
+  { tab:'seq', el:'euPreset', title:'EUCLIDEAN RHYTHMS + GROOVE',
+    body:'Spread <b>N hits evenly over M steps</b> and you get the rhythms that run through most of the world’s music. Choose a preset, or dial hits/steps/rotate yourself.<br><br>The <b>GROOVE</b> menu below then pushes the timing around — swing, shuffle, dragged backbeats — so it breathes instead of marching.' },
+
+  { tab:'seq', el:'btnViewCircle', title:'CIRCLE VIEW + SCALE LOCK',
+    body:'<b>CIRCLE</b> draws each part as a turning ring. Rings of different lengths drift against each other, which makes polymeter obvious instead of invisible.<br><br><b>&#128274; SCALE</b> pins every pitch you write to a key, so nothing you play lands wrong.' },
+
+  { tab:'trax', el:'traxlist', title:'TRAX — RECORD YOUR TAKE',
+    body:'These are your tape lanes. Arm one with <b>&#9679;</b>, press PLAY and it records a pass — the whole mix, just what you play in <b>LIVE</b>, or the mic.<br><br>Stack lanes into an arrangement, and reopen any take in the sample editor to chop it like any other sound.' },
+
+  { tab:'pads', el:'btnPlay', title:'THAT IS THE TOUR',
+    body:'Press <b>&#9654;</b> to start playing. Your work saves itself as you go, and the <b>PROJ</b> tab keeps named projects, undo history and the bounce/export tools.<br><br>Have fun. Replay this any time with <b>?</b>.' }
+];
+let tourAt=-1;
+function tourTarget(st){
+  if(!st || !st.el) return null;
+  const id = (typeof st.el==='function') ? st.el() : st.el;
+  const e = $(id);
+  if(!e) return null;
+  const r = e.getBoundingClientRect();
+  return (r.width>0 && r.height>0) ? e : null;   // hidden targets fall back to a centred card
+}
+function tourPlace(){
+  const st=TOUR[tourAt]; if(!st) return;
+  const spot=$('tourSpot'), card=$('tourCard');
+  const el=tourTarget(st);
+  const vh=window.innerHeight, ch=card.offsetHeight||160;
+  if(!el){
+    spot.classList.remove('on');
+    card.style.top = Math.max(12, Math.round((vh-ch)/2)) + 'px';
+    return;
+  }
+  const r=el.getBoundingClientRect(), pad=6;
+  spot.classList.add('on');
+  spot.style.left   = Math.round(r.left-pad)+'px';
+  spot.style.top    = Math.round(r.top-pad)+'px';
+  spot.style.width  = Math.round(r.width+pad*2)+'px';
+  spot.style.height = Math.round(r.height+pad*2)+'px';
+  const below = r.bottom+12, above = r.top-12-ch;
+  let top;
+  if(below+ch+12 <= vh) top = below;          // prefer under the highlight
+  else if(above >= 12)  top = above;          // else over it
+  else top = Math.max(12, vh-ch-12);          // else pinned to the bottom
+  card.style.top = Math.round(top)+'px';
+}
+function tourShow(i){
+  if(i<0) i=0;
+  if(i>=TOUR.length){ tourClose(true); return; }
+  tourAt=i;
+  const st=TOUR[i];
+  if(st.tab){ const b=document.querySelector('#tabs button[data-v="'+st.tab+'"]'); if(b && !b.classList.contains('on')) b.click(); }
+  $('tourStep').textContent = 'STEP '+(i+1)+' OF '+TOUR.length;
+  $('tourTitle').innerHTML  = st.title;
+  $('tourBody').innerHTML   = st.body;
+  $('tourBack').style.visibility = i===0 ? 'hidden' : 'visible';
+  $('tourNext').textContent = (i===TOUR.length-1) ? 'DONE' : 'NEXT';
+  const el=tourTarget(st);
+  if(el){ try{ el.scrollIntoView({block:'center',inline:'nearest'}); }catch(e){ try{ el.scrollIntoView(); }catch(e2){} } }
+  requestAnimationFrame(()=>requestAnimationFrame(tourPlace));
+  tourPlace();
+}
+function tourOpen(i){
+  $('tour').classList.add('on');
+  $('tour').setAttribute('aria-hidden','false');
+  tourShow(typeof i==='number' ? i : 0);
+}
+function tourClose(finished){
+  $('tour').classList.remove('on');
+  $('tour').setAttribute('aria-hidden','true');
+  $('tourSpot').classList.remove('on');
+  tourAt=-1;
+  try{ localStorage.setItem(TOUR_KEY, finished?'done':'skipped'); }catch(e){}
+  if(finished) lcd('TOUR COMPLETE · replay it any time with ?');
+}
+function tourSeen(){ try{ return !!localStorage.getItem(TOUR_KEY); }catch(e){ return true; } }
+$('tourNext').addEventListener('click',()=>tourShow(tourAt+1));
+$('tourBack').addEventListener('click',()=>tourShow(tourAt-1));
+$('tourSkip').addEventListener('click',()=>tourClose(false));
+$('btnTour').addEventListener('click',()=>tourOpen(0));
+window.addEventListener('resize',()=>{ if(tourAt>=0) tourPlace(); });
+document.addEventListener('keydown',e=>{
+  if(tourAt<0) return;
+  if(e.key==='Escape'){ tourClose(false); }
+  else if(e.key==='ArrowRight'||e.key==='Enter'){ tourShow(tourAt+1); }
+  else if(e.key==='ArrowLeft'){ tourShow(tourAt-1); }
+});
+function tourMaybeAutoStart(){
+  if(tourSeen()) return;
+  const bar=$('restoreBar');
+  if(bar && bar.style.display!=='none') return;   // returning user with a session to restore
+  setTimeout(()=>{ if(!tourSeen() && tourAt<0) tourOpen(0); },700);
+}
+
 /* ---------------- boot ---------------- */
 buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader(); drawTrax(); drawLive(); drawSidechain();
 if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
@@ -8133,7 +8291,7 @@ if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
 document.body.addEventListener('touchstart',function once(){ ensureAudio(); document.body.removeEventListener('touchstart',once); },{passive:true});
 drawSong(); undoInit(); drawProjects(); drawRewind();
 lcd('READY · load a sample into a pad (SMPL tab).');
-offerRestore();
+offerRestore().then(tourMaybeAutoStart, tourMaybeAutoStart);
 
 </script>
 </body>
