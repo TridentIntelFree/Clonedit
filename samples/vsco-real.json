@@ -1,0 +1,230 @@
+{
+ "name": "Real Cello + Acoustic Drums (CC0 · VSCO-2 CE)",
+ "license": "CC0 1.0 Universal — VSCO 2 Community Edition by Versilian Studios (Sam Gossner, Simon Dalzell). Public domain: free to use, modify, sell and redistribute.",
+ "source": "https://github.com/sgossner/VSCO-2-CE",
+ "samples": [
+  {
+   "id": "vsco:cello-C2",
+   "name": "Cello C2",
+   "cat": "CELLO",
+   "note": 36,
+   "file": "vsco/cello/cello_C2.wav"
+  },
+  {
+   "id": "vsco:cello-E2",
+   "name": "Cello E2",
+   "cat": "CELLO",
+   "note": 40,
+   "file": "vsco/cello/cello_E2.wav"
+  },
+  {
+   "id": "vsco:cello-G2",
+   "name": "Cello G2",
+   "cat": "CELLO",
+   "note": 43,
+   "file": "vsco/cello/cello_G2.wav"
+  },
+  {
+   "id": "vsco:cello-B2",
+   "name": "Cello B2",
+   "cat": "CELLO",
+   "note": 47,
+   "file": "vsco/cello/cello_B2.wav"
+  },
+  {
+   "id": "vsco:cello-D3",
+   "name": "Cello D3",
+   "cat": "CELLO",
+   "note": 50,
+   "file": "vsco/cello/cello_D3.wav"
+  },
+  {
+   "id": "vsco:cello-F3",
+   "name": "Cello F3",
+   "cat": "CELLO",
+   "note": 53,
+   "file": "vsco/cello/cello_F3.wav"
+  },
+  {
+   "id": "vsco:cello-A3",
+   "name": "Cello A3",
+   "cat": "CELLO",
+   "note": 57,
+   "file": "vsco/cello/cello_A3.wav"
+  },
+  {
+   "id": "vsco:cello-C4",
+   "name": "Cello C4",
+   "cat": "CELLO",
+   "note": 60,
+   "file": "vsco/cello/cello_C4.wav"
+  },
+  {
+   "id": "vsco:cello-E4",
+   "name": "Cello E4",
+   "cat": "CELLO",
+   "note": 64,
+   "file": "vsco/cello/cello_E4.wav"
+  },
+  {
+   "id": "vsco:cello-G4",
+   "name": "Cello G4",
+   "cat": "CELLO",
+   "note": 67,
+   "file": "vsco/cello/cello_G4.wav"
+  },
+  {
+   "id": "vsco:cello-B4",
+   "name": "Cello B4",
+   "cat": "CELLO",
+   "note": 71,
+   "file": "vsco/cello/cello_B4.wav"
+  },
+  {
+   "id": "vsco:cello-D5",
+   "name": "Cello D5",
+   "cat": "CELLO",
+   "note": 74,
+   "file": "vsco/cello/cello_D5.wav"
+  },
+  {
+   "id": "vsco:cello-F5",
+   "name": "Cello F5",
+   "cat": "CELLO",
+   "note": 77,
+   "file": "vsco/cello/cello_F5.wav"
+  },
+  {
+   "id": "vsco:cellopizz-C2",
+   "name": "Cello pizz C2",
+   "cat": "CELLO",
+   "note": 36,
+   "file": "vsco/cello/cellopizz_C2.wav"
+  },
+  {
+   "id": "vsco:cellopizz-E2",
+   "name": "Cello pizz E2",
+   "cat": "CELLO",
+   "note": 40,
+   "file": "vsco/cello/cellopizz_E2.wav"
+  },
+  {
+   "id": "vsco:cellopizz-G2",
+   "name": "Cello pizz G2",
+   "cat": "CELLO",
+   "note": 43,
+   "file": "vsco/cello/cellopizz_G2.wav"
+  },
+  {
+   "id": "vsco:cellopizz-C4",
+   "name": "Cello pizz C4",
+   "cat": "CELLO",
+   "note": 60,
+   "file": "vsco/cello/cellopizz_C4.wav"
+  },
+  {
+   "id": "vsco:cellopizz-E4",
+   "name": "Cello pizz E4",
+   "cat": "CELLO",
+   "note": 64,
+   "file": "vsco/cello/cellopizz_E4.wav"
+  },
+  {
+   "id": "vsco:cellopizz-G4",
+   "name": "Cello pizz G4",
+   "cat": "CELLO",
+   "note": 67,
+   "file": "vsco/cello/cellopizz_G4.wav"
+  },
+  {
+   "id": "vsco:bassdrum_hard",
+   "name": "Bass Drum Hard",
+   "cat": "DRUMS",
+   "file": "vsco/drums/bassdrum_hard.wav"
+  },
+  {
+   "id": "vsco:bassdrum_med",
+   "name": "Bass Drum",
+   "cat": "DRUMS",
+   "file": "vsco/drums/bassdrum_med.wav"
+  },
+  {
+   "id": "vsco:bassdrum_soft",
+   "name": "Bass Drum Soft",
+   "cat": "DRUMS",
+   "file": "vsco/drums/bassdrum_soft.wav"
+  },
+  {
+   "id": "vsco:bassdrum_muted",
+   "name": "Bass Drum Muted",
+   "cat": "DRUMS",
+   "file": "vsco/drums/bassdrum_muted.wav"
+  },
+  {
+   "id": "vsco:snare_hit",
+   "name": "Snare",
+   "cat": "DRUMS",
+   "file": "vsco/drums/snare_hit.wav"
+  },
+  {
+   "id": "vsco:snare_crack",
+   "name": "Snare Crack",
+   "cat": "DRUMS",
+   "file": "vsco/drums/snare_crack.wav"
+  },
+  {
+   "id": "vsco:snare_vintage",
+   "name": "Snare Vintage",
+   "cat": "DRUMS",
+   "file": "vsco/drums/snare_vintage.wav"
+  },
+  {
+   "id": "vsco:tom_hi",
+   "name": "Tom Hi",
+   "cat": "DRUMS",
+   "file": "vsco/drums/tom_hi.wav"
+  },
+  {
+   "id": "vsco:tom_lo",
+   "name": "Tom Lo",
+   "cat": "DRUMS",
+   "file": "vsco/drums/tom_lo.wav"
+  },
+  {
+   "id": "vsco:tom_lo_hard",
+   "name": "Tom Lo Hard",
+   "cat": "DRUMS",
+   "file": "vsco/drums/tom_lo_hard.wav"
+  },
+  {
+   "id": "vsco:conga_hi",
+   "name": "Conga Hi",
+   "cat": "PERC",
+   "file": "vsco/drums/conga_hi.wav"
+  },
+  {
+   "id": "vsco:conga_lo",
+   "name": "Conga Lo",
+   "cat": "PERC",
+   "file": "vsco/drums/conga_lo.wav"
+  },
+  {
+   "id": "vsco:crash",
+   "name": "Crash Cymbal",
+   "cat": "DRUMS",
+   "file": "vsco/drums/crash.wav"
+  },
+  {
+   "id": "vsco:cymbal_susp",
+   "name": "Suspended Cymbal",
+   "cat": "DRUMS",
+   "file": "vsco/drums/cymbal_susp.wav"
+  },
+  {
+   "id": "vsco:triangle",
+   "name": "Triangle",
+   "cat": "PERC",
+   "file": "vsco/drums/triangle.wav"
+  }
+ ]
+}

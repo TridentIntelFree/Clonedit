@@ -1,0 +1,10 @@
+Real Cello + Acoustic Drums — sourced from VSCO 2: Community Edition
+Versilian Studios (recorded by Sam Gossner & Simon Dalzell).
+Source: https://github.com/sgossner/VSCO-2-CE
+
+Licensed CC0 1.0 Universal (public domain): free to use, modify, sell and
+redistribute for any purpose, commercial or not, with or without attribution.
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Processed for JBH-88: mixed to mono, resampled to 44.1kHz/16-bit, trimmed,
+peak-normalized. No other alteration.

@@ -388,7 +388,8 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">— download online, stored on-device, used offline</span></h3>
   <div class="row">
     <select id="packPick" class="grow">
-      <option value="samples/jbh-drums.json">JBH Drums — Kit One (CC0) ★ new</option>
+      <option value="samples/vsco-real.json">★ REAL Cello + Acoustic Drums (CC0)</option>
+      <option value="samples/jbh-drums.json">JBH Drums — Kit One (synth, CC0)</option>
       <option value="samples/real-cc0-full.json">Full Kit — Drums + Real (CC0)</option>
       <option value="samples/real-cc0.json">Real Instruments · Core (CC0)</option>
       <option value="samples/manifest.json">JBH Studio (synth)</option>
@@ -397,7 +398,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnPackLoad">LOAD PACK</button>
   </div>
   <div class="row" id="packUrlRow" style="display:none">
-    <input type="text" id="packUrl" class="grow" value="samples/real-cc0-full.json" spellcheck="false" autocapitalize="off" placeholder="https://…/manifest.json">
+    <input type="text" id="packUrl" class="grow" value="samples/vsco-real.json" spellcheck="false" autocapitalize="off" placeholder="https://…/manifest.json">
   </div>
   <div class="row">
     <span class="lbl">ON DEVICE</span>
@@ -1424,8 +1425,21 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      → Recents/Downloads — calling out that the missed "Save to Files" step is
      why downloads seem to vanish. Made clear Pixabay PAGE links can't be
      fetched directly.
+   - R80: REAL RECORDED CELLO + ACOUSTIC DRUMS (requested: "I want them to
+     sound real", "realistic cello"). Added a pack of 34 genuinely RECORDED
+     samples from VSCO 2: Community Edition (Versilian Studios) — CC0 public
+     domain, so it ships and redistributes freely:
+       * CELLO — 13 sustain-vibrato notes spanning the true cello range
+         (C2 65Hz → F5) plus 6 pizzicato. Each note's pitch was verified by
+         autocorrelation and named by its ACTUAL detected pitch (VSCO's own
+         labels are an octave low), so pads map correctly.
+       * DRUMS — real bass drum (4 dynamics), 3 snares, toms, congas, crash,
+         suspended cymbal, triangle. Real transient dynamics (RMS ~0.07 against
+         0.95 peak) — the thing synthesis couldn't fake.
+     Converted to mono 44.1k/16-bit, trimmed, peak-normalised. Selected by
+     default in SMPL → SAMPLE PACKS; the synth kit remains as "Kit One".
    ================================================================ */
-const BUILD = 'JBH-88 · R79 · 2026-07-23 · iOS import help: one-tap PASTE + Save-to-Files recipe';
+const BUILD = 'JBH-88 · R80 · 2026-07-25 · REAL recorded cello + acoustic drums (CC0 · VSCO-2 CE)';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
