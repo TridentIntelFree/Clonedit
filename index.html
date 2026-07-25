@@ -509,6 +509,69 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnPatClr">CLR PTN</button>
   </div>
   <div style="font-size:10px;color:var(--txt-dim);margin:0 0 4px">VEL sets the loudness of steps you place next (step brightness shows it). To change a placed step: <b style="color:var(--amber)">LOCK</b> &#8594; tap the step &#8594; VEL slider.</div>
+
+  <h3>EUCLID <span style="color:var(--txt-dim);letter-spacing:0">— spread N hits evenly over the track</span></h3>
+  <div class="row">
+    <span class="lbl">PRESET</span>
+    <select id="euPreset" class="grow">
+      <option value="">— custom —</option>
+      <option value="3,8,0">Tresillo · 3 in 8</option>
+      <option value="5,8,0">Cinquillo · 5 in 8</option>
+      <option value="5,16,0">Son clave · 5 in 16</option>
+      <option value="7,16,0">Rumba feel · 7 in 16</option>
+      <option value="2,5,0">Bembé · 2 in 5</option>
+      <option value="4,9,0">Agbadza · 4 in 9</option>
+      <option value="3,7,0">Ruchenitza · 3 in 7</option>
+      <option value="7,12,0">West African · 7 in 12</option>
+      <option value="9,16,0">Rolling · 9 in 16</option>
+      <option value="1,4,0">Four on the floor</option>
+      <option value="2,8,4">Backbeat · 2 in 8</option>
+      <option value="8,16,0">Straight 8ths</option>
+    </select>
+  </div>
+  <div class="pslider"><span class="lbl">STEPS</span><input type="range" id="euSteps" min="2" max="16" step="1" value="16"><span class="val" id="euStepsV">16</span></div>
+  <div class="pslider"><span class="lbl">HITS</span><input type="range" id="euHits" min="0" max="16" step="1" value="5"><span class="val" id="euHitsV">5</span></div>
+  <div class="pslider"><span class="lbl">ROTATE</span><input type="range" id="euRot" min="0" max="15" step="1" value="0"><span class="val" id="euRotV">0</span></div>
+  <div id="euPreview" style="font-family:ui-monospace;font-size:15px;color:var(--lcd);letter-spacing:2px;margin:2px 0 4px;overflow-x:auto;white-space:nowrap">—</div>
+  <div class="row">
+    <span class="lbl">MODE</span>
+    <select id="euMode">
+      <option value="replace">REPLACE row</option>
+      <option value="merge">ADD to row</option>
+      <option value="remove">REMOVE from row</option>
+    </select>
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="euSetLen" style="width:auto"> set track LEN (polymeter)</label>
+  </div>
+  <div class="row">
+    <button id="btnEuApply" class="grow">APPLY TO TRACK</button>
+    <button id="btnEuAll">ALL LOADED PADS</button>
+  </div>
+
+  <h3>GROOVE <span style="color:var(--txt-dim);letter-spacing:0">— feel templates: timing push/pull + accents</span></h3>
+  <div class="row">
+    <span class="lbl">FEEL</span>
+    <select id="grvSel" class="grow">
+      <option value="straight">STRAIGHT (reset)</option>
+      <option value="mpc54">MPC SWING 54%</option>
+      <option value="mpc58">MPC SWING 58%</option>
+      <option value="mpc62">MPC SWING 62%</option>
+      <option value="mpc66">MPC SWING 66% (hard)</option>
+      <option value="dilla">DILLA · drunk / off-grid</option>
+      <option value="push">LATIN PUSH · ahead of the beat</option>
+      <option value="drag">REGGAE DRAG · behind the beat</option>
+      <option value="shuffle">TRIPLET SHUFFLE</option>
+      <option value="halftime">HALF-TIME LEAN</option>
+      <option value="loose">HUMAN LOOSE · light drift</option>
+    </select>
+  </div>
+  <div class="pslider"><span class="lbl">AMOUNT</span><input type="range" id="grvAmt" min="0" max="1" step="0.05" value="1"><span class="val" id="grvAmtV">100%</span></div>
+  <div class="row">
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="grvVel" checked style="width:auto"> apply accents (velocity)</label>
+    <span class="grow"></span>
+    <button id="btnGrvTrack">THIS TRACK</button>
+    <button id="btnGrvAll">ALL TRACKS</button>
+  </div>
+  <div id="grvInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">Groove writes per-step timing nudges (and accents) into the pattern — it bounces and exports exactly as you hear it. STRAIGHT clears them.</div>
   <div id="notesPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
     <div class="row" style="margin-bottom:6px">
       <span class="lbl">SCALE</span>
@@ -1493,8 +1556,20 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      than stepping. (3) LENGTH (0.25×–4×, with ½ and ×2) stretches or shrinks
      the sample with PITCH PRESERVED, reusing the WARP granular engine — the
      readout shows the before → after duration live.
+   - R84: EUCLID + GROOVE (SEQ). EUCLID spreads N hits as evenly as possible
+     over K steps — the maths behind tresillo, clave and most Afro-Latin /
+     Balkan rhythms — with live ●·· preview, 12 named presets, free
+     STEPS/HITS/ROTATE, REPLACE / ADD / REMOVE modes, an optional "set track
+     LEN" that turns the result into real polymeter, and ALL LOADED PADS which
+     rotates each pad one step further for instant polyrhythm. Distribution is
+     phased so step 0 is always a hit, and is provably maximally even for every
+     combination up to 16. GROOVE applies feel templates — MPC swing 54/58/62/
+     66, Dilla drunk, Latin push, reggae drag, triplet shuffle, half-time lean,
+     human loose — as per-step timing nudges plus optional velocity accents,
+     with an AMOUNT blend and per-track or all-tracks scope. Both write into
+     the pattern, so they bounce and export exactly as heard; STRAIGHT clears.
    ================================================================ */
-const BUILD = 'JBH-88 · R83 · 2026-07-25 · SCULPT — draw gain on the wave, tame peaks, stretch/shrink';
+const BUILD = 'JBH-88 · R84 · 2026-07-25 · EUCLID rhythm generator + GROOVE feel templates';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -5564,6 +5639,130 @@ $('btnPtnBpm').addEventListener('click',()=>{
   }else lcd('PTN TEMPO OFF · global BPM');
 });
 $('btnPatClr').addEventListener('click',()=>{ panicVoices(); S.patterns[S.pattern]=newPattern(); drawSteps(); dirty(); lcd('PTN '+(S.pattern+1)+' CLEARED'); });
+
+/* ---------------- EUCLID — spread N hits as evenly as possible over K steps ----
+   Bjorklund's algorithm: the pattern behind tresillo, clave, and most
+   Afro-Latin/Balkan rhythms. Pairs with per-track LEN (polymeter): a 5-in-7
+   track against a 16-step kick phrases for bars before it repeats. */
+function euclid(hits,steps,rot){
+  steps=Math.max(1,steps|0); hits=clamp(hits|0,0,steps);
+  const out=new Array(steps).fill(false);
+  if(hits===0) return out;
+  if(hits===steps){ out.fill(true); return out; }
+  // maximally-even distribution, phased so step 0 is always a hit (so "1 in 4"
+  // lands on the downbeat rather than the last step)
+  for(let i=0;i<steps;i++) out[i]=((i*hits)%steps)<hits;
+  if(rot){ const r=((rot|0)%steps+steps)%steps; return out.slice(r).concat(out.slice(0,r)); }
+  return out;
+}
+function euParams(){ return { hits:+$('euHits').value, steps:+$('euSteps').value, rot:+$('euRot').value }; }
+function euRefresh(){
+  const {hits,steps,rot}=euParams();
+  $('euStepsV').textContent=steps; $('euHitsV').textContent=hits; $('euRotV').textContent=rot;
+  $('euHits').max=steps; if(+$('euHits').value>steps){ $('euHits').value=steps; $('euHitsV').textContent=steps; }
+  $('euRot').max=Math.max(0,steps-1); if(+$('euRot').value>steps-1){ $('euRot').value=Math.max(0,steps-1); $('euRotV').textContent=$('euRot').value; }
+  const p=euclid(+$('euHits').value,steps,+$('euRot').value);
+  $('euPreview').textContent=p.map(v=>v?'●':'·').join(' ');
+}
+['euSteps','euHits','euRot'].forEach(id=>$(id).addEventListener('input',()=>{ $('euPreset').value=''; euRefresh(); }));
+$('euPreset').addEventListener('change',e=>{
+  const v=e.target.value; if(!v) return;
+  const [h,s,r]=v.split(',').map(Number);
+  $('euSteps').value=s; $('euHits').value=h; $('euRot').value=r;
+  euRefresh();
+});
+function euApplyTo(pad){
+  const pat=S.patterns[S.pattern], {rot}=euParams();
+  const steps=+$('euSteps').value, hits=+$('euHits').value, mode=$('euMode').value;
+  const vel=parseFloat($('stepVel').value)||0.85;
+  const p=euclid(hits,steps,rot);
+  if($('euSetLen').checked){ if(!Array.isArray(pat.len)) pat.len=new Array(NPADS).fill(NSTEPS); pat.len[pad]=steps; }
+  const row=pat.steps[pad];
+  for(let i=0;i<NSTEPS;i++){
+    const on=p[i%steps];
+    if(mode==='replace'){ if(i<steps||!$('euSetLen').checked){ row[i]=on?vel:0; if(!on) delete pat.locks[pad+':'+i]; } }
+    else if(mode==='merge'){ if(on&&!(row[i]>0)) row[i]=vel; }
+    else if(mode==='remove'){ if(on){ row[i]=0; delete pat.locks[pad+':'+i]; } }
+  }
+  return p.filter(Boolean).length;
+}
+$('btnEuApply').addEventListener('click',()=>{
+  const n=euApplyTo(S.seqPad);
+  drawSteps(); drawStepLock(); dirty();
+  const {steps}=euParams();
+  lcd('EUCLID '+$('euHits').value+' in '+steps+(+$('euRot').value?' rot '+$('euRot').value:'')+' → '+padName(S.seqPad)+($('euSetLen').checked?' · LEN '+steps+' (polymeter)':''));
+});
+$('btnEuAll').addEventListener('click',()=>{
+  const loaded=[]; for(let i=0;i<NPADS;i++) if(S.pads[i].bufId>=0) loaded.push(i);
+  if(!loaded.length){ lcd('No loaded pads to fill.'); return; }
+  if(!confirm('Apply this euclid to ALL '+loaded.length+' loaded pad(s) in PTN '+(S.pattern+1)+'?\n\nMODE = '+$('euMode').value.toUpperCase()+'. Undo restores.')) return;
+  loaded.forEach((p,k)=>{ const save=$('euRot').value; $('euRot').value=(+save+k)%Math.max(1,+$('euSteps').value); euApplyTo(p); $('euRot').value=save; });
+  drawSteps(); dirty();
+  lcd('EUCLID → '+loaded.length+' pads (each rotated one step further — instant polyrhythm).');
+});
+
+/* ---------------- GROOVE — feel templates -------------------------------------
+   Each template gives, per 16th step, a timing offset (as a fraction of a step;
+   + = late/behind, − = early/ahead) and a velocity multiplier. Written into the
+   pattern as nudge locks + step velocities, so it bounces and exports exactly
+   as heard. STRAIGHT clears them. */
+const GROOVES={
+  straight:{name:'STRAIGHT', t:new Array(16).fill(0), v:new Array(16).fill(1)},
+  mpc54:{name:'MPC SWING 54%', t:[0,.08,0,.08,0,.08,0,.08,0,.08,0,.08,0,.08,0,.08], v:[1,.92,1,.92,1,.92,1,.92,1,.92,1,.92,1,.92,1,.92]},
+  mpc58:{name:'MPC SWING 58%', t:[0,.16,0,.16,0,.16,0,.16,0,.16,0,.16,0,.16,0,.16], v:[1,.9,1,.9,1,.9,1,.9,1,.9,1,.9,1,.9,1,.9]},
+  mpc62:{name:'MPC SWING 62%', t:[0,.24,0,.24,0,.24,0,.24,0,.24,0,.24,0,.24,0,.24], v:[1,.88,1,.88,1,.88,1,.88,1,.88,1,.88,1,.88,1,.88]},
+  mpc66:{name:'MPC SWING 66%', t:[0,.32,0,.32,0,.32,0,.32,0,.32,0,.32,0,.32,0,.32], v:[1,.86,1,.86,1,.86,1,.86,1,.86,1,.86,1,.86,1,.86]},
+  // Dilla: deliberately uneven — snare late, some hats early, kick a touch behind
+  dilla:{name:'DILLA', t:[0,.19,-.04,.13,.06,.21,-.03,.15,.02,.18,-.05,.12,.07,.23,-.02,.16],
+         v:[1,.82,.9,.86,1,.8,.94,.84,.98,.82,.9,.88,1,.78,.92,.85]},
+  push:{name:'LATIN PUSH', t:[0,-.05,-.02,-.07,0,-.05,-.02,-.08,0,-.05,-.02,-.07,0,-.06,-.03,-.09],
+        v:[1,.88,.95,.85,1,.88,.95,.85,1,.88,.95,.85,1,.9,.95,.9]},
+  drag:{name:'REGGAE DRAG', t:[.02,.1,.05,.12,.06,.12,.05,.14,.02,.1,.05,.12,.07,.13,.06,.15],
+        v:[.9,.85,.95,.85,1,.85,.95,.85,.9,.85,.95,.85,1,.85,.95,.88]},
+  shuffle:{name:'TRIPLET SHUFFLE', t:[0,.33,-.02,.31,0,.33,-.02,.31,0,.33,-.02,.31,0,.33,-.02,.31],
+           v:[1,.84,.92,.84,1,.84,.92,.84,1,.84,.92,.84,1,.84,.92,.84]},
+  halftime:{name:'HALF-TIME LEAN', t:[0,.06,.03,.09,.08,.12,.05,.11,.02,.07,.04,.1,.09,.14,.06,.12],
+            v:[1,.8,.88,.8,.98,.8,.88,.8,1,.8,.88,.8,.96,.8,.88,.82]},
+  loose:{name:'HUMAN LOOSE', t:[0,.04,-.03,.05,.02,-.04,.03,.06,-.02,.05,.03,-.03,.04,.06,-.02,.04],
+         v:[1,.93,.96,.92,.99,.94,.95,.9,1,.92,.96,.93,.98,.91,.95,.94]},
+};
+$('grvAmt').addEventListener('input',e=>{ $('grvAmtV').textContent=Math.round(parseFloat(e.target.value)*100)+'%'; });
+function grooveApply(pad){
+  const g=GROOVES[$('grvSel').value]||GROOVES.straight;
+  const amt=clamp(parseFloat($('grvAmt').value),0,1);
+  const useVel=$('grvVel').checked;
+  const pat=S.patterns[S.pattern], row=pat.steps[pad];
+  let n=0;
+  for(let i=0;i<NSTEPS;i++){
+    if(!(row[i]>0)) continue;
+    n++;
+    const k=pat.locks[pad+':'+i]||{};
+    const off=(g.t[i%16]||0)*amt;
+    if(Math.abs(off)<0.001) delete k.nudge; else k.nudge=clamp(off,-0.5,0.5);
+    if(useVel){
+      const mul=1+((g.v[i%16]||1)-1)*amt;
+      row[i]=clamp(row[i]*mul,0.05,1);
+    }
+    if(Object.keys(k).length) pat.locks[pad+':'+i]=k; else delete pat.locks[pad+':'+i];
+  }
+  return n;
+}
+$('btnGrvTrack').addEventListener('click',()=>{
+  const n=grooveApply(S.seqPad);
+  drawSteps(); drawStepLock(); dirty();
+  const g=GROOVES[$('grvSel').value]||GROOVES.straight;
+  lcd(n? (g.name+' → '+padName(S.seqPad)+' · '+n+' step'+(n>1?'s':'')+' at '+Math.round(parseFloat($('grvAmt').value)*100)+'%')
+       : 'No hits on '+padName(S.seqPad)+' to groove — program some steps first.');
+});
+$('btnGrvAll').addEventListener('click',()=>{
+  let tot=0, pads=0;
+  for(let p=0;p<NPADS;p++){ const n=grooveApply(p); if(n){ tot+=n; pads++; } }
+  drawSteps(); drawStepLock(); dirty();
+  const g=GROOVES[$('grvSel').value]||GROOVES.straight;
+  lcd(tot? (g.name+' → '+pads+' track'+(pads>1?'s':'')+', '+tot+' steps at '+Math.round(parseFloat($('grvAmt').value)*100)+'%')
+        : 'Nothing programmed in this pattern yet.');
+});
+euRefresh();
 
 /* ---------------- AUTOMATION — record macro moves into the pattern ---------------- */
 let autoArmed=false, autoRAF=0; const autoTouch={};
