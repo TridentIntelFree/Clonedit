@@ -1,5 +1,5 @@
 {
- "name": "Real Cello + Acoustic Drums (CC0 · VSCO-2 CE)",
+ "name": "Real Instruments + Acoustic Drums (CC0 · VSCO-2 CE)",
  "license": "CC0 1.0 Universal — VSCO 2 Community Edition by Versilian Studios (Sam Gossner, Simon Dalzell). Public domain: free to use, modify, sell and redistribute.",
  "source": "https://github.com/sgossner/VSCO-2-CE",
  "samples": [
@@ -225,6 +225,290 @@
    "name": "Triangle",
    "cat": "PERC",
    "file": "vsco/drums/triangle.wav"
+  },
+  {
+   "id": "vsco:viola-C3",
+   "name": "Viola C3",
+   "cat": "STRINGS",
+   "note": 48,
+   "file": "vsco/viola/viola_C3.wav"
+  },
+  {
+   "id": "vsco:viola-D4",
+   "name": "Viola D4",
+   "cat": "STRINGS",
+   "note": 62,
+   "file": "vsco/viola/viola_D4.wav"
+  },
+  {
+   "id": "vsco:viola-A4",
+   "name": "Viola A4",
+   "cat": "STRINGS",
+   "note": 69,
+   "file": "vsco/viola/viola_A4.wav"
+  },
+  {
+   "id": "vsco:viola-E5",
+   "name": "Viola E5",
+   "cat": "STRINGS",
+   "note": 76,
+   "file": "vsco/viola/viola_E5.wav"
+  },
+  {
+   "id": "vsco:viola-G5",
+   "name": "Viola G5",
+   "cat": "STRINGS",
+   "note": 79,
+   "file": "vsco/viola/viola_G5.wav"
+  },
+  {
+   "id": "vsco:violin-G3",
+   "name": "Violin G3",
+   "cat": "STRINGS",
+   "note": 55,
+   "file": "vsco/violin/violin_G3.wav"
+  },
+  {
+   "id": "vsco:violin-A3",
+   "name": "Violin A3",
+   "cat": "STRINGS",
+   "note": 57,
+   "file": "vsco/violin/violin_A3.wav"
+  },
+  {
+   "id": "vsco:violin-C4",
+   "name": "Violin C4",
+   "cat": "STRINGS",
+   "note": 60,
+   "file": "vsco/violin/violin_C4.wav"
+  },
+  {
+   "id": "vsco:violin-C6",
+   "name": "Violin C6",
+   "cat": "STRINGS",
+   "note": 84,
+   "file": "vsco/violin/violin_C6.wav"
+  },
+  {
+   "id": "vsco:violin-G6",
+   "name": "Violin G6",
+   "cat": "STRINGS",
+   "note": 91,
+   "file": "vsco/violin/violin_G6.wav"
+  },
+  {
+   "id": "vsco:contrabass-Fs1",
+   "name": "Contrabass F#1",
+   "cat": "STRINGS",
+   "note": 30,
+   "file": "vsco/contrabass/contrabass_Fs1.wav"
+  },
+  {
+   "id": "vsco:contrabass-G1",
+   "name": "Contrabass G1",
+   "cat": "STRINGS",
+   "note": 31,
+   "file": "vsco/contrabass/contrabass_G1.wav"
+  },
+  {
+   "id": "vsco:contrabass-As1",
+   "name": "Contrabass A#1",
+   "cat": "STRINGS",
+   "note": 34,
+   "file": "vsco/contrabass/contrabass_As1.wav"
+  },
+  {
+   "id": "vsco:contrabass-C2",
+   "name": "Contrabass C2",
+   "cat": "STRINGS",
+   "note": 36,
+   "file": "vsco/contrabass/contrabass_C2.wav"
+  },
+  {
+   "id": "vsco:harp-D2",
+   "name": "Harp D2",
+   "cat": "STRINGS",
+   "note": 38,
+   "file": "vsco/harp/harp_D2.wav"
+  },
+  {
+   "id": "vsco:harp-F2",
+   "name": "Harp F2",
+   "cat": "STRINGS",
+   "note": 41,
+   "file": "vsco/harp/harp_F2.wav"
+  },
+  {
+   "id": "vsco:harp-A2",
+   "name": "Harp A2",
+   "cat": "STRINGS",
+   "note": 45,
+   "file": "vsco/harp/harp_A2.wav"
+  },
+  {
+   "id": "vsco:harp-G5",
+   "name": "Harp G5",
+   "cat": "STRINGS",
+   "note": 79,
+   "file": "vsco/harp/harp_G5.wav"
+  },
+  {
+   "id": "vsco:harp-B5",
+   "name": "Harp B5",
+   "cat": "STRINGS",
+   "note": 83,
+   "file": "vsco/harp/harp_B5.wav"
+  },
+  {
+   "id": "vsco:marimba-B3",
+   "name": "Marimba B3",
+   "cat": "MALLET",
+   "note": 59,
+   "file": "vsco/marimba/marimba_B3.wav"
+  },
+  {
+   "id": "vsco:marimba-F4",
+   "name": "Marimba F4",
+   "cat": "MALLET",
+   "note": 65,
+   "file": "vsco/marimba/marimba_F4.wav"
+  },
+  {
+   "id": "vsco:marimba-C5",
+   "name": "Marimba C5",
+   "cat": "MALLET",
+   "note": 72,
+   "file": "vsco/marimba/marimba_C5.wav"
+  },
+  {
+   "id": "vsco:marimba-G5",
+   "name": "Marimba G5",
+   "cat": "MALLET",
+   "note": 79,
+   "file": "vsco/marimba/marimba_G5.wav"
+  },
+  {
+   "id": "vsco:glock-lo",
+   "name": "Glockenspiel LO",
+   "cat": "MALLET",
+   "file": "vsco/glock/glock_lo.wav"
+  },
+  {
+   "id": "vsco:glock-mid",
+   "name": "Glockenspiel MID",
+   "cat": "MALLET",
+   "file": "vsco/glock/glock_mid.wav"
+  },
+  {
+   "id": "vsco:glock-hi",
+   "name": "Glockenspiel HI",
+   "cat": "MALLET",
+   "file": "vsco/glock/glock_hi.wav"
+  },
+  {
+   "id": "vsco:trumpet-As3",
+   "name": "Trumpet A#3",
+   "cat": "BRASS",
+   "note": 58,
+   "file": "vsco/trumpet/trumpet_As3.wav"
+  },
+  {
+   "id": "vsco:trumpet-C4",
+   "name": "Trumpet C4",
+   "cat": "BRASS",
+   "note": 60,
+   "file": "vsco/trumpet/trumpet_C4.wav"
+  },
+  {
+   "id": "vsco:trumpet-G4",
+   "name": "Trumpet G4",
+   "cat": "BRASS",
+   "note": 67,
+   "file": "vsco/trumpet/trumpet_G4.wav"
+  },
+  {
+   "id": "vsco:trumpet-D5",
+   "name": "Trumpet D5",
+   "cat": "BRASS",
+   "note": 74,
+   "file": "vsco/trumpet/trumpet_D5.wav"
+  },
+  {
+   "id": "vsco:trombone-As2",
+   "name": "Trombone A#2",
+   "cat": "BRASS",
+   "note": 46,
+   "file": "vsco/trombone/trombone_As2.wav"
+  },
+  {
+   "id": "vsco:trombone-D3",
+   "name": "Trombone D3",
+   "cat": "BRASS",
+   "note": 50,
+   "file": "vsco/trombone/trombone_D3.wav"
+  },
+  {
+   "id": "vsco:trombone-Cs4",
+   "name": "Trombone C#4",
+   "cat": "BRASS",
+   "note": 61,
+   "file": "vsco/trombone/trombone_Cs4.wav"
+  },
+  {
+   "id": "vsco:trombone-F4",
+   "name": "Trombone F4",
+   "cat": "BRASS",
+   "note": 65,
+   "file": "vsco/trombone/trombone_F4.wav"
+  },
+  {
+   "id": "vsco:frenchhorn-G2",
+   "name": "French Horn G2",
+   "cat": "BRASS",
+   "note": 43,
+   "file": "vsco/frenchhorn/frenchhorn_G2.wav"
+  },
+  {
+   "id": "vsco:frenchhorn-As2",
+   "name": "French Horn A#2",
+   "cat": "BRASS",
+   "note": 46,
+   "file": "vsco/frenchhorn/frenchhorn_As2.wav"
+  },
+  {
+   "id": "vsco:frenchhorn-D3",
+   "name": "French Horn D3",
+   "cat": "BRASS",
+   "note": 50,
+   "file": "vsco/frenchhorn/frenchhorn_D3.wav"
+  },
+  {
+   "id": "vsco:frenchhorn-Cs5",
+   "name": "French Horn C#5",
+   "cat": "BRASS",
+   "note": 73,
+   "file": "vsco/frenchhorn/frenchhorn_Cs5.wav"
+  },
+  {
+   "id": "vsco:tuba-As1",
+   "name": "Tuba A#1",
+   "cat": "BRASS",
+   "note": 34,
+   "file": "vsco/tuba/tuba_As1.wav"
+  },
+  {
+   "id": "vsco:tuba-Ds2",
+   "name": "Tuba D#2",
+   "cat": "BRASS",
+   "note": 39,
+   "file": "vsco/tuba/tuba_Ds2.wav"
+  },
+  {
+   "id": "vsco:tuba-F3",
+   "name": "Tuba F3",
+   "cat": "BRASS",
+   "note": 53,
+   "file": "vsco/tuba/tuba_F3.wav"
   }
  ]
 }

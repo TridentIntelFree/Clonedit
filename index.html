@@ -406,6 +406,13 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnPackPersist">KEEP OFFLINE</button>
   </div>
   <div id="packList" style="max-height:210px;overflow-y:auto;margin:6px 0"></div>
+  <h3>MY DOWNLOADS <span style="color:var(--txt-dim);letter-spacing:0">— every sound saved on this device, from any pack</span></h3>
+  <div class="row">
+    <span id="dlInfo" style="font-size:10px;color:var(--lcd);flex:1">—</span>
+    <button id="btnDlRefresh">REFRESH</button>
+    <button id="btnDlClear">DELETE ALL</button>
+  </div>
+  <div id="dlList" style="max-height:230px;overflow-y:auto;margin:6px 0"></div>
   <div id="wavewrap"><canvas id="wave" width="800" height="260"></canvas></div>
   <div class="row">
     <button id="btnPrev">&#9654; PREVIEW</button>
@@ -836,6 +843,7 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   <div class="row">
     <button id="btnLibBackup" class="grow">BACKUP ALL &#11015; .JSON</button>
     <button id="btnLibImport" class="grow">IMPORT BACKUP</button>
+    <button id="btnLibClear">DELETE ALL</button>
   </div>
   <input type="file" id="libIn" style="display:none">
   <h3>REWIND <span style="color:var(--txt-dim);letter-spacing:0">— automatic checkpoints, every 3 min while you work</span></h3>
@@ -1438,8 +1446,21 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
          0.95 peak) — the thing synthesis couldn't fake.
      Converted to mono 44.1k/16-bit, trimmed, peak-normalised. Selected by
      default in SMPL → SAMPLE PACKS; the synth kit remains as "Kit One".
+   - R81: BIG CC0 CATALOG + STORAGE YOU CONTROL. Sample packs cost nothing
+     until used — a manifest is a few KB of JSON and the app ships no audio —
+     so the real pack grew to 75 recorded samples: cello (sustain + pizz),
+     viola, violin, contrabass, harp, marimba, glockenspiel, trumpet,
+     trombone, french horn, tuba, and the acoustic drum kit. Every pitched
+     file is named by its MEASURED pitch, with detection bounded to each
+     instrument's real range so overtones can't cause an octave error
+     (glockenspiel is inharmonic, so its three are labelled by register).
+     MY DOWNLOADS (SMPL): lists every sound stored on the device — from ANY
+     pack, not just the loaded one — with its size, → PAD, individual delete,
+     and DELETE ALL. Before this, a sample downloaded from one pack became
+     invisible and undeletable once you switched packs. PROJ gains DELETE ALL
+     for the saved-project library (backup first; the open project is kept).
    ================================================================ */
-const BUILD = 'JBH-88 · R80 · 2026-07-25 · REAL recorded cello + acoustic drums (CC0 · VSCO-2 CE)';
+const BUILD = 'JBH-88 · R81 · 2026-07-25 · 75 real CC0 samples + full control of what is stored';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2434,7 +2455,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
     if(!workBuf){ const p=S.pads[S.editPad];   // empty workspace: adopt the target pad's sample
       if(p.bufId>=0 && S.buffers[p.bufId]){ workBuf=S.buffers[p.bufId]; slices=[]; selSlice=-1; } }
     drawWave(); drawEdit();
-    refreshHaveKeys().then(()=>{ drawPackList(); updateStoreMeter(); });   // always reflect current on-device library
+    refreshHaveKeys().then(()=>{ drawPackList(); drawDownloads(); updateStoreMeter(); });   // always reflect current on-device library
   }
   if(b.dataset.v==='mix'){ drawEdit(); drawSidechain(); drawMixer(); }
   if(b.dataset.v==='proj'){ $('bSrc').value=(S.songOn&&S.song.length)?'song':((S.chainOn&&S.chain.length)?'chain':'pat'); drawProjects(); drawRewind(); }
@@ -3856,7 +3877,7 @@ function drawPackList(){
       const pad=document.createElement('button'); pad.textContent='→ PAD'; pad.classList.add('on');
       pad.addEventListener('click',()=>libToPad(sm));
       const del=document.createElement('button'); del.innerHTML='&#215;';
-      del.addEventListener('click',async ()=>{ await idbDelS(IDB_LIB,LIBKEY(sm.id)); await refreshHaveKeys(); drawPackList(); updateStoreMeter(); });
+      del.addEventListener('click',async ()=>{ await idbDelS(IDB_LIB,LIBKEY(sm.id)); await refreshHaveKeys(); drawPackList(); drawDownloads(); updateStoreMeter(); });
       row.append(pad,del);
     }else{
       const get=document.createElement('button'); get.textContent='GET';
@@ -3900,7 +3921,7 @@ async function libDownload(sm,btn){
     const bytes=await res.arrayBuffer();
     await idbPutS(IDB_LIB,LIBKEY(sm.id),{id:sm.id,name:sm.name,cat:sm.cat,type:res.headers.get('content-type')||'audio/wav',bytes});
     if(navigator.storage && navigator.storage.persist){ try{ await navigator.storage.persist(); }catch(e){} }
-    await refreshHaveKeys(); drawPackList(); updateStoreMeter();
+    await refreshHaveKeys(); drawPackList(); drawDownloads(); updateStoreMeter();
     lcd('STORED '+sm.name+' — now available offline. Tap → PAD to use.');
   }catch(err){
     if(btn){ btn.textContent='GET'; btn.disabled=false; }
@@ -3931,10 +3952,69 @@ $('btnPackPersist').addEventListener('click',async ()=>{
     updateStoreMeter();
   }else lcd('Persistent storage API unavailable on this browser.');
 });
+/* MY DOWNLOADS — every stored sound, regardless of which pack it came from.
+   Downloads live in IndexedDB keyed 's:<id>'; the pack list can only show the
+   CURRENT pack, so anything from another pack used to be invisible AND
+   undeletable. This lists them all with size, → PAD, and delete. */
+let dlDrawing=false, dlAgain=false;
+async function drawDownloads(){
+  const el=$('dlList'); if(!el) return;
+  // re-entrancy guard: this is async (one IDB read per sound), so two
+  // overlapping calls would each clear then append — doubling every row.
+  if(dlDrawing){ dlAgain=true; return; }
+  dlDrawing=true;
+  try{ await drawDownloadsInner(el); }
+  finally{
+    dlDrawing=false;
+    if(dlAgain){ dlAgain=false; drawDownloads(); }
+  }
+}
+async function drawDownloadsInner(el){
+  el.innerHTML='';
+  let keys=[];
+  try{ keys=(await idbKeysS(IDB_LIB)).filter(k=>typeof k==='string'&&k.indexOf('s:')===0); }catch(e){}
+  const rows=[]; let total=0;
+  for(const k of keys){
+    let rec=null; try{ rec=await idbGetS(IDB_LIB,k); }catch(e){}
+    if(!rec) continue;
+    const sz=(rec.bytes&&rec.bytes.byteLength)||0; total+=sz;
+    rows.push({k,rec,sz});
+  }
+  $('dlInfo').textContent = rows.length
+    ? rows.length+' sound'+(rows.length>1?'s':'')+' · '+fmtBytes(total)+' on this device'
+    : 'Nothing downloaded yet — tap GET on a pack sample above.';
+  $('btnDlClear').disabled = !rows.length;
+  if(!rows.length){ el.innerHTML='<div style="font-size:11px;color:var(--txt-dim);padding:4px">Sounds you GET from a pack are saved here for offline use. They stay until you delete them.</div>'; return; }
+  rows.sort((a,b)=>(a.rec.cat||'').localeCompare(b.rec.cat||'')||(a.rec.name||'').localeCompare(b.rec.name||''));
+  rows.forEach(({k,rec,sz})=>{
+    const row=document.createElement('div'); row.className='packrow have';
+    const cat=document.createElement('span'); cat.className='pcat'; cat.textContent=rec.cat||'';
+    const nm=document.createElement('span'); nm.className='pnm'; nm.textContent=(rec.name||rec.id)+'  ('+fmtBytes(sz)+')';
+    const pad=document.createElement('button'); pad.textContent='→ PAD'; pad.classList.add('on');
+    pad.addEventListener('click',()=>libToPad({id:rec.id,name:rec.name,cat:rec.cat}));
+    const del=document.createElement('button'); del.innerHTML='&#215;'; del.title='delete this sound';
+    del.addEventListener('click',async ()=>{
+      if(!confirm('Delete “'+(rec.name||rec.id)+'” from this device?')) return;
+      try{ await idbDelS(IDB_LIB,k); }catch(e){}
+      await refreshHaveKeys(); drawPackList(); drawDownloads(); updateStoreMeter();
+      lcd('DELETED “'+(rec.name||rec.id)+'” · '+fmtBytes(sz)+' freed.');
+    });
+    row.append(cat,nm,pad,del); el.appendChild(row);
+  });
+}
+$('btnDlRefresh').addEventListener('click',async ()=>{ await refreshHaveKeys(); drawDownloads(); drawPackList(); updateStoreMeter(); lcd('Downloads list refreshed.'); });
+$('btnDlClear').addEventListener('click',async ()=>{
+  let keys=[]; try{ keys=(await idbKeysS(IDB_LIB)).filter(k=>typeof k==='string'&&k.indexOf('s:')===0); }catch(e){}
+  if(!keys.length) return;
+  if(!confirm('Delete ALL '+keys.length+' downloaded sound'+(keys.length>1?'s':'')+' from this device?\n\nPads already using them keep playing — this only clears the download store. Your projects are not touched.')) return;
+  for(const k of keys){ try{ await idbDelS(IDB_LIB,k); }catch(e){} }
+  await refreshHaveKeys(); drawPackList(); drawDownloads(); updateStoreMeter();
+  lcd('CLEARED '+keys.length+' downloaded sound'+(keys.length>1?'s':'')+'.');
+});
 (async function initPacks(){
   await refreshHaveKeys();
   try{ const cached=await idbGetS(IDB_LIB,'__manifest'); if(cached) packManifest=cached; }catch(e){}
-  drawPackList(); updateStoreMeter();
+  drawPackList(); drawDownloads(); updateStoreMeter();
 })();
 
 /* ---------------- sequencer ---------------- */
@@ -6657,6 +6737,17 @@ $('btnLibBackup').addEventListener('click',async ()=>{
   lcd('BACKUP SAVED · '+out.length+' projects');
 });
 $('btnLibImport').addEventListener('click',()=>{ $('libIn').value=''; $('libIn').click(); });
+$('btnLibClear').addEventListener('click',async ()=>{
+  const idx=await projIndexGet();
+  if(!idx.length){ lcd('LIBRARY ALREADY EMPTY.'); return; }
+  if(!confirm('Delete ALL '+idx.length+' saved project'+(idx.length>1?'s':'')+'?\n\nThis cannot be undone. Tap BACKUP ALL first if you want a copy.\n\nThe project you have OPEN stays loaded — only the saved library is cleared.')) return;
+  for(const m of idx){ try{ await idbDelS(IDB_STORE,'proj:'+m.id); }catch(e){} }
+  try{ await idbPut('projIndex',[]); }catch(e){}
+  curProjId=null;
+  await drawProjects();
+  plog('Deleted all '+idx.length+' saved project(s).');
+  lcd('LIBRARY CLEARED · '+idx.length+' project'+(idx.length>1?'s':'')+' deleted.');
+});
 $('btnDocLoad').addEventListener('click',async ()=>{
   const t=$('docText').value.trim();
   if(!t){ lcd('Paste a song doc first — tap SPEC to see the format.'); return; }
