@@ -1671,8 +1671,17 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      polymeter gets far more room (a 12 against a 32), and EUCLID's STEPS
      follows. Changing the length moves tracks that ran full-length with it
      while leaving deliberately shortened polymeter tracks alone.
+   - R90: RECORDING MOVED OFF THE MAIN THREAD. REC OUT, TRAX lanes and the
+     BLACK BOX all captured audio through ScriptProcessorNode — deprecated,
+     and it runs on the MAIN thread, so heavy UI work (waveform drawing, the
+     circle view, a big pattern redraw) could glitch a take. All three now
+     share one AudioWorklet capture tap that runs on the audio thread and
+     batches samples before posting, with transferable buffers so there is no
+     copy. The worklet module is built from a Blob, so the app is still a
+     single offline file, and it is preloaded when audio starts. Engines
+     without AudioWorklet transparently keep the old path.
    ================================================================ */
-const BUILD = 'JBH-88 · R89 · 2026-07-25 · pattern length 16/32/48/64 (a bar is still 16)';
+const BUILD = 'JBH-88 · R90 · 2026-07-25 · recording runs on the audio thread (AudioWorklet)';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2167,25 +2176,99 @@ function stopPadVoices(idx){ // cut every sounding voice on a pad NOW (clear / r
   if(activeEnv[idx]) delete activeEnv[idx];
 }
 
+/* ---------------- CAPTURE TAPS (AudioWorklet, with a safe fallback) ----------
+   Every recorder in the app — REC OUT, TRAX lanes, the BLACK BOX — needs the
+   same thing: read the audio flowing through a node into JS. That used to be a
+   ScriptProcessorNode, which is deprecated and runs on the MAIN thread, so a
+   busy UI could glitch a take. These now run in an AudioWorklet (audio thread)
+   and batch samples before posting, so capture survives heavy drawing.
+   The module is built from a Blob so the app stays a single offline file.
+   Older engines without AudioWorklet transparently keep the old path. */
+const CAPTURE_WORKLET_SRC = `
+class JBHCapture extends AudioWorkletProcessor {
+  constructor(opt){
+    super();
+    const o=(opt&&opt.processorOptions)||{};
+    this.size=o.size||2048;
+    this.l=new Float32Array(this.size); this.r=new Float32Array(this.size); this.n=0; this.on=true;
+    this.port.onmessage=e=>{ if(e.data&&e.data.cmd==='stop'){ this.flush(); this.on=false; } };
+  }
+  flush(){
+    if(!this.n) return;
+    const l=this.l.slice(0,this.n), r=this.r.slice(0,this.n);
+    this.port.postMessage({l:l,r:r,t:currentTime,n:this.n},[l.buffer,r.buffer]);
+    this.n=0;
+  }
+  process(inputs){
+    if(!this.on) return true;
+    const inp=inputs[0];
+    if(inp && inp.length && inp[0] && inp[0].length){
+      const L=inp[0], R=inp.length>1&&inp[1]?inp[1]:inp[0];
+      for(let i=0;i<L.length;i++){
+        this.l[this.n]=L[i]; this.r[this.n]=R[i]; this.n++;
+        if(this.n>=this.size) this.flush();
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('jbh-capture', JBHCapture);
+`;
+let captureWorkletURL=null;
+function captureWorkletReady(ctx){ return !!(ctx && ctx._jbhCapReady); }
+async function loadCaptureWorklet(ctx){
+  if(!ctx || ctx._jbhCapReady || !ctx.audioWorklet) return false;
+  try{
+    if(!captureWorkletURL) captureWorkletURL=URL.createObjectURL(new Blob([CAPTURE_WORKLET_SRC],{type:'text/javascript'}));
+    await ctx.audioWorklet.addModule(captureWorkletURL);
+    ctx._jbhCapReady=true;
+    return true;
+  }catch(e){ return false; }
+}
+/* makeCaptureTap(ctx, onChunk) -> {node, stop()}   onChunk(L,R,frames,time)
+   L/R are Float32Arrays owned by the caller. `node` is connected like any
+   other AudioNode; it also needs a silent route to destination so the graph
+   pulls it (true for both the worklet and the fallback). */
+function makeCaptureTap(ctx,onChunk,size){
+  const sink=ctx.createGain(); sink.gain.value=0;
+  if(captureWorkletReady(ctx)){
+    const node=new AudioWorkletNode(ctx,'jbh-capture',{numberOfInputs:1,numberOfOutputs:1,
+      outputChannelCount:[2],channelCount:2,channelCountMode:'explicit',
+      processorOptions:{size:size||2048}});
+    node.port.onmessage=e=>{ const d=e.data; if(d&&d.l) onChunk(d.l,d.r,d.n,d.t); };
+    node.connect(sink); sink.connect(ctx.destination);
+    return { node, worklet:true,
+      stop(){ try{ node.port.postMessage({cmd:'stop'}); }catch(e){}
+              try{ node.disconnect(); }catch(e){} try{ sink.disconnect(); }catch(e){} } };
+  }
+  const node=ctx.createScriptProcessor(4096,2,2);   // legacy engines only
+  node.onaudioprocess=e=>{
+    const b=e.inputBuffer;
+    onChunk(b.getChannelData(0), b.getChannelData(b.numberOfChannels>1?1:0), b.length,
+      (e.playbackTime!=null?e.playbackTime:ctx.currentTime));
+  };
+  node.connect(sink); sink.connect(ctx.destination);
+  return { node, worklet:false,
+    stop(){ try{ node.onaudioprocess=null; node.disconnect(); }catch(e){} try{ sink.disconnect(); }catch(e){} } };
+}
+
 /* BLACK BOX — always-on rolling capture of the last 30s of the master.
    Whatever you just heard is always recoverable: KEEP writes it to a pad. */
 const BB_SECONDS=30;
-let bbTap=null, bbL=null, bbR=null, bbPos=0, bbFilled=0;
+let bbTap=null, bbCap=null, bbL=null, bbR=null, bbPos=0, bbFilled=0;
 function bbStart(){
   if(!AC||!LIVE||bbTap) return;
   try{
     const n=Math.ceil(AC.sampleRate*BB_SECONDS);
     if(!bbL||bbL.length!==n){ bbL=new Float32Array(n); bbR=new Float32Array(n); bbPos=0; bbFilled=0; }
-    bbTap=AC.createScriptProcessor(4096,2,2);
-    bbTap.onaudioprocess=e=>{
-      const inL=e.inputBuffer.getChannelData(0), inR=e.inputBuffer.getChannelData(e.inputBuffer.numberOfChannels>1?1:0);
+    const cap=makeCaptureTap(AC,(inL,inR,frames)=>{
       let p=bbPos;
-      for(let i=0;i<inL.length;i++){ bbL[p]=inL[i]; bbR[p]=inR[i]; p++; if(p>=bbL.length)p=0; }
-      bbPos=p; bbFilled=Math.min(bbL.length,bbFilled+inL.length);
-    };
-    const sink=AC.createGain(); sink.gain.value=0;
-    LIVE.softclip.connect(bbTap); bbTap.connect(sink); sink.connect(AC.destination);
-    LIVE.bbTap=bbTap; LIVE.bbSink=sink;
+      for(let i=0;i<frames;i++){ bbL[p]=inL[i]; bbR[p]=inR[i]; p++; if(p>=bbL.length)p=0; }
+      bbPos=p; bbFilled=Math.min(bbL.length,bbFilled+frames);
+    });
+    bbTap=cap.node; bbCap=cap;
+    LIVE.softclip.connect(bbTap);
+    LIVE.bbTap=bbTap; LIVE.bbSink=cap;
   }catch(e){ bbTap=null; }
 }
 function bbKeep(){
@@ -2200,6 +2283,22 @@ function bbKeep(){
   lcd('BLACK BOX \u2192 '+padName(S.editPad)+' \u00b7 last '+(n/AC.sampleRate).toFixed(0)+'s saved — trim/chop it in SMPL.');
 }
 function ensureAudio(){
+  /* load the capture worklet early so REC OUT / TRAX / BLACK BOX get the
+     audio-thread path rather than falling back on first use. The BLACK BOX
+     arms itself as soon as audio exists — before the module can finish
+     loading — so upgrade it once the worklet is ready (its history is kept,
+     bbStart reuses the ring buffer when the length matches). */
+  setTimeout(async ()=>{
+    try{
+      if(!AC) return;
+      const ok=await loadCaptureWorklet(AC);
+      if(ok && bbCap && !bbCap.worklet && LIVE){
+        try{ LIVE.softclip.disconnect(bbTap); }catch(e){}
+        try{ bbCap.stop(); }catch(e){}
+        bbTap=null; bbCap=null; bbStart();
+      }
+    }catch(e){}
+  },0);
   if(AC) { resumeSession(); return; }
   const Ctor = window.AudioContext || window.webkitAudioContext;
   AC = new Ctor();
@@ -4856,7 +4955,7 @@ $('warbRate').addEventListener('input',e=>{
    Tapping the compressor output into Float32 chunks keeps everything at
    the context rate — the pad plays back exactly what was heard, and
    SAVE writes lossless WAV instead of M4A. */
-let jamTap=null, jamL=[], jamR=[], jamLen=0, jamOn=false, jamBuf=null;
+let jamTap=null, jamCap=null, jamL=[], jamR=[], jamLen=0, jamOn=false, jamBuf=null;
 const JAM_MAX_S=300;
 function jamStamp(){ return 'jam-'+new Date().toISOString().slice(11,19).replace(/:/g,''); }
 $('btnJam').addEventListener('click',()=>{
@@ -4864,18 +4963,15 @@ $('btnJam').addEventListener('click',()=>{
   ensureAudio();
   jamL=[]; jamR=[]; jamLen=0; jamBuf=null;
   try{
-    jamTap=AC.createScriptProcessor(4096,2,2);   // deprecated but universal, incl. iOS Safari
-    jamTap.onaudioprocess=e=>{
+    jamCap=makeCaptureTap(AC,(l,r,frames)=>{
       if(!jamOn) return;
-      const b=e.inputBuffer;
-      jamL.push(new Float32Array(b.getChannelData(0)));
-      jamR.push(new Float32Array(b.getChannelData(b.numberOfChannels>1?1:0)));
-      jamLen+=b.length;
+      jamL.push(l.buffer?l:new Float32Array(l));      // worklet hands us owned arrays
+      jamR.push(r.buffer?r:new Float32Array(r));
+      jamLen+=frames;
       if(jamLen>=AC.sampleRate*JAM_MAX_S) stopJam();
-    };
-    const sink=AC.createGain(); sink.gain.value=0; // SP needs a route to destination to run; keep it silent
-    LIVE.softclip.connect(jamTap); jamTap.connect(sink); sink.connect(AC.destination);
-    jamTap._sink=sink;
+    });
+    jamTap=jamCap.node;
+    LIVE.softclip.connect(jamTap);
   }catch(e){ jamTap=null; lcd('REC OUT unavailable: '+(e.message||'no tap')); return; }
   jamOn=true;
   $('btnJam').classList.add('on'); $('btnJam').textContent='STOP REC';
@@ -4885,8 +4981,8 @@ function stopJam(){
   if(!jamOn) return;
   jamOn=false;
   try{ LIVE.softclip.disconnect(jamTap); }catch(e){}
-  try{ jamTap._sink.disconnect(); jamTap.disconnect(); }catch(e){}
-  jamTap=null;
+  try{ if(jamCap) jamCap.stop(); }catch(e){}
+  jamTap=null; jamCap=null;
   $('btnJam').classList.remove('on'); $('btnJam').innerHTML='&#9679; REC OUT';
   if(!jamLen){ lcd('JAM EMPTY.'); return; }
   jamBuf=AC.createBuffer(2,jamLen,AC.sampleRate);
@@ -5107,28 +5203,25 @@ function traxBeginCapture(when){
     }
     const cap={ctx,srcNode,L:[],R:[],len:0,first:-1,
       seqStartCap: ctx===AC ? when : ctx.currentTime+(when-AC.currentTime)};
-    const tap=ctx.createScriptProcessor(4096,2,2);
-    cap.bufSize=tap.bufferSize||4096;
-    tap.onaudioprocess=e=>{
-      const b=e.inputBuffer;
-      if(cap.first<0) cap.first=(e.playbackTime!=null?e.playbackTime:ctx.currentTime);
-      cap.L.push(new Float32Array(b.getChannelData(0)));
-      cap.R.push(new Float32Array(b.getChannelData(b.numberOfChannels>1?1:0)));
-      cap.len+=b.length;
+    const ct=makeCaptureTap(ctx,(l,r,frames,when)=>{
+      if(cap.first<0) cap.first=(when!=null?when:ctx.currentTime);
+      cap.L.push(l.buffer?l:new Float32Array(l));
+      cap.R.push(r.buffer?r:new Float32Array(r));
+      cap.len+=frames;
       if(cap.len>=ctx.sampleRate*TRAX_MAX_S) traxCommit();
-    };
-    const sink=ctx.createGain(); sink.gain.value=0;
+    });
+    const tap=ct.node;
+    cap.bufSize=ct.worklet?2048:(tap.bufferSize||4096);
     cap.srcMode=useMic?'mic':($('traxSrc').value==='live'?'live':'bus');
     if(useMic) srcNode.connect(tap);
     else if(cap.srcMode==='live') LIVE.liveBus.connect(tap);
     else (LIVE.perfGain||LIVE.master).connect(tap);
-    tap.connect(sink); sink.connect(ctx.destination);
-    cap.tap=tap; cap.sink=sink;
+    cap.tap=tap; cap.cap=ct;
     // sync marker: a ±4.0 impulse pair fired into the TAP ONLY (never audible)
     // exactly at bar 1 — located in the raw capture at commit for
     // sample-accurate alignment, then scrubbed from the take head.
-    // SP callback timestamps proved unreliable (cold vs warm starts differ
-    // by a whole buffer), so we align in the audio domain instead.
+    // callback timestamps proved unreliable (cold vs warm starts differ by a
+    // whole buffer), so we align in the audio domain instead.
     try{
       const mb=ctx.createBuffer(1,80,ctx.sampleRate), md=mb.getChannelData(0);
       md[0]=4; md[64]=-4;
@@ -5147,7 +5240,7 @@ function traxCommit(){
   try{ if(cap.srcNode) cap.srcNode.disconnect();
     else if(cap.srcMode==='live') LIVE.liveBus.disconnect(cap.tap);
     else (LIVE.perfGain||LIVE.master).disconnect(cap.tap); }catch(e){}
-  try{ cap.tap.disconnect(); cap.sink.disconnect(); }catch(e){}
+  try{ if(cap.cap) cap.cap.stop(); else cap.tap.disconnect(); }catch(e){}
   const i=traxArm;
   disarmTrax();
   if(cap.ctx!==AC){ try{ cap.ctx.close(); }catch(e){} }
