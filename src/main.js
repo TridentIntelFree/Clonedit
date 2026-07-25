@@ -7,6 +7,12 @@
 import './app.css';
 import { mount } from 'svelte';
 import About from './lib/About.svelte';
+import Install from './lib/Install.svelte';
+
+for (const [id, mode] of [['installBar', 'banner'], ['installPanel', 'panel']]) {
+  const el = document.getElementById(id);
+  if (el) mount(Install, { target: el, props: { mode } });
+}
 
 const host = document.getElementById('aboutPanel');
 if (host) {

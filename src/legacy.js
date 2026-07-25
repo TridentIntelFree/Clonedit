@@ -870,8 +870,28 @@
      West African bell really are Euclidean and are asserted up to rotation,
      since this implementation deliberately phases every pattern so step 0 is a
      hit.
+   - R100: GETTING IT ONTO A HOME SCREEN. The app had no install UI of any kind,
+     which meant everyone sent the link was running it in a browser tab — URL
+     bar eating the screen, none of the offline behaviour we had been building,
+     and gone when the tab closed. The three cases behave completely differently
+     and none announce themselves: Chrome fires beforeinstallprompt, which can
+     be saved and replayed as a real system dialog; iOS Safari never prompts and
+     has NO API, so the only honest move is to say where the button is (Share →
+     Add to Home Screen); everything else varies enough that pointing at the
+     browser menu beats inventing a path. In-app browsers (Facebook, Instagram)
+     cannot install at all and are told to open in Safari instead.
+     Two shapes, one component: a one-time dismissible banner that only appears
+     once the first-run tour has been dealt with, so the two never collide, and
+     a permanent panel in PROJ so dismissing the nudge never makes installing
+     undiscoverable. Already installed shows neither. The detection is pure and
+     lives in src/pure/install.js, tested against real user-agent strings rather
+     than whatever browser happens to run the suite.
+     Written as a Svelte component — the first feature built the new way rather
+     than added to the engine. The banner is hidden on short screens: it is
+     worth a strip of a tall phone, but on a sideways one it cost a tenth of the
+     app for a portrait-time action, which the landscape layout test caught.
    ================================================================ */
-const BUILD = 'JBH-88 · R99 · 2026-07-25 · logic extracted + unit tested';
+const BUILD = 'JBH-88 · R100 · 2026-07-25 · add to home screen';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -7845,6 +7865,16 @@ function tourMaybeAutoStart(){
   if(bar && bar.style.display!=='none') return;   // returning user with a session to restore
   setTimeout(()=>{ if(!tourSeen() && tourAt<0) tourOpen(0); },700);
 }
+
+/* Chrome fires beforeinstallprompt once, early, and only when the app is
+   actually installable. Catch it here — this script runs before any module —
+   and let the install UI (a Svelte component, mounted later) read it. */
+window.__jbhInstall = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); window.__jbhInstall = e;
+  dispatchEvent(new CustomEvent('jbh-installable')); });
+addEventListener('appinstalled', () => { window.__jbhInstall = null;
+  dispatchEvent(new CustomEvent('jbh-installed'));
+  try{ lcd('INSTALLED — open JBH-88 from your home screen from now on.'); }catch(e){} });
 
 /* ---------------- boot ---------------- */
 buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader(); drawTrax(); drawLive(); drawSidechain();

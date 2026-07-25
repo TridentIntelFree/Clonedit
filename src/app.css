@@ -260,6 +260,11 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      so the cap has to carry the padding or it cuts through the middle of a line. */
   .hint{max-height:calc(2.9em + 10px);overflow:hidden;padding:5px 8px;cursor:pointer}
   .hint.open{max-height:none}
+  /* Not on a sideways phone. The install nudge is worth a strip of a tall
+     screen, but here it costs a tenth of the app for something that is a
+     portrait-time action anyway — and PROJ still explains how. It comes back
+     the moment the phone is turned upright. */
+  #installBar{display:none}
   /* the tour card has to leave room for what it is pointing at */
   #tourCard{padding:9px 11px;max-height:40vh;overflow-y:auto}
   #tourCard h3{font-size:12px;margin:0 0 4px}
