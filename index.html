@@ -299,6 +299,15 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
       <button id="epRevrs">REVERSE</button>
       <button id="epMode">1-SHOT</button>
     </div>
+    <div id="grainPanel" style="display:none;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px;margin:4px 0">
+      <div style="font-size:10px;color:var(--lcd);margin-bottom:4px">&#9729; GRAIN CLOUD — <b>hold the pad</b> and slide: left/right = POSITION, up/down = DENSITY. Sequenced steps play a burst.</div>
+      <div class="pslider"><span class="lbl">POS</span><input type="range" id="grPos" min="0" max="1" step="0.005"><span class="val" id="grPosV">0%</span></div>
+      <div class="pslider"><span class="lbl">SIZE</span><input type="range" id="grSize" min="0.01" max="0.6" step="0.005"><span class="val" id="grSizeV">120ms</span></div>
+      <div class="pslider"><span class="lbl">DENSITY</span><input type="range" id="grDens" min="1" max="50" step="1"><span class="val" id="grDensV">18/s</span></div>
+      <div class="pslider"><span class="lbl">SPREAD</span><input type="range" id="grSpread" min="0" max="1" step="0.01"><span class="val" id="grSpreadV">5%</span></div>
+      <div class="pslider"><span class="lbl">PITCH JIT</span><input type="range" id="grPitch" min="0" max="24" step="1"><span class="val" id="grPitchV">±0 st</span></div>
+      <div class="pslider"><span class="lbl">BURST</span><input type="range" id="grBurst" min="0.05" max="4" step="0.05"><span class="val" id="grBurstV">0.45s</span></div>
+    </div>
     <div class="row">
       <span class="lbl">NOTE</span><span id="epNote" style="color:var(--lcd);font-size:12px">—</span>
       <button id="epLearn">LEARN</button>
@@ -1638,8 +1647,18 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      rather than borrowing the LIVE instrument's), and chromatic MIDI input.
      FIX PTN retunes pitches already written in the current pattern, chords
      included, and reports how many moved. Persists with the project.
+   - R88: GRANULAR TEXTURE PADS. Pad MODE now cycles 1-SHOT → GATE → GRAIN. A
+     GRAIN pad doesn't play the sample — it sprays short windowed fragments
+     from a position in it, so a 0.2s snippet becomes an endless pad. HOLD the
+     pad for a cloud and SLIDE to steer it: left/right = POSITION, up/down =
+     DENSITY. Per-pad controls for position, grain SIZE, DENSITY, SPREAD
+     (position jitter + stereo scatter), PITCH JITTER and BURST length.
+     Grains run through the pad's normal channel so filter/EQ/drive/sends all
+     apply, they honour pitch, speed and REVERSE, and sequenced grain pads
+     play a burst through the SAME code path — so bounces match what you hear.
+     Grain voices are tracked per pad so STOP, panic and pad-clear cut them.
    ================================================================ */
-const BUILD = 'JBH-88 · R87 · 2026-07-25 · SCALE LOCK — write and play in key';
+const BUILD = 'JBH-88 · R88 · 2026-07-25 · granular texture pads — hold and slide for clouds';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1657,6 +1676,7 @@ function bpmAbs(){ return Math.abs(S.bpm); }
 const NPADS = 64, NSTEPS = 16, NPAT = 8;
 function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   gain:0.9, pitch:0, fine:0, speed:1, keepPitch:false, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
+  grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grPos:0, grBurst:0.45,
   choke:0, note:36+i, reverse:false, mode:'one',
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
   eqLo:0, eqMid:0, eqHi:0,
@@ -1961,6 +1981,10 @@ function updatePerf(){
 }
 function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
   const p=S.pads[idx]; if(p.bufId<0) return null;
+  if(p.mode==='grain'){   // GRAIN pads spray a cloud instead of playing the sample
+    scheduleGrains(ctx,g,idx,clamp(vel,0,1),when,clamp(p.grBurst||0.45,0.05,4),pitchOff||0);
+    return null;
+  }
   let buf=S.buffers[p.bufId]; if(!buf) return null;
   let s0=p.start, e0=p.end;
   if(p.reverse){ buf=getReversed(p.bufId); s0=1-p.end; e0=1-p.start; }
@@ -2030,8 +2054,81 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
   return {env,src};
 }
 
+/* ---------------- GRANULAR TEXTURE PADS ---------------------------------------
+   A pad in GRAIN mode doesn't play the sample — it sprays short windowed
+   fragments ("grains") from a position in it. Holding the pad sustains the
+   cloud forever from a 0.2s source; sliding your finger moves POSITION (X) and
+   DENSITY (Y) live. Grains run through the pad's normal channel, so filter,
+   EQ, drive, pan and sends all still apply. Sequenced grain pads play a burst,
+   and because the same code path renders offline, bounces match. */
+const grainVoices={};      // padIdx -> Set of live sources (so STOP/panic can cut them)
+const grainHold={};        // padIdx -> {timer,nextT,vel} while a finger is down
+function grainReg(idx,src){
+  const set=grainVoices[idx]||(grainVoices[idx]=new Set());
+  set.add(src); src.addEventListener('ended',()=>set.delete(src));
+}
+function scheduleGrains(ctx,g,idx,vel,when,dur,pitchOff){
+  const p=S.pads[idx]; if(p.bufId<0) return;
+  let buf=S.buffers[p.bufId]; if(!buf) return;
+  if(p.reverse){ const r=getReversed(p.bufId); if(r) buf=r; }
+  const live=(ctx===AC);
+  const dens=clamp(p.grDens||18,1,50), size=clamp(p.grSize||0.12,0.01,0.6);
+  const spread=clamp(p.grSpread||0.05,0,1), pj=clamp(p.grPitch||0,0,24);
+  const basePos=clamp(p.grPos!=null?p.grPos:p.start,0,1);
+  const iv=1/dens, n=Math.max(1,Math.min(400,Math.ceil(dur*dens)));
+  for(let i=0;i<n;i++){
+    const t=when+i*iv;
+    const jit=spread?(Math.random()*2-1)*spread:0;
+    const posN=clamp(basePos+jit,0,0.999);
+    const semis=p.pitch+(pitchOff||0)+p.fine/100+(pj?(Math.random()*2-1)*pj:0);
+    let rate=Math.pow(2,semis/12)*(p.speed||1);
+    if(live) rate*=perfFactor();
+    const src=ctx.createBufferSource(); src.buffer=buf; src.playbackRate.value=rate;
+    const env=ctx.createGain();
+    env.gain.setValueAtTime(0,t);
+    env.gain.linearRampToValueAtTime(vel*0.7,t+size*0.4);      // Hann-ish window: no clicks
+    env.gain.linearRampToValueAtTime(0.0001,t+size);
+    let tail=env;
+    if(ctx.createStereoPanner && spread>0){
+      const pan=ctx.createStereoPanner();
+      pan.pan.value=clamp((Math.random()*2-1)*Math.min(1,spread*2),-1,1);
+      env.connect(pan); tail=pan;
+    }
+    src.connect(env); tail.connect(g.pads[idx].in);
+    const off=Math.min(posN*buf.duration, Math.max(0,buf.duration-0.005));
+    try{ src.start(t,off,Math.min(size*rate+0.02, Math.max(0.005,buf.duration-off))); }catch(e){ continue; }
+    try{ src.stop(t+size+0.03); }catch(e){}
+    if(live) grainReg(idx,src);
+    src.onended=()=>{ try{ src.disconnect(); env.disconnect(); if(tail!==env) tail.disconnect(); }catch(e){} };
+  }
+}
+function grainStart(idx,vel){
+  if(grainHold[idx]) return;
+  ensureAudio();
+  const h={nextT:AC.currentTime,vel:clamp(vel,0.1,1)};
+  h.timer=setInterval(()=>{                 // lookahead so the cloud never gaps
+    const p=S.pads[idx], dens=clamp(p.grDens||18,1,50);
+    while(h.nextT<AC.currentTime+0.15){
+      scheduleGrains(AC,LIVE,idx,h.vel,h.nextT,1/dens,0);
+      h.nextT+=1/dens;
+    }
+  },40);
+  grainHold[idx]=h;
+  flashPad(idx,vel);
+}
+function grainStop(idx){
+  const h=grainHold[idx]; if(!h) return;
+  clearInterval(h.timer); delete grainHold[idx];
+}
+function grainStopAll(){ Object.keys(grainHold).forEach(k=>grainStop(+k)); }
+function grainCut(idx){    // hard stop any sounding grains on a pad
+  grainStop(idx);
+  const set=grainVoices[idx]; if(!set) return;
+  set.forEach(s=>{ try{ s.stop(); }catch(e){} }); set.clear();
+}
 function padRelease(idx){ // gate mode: note-off on touch release (live only)
   repStop(idx);                            // end a NOTE REPEAT roll on release
+  grainStop(idx);                          // end a held grain cloud (tails ring out)
   const p=S.pads[idx]; if(p.mode!=='gate') return;
   const a=activeEnv[idx]; if(!a || !AC) return;
   const t=AC.currentTime;
@@ -2043,6 +2140,7 @@ function padRelease(idx){ // gate mode: note-off on touch release (live only)
   delete activeEnv[idx];
 }
 function stopPadVoices(idx){ // cut every sounding voice on a pad NOW (clear / replace = instant silence)
+  try{ grainCut(idx); }catch(e){}
   if(!AC || !LIVE || !LIVE.pads[idx]) return;
   const t=AC.currentTime, act=LIVE.pads[idx].act;
   if(act){ act.forEach(v=>{ try{ v.env.gain.cancelScheduledValues(t); v.env.gain.setTargetAtTime(0,t,0.008); v.src.stop(t+0.04); }catch(e){} }); act.length=0; }
@@ -2230,6 +2328,17 @@ function buildPads(){
       const vel=clamp(1-((t.clientY-r.top)/r.height)*0.7,0.3,1);
       padPress(i,vel);
     },{passive:false});
+    el.addEventListener('touchmove',e=>{   // GRAIN: slide to steer the cloud
+      const idx=padIndex(i); if(!grainHold[idx]) return;
+      e.preventDefault();
+      const t=e.changedTouches[0], r=el.getBoundingClientRect(), p=S.pads[idx];
+      p.grPos=clamp((t.clientX-r.left)/r.width,0,1);
+      p.grDens=clamp(1+(1-(t.clientY-r.top)/r.height)*49,1,50);
+      if(idx===S.editPad && $('grainPanel').style.display!=='none'){
+        $('grPos').value=p.grPos; $('grPosV').textContent=Math.round(p.grPos*100)+'%';
+        $('grDens').value=p.grDens; $('grDensV').textContent=Math.round(p.grDens)+'/s';
+      }
+    },{passive:false});
     el.addEventListener('touchend',e=>{ e.preventDefault(); if(!S.edit) padRelease(padIndex(i)); },{passive:false});
     el.addEventListener('mousedown',e=>{
       const r=el.getBoundingClientRect();
@@ -2276,6 +2385,7 @@ function padPress(slot,vel){
   if(seqChanged) seqSelStep=-1;
   if(S.edit){ hitLive(idx,vel); drawPads(); drawEdit(); if(seqChanged) drawSeq(); return; }
   if(repOn && S.pads[idx].bufId>=0){ repStart(idx,vel); drawEditTitleOnly(); if(seqChanged) drawSeq(); return; }
+  if(S.pads[idx].mode==='grain' && S.pads[idx].bufId>=0){ grainStart(idx,vel); drawEditTitleOnly(); if(seqChanged) drawSeq(); return; }
   hitLive(idx,vel); drawEditTitleOnly(); if(seqChanged) drawSeq();
 }
 function drawPads(){
@@ -2321,8 +2431,17 @@ function drawEdit(){
   $('epRel').value=p.rel; $('epRelV').textContent=Math.round(p.rel*1000)+'ms';
   $('epChoke').value=String(p.choke);
   $('epRevrs').classList.toggle('on',p.reverse);
-  $('epMode').textContent=p.mode==='gate'?'GATE':'1-SHOT';
-  $('epMode').classList.toggle('on',p.mode==='gate');
+  $('epMode').textContent=p.mode==='grain'?'GRAIN':(p.mode==='gate'?'GATE':'1-SHOT');
+  $('epMode').classList.toggle('on',p.mode!=='one');
+  $('grainPanel').style.display=p.mode==='grain'?'block':'none';
+  if(p.mode==='grain'){
+    $('grSize').value=p.grSize; $('grSizeV').textContent=Math.round(p.grSize*1000)+'ms';
+    $('grDens').value=p.grDens; $('grDensV').textContent=Math.round(p.grDens)+'/s';
+    $('grSpread').value=p.grSpread; $('grSpreadV').textContent=Math.round(p.grSpread*100)+'%';
+    $('grPitch').value=p.grPitch; $('grPitchV').textContent='\u00b1'+p.grPitch+' st';
+    $('grPos').value=p.grPos; $('grPosV').textContent=Math.round(p.grPos*100)+'%';
+    $('grBurst').value=p.grBurst; $('grBurstV').textContent=p.grBurst.toFixed(2)+'s';
+  }
   $('epNote').textContent=p.note<0?'—':p.note;
   $('epFType').value=p.ftype;
   $('epFCut').value=p.fcut; $('epFCutV').textContent=Math.round(cutHz(p.fcut))+'Hz';
@@ -2375,11 +2494,22 @@ bindEdit('epRev','rev',null,(n,p)=>{ n.rev.gain.setTargetAtTime(p.rev,AC.current
 bindEdit('epDly','dly',null,(n,p)=>{ n.dly.gain.setTargetAtTime(p.dly,AC.currentTime,0.01); });
 bindEdit('epAtt','att',null,null);
 bindEdit('epRel','rel',null,null);
+/* grain cloud params — live while the pad is held */
+[['grPos','grPos',v=>Math.round(v*100)+'%'],['grSize','grSize',v=>Math.round(v*1000)+'ms'],
+ ['grDens','grDens',v=>Math.round(v)+'/s'],['grSpread','grSpread',v=>Math.round(v*100)+'%'],
+ ['grPitch','grPitch',v=>'\u00b1'+Math.round(v)+' st'],['grBurst','grBurst',v=>(+v).toFixed(2)+'s']
+].forEach(([id,key,fmt])=>{
+  $(id).addEventListener('input',e=>{ const p=S.pads[S.editPad]; p[key]=parseFloat(e.target.value); $(id+'V').textContent=fmt(p[key]); dirty(); });
+});
 $('epChoke').addEventListener('change',e=>{ S.pads[S.editPad].choke=parseInt(e.target.value,10); dirty(); });
 $('epRevrs').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.reverse=!p.reverse; if(p.bufId>=0) getReversed(p.bufId);
   if(p.keepPitch && p.bufId>=0) buildSpeedStretch(p.bufId,!!p.reverse,padSpeed(p));   // stretch depends on direction
   drawEdit(); dirty(); });
-$('epMode').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.mode=p.mode==='gate'?'one':'gate'; drawEdit(); dirty(); });
+$('epMode').addEventListener('click',()=>{ const p=S.pads[S.editPad];
+  p.mode = p.mode==='one' ? 'gate' : (p.mode==='gate' ? 'grain' : 'one');
+  if(p.mode!=='grain') grainCut(S.editPad);
+  drawEdit(); dirty();
+  lcd(p.mode==='grain'?'GRAIN — hold the pad for a cloud; slide for POSITION (left/right) and DENSITY (up/down).':(p.mode==='gate'?'GATE — the sound lasts as long as you hold.':'1-SHOT — the sample plays through.')); });
 function liveFx(){ const p=S.pads[S.editPad]; if(LIVE) applyPadFx(LIVE.pads[S.editPad],p,AC); drawPads(); drawEdit(); dirty(); }
 function hasFx(p){ return p.ftype!=='off' || p.drv>0 || p.crush<16 || !!(p.eqLo||p.eqMid||p.eqHi); }
 $('epFType').addEventListener('change',e=>{
@@ -4570,6 +4700,7 @@ function silRestore(g, t){
 }
 function panicVoices(){ // silence every sounding pad voice immediately (short click-free fade)
   try{ repStopAll(); }catch(e){}
+  try{ grainStopAll(); for(const k in grainVoices) grainCut(+k); }catch(e){}
   if(!AC||!LIVE) return;
   const t=AC.currentTime;
   for(let i=0;i<NPADS;i++){ const act=LIVE.pads[i]&&LIVE.pads[i].act;
@@ -4583,6 +4714,7 @@ function stopSeq(){
   if(S.clkOut) moSend([0xFC]);        // MIDI STOP
   if(S.notesOut) moAllOff();          // stuck-note failsafe
   stopTraxVoices();
+  try{ grainStopAll(); }catch(e){}
   panicVoices();                 // STOP silences sounding samples (long one-shots don't ring on)
   if(silGateDown && LIVE){ silRestore(LIVE, AC.currentTime); silGateDown=false; }
   $('btnPlay').classList.remove('on');
@@ -6819,6 +6951,8 @@ function applySessionDoc(doc, bufs){
     if(p.lfoSync==null)p.lfoSync='free'; if(p.lfoRate==null)p.lfoRate=2; if(p.lfoDepth==null)p.lfoDepth=0.5;
     if(p.warpBeats==null)p.warpBeats=4; if(p.warpBpm==null)p.warpBpm=0;
     if(p.speed==null)p.speed=1; if(p.keepPitch==null)p.keepPitch=false;
+    if(p.grSize==null)p.grSize=0.12; if(p.grDens==null)p.grDens=18; if(p.grSpread==null)p.grSpread=0.05;
+    if(p.grPitch==null)p.grPitch=0; if(p.grPos==null)p.grPos=0; if(p.grBurst==null)p.grBurst=0.45;
     if(p.eqLo==null)p.eqLo=0; if(p.eqMid==null)p.eqMid=0; if(p.eqHi==null)p.eqHi=0; });
   { // LOAD FAILSAFE: every loaded pad at ~0 volume = a poisoned save (a real
     // field failure wrote gain 0 into state and autosave kept it). One pad at
