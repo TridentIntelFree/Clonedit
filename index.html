@@ -143,6 +143,7 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
 .pslider .lbl{min-width:44px}
 .pslider .val{min-width:44px;text-align:right;font-size:11px;color:var(--lcd)}
 
+
 /* sampler */
 #tour{position:fixed;inset:0;z-index:9000;display:none}
 #tour.on{display:block}
@@ -220,6 +221,61 @@ h3{font-size:10px;letter-spacing:2px;color:var(--txt-dim);margin:12px 0 6px;bord
 footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-height:1.5}
 .hint{font-size:10px;color:var(--txt-dim);line-height:1.45;margin:0 0 8px;padding:6px 8px;background:var(--panel);border:1px solid var(--line);border-radius:6px}
 .hint b{color:var(--amber)}
+/* ---------------- wide screens: iPad, and any phone turned sideways ----------
+   The whole app was one phone-width column, so a tablet or a landscape phone
+   got the same layout stretched across twice the space — rows a metre wide and
+   a circle sequencer taller than the screen.
+
+   Above 760px (iPad portrait and up) each view becomes a two-column grid. Only
+   .row and .pslider pair up; everything else — headings, hints, grids,
+   canvases, lists — still spans the full width, because those are the things
+   that need room. The result halves the scrolling without reflowing any of the
+   markup, and it degrades to the original single column below the breakpoint. */
+@media (min-width:760px){
+  /* align-items:start matters — a grid item defaults to stretching to its row,
+     and an overflow:hidden box has a min-content height of 0, so the clamped
+     hint got squashed instead of showing its two lines. */
+  .view{grid-template-columns:1fr 1fr;gap:0 16px;align-content:start;align-items:start}
+  .view.on{display:grid}
+  .view > *{grid-column:1 / -1;min-width:0}
+  .view > .row,.view > .pslider{grid-column:auto}
+  /* rows that carry a whole control set stay full width */
+  #bankrow,#patrow,#chainrow,#songrow,#kitRow,#packUrlRow{grid-column:1 / -1}
+  /* 16 pads as 8x2 — the hardware layout, and both thumbs can reach it */
+  #padgrid{grid-template-columns:repeat(8,1fr)}
+  /* a whole bar on one line instead of two */
+  #stepgrid,#silrow{grid-template-columns:repeat(16,1fr)}
+  /* the circle is square: bound it by HEIGHT so it never outgrows the viewport */
+  #circlewrap{max-width:min(100%,66vh);margin:0 auto}
+  /* lists of uniform rows pair up too, instead of leaving half the screen bare */
+  #songlist,#traxlist,#projList,#rewindList,#stemlist{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;align-content:start}
+}
+@media (min-width:1180px){          /* iPad Pro: stop rows growing without limit */
+  .view{max-width:1120px;margin:0 auto}
+}
+/* short viewports (a phone on its side) — claw back vertical chrome */
+@media (max-height:560px){
+  #hdr{padding:5px 10px}
+  #logo{font-size:13px;letter-spacing:1.5px}
+  #build{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+  #transport button{height:32px;width:40px}
+  #btnUndo,#btnRedo,#btnTour{width:30px}
+  #lcdstrip{padding:4px 10px;min-height:26px}
+  #masterMeter{padding:2px 10px 3px}
+  #tabs button{padding:8px 0}
+  .view{padding:8px}
+  /* clamp to exactly two lines — tap to read the rest. box-sizing is border-box,
+     so the cap has to carry the padding or it cuts through the middle of a line. */
+  .hint{max-height:calc(2.9em + 10px);overflow:hidden;padding:5px 8px;cursor:pointer}
+  .hint.open{max-height:none}
+  /* the tour card has to leave room for what it is pointing at */
+  #tourCard{padding:9px 11px;max-height:40vh;overflow-y:auto}
+  #tourCard h3{font-size:12px;margin:0 0 4px}
+  #tourBody{font-size:11px;line-height:1.42}
+  #tourCard .row{margin-top:6px}
+  #tourCard button{padding:6px 9px;font-size:11px}
+  h3{margin:9px 0 5px}
+}
 </style>
 </head>
 <body>
@@ -1867,8 +1923,35 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      cathedral tail off at a third of its length. That clamp is now a shared
      irDur() the render and the readout both use; the IRs themselves are
      unchanged, bit for bit.
+   - R95: WIDE SCREENS — iPad, and any phone turned sideways. The app was one
+     phone-width column with no media queries at all, so a tablet got the same
+     layout stretched across twice the space: rows a metre wide, a circle
+     sequencer taller than the screen, and half the display empty. From 760px
+     (iPad portrait) up, each view becomes a two-column grid. Only .row and
+     .pslider pair up — headings, hints, grids, canvases and lists still span
+     the full width, because those are what need room — so nothing in the
+     markup had to be reflowed and phone portrait is untouched, measured box
+     for box against the previous build. The 16 pads become 8x2, which is the
+     hardware layout and reachable with both thumbs; a whole 16-step bar fits
+     on one line instead of two; lists of uniform rows (song sections, tape
+     lanes, projects, rewind points, stems) pair up rather than leaving the
+     right half bare; the circle is bounded by viewport HEIGHT so it always
+     fits; and rows stop growing past 1120px on an iPad Pro. Short viewports
+     also claw back vertical chrome and clamp the per-tab hint to two lines,
+     tap to open. Two details worth recording: a grid item defaults to
+     stretching to its row and an overflow:hidden box has a min-content height
+     of zero, so the clamped hint was being squashed to 2px until
+     align-items:start went on; and responsive overrides have to be the LAST
+     rules in the sheet, because same-specificity rules defined later in the
+     file were quietly winning. The guided tour needed real work to survive
+     the short screen: its card was up to 244px of a 430px viewport, so it
+     covered whatever it pointed at. The card is now compact and scrollable
+     under 560px tall, tall targets scroll to the top rather than the centre,
+     and placement tries under the highlight, over it, under a highlight
+     trimmed to fit, and only then pins low. The manifest no longer locks the
+     installed app to portrait.
    ================================================================ */
-const BUILD = 'JBH-88 · R94 · 2026-07-25 · pre-verb (reverse reverb)';
+const BUILD = 'JBH-88 · R95 · 2026-07-25 · iPad + landscape layout';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -8719,24 +8802,39 @@ function tourPlace(){
   const st=TOUR[tourAt]; if(!st) return;
   const spot=$('tourSpot'), card=$('tourCard');
   const el=tourTarget(st);
-  const vh=window.innerHeight, ch=card.offsetHeight||160;
+  const vh=window.innerHeight, ch=card.offsetHeight||160, pad=6, gap=12, edge=8;
   if(!el){
     spot.classList.remove('on');
     card.style.top = Math.max(12, Math.round((vh-ch)/2)) + 'px';
     return;
   }
-  const r=el.getBoundingClientRect(), pad=6;
+  const r=el.getBoundingClientRect();
+  let sTop=r.top-pad, sH=r.height+pad*2;
+  if(sTop<edge){ sH-=(edge-sTop); sTop=edge; }                 // keep it on screen
+  if(sTop+sH > vh-edge) sH = vh-edge-sTop;
+  // A card sitting on top of the thing it is pointing at is useless. On a short
+  // screen — a phone on its side — a full pad grid or tape-lane list is taller
+  // than the room left over, so highlight as much of it as still leaves space
+  // for the card rather than covering it.
+  // A card sitting on top of the thing it points at is useless, and on a short
+  // screen — a phone on its side — a pad grid or a tape-lane list is taller than
+  // the room left over. Try, in order: under the whole highlight, over it, under
+  // a highlight trimmed to the top of the target, and only then pinned low.
+  let top;
+  if(sTop+sH+gap+ch+edge <= vh)      top = sTop+sH+gap;
+  else if(sTop-gap-ch >= edge)       top = sTop-gap-ch;
+  else {
+    const trimmed = vh-sTop-gap-ch-edge;      // how tall the highlight can be with the card below
+    if(trimmed >= 40){ sH = trimmed; top = sTop+sH+gap; }
+    else { top = Math.max(edge, vh-ch-edge);
+           sH = Math.max(28, Math.min(sH, top-gap-sTop)); }
+  }
   spot.classList.add('on');
   spot.style.left   = Math.round(r.left-pad)+'px';
-  spot.style.top    = Math.round(r.top-pad)+'px';
+  spot.style.top    = Math.round(sTop)+'px';
   spot.style.width  = Math.round(r.width+pad*2)+'px';
-  spot.style.height = Math.round(r.height+pad*2)+'px';
-  const below = r.bottom+12, above = r.top-12-ch;
-  let top;
-  if(below+ch+12 <= vh) top = below;          // prefer under the highlight
-  else if(above >= 12)  top = above;          // else over it
-  else top = Math.max(12, vh-ch-12);          // else pinned to the bottom
-  card.style.top = Math.round(top)+'px';
+  spot.style.height = Math.round(sH)+'px';
+  card.style.top    = Math.round(top)+'px';
 }
 function tourShow(i){
   if(i<0) i=0;
@@ -8750,7 +8848,11 @@ function tourShow(i){
   $('tourBack').style.visibility = i===0 ? 'hidden' : 'visible';
   $('tourNext').textContent = (i===TOUR.length-1) ? 'DONE' : 'NEXT';
   const el=tourTarget(st);
-  if(el){ try{ el.scrollIntoView({block:'center',inline:'nearest'}); }catch(e){ try{ el.scrollIntoView(); }catch(e2){} } }
+  if(el){
+    const tall = el.getBoundingClientRect().height > window.innerHeight*0.42;
+    const blk = tall ? 'start' : 'center';    // tall targets go to the top so the card fits below
+    try{ el.scrollIntoView({block:blk,inline:'nearest'}); }catch(e){ try{ el.scrollIntoView(); }catch(e2){} }
+  }
   requestAnimationFrame(()=>requestAnimationFrame(tourPlace));
   tourPlace();
 }
@@ -8779,6 +8881,9 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='ArrowRight'||e.key==='Enter'){ tourShow(tourAt+1); }
   else if(e.key==='ArrowLeft'){ tourShow(tourAt-1); }
 });
+/* short screens clamp the per-tab hint to two lines — tapping one opens it. */
+document.querySelectorAll('.hint').forEach(h=>h.addEventListener('click',()=>h.classList.toggle('open')));
+
 function tourMaybeAutoStart(){
   if(tourSeen()) return;
   const bar=$('restoreBar');
