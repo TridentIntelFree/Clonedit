@@ -1,8 +1,10 @@
-/* MVX-880 offline shell.
+/* JBH-88 offline shell.
    Network-first: online always serves the newest deployed build (no stale
    caches), offline falls back to the last good copy. */
-const CACHE = 'mvx880-shell-v1';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.png'];
+const CACHE = 'jbh88-shell-v2';   // bumped: renamed app + new icon set
+const SHELL = ['./', './index.html', './manifest.webmanifest',
+  './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png',
+  './icons/maskable-192.png', './icons/maskable-512.png'];
 
 self.addEventListener('install', e => {
   self.skipWaiting();

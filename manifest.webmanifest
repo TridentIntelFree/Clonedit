@@ -1,9 +1,20 @@
 {
-  "name": "MVX-880",
-  "short_name": "MVX-880",
+  "name": "JBH-88 Groovebox",
+  "short_name": "JBH-88",
+  "description": "Offline sampler, sequencer and groovebox. Build a drum kit from any sound, program euclidean polyrhythms, record live takes — everything works with no connection.",
   "start_url": ".",
+  "scope": ".",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#17191d",
   "theme_color": "#17191d",
-  "icons": [{ "src": "icon.png", "sizes": "180x180", "type": "image/png" }]
+  "categories": ["music", "entertainment"],
+  "icons": [
+    { "src": "icons/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }

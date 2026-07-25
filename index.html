@@ -5,10 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>JBH-88</title>
+<title>JBH-88 Groovebox</title>
+<meta name="description" content="Offline sampler, sequencer and groovebox: build a drum kit from any sound, program euclidean polyrhythms, record live takes — with no connection.">
+<meta name="apple-mobile-web-app-title" content="JBH-88">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon.png">
-<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <meta name="theme-color" content="#17191d">
 <style>
 :root{
@@ -605,11 +609,11 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <span class="lbl">FEEL</span>
     <select id="grvSel" class="grow">
       <option value="straight">STRAIGHT (reset)</option>
-      <option value="mpc54">MPC SWING 54%</option>
-      <option value="mpc58">MPC SWING 58%</option>
-      <option value="mpc62">MPC SWING 62%</option>
-      <option value="mpc66">MPC SWING 66% (hard)</option>
-      <option value="dilla">DILLA · drunk / off-grid</option>
+      <option value="mpc54">SWING 54% · subtle</option>
+      <option value="mpc58">SWING 58% · classic</option>
+      <option value="mpc62">SWING 62% · heavy</option>
+      <option value="mpc66">SWING 66% · hard</option>
+      <option value="dilla">OFF-GRID · drunk / lopsided</option>
       <option value="push">LATIN PUSH · ahead of the beat</option>
       <option value="drag">REGGAE DRAG · behind the beat</option>
       <option value="shuffle">TRIPLET SHUFFLE</option>
@@ -1616,8 +1620,8 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      LEN" that turns the result into real polymeter, and ALL LOADED PADS which
      rotates each pad one step further for instant polyrhythm. Distribution is
      phased so step 0 is always a hit, and is provably maximally even for every
-     combination up to 16. GROOVE applies feel templates — MPC swing 54/58/62/
-     66, Dilla drunk, Latin push, reggae drag, triplet shuffle, half-time lean,
+     combination up to 16. GROOVE applies feel templates — swing 54/58/62/
+     66, off-grid drunk, Latin push, reggae drag, triplet shuffle, half-time lean,
      human loose — as per-step timing nudges plus optional velocity accents,
      with an AMOUNT blend and per-track or all-tracks scope. Both write into
      the pattern, so they bounce and export exactly as heard; STRAIGHT clears.
@@ -1680,8 +1684,22 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      copy. The worklet module is built from a Blob, so the app is still a
      single offline file, and it is preloaded when audio starts. Engines
      without AudioWorklet transparently keep the old path.
+   - R91: STORE-READINESS PASS 1 — naming + install metadata. (1) Groove
+     presets no longer carry third-party marks: "MPC SWING xx%" became
+     "SWING xx%" (subtle/classic/heavy/hard) and "DILLA" became "OFF-GRID";
+     synth presets "808 Cowbell"/"808 Sub" became "Sub Cowbell"/"Deep Sub",
+     and the sample pack's "Kick 808/909", "Snare 909" and "808 Bass" became
+     Kick Sub / Kick Punch / Snare Snap / Sub Bass. The timing and velocity
+     tables are untouched — only the labels changed. Remaining 808/909
+     mentions are code comments describing a synthesis recipe, not UI.
+     (2) Install metadata was still branded MVX-880 with a single 653-byte
+     icon: the manifest is now JBH-88 Groovebox with description, scope,
+     orientation and categories, and there is a real icon set (180/192/256/
+     512/1024 plus maskable 192/512) drawn as the circle-sequencer motif.
+     The service worker caches them and its cache name is bumped so devices
+     pick the rename up.
    ================================================================ */
-const BUILD = 'JBH-88 · R90 · 2026-07-25 · recording runs on the audio thread (AudioWorklet)';
+const BUILD = 'JBH-88 · R91 · 2026-07-25 · neutral preset names + real app icons and manifest';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -3576,7 +3594,7 @@ const PRESETS=[
   [263.5,400,421,474,587,845].forEach(f=>{ const o=pOsc(oc,'square',f*1.45); pChain(o,pGain(oc,0.15),hp); o.start(0); o.stop(dur); });
   const n=pNoise(oc,dur,37); pChain(n,pGain(oc,0.18),hp); n.start(0);   // wash under the metal
 }},
-{id:'dcow',cat:'DRUMS',name:'808 Cowbell',note:56,dur:0.4,render:(oc,out,f0,dur)=>{
+{id:'dcow',cat:'DRUMS',name:'Sub Cowbell',note:56,dur:0.4,render:(oc,out,f0,dur)=>{
   const bp=pFilt(oc,'bandpass',2640,3.5), e=pEnv(oc,[[0,0],[0.001,0.9],[0.02,0.45],[dur,0.0001,'x']]);
   pChain(bp,e,out);
   [540,800].forEach(f=>{ const o=pOsc(oc,'square',f); pChain(o,pGain(oc,0.5),bp); o.start(0); o.stop(dur); });
@@ -3610,7 +3628,7 @@ const PRESETS=[
   const n=pNoise(oc,0.02,9), ne=pEnv(oc,[[0,0.25],[0.02,0.0001,'x']]);
   pChain(n,pFilt(oc,'bandpass',400,1),ne,out); n.start(0);
 }},
-{id:'b808',cat:'BASS',name:'808 Sub',note:31,dur:2.8,render:(oc,out,f0,dur)=>{
+{id:'b808',cat:'BASS',name:'Deep Sub',note:31,dur:2.8,render:(oc,out,f0,dur)=>{
   const o=pOsc(oc,'sine',f0);
   o.frequency.setValueAtTime(f0*3.4,0);
   o.frequency.exponentialRampToValueAtTime(f0,0.06);        // pitch-drop knock
@@ -6354,12 +6372,12 @@ $('btnEuAll').addEventListener('click',()=>{
    as heard. STRAIGHT clears them. */
 const GROOVES={
   straight:{name:'STRAIGHT', t:new Array(16).fill(0), v:new Array(16).fill(1)},
-  mpc54:{name:'MPC SWING 54%', t:[0,.08,0,.08,0,.08,0,.08,0,.08,0,.08,0,.08,0,.08], v:[1,.92,1,.92,1,.92,1,.92,1,.92,1,.92,1,.92,1,.92]},
-  mpc58:{name:'MPC SWING 58%', t:[0,.16,0,.16,0,.16,0,.16,0,.16,0,.16,0,.16,0,.16], v:[1,.9,1,.9,1,.9,1,.9,1,.9,1,.9,1,.9,1,.9]},
-  mpc62:{name:'MPC SWING 62%', t:[0,.24,0,.24,0,.24,0,.24,0,.24,0,.24,0,.24,0,.24], v:[1,.88,1,.88,1,.88,1,.88,1,.88,1,.88,1,.88,1,.88]},
-  mpc66:{name:'MPC SWING 66%', t:[0,.32,0,.32,0,.32,0,.32,0,.32,0,.32,0,.32,0,.32], v:[1,.86,1,.86,1,.86,1,.86,1,.86,1,.86,1,.86,1,.86]},
-  // Dilla: deliberately uneven — snare late, some hats early, kick a touch behind
-  dilla:{name:'DILLA', t:[0,.19,-.04,.13,.06,.21,-.03,.15,.02,.18,-.05,.12,.07,.23,-.02,.16],
+  mpc54:{name:'SWING 54%', t:[0,.08,0,.08,0,.08,0,.08,0,.08,0,.08,0,.08,0,.08], v:[1,.92,1,.92,1,.92,1,.92,1,.92,1,.92,1,.92,1,.92]},
+  mpc58:{name:'SWING 58%', t:[0,.16,0,.16,0,.16,0,.16,0,.16,0,.16,0,.16,0,.16], v:[1,.9,1,.9,1,.9,1,.9,1,.9,1,.9,1,.9,1,.9]},
+  mpc62:{name:'SWING 62%', t:[0,.24,0,.24,0,.24,0,.24,0,.24,0,.24,0,.24,0,.24], v:[1,.88,1,.88,1,.88,1,.88,1,.88,1,.88,1,.88,1,.88]},
+  mpc66:{name:'SWING 66%', t:[0,.32,0,.32,0,.32,0,.32,0,.32,0,.32,0,.32,0,.32], v:[1,.86,1,.86,1,.86,1,.86,1,.86,1,.86,1,.86,1,.86]},
+  // deliberately uneven — snare late, some hats early, kick a touch behind
+  dilla:{name:'OFF-GRID', t:[0,.19,-.04,.13,.06,.21,-.03,.15,.02,.18,-.05,.12,.07,.23,-.02,.16],
          v:[1,.82,.9,.86,1,.8,.94,.84,.98,.82,.9,.88,1,.78,.92,.85]},
   push:{name:'LATIN PUSH', t:[0,-.05,-.02,-.07,0,-.05,-.02,-.08,0,-.05,-.02,-.07,0,-.06,-.03,-.09],
         v:[1,.88,.95,.85,1,.88,.95,.85,1,.88,.95,.85,1,.9,.95,.9]},
