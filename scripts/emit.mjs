@@ -1,35 +1,33 @@
-/* Copy the built single file to the repository root, where index.html has always
-   lived — the deploy, the service worker shell list and every relative path
-   (samples/, icons/, manifest.webmanifest) depend on it being there. */
-import { readFileSync, writeFileSync, statSync } from 'node:fs';
+/* Stage the built page as index.next.html and run the static checks.
+
+   It is deliberately NOT written to index.html here. That file is what people
+   who have been sent the link are running, so it is only replaced once
+   scripts/smoke.mjs has loaded the new one in a real browser and confirmed it
+   works. Until then the live app is untouched. */
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-const built = resolve(root, 'dist/index.html');
-const out = resolve(root, 'index.html');
+const html = readFileSync(resolve(root, 'dist/index.html'), 'utf8');
 
-const html = readFileSync(built, 'utf8');
-
-// a broken emit would overwrite the deployed app, so sanity-check the payload
 const must = [
   ['an inlined stylesheet', /<style[^>]*>[\s\S]{2000,}<\/style>/],
   ['the legacy engine', /function padPress\s*\(/],
   ['the pad grid', /id="padgrid"/],
-  ['the Svelte component', /data-svelte="about"|aboutPanel/],
-  ['the manifest link', /rel="manifest"/],
-  ['an apple touch icon', /rel="apple-touch-icon"/],
+  ['the Svelte component', /aboutPanel/],
+  ['the manifest link', /<link rel="manifest" href="manifest\.webmanifest">/],
+  ['the apple touch icon', /rel="apple-touch-icon"/],
 ];
-const missing = must.filter(([, re]) => !re.test(html)).map(([what]) => what);
+const missing = must.filter(([, re]) => !re.test(html)).map(([w]) => w);
 if (missing.length) {
-  console.error('emit refused — the build is missing: ' + missing.join(', '));
+  console.error('BUILD REFUSED — the output is missing: ' + missing.join(', '));
   process.exit(1);
 }
-if (html.includes('type="module" src=')) {
-  console.error('emit refused — the build still references an external module; it must be self-contained.');
+if (/<script[^>]+src=["'][^"']/.test(html) || /<link[^>]+rel=["']stylesheet/.test(html)) {
+  console.error('BUILD REFUSED — the output is not self-contained (it still loads an external file).');
   process.exit(1);
 }
 
-/* Anyone opening index.html should know an edit here is lost on the next build. */
 const banner = `<!DOCTYPE html>
 <!-- ==========================================================================
      GENERATED FILE — do not edit.
@@ -41,5 +39,5 @@ const banner = `<!DOCTYPE html>
      It is committed because there is no CI: this file IS the deployment.
      ========================================================================== -->
 `;
-writeFileSync(out, html.replace(/^<!DOCTYPE html>\r?\n/i, banner));
-console.log('index.html  ' + (statSync(out).size / 1024).toFixed(0) + ' KB  (self-contained)');
+writeFileSync(resolve(root, 'index.next.html'), html.replace(/^<!DOCTYPE html>\r?\n/i, banner));
+console.log('staged  index.next.html  ' + (html.length / 1024).toFixed(0) + ' KB');

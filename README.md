@@ -28,6 +28,19 @@ npm run dev       # hot-reloading dev server while you work
 there is no CI — that file *is* the deployment — so **build before you push** or
 the deployed app will lag behind the source.
 
+The build will not publish an app that does not work. Output is staged as
+`index.next.html`, loaded in a real browser from a real server, and only
+promoted to `index.html` once it has booted: 64 pads, the engine present, all
+ten tabs opening, the sequencer running, no JS errors. If any of that fails,
+**`index.html` is left exactly as it was** and the build exits non-zero — the
+link you have handed out keeps working. The failing build is left at
+`index.next.html` to inspect.
+
+That needs a browser. If none can be found the build stops rather than
+publishing something unverified; install one with `npx playwright install
+chromium`, or set `CHROME_PATH`. `npm run build -- --skip-smoke` overrides it,
+and you should know why you are doing that.
+
 To just run what is already built, no toolchain needed:
 
 ```sh

@@ -819,8 +819,33 @@
      src/lib/About.svelte is the first component — small and additive on
      purpose, proving the pipeline compiles, mounts into the running app, stays
      reactive and scopes its styles.
+   - R98: THE BUILD NOW GUARDS THE LINK YOU HANDED OUT. index.html is not just
+     an artifact, it is what everyone who was sent the link is running, so a
+     broken one is not a failed build — it is a broken app in someone else's
+     hands. The build no longer writes it directly. Output is staged as
+     index.next.html, loaded in a real browser from a real server with the real
+     sample and icon files beside it, and only promoted once it has actually
+     booted: 64 pads, the engine's functions present, all ten tabs opening, the
+     sequencer running, the Svelte component mounted, no JS errors and no failed
+     requests. If any of that fails the live page is left untouched and the
+     build exits non-zero. Verified by deliberately sabotaging the engine and
+     confirming index.html came through byte-identical.
+     Also fixes a service worker bug that had exactly the same consequence.
+     "Network-first" was not enough on its own: a plain fetch() still goes
+     through the browser's HTTP cache, so an installed app could be handed a
+     stale page while perfectly online — and the worker then wrote that stale
+     copy into its own cache and kept serving it. Someone could have sat on an
+     old build long after it was fixed. The shell is now revalidated with
+     cache:'no-store' and installed with cache:'reload'. The first test written
+     for this passed against the OLD worker too, because page.reload()
+     revalidates the navigation by itself and never exercises the worker's own
+     fetch path; rewritten to fetch through the worker, the old code returns
+     stale twice without contacting the server and the new code returns fresh.
+     Samples and icons are deliberately left on normal caching — they are large,
+     they almost never change, and re-downloading a 14 MB pack every launch
+     would be worse than the bug.
    ================================================================ */
-const BUILD = 'JBH-88 · R97 · 2026-07-25 · Vite + Svelte build';
+const BUILD = 'JBH-88 · R98 · 2026-07-25 · verified builds + reliable updates';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
