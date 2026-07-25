@@ -521,7 +521,17 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
     <button id="btnNotes">NOTES</button>
     <span id="lockHint" style="font-size:10px;color:var(--txt-dim)">tap step to toggle</span>
   </div>
+  <div class="row">
+    <span class="lbl">VIEW</span>
+    <button id="btnViewGrid" class="on">GRID</button>
+    <button id="btnViewCircle">&#9711; CIRCLE</button>
+    <span id="viewHint" style="font-size:10px;color:var(--txt-dim);flex:1">rows of steps</span>
+  </div>
   <div id="stepgrid"></div>
+  <div id="circlewrap" style="display:none">
+    <canvas id="circle" width="760" height="760" style="width:100%;height:auto;display:block;background:var(--lcd-bg);border:1px solid var(--line);border-radius:10px;touch-action:none"></canvas>
+    <div style="font-size:10px;color:var(--txt-dim);margin:4px 0 6px">Outer ring = the selected track — tap its segments to place hits. Inner rings are the other tracks; <b>tap one to select it</b>. Each ring turns at its own LEN, so polymeter is something you can watch.</div>
+  </div>
   <div class="row">
     <span class="lbl">VEL</span>
     <input type="range" id="stepVel" min="0.2" max="1" step="0.05" value="0.85" class="grow">
@@ -1601,8 +1611,16 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      beat. It auto-finds the sample's strongest onset to use as attack
      material, trims and normalises each piece, fills pads from the TARGET
      onward, and warns before replacing loaded pads. Undoable.
+   - R86: CIRCLE VIEW (SEQ). A GRID / CIRCLE toggle — your choice, remembered
+     between sessions; both views edit the SAME pattern and stay in sync. In
+     circle view every track is a ring: the selected track is the outer ring
+     (tap its segments to place hits, brightness = velocity), and up to seven
+     other tracks with content are inner rings — tap one to select it. Each
+     ring turns at its OWN track LEN, so polymeter (long supported, never
+     visible) becomes something you watch drift, with a blue playhead per
+     ring. The hub shows the pattern and selected track.
    ================================================================ */
-const BUILD = 'JBH-88 · R85 · 2026-07-25 · BUILD A KIT — any sound becomes a drum kit';
+const BUILD = 'JBH-88 · R86 · 2026-07-25 · CIRCLE view — polymeter you can watch (GRID/CIRCLE toggle)';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -4380,7 +4398,106 @@ function markStep(absStep){
   const cur16=posMod(absStep,NSTEPS);
   document.querySelectorAll('#silrow .step').forEach((el,i)=>el.classList.toggle('cur',i===cur16));
   if(notesMode) document.querySelectorAll('#notegrid .ncell').forEach(el=>el.classList.toggle('curcol',+el.dataset.col===cur));
+  if(seqView==='circle') drawCircle();
 }
+
+/* ---------------- CIRCLE VIEW — the same pattern, drawn as rings -------------
+   Each track becomes a ring whose segments are its steps, and each ring turns
+   at its OWN length. Polymeter (already supported via per-track LEN) stops
+   being an abstraction and becomes something you can watch drift. Grid and
+   circle edit the same data; the toggle is purely how you look at it. */
+let seqView='grid';
+const CIRC={rings:[],cx:0,cy:0};
+function circleTracks(){
+  const pat=S.patterns[S.pattern], list=[S.seqPad];
+  for(let p=0;p<NPADS && list.length<8;p++){
+    if(p===S.seqPad) continue;
+    if(pat.steps[p].some(v=>v>0)) list.push(p);
+  }
+  return list;
+}
+function drawCircle(){
+  const cv=$('circle'); if(!cv || seqView!=='circle') return;
+  const cx=cv.getContext('2d'), W=cv.width, H=cv.height, ccx=W/2, ccy=H/2;
+  cx.fillStyle='#120d04'; cx.fillRect(0,0,W,H);
+  const pat=S.patterns[S.pattern], tracks=circleTracks();
+  const outer=Math.min(W,H)*0.46, inner=Math.min(W,H)*0.14;
+  const span=(outer-inner)/Math.max(1,tracks.length);
+  CIRC.rings=[]; CIRC.cx=ccx; CIRC.cy=ccy;
+  tracks.forEach((p,ri)=>{
+    const r1=outer-ri*span, r0=r1-span*0.72;
+    const len=trackLen(pat,p), row=pat.steps[p], isSel=(p===S.seqPad);
+    const curIdx=playing?posMod(curAbsStep,len):-1;
+    for(let i=0;i<len;i++){
+      const a0=-Math.PI/2 + (i/len)*Math.PI*2 + 0.012;
+      const a1=-Math.PI/2 + ((i+1)/len)*Math.PI*2 - 0.012;
+      const v=row[i], on=v>0, isCur=(i===curIdx);
+      cx.beginPath();
+      cx.arc(ccx,ccy,r1,a0,a1); cx.arc(ccx,ccy,r0,a1,a0,true); cx.closePath();
+      if(on){
+        const al=isSel?(0.45+v*0.55):(0.20+v*0.28);
+        cx.fillStyle=isSel?'rgba(255,140,46,'+al.toFixed(2)+')':'rgba(255,180,84,'+al.toFixed(2)+')';
+      }else{
+        cx.fillStyle=isSel?'rgba(255,255,255,0.06)':'rgba(255,255,255,0.03)';
+      }
+      cx.fill();
+      if(isCur){ cx.strokeStyle='#4aa3ff'; cx.lineWidth=isSel?4:2; cx.stroke(); }
+      else if(isSel && i%4===0){ cx.strokeStyle='rgba(255,255,255,0.18)'; cx.lineWidth=1; cx.stroke(); }
+    }
+    // ring label
+    cx.fillStyle=isSel?'#ffb454':'rgba(255,180,84,0.5)';
+    cx.font=(isSel?'bold ':'')+Math.round(span*0.42)+'px ui-monospace';
+    cx.textAlign='right'; cx.textBaseline='middle';
+    cx.fillText(padName(p)+(len!==NSTEPS?('/'+len):''), ccx-6, ccy-(r0+r1)/2+span*0.05);
+    CIRC.rings.push({p,r0,r1,len});
+  });
+  // hub: pattern + selected track
+  cx.textAlign='center'; cx.textBaseline='middle';
+  cx.fillStyle='#8a6530'; cx.font='26px ui-monospace';
+  cx.fillText('PTN '+(S.pattern+1), ccx, ccy-14);
+  cx.fillStyle='#ffb454'; cx.font='bold 30px ui-monospace';
+  cx.fillText(padName(S.seqPad), ccx, ccy+20);
+}
+function circleTap(clientX,clientY){
+  const cv=$('circle'), r=cv.getBoundingClientRect();
+  const sx=cv.width/r.width, sy=cv.height/r.height;
+  const x=(clientX-r.left)*sx-CIRC.cx, y=(clientY-r.top)*sy-CIRC.cy;
+  const rad=Math.hypot(x,y);
+  const ring=CIRC.rings.find(g=>rad>=g.r0-2 && rad<=g.r1+2);
+  if(!ring) return;
+  if(ring.p!==S.seqPad){          // tapping an inner ring selects that track
+    S.seqPad=ring.p; S.editPad=ring.p; manualPad=true;
+    seqSelStep=-1; drawSeq(); drawPads(); drawCircle();
+    lcd('TRACK '+padName(ring.p)+' selected — it moves to the outer ring.');
+    return;
+  }
+  let ang=Math.atan2(y,x)+Math.PI/2;            // 0 at top, clockwise
+  if(ang<0) ang+=Math.PI*2;
+  const i=Math.floor(ang/(Math.PI*2)*ring.len)%ring.len;
+  const pat=S.patterns[S.pattern], row=pat.steps[ring.p];
+  const wasOn=row[i]>0;
+  row[i]=wasOn?0:parseFloat($('stepVel').value);
+  if(wasOn){ delete pat.locks[ring.p+':'+i]; if(playing) stopPadVoices(ring.p); }
+  else if(!playing) hitLive(ring.p,row[i]);
+  drawSteps(); drawCircle(); dirty();
+}
+$('circle').addEventListener('touchstart',e=>{ e.preventDefault(); const t=e.changedTouches[0]; circleTap(t.clientX,t.clientY); },{passive:false});
+$('circle').addEventListener('mousedown',e=>circleTap(e.clientX,e.clientY));
+function setSeqView(v){
+  seqView=v;
+  $('stepgrid').style.display = v==='grid' ? '' : 'none';
+  $('circlewrap').style.display = v==='circle' ? '' : 'none';
+  $('btnViewGrid').classList.toggle('on',v==='grid');
+  $('btnViewCircle').classList.toggle('on',v==='circle');
+  $('viewHint').textContent = v==='circle'
+    ? 'rings turn at their own LEN — watch polymeter drift'
+    : 'rows of steps';
+  if(v==='circle') drawCircle();
+  try{ localStorage.setItem('jbh_seqview',v); }catch(e){}
+}
+$('btnViewGrid').addEventListener('click',()=>setSeqView('grid'));
+$('btnViewCircle').addEventListener('click',()=>setSeqView('circle'));
+try{ const sv=localStorage.getItem('jbh_seqview'); if(sv==='circle') setSeqView('circle'); }catch(e){}
 function seqTick(){
   while(nextStepTime < AC.currentTime + 0.12){
     schedStep(curStepSched, absStepSched, nextStepTime);
@@ -5517,6 +5634,7 @@ function drawSteps(){
   drawNotes();   // keep the melodic lane in step with the velocity grid
   drawPads();    // pad LEDs mirror the current pattern's usage
   drawSil();     // silencer row belongs to the pattern too
+  if(seqView==='circle') drawCircle();   // both views show the same pattern
 }
 function setTrackLen(d){
   const pat=S.patterns[S.pattern];
