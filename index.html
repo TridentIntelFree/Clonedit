@@ -997,13 +997,7 @@
     <button id="fbPreview">PREVIEW</button>
   </div>
   <div id="fbMsg" style="font-size:11px;color:var(--lcd);margin:2px 0 6px"></div>
-  <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
-    <b>POST</b> opens the project&rsquo;s issue tracker with the whole report already written out &mdash; press Submit
-    there and it can be read straight away, with no file to pass around. It needs a GitHub account, and the
-    project is <b>public</b>, so treat what you write as public too.
-    <b>COPY</b> puts the same report on your clipboard as plain text, to send privately instead.
-    Diagnostics are engine state only &mdash; pad slots, levels, errors. No project names, no sample names, no audio.
-  </div>
+  <div id="fbRouteNote" style="font-size:11px;color:var(--txt-dim);margin:0 0 6px"></div>
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>
@@ -2359,8 +2353,26 @@ Object.assign(globalThis, __JBH_PURE);})();
      now says the project is public, says what the diagnostics contain (engine
      state — pad slots, levels, errors; no project names, no sample names, no
      audio), and offers COPY as the genuinely private route.
+   - R106: REPORTING WITHOUT AN ACCOUNT. R105 made reports readable but left the
+     main route needing a GitHub login, which is no good for a tester who just
+     wants to type a few words. A static offline file cannot write to a repo by
+     itself — that needs a secret, and a secret shipped inside a public app gets
+     abused — so the relay in feedback/worker.js does it: the app POSTs the
+     report, the relay holds the token server-side and appends it to
+     feedback/inbox.json, and it is read from there. The tester needs no
+     account, installs nothing, and never sees a file.
+     The relay already existed for the old blob format; it now takes plain
+     Markdown, so the inbox is readable without decoding anything. With an
+     endpoint configured SEND is one tap; with none it says so plainly, keeps
+     the issue-tracker route, and warns that one needs an account and is public.
+     A relay that is down or blocked falls back to the issue tracker rather than
+     losing the report.
+     feedback/decode.js turns out to have been broken since R97: package.json
+     gained "type": "module", which made its require() calls illegal. Nobody
+     noticed because there were no reports to read. Rewritten as ESM, taught the
+     new format, and now covered by the suite.
    ================================================================ */
-const BUILD = 'JBH-88 · R105 · 2026-07-26 · readable bug reports';
+const BUILD = 'JBH-88 · R106 · 2026-07-26 · reporting without an account';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -9259,9 +9271,8 @@ $('btnDiag').addEventListener('click',()=>{ const d=diagDump('manual'); $('docTe
    OFFLINE / no endpoint: falls back to the OS share sheet / clipboard so the
    tester forwards the blob to the developer directly. Either way there is no
    public write path to abuse. */
-const FEEDBACK_ENDPOINT='';   // ← paste your deployed Worker URL here to turn on the online 100-message inbox; empty = share/copy only
-// You can also set it without editing this file:  localStorage.setItem('jbh_fb_endpoint','https://…')
-function feedbackEndpoint(){ try{ return (localStorage.getItem('jbh_fb_endpoint')||'').trim()||FEEDBACK_ENDPOINT; }catch(e){ return FEEDBACK_ENDPOINT; } }
+/* FEEDBACK_ENDPOINT + feedbackEndpoint() are defined with the rest of the
+   reporting code below. */
 let lastFbT=0;
 
 /* A report is only useful if somebody can READ it. The old one was packaged as
@@ -9272,7 +9283,33 @@ let lastFbT=0;
 
    COPY stays for anyone without a GitHub account, or who would rather send it
    privately: the same text, no encoding. */
-const FEEDBACK_REPO='TridentIntelFree/Clonedit';   // where POST files the issue
+const FEEDBACK_REPO='TridentIntelFree/Clonedit';   // where the issue-tracker route files to
+
+/* Paste a deployed relay URL here (feedback/worker.js) and SEND becomes a
+   single tap that needs no account at all: the app POSTs the report, the relay
+   writes it into feedback/inbox.json in the repo, and it can be read from
+   there. Empty = no relay, and SEND falls back to the issue tracker, which does
+   need a GitHub account.
+   Settable without a rebuild:  localStorage.setItem('jbh_fb_endpoint','https://…') */
+const FEEDBACK_ENDPOINT='';
+function feedbackEndpoint(){
+  try{ return (localStorage.getItem('jbh_fb_endpoint')||'').trim()||FEEDBACK_ENDPOINT; }
+  catch(e){ return FEEDBACK_ENDPOINT; }
+}
+/* The button can only promise what is actually wired up, so it says which. */
+function fbRefreshUI(){
+  const relay=!!feedbackEndpoint();
+  const b=$('fbSubmit'); if(!b) return;
+  b.innerHTML = relay ? '&#128232; SEND REPORT' : '&#128172; POST TO THE ISSUE TRACKER';
+  const n=$('fbRouteNote');
+  if(n) n.innerHTML = relay
+    ? 'Goes straight to the developer &mdash; no account, no file to pass around. '
+      + 'Diagnostics are engine state only: pad slots, levels, errors. No project names, no sample names, no audio.'
+    : '<b>SEND</b> opens the project&rsquo;s issue tracker with the report already written out; press Submit there. '
+      + 'That needs a GitHub account, and the project is <b>public</b>, so treat what you write as public too. '
+      + '<b>COPY</b> puts the same report on your clipboard to send privately instead. '
+      + 'Diagnostics are engine state only: pad slots, levels, errors. No project names, no sample names, no audio.';
+}
 
 function fbDevice(){
   const bits=[];
@@ -9318,8 +9355,34 @@ function fbValidate(){
   return { msg, cat:$('fbCat').value, diag:$('fbDiag').checked };
 }
 
-$('fbSubmit').addEventListener('click',()=>{
+async function fbSendViaRelay(endpoint,r){
+  $('fbMsg').textContent='Sending …';
+  const report=fbReport(r.cat,r.msg,r.diag,8000);
+  const ctrl=('AbortController' in window)?new AbortController():null;
+  const to=ctrl?setTimeout(()=>ctrl.abort(),12000):0;
+  try{
+    const res=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({report}),signal:ctrl?ctrl.signal:undefined});
+    if(to) clearTimeout(to);
+    if(res.ok){
+      $('fbMsg').textContent='Sent — thank you. The developer can read it now.';
+      $('fbText').value='';
+      return true;
+    }
+    if(res.status===429){ $('fbMsg').textContent='Just a moment between reports, please — try again shortly.'; lastFbT=0; return true; }
+    return false;                        // any other status: fall through, lose nothing
+  }catch(e){ if(to) clearTimeout(to); return false; }
+}
+
+$('fbSubmit').addEventListener('click',async ()=>{
   const r=fbValidate(); if(!r) return;
+  // the account-free route, when a relay is configured
+  const endpoint=feedbackEndpoint();
+  if(endpoint && navigator.onLine){
+    lastFbT=Date.now();
+    if(await fbSendViaRelay(endpoint,r)) return;
+    $('fbMsg').textContent='Could not reach the developer — opening the issue tracker instead …';
+  }
   // GitHub rejects very long URLs, so build the body to fit and say so if the
   // diagnostics had to be trimmed rather than silently dropping them
   const base='https://github.com/'+FEEDBACK_REPO+'/issues/new';
@@ -9351,6 +9414,7 @@ $('fbCopy').addEventListener('click',async ()=>{
   }
 });
 
+fbRefreshUI();
 $('fbPreview').addEventListener('click',()=>{
   const msg=$('fbText').value.trim();
   if(msg.length<4){ $('fbMsg').textContent='Write something first and PREVIEW will show exactly what gets sent.'; return; }

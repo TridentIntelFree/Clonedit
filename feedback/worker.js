@@ -6,24 +6,34 @@
  * it in the repo as a RING BUFFER capped at 100 — so a spam flood can never
  * grow the inbox beyond 100 short messages.
  *
- * ── Deploy (once) ────────────────────────────────────────────────────────
- *   1. Create a GitHub fine-grained token limited to THIS repo with
- *      "Contents: Read and write". Nothing else.
- *   2. `npm i -g wrangler` then `wrangler deploy` this file (or paste it into
- *      the Cloudflare dashboard → Workers → Quick edit).
- *   3. Set these as Worker variables/secrets:
- *        GH_TOKEN   (secret)  the fine-grained token
- *        GH_REPO    (var)     "owner/name"  e.g. "tridentintelfree/clonedit"
- *        GH_BRANCH  (var)     "main"
- *        GH_PATH    (var)     "feedback/inbox.json"
- *   4. Copy the Worker's URL into the app: set FEEDBACK_ENDPOINT in index.html.
+ * A tester needs no account and installs nothing: the app POSTs here, this
+ * writes the report into the repo, and it can be read straight from
+ * feedback/inbox.json. Reports are plain Markdown, so no decoding either.
  *
- * The token never touches the app or the testers. The Worker only appends;
- * it can't read other files or damage the repo beyond feedback/inbox.json.
+ * ── Deploy (once, about ten minutes, all in a browser) ────────────────────
+ *   1. github.com → Settings → Developer settings → Personal access tokens →
+ *      Fine-grained tokens → Generate new token.
+ *        · Repository access: Only select repositories → this repo
+ *        · Permissions: Repository permissions → Contents → Read and write
+ *      Nothing else. Copy the token.
+ *   2. dash.cloudflare.com → Workers & Pages → Create → Worker → Deploy.
+ *      Then "Edit code", paste this whole file over what is there, Deploy.
+ *   3. That Worker → Settings → Variables:
+ *        GH_TOKEN   (encrypt it)  the token from step 1
+ *        GH_REPO    (plain text)  "TridentIntelFree/Clonedit"
+ *        GH_BRANCH  (plain text)  "main"
+ *        GH_PATH    (plain text)  "feedback/inbox.json"
+ *   4. Copy the Worker's URL (…workers.dev) and set FEEDBACK_ENDPOINT in
+ *      src/legacy.js, then rebuild. Or, without rebuilding, run this once in
+ *      the app's console:
+ *        localStorage.setItem('jbh_fb_endpoint','https://…workers.dev')
+ *
+ * The token never touches the app or the testers. This Worker can only append
+ * to that one file; it cannot read anything else or damage the repo.
  */
 
 const CAP = 100;            // hard ceiling on stored reports (ring buffer)
-const MAX_BLOB = 8000;      // reject anything bigger than a short report + diag
+const MAX_REPORT = 9000;    // reject anything bigger than a short report + diag
 const MIN_INTERVAL_MS = 4000; // soft per-IP throttle (best-effort, in-memory)
 
 const seen = new Map();     // ip -> last accept time (per-isolate, best effort)
@@ -44,16 +54,20 @@ export default {
 
     let body;
     try { body = await req.json(); } catch (e) { return j({ error: 'bad json' }, 400, cors); }
-    const blob = (body && body.blob || '').toString();
-    if (!/^jbhfb1:[A-Za-z0-9+/=]+$/.test(blob) || blob.length > MAX_BLOB)
+    // Reports are plain Markdown as of R105, so the inbox is readable without a
+    // decoder. The old base64 form is still accepted so anything already in
+    // flight is not thrown away.
+    const text = (body && (body.report || body.blob) || '').toString();
+    if (text.length < 8 || text.length > MAX_REPORT)
       return j({ error: 'invalid report' }, 400, cors);
 
     for (let attempt = 0; attempt < 4; attempt++) {
       const cur = await ghGet(env);
       const data = (cur.json && Array.isArray(cur.json.reports))
         ? cur.json
-        : { fmt: 'jbh-inbox-1', cap: CAP, updated: '', reports: [] };
-      data.reports.push({ t: new Date().toISOString(), ip: await hash(ip), blob });
+        : { fmt: 'jbh-inbox-2', cap: CAP, updated: '', reports: [] };
+      data.fmt = 'jbh-inbox-2';
+      data.reports.push({ t: new Date().toISOString(), ip: await hash(ip), text });
       if (data.reports.length > CAP) data.reports = data.reports.slice(-CAP);  // keep newest 100
       data.cap = CAP;
       data.updated = new Date().toISOString();
