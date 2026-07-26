@@ -964,8 +964,27 @@
      otherwise amber app, because -webkit-appearance:slider-vertical opts a
      range back into the platform look. writing-mode does the rotating without
      giving up the custom thumb.
+   - R104: THE MORPH SLIDER WAS HIJACKING THE SEQUENCER. Reported as hits not
+     lighting up in the circle view, and the cause was a footgun introduced with
+     MORPH itself: dragging the AMOUNT slider ENGAGED the morph. A thumb brushing
+     it on the way past was enough. From then on the grid and the circle showed a
+     BLEND rather than the pattern — so on a project whose second pattern is
+     empty, the hits simply vanished — and every edit was silently refused, with
+     nothing having announced that a mode had been entered.
+     The slider now only sets the amount and redraws the preview strip. MORPH is
+     the only thing that starts a morph, which is what the button is for, and
+     END:HOLD already existed for hand-scrubbing once it is running.
+     A running morph is also no longer something you have to infer: a badge sits
+     directly above the step grid naming both patterns and the amount, and the
+     circle paints the same warning across the top, because that view fills the
+     screen and the badge would be off-shot.
+     The circle suite only ever checked the DATA — ring lengths, which track is
+     selected, where the playheads sit — which is why a rendering complaint had
+     to come from a user. It now reads the canvas: hits must light the rings well
+     beyond the ring-label baseline, no playhead may be painted while stopped,
+     and one must be painted on every frame while playing, moving as it goes.
    ================================================================ */
-const BUILD = 'JBH-88 · R103 · 2026-07-26 · landscape overlap fix';
+const BUILD = 'JBH-88 · R104 · 2026-07-26 · morph no longer hijacks the grid';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2234,9 +2253,14 @@ function morphSetAmt(v){
   const m=S.morph;
   m.amt=clamp(v,0,1);
   m.pos=Math.round(m.amt*m.bars);
-  const engaged=m.on;
-  if(!m.on){ if(m.from===m.to){ lcd('MORPH needs two different patterns.'); return; } m.on=true; S.chainOn=false; S.songOn=false; selectPattern(m.from); }
-  morphBuild(); if(engaged) drawSteps(); else drawSeq(); dirty();
+  /* Dragging this used to ENGAGE the morph, which silently took the sequencer
+     over: the grid and circle started showing a blend instead of the pattern,
+     and every edit was refused. A thumb brushing the slider on the way past was
+     enough, and nothing announced it. The slider now only sets the amount and
+     redraws the preview strip; MORPH is the only thing that starts a morph. */
+  if(m.on){ morphBuild(); drawSteps(); }
+  else drawMorph();
+  dirty();
 }
 function morphGuard(){        // shared by every pattern-editing handler
   if(!morphActive()) return false;
@@ -4685,6 +4709,12 @@ function drawCircle(){
     cx.fillText(padName(p)+(len!==patLen(pat)?('/'+len):''), ccx-6, ccy-(r0+r1)/2+span*0.05);
     CIRC.rings.push({p,r0,r1,len});
   });
+  if(morphActive()){                               // this is a blend, not the pattern
+    cx.fillStyle='rgba(74,163,255,0.92)';
+    cx.font='bold '+Math.round(W*0.028)+'px system-ui,sans-serif';
+    cx.textAlign='center'; cx.textBaseline='top';
+    cx.fillText('MORPH '+Math.round(S.morph.amt*100)+'% — showing the blend', ccx, 10);
+  }
   // hub: pattern + selected track
   cx.textAlign='center'; cx.textBaseline='middle';
   cx.fillStyle='#8a6530'; cx.font='26px ui-monospace';
@@ -5852,6 +5882,11 @@ function drawSeq(){
   }
   $('seqPadName').textContent=padName(S.seqPad)+(S.pads[S.seqPad].name?' · '+S.pads[S.seqPad].name:'');
   { const pl=curPatLen(); $('patLenSel').value=String(pl); $('euSteps').max=String(pl); }
+  { const b=$('seqModeBadge');                    // the grid is not the pattern right now — say so
+    if(b){ const on=morphActive();
+      b.style.display=on?'':'none';
+      if(on) b.textContent='MORPH RUNNING · PTN '+(S.morph.from+1)+' → PTN '+(S.morph.to+1)
+        +' · '+Math.round(S.morph.amt*100)+'% — showing the blend, editing is off'; } }
   drawSteps(); drawAuto(); drawSong();
 }
 let seqLockMode=false, seqSelStep=-1;

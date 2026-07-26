@@ -221,6 +221,9 @@ h3 span{font-weight:400}
 #micBar>div.clip{background:var(--red)}
 #micPeakV{font-family:var(--f-mono);min-width:54px}
 
+#seqModeBadge{font-size:var(--fs-xs);color:var(--sel);background:rgba(74,163,255,.10);
+  border:1px solid var(--sel);border-radius:var(--r-sm);padding:6px 10px;margin:0 0 var(--sp-2)}
+
 /* sequencer */
 #stepgrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:8px 0}
 .step{aspect-ratio:1;background:var(--pad);border:1px solid var(--line);border-radius:7px;position:relative;touch-action:manipulation}
