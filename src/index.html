@@ -81,6 +81,7 @@
   <button role="tab" aria-label="Sampler" data-v="smpl">SMPL</button>
   <button role="tab" aria-label="Sequencer" data-v="seq">SEQ</button>
   <button role="tab" aria-label="Tape tracks" data-v="trax">TRAX</button>
+  <button role="tab" aria-label="Microphone" data-v="mic">MIC</button>
   <button role="tab" aria-label="Live instruments" data-v="live">LIVE</button>
   <button role="tab" aria-label="Amp and guitar input" data-v="amp">AMP</button>
   <button role="tab" aria-label="DJ decks" data-v="dj">DJ</button>
@@ -588,6 +589,80 @@
   <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
     Tape lanes roll from bar 1 with the sequencer, save with the session, and mix into the
     WAV bounce. BUS records everything you hear except the tracks themselves — overdub freely.
+  </div>
+</div>
+
+<!-- MIC -->
+<div class="view" role="tabpanel" aria-label="Microphone" id="v-mic">
+  <div class="hint"><b>SING, SPEAK, BEATBOX, RECORD A ROOM.</b> Turn the mic on, shape the voice, then
+  <b>RECORD</b> straight to a tape lane &mdash; no need to arm anything or start the sequencer.
+  <b>Use headphones</b> before turning MONITOR on, or the speakers will howl.</div>
+
+  <div class="row">
+    <button id="btnMicOn" class="rec grow">&#9673; TURN THE MIC ON</button>
+  </div>
+  <div class="row">
+    <span class="lbl">INPUT</span>
+    <select id="micIn" class="grow" aria-label="Microphone input device"><option value="default">Default microphone</option></select>
+  </div>
+  <div class="row">
+    <span class="lbl">LEVEL</span>
+    <div id="micBar"><div></div></div>
+    <span id="micPeakV" class="val">&mdash;</span>
+  </div>
+  <div class="row">
+    <button id="btnMicMon">MONITOR</button>
+    <span id="micMonHint" style="font-size:11px;color:var(--txt-dim);flex:1">off &mdash; headphones only, or it will feed back</span>
+  </div>
+
+  <h3>VOICE <span style="color:var(--txt-dim);letter-spacing:0">&mdash; shaped before it is recorded</span></h3>
+  <div class="row">
+    <span class="lbl">PRESET</span>
+    <select id="micPreset" class="grow">
+      <option value="natural">Natural — just tidied up</option>
+      <option value="warm">Warm — fuller, softer top</option>
+      <option value="bright">Bright — forward and clear</option>
+      <option value="radio">Radio — loud, close, compressed</option>
+      <option value="phone">Telephone — thin and boxy</option>
+      <option value="mega">Megaphone — distorted and harsh</option>
+      <option value="whisper">Whisper — intimate, lifted</option>
+      <option value="huge">Huge — doubled and washed</option>
+    </select>
+  </div>
+  <div class="pslider"><span class="lbl">GAIN</span><input type="range" id="micGain" min="0" max="4" step="0.05" value="1"><span class="val" id="micGainV">1.0&times;</span></div>
+  <div class="pslider"><span class="lbl">RUMBLE</span><input type="range" id="micHp" min="20" max="400" step="5" value="80"><span class="val" id="micHpV">80Hz</span></div>
+  <div class="pslider"><span class="lbl">TONE</span><input type="range" id="micLp" min="1200" max="18000" step="100" value="18000"><span class="val" id="micLpV">off</span></div>
+  <div class="pslider"><span class="lbl">GATE</span><input type="range" id="micGate" min="0" max="1" step="0.01" value="0.12"><span class="val" id="micGateV">12%</span></div>
+  <div class="pslider"><span class="lbl">SMOOTH</span><input type="range" id="micComp" min="0" max="1" step="0.01" value="0.35"><span class="val" id="micCompV">35%</span></div>
+  <div class="pslider"><span class="lbl">SIBILANCE</span><input type="range" id="micSib" min="0" max="1" step="0.01" value="0"><span class="val" id="micSibV">0%</span></div>
+  <div class="pslider"><span class="lbl">LOW</span><input type="range" id="micLo" min="-12" max="12" step="0.5" value="0"><span class="val" id="micLoV">0dB</span></div>
+  <div class="pslider"><span class="lbl">MID</span><input type="range" id="micMid" min="-12" max="12" step="0.5" value="0"><span class="val" id="micMidV">0dB</span></div>
+  <div class="pslider"><span class="lbl">HIGH</span><input type="range" id="micHi" min="-12" max="12" step="0.5" value="0"><span class="val" id="micHiV">0dB</span></div>
+  <div class="pslider"><span class="lbl">CHARACTER</span><input type="range" id="micDrive" min="0" max="1" step="0.01" value="0"><span class="val" id="micDriveV">0%</span></div>
+  <div class="pslider"><span class="lbl">DOUBLE</span><input type="range" id="micDbl" min="0" max="1" step="0.01" value="0"><span class="val" id="micDblV">0%</span></div>
+  <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="micRev" min="0" max="1" step="0.01" value="0.1"><span class="val" id="micRevV">10%</span></div>
+  <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="micDly" min="0" max="1" step="0.01" value="0"><span class="val" id="micDlyV">0%</span></div>
+
+  <h3>RECORD <span style="color:var(--txt-dim);letter-spacing:0">&mdash; straight to tape, nothing to arm</span></h3>
+  <div class="row">
+    <button id="btnMicRec" class="rec grow">&#9679; RECORD</button>
+    <span id="micRecInfo" style="font-size:11px;color:var(--lcd);min-width:88px">ready</span>
+  </div>
+  <div class="row">
+    <span class="lbl">GOES TO</span>
+    <select id="micDest" class="grow">
+      <option value="lane">the next empty tape lane</option>
+      <option value="pad">the selected pad</option>
+    </select>
+  </div>
+  <div class="row">
+    <label style="font-size:11px;display:flex;align-items:center;gap:6px">
+      <input type="checkbox" id="micWet" checked> record the shaping too (off = the raw mic)
+    </label>
+  </div>
+  <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
+    A take lands on a tape lane, where it loops, takes FX, or goes to a pad. The sequencer does not need to
+    be running &mdash; press RECORD, speak, press it again. Everything stays on this device.
   </div>
 </div>
 

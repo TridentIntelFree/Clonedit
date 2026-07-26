@@ -915,8 +915,35 @@
      line-height, and changing the type size silently started it cutting through
      the middle of a line again, exactly as in R95. Both the app rule and the
      test now compute from the line-height instead of a magic number.
+   - R102: A MIC TAB. Microphone capture existed but was scattered and none of
+     it was direct: SMPL recorded a raw sample, TRAX would take MIC as a lane
+     source but only while the sequencer rolled, and the AMP chain is voiced for
+     a guitar — cabinet filtering and a presence bump, which is wrong for a
+     voice. This is a channel built for a microphone, and a record button that
+     needs nothing armed and nothing playing.
+     Chain: source → gate → rumble highpass → tone lowpass → compressor →
+     sibilance cut → low/mid/high → character → doubler → out, with monitor,
+     reverb and delay sends, and a capture destination. Eight presets from
+     Natural through Telephone and Megaphone to Huge. MONITOR is off until
+     asked, because a monitored mic on speakers howls, and the hint next to it
+     says so in both states.
+     SIBILANCE is a fixed peaking cut near 7kHz, not a true dynamic de-esser —
+     that needs sidechained band splitting, which Web Audio cannot do cleanly
+     without phase trouble. It is named for what it does rather than what it is
+     not.
+     RECORD captures the shaped channel through a MediaStreamDestination (or the
+     raw mic, if you untick it) and drops the take on the next empty tape lane
+     or the selected pad. The iOS permission dance — the remembered-deny
+     preflight, the play-and-record session category, and a real message for
+     each failure — was factored out of the sampler's mic button so every entry
+     point explains itself the same way. Verified end to end against Chromium's
+     fake capture device rather than mocked.
+     Also fixes a slider-label bug the new type size exposed everywhere: a flex
+     item shrinks below its content by default, so longer names (SIBILANCE,
+     CHARACTER) were being squeezed and clipped. Labels and readouts now hold
+     their width and the slider takes what is left.
    ================================================================ */
-const BUILD = 'JBH-88 · R101 · 2026-07-25 · calmer, easier to read';
+const BUILD = 'JBH-88 · R102 · 2026-07-26 · MIC tab';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2331,6 +2358,290 @@ function a11yWatch(){
   }).observe(document.body,{subtree:true,attributes:true,attributeFilter:['class']});
 }
 
+
+/* ---------------- MIC — a voice channel, and tape without ceremony ------------
+   Mic capture already existed but was scattered: SMPL recorded a raw sample,
+   TRAX could take MIC as a lane source but only while the sequencer rolled, and
+   the AMP chain was voiced for guitar (cabinet filtering, presence bump) which
+   is wrong for a voice. This is a channel built for a microphone, and a record
+   button that needs nothing armed and nothing playing.
+
+   Signal path:
+     source → in → analyser (metering, pre-shaping so the meter shows the room)
+                 → gate → rumble HPF → tone LPF → compressor → sibilance cut
+                 → low/mid/high → character → doubler → out
+     out → monitor → master     (monitor OFF by default; speakers WILL howl)
+     out → liveBus              (a mic is a live performance, so LIVE-ONLY
+                                 tape recording picks it up)
+     out → reverb / delay sends
+     out → capture destination  (what RECORD actually records)
+
+   SIBILANCE is a fixed peaking cut around 7kHz, not a true dynamic de-esser —
+   that needs sidechained band splitting, which Web Audio cannot do cleanly
+   without phase trouble. It is labelled for what it does rather than what it
+   is not: it takes the edge off harsh S sounds at the cost of some air. ---- */
+let micOn=false, micChain=null, micStreamIn=null, micVuRAF=0, micAn=null, micPeakHold=0;
+let micRec=null, micRecT0=0, micRecTimer=0;
+
+const MIC_PRESETS={
+  natural:{gain:1,  hp:80,  lp:18000, gate:.12, comp:.35, sib:0,  lo:0,  mid:0,   hi:1,  drive:0,   dbl:0,  rev:.10, dly:0},
+  warm:   {gain:1.2,hp:70,  lp:12000, gate:.12, comp:.45, sib:.2, lo:3,  mid:-1,  hi:-1, drive:.10, dbl:0,  rev:.14, dly:0},
+  bright: {gain:1.1,hp:95,  lp:18000, gate:.14, comp:.35, sib:.3, lo:-1, mid:1,   hi:4,  drive:0,   dbl:0,  rev:.12, dly:0},
+  radio:  {gain:1.6,hp:120, lp:14000, gate:.18, comp:.85, sib:.35,lo:2,  mid:2,   hi:3,  drive:.25, dbl:0,  rev:.04, dly:0},
+  phone:  {gain:1.4,hp:400, lp:3000,  gate:.18, comp:.7,  sib:0,  lo:-8, mid:6,   hi:-6, drive:.15, dbl:0,  rev:0,   dly:0},
+  mega:   {gain:1.8,hp:350, lp:4000,  gate:.2,  comp:.8,  sib:0,  lo:-6, mid:8,   hi:-4, drive:.75, dbl:0,  rev:.05, dly:0},
+  whisper:{gain:2.2,hp:110, lp:18000, gate:.05, comp:.75, sib:.4, lo:-2, mid:0,   hi:5,  drive:0,   dbl:.2, rev:.35, dly:.08},
+  huge:   {gain:1.2,hp:75,  lp:18000, gate:.12, comp:.5,  sib:.25,lo:2,  mid:0,   hi:2,  drive:.08, dbl:.55,rev:.5,  dly:.22},
+};
+
+/* Opening a microphone on iOS has more failure modes than it has successes, and
+   every one of them is silent by default. Shared so the MIC tab, the sampler
+   and the amp all explain themselves the same way. */
+async function openMicStream(constraints){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
+    throw new Error('This browser has no microphone access. If Lockdown Mode is on, media APIs are disabled.');
+  try{
+    if(navigator.permissions && navigator.permissions.query){
+      const st=await navigator.permissions.query({name:'microphone'});
+      if(st.state==='denied')
+        throw new Error('Microphone blocked for this site — Safari: tap aA in the address bar → Website Settings → Microphone → Allow.');
+    }
+  }catch(e){ if(/blocked for this site/.test(e.message)) throw e; }
+  // a 'playback' audio session forbids capture on iOS: the track arrives dead
+  try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
+  try{
+    return await navigator.mediaDevices.getUserMedia(constraints||{audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  }catch(err){
+    const n=err&&err.name;
+    if(n==='NotAllowedError') throw new Error('Microphone denied — Safari: aA menu → Website Settings → Microphone → Allow.');
+    if(n==='NotFoundError')   throw new Error('No microphone found on this device.');
+    if(n==='NotReadableError')throw new Error('Microphone busy — another app may be holding it.');
+    if(n==='SecurityError')   throw new Error('Microphone blocked by browser security.');
+    throw new Error('Microphone error: '+(n||'unknown'));
+  }
+}
+
+function micBuild(){
+  const M={};
+  M.src=AC.createMediaStreamSource(micStreamIn);
+  M.in=AC.createGain();
+  M.an=AC.createAnalyser(); M.an.fftSize=1024;
+  M.gate=AC.createGain(); M.gate.gain.value=1;
+  M.hp=AC.createBiquadFilter(); M.hp.type='highpass'; M.hp.frequency.value=80;
+  M.lp=AC.createBiquadFilter(); M.lp.type='lowpass';  M.lp.frequency.value=18000;
+  M.comp=AC.createDynamicsCompressor();
+  M.sib=AC.createBiquadFilter(); M.sib.type='peaking'; M.sib.frequency.value=7000; M.sib.Q.value=1.6; M.sib.gain.value=0;
+  M.lo=AC.createBiquadFilter();  M.lo.type='lowshelf';  M.lo.frequency.value=180;
+  M.mid=AC.createBiquadFilter(); M.mid.type='peaking';  M.mid.frequency.value=1400; M.mid.Q.value=0.8;
+  M.hi=AC.createBiquadFilter();  M.hi.type='highshelf'; M.hi.frequency.value=4200;
+  M.drive=AC.createWaveShaper(); M.drive.oversample='2x';
+  M.dry=AC.createGain();
+  // doubler: a short modulated delay reads as a second, slightly-late take
+  M.dblDelay=AC.createDelay(0.08); M.dblDelay.delayTime.value=0.026;
+  M.dblLfo=AC.createOscillator(); M.dblLfo.frequency.value=0.7;
+  M.dblDepth=AC.createGain(); M.dblDepth.gain.value=0.0015;
+  M.dblWet=AC.createGain(); M.dblWet.gain.value=0;
+  M.out=AC.createGain();
+  M.mon=AC.createGain(); M.mon.gain.value=0;      // silence until asked: feedback
+  M.rsend=AC.createGain(); M.rsend.gain.value=0;
+  M.dsend=AC.createGain(); M.dsend.gain.value=0;
+  M.dest=AC.createMediaStreamDestination();       // what RECORD captures
+
+  M.dblLfo.connect(M.dblDepth); M.dblDepth.connect(M.dblDelay.delayTime); M.dblLfo.start();
+  M.src.connect(M.in);
+  M.in.connect(M.an);                              // meter the room, before shaping
+  M.in.connect(M.gate);
+  M.gate.connect(M.hp); M.hp.connect(M.lp); M.lp.connect(M.comp); M.comp.connect(M.sib);
+  M.sib.connect(M.lo); M.lo.connect(M.mid); M.mid.connect(M.hi); M.hi.connect(M.drive);
+  M.drive.connect(M.dry); M.dry.connect(M.out);
+  M.drive.connect(M.dblDelay); M.dblDelay.connect(M.dblWet); M.dblWet.connect(M.out);
+  M.out.connect(M.mon); M.mon.connect(LIVE.master);
+  if(LIVE.liveBus) M.out.connect(LIVE.liveBus);
+  M.out.connect(M.rsend); M.rsend.connect(LIVE.revIn);
+  M.out.connect(M.dsend); M.dsend.connect(LIVE.dlyIn);
+  M.out.connect(M.dest);
+  micAn=new Float32Array(M.an.fftSize);
+  return M;
+}
+
+function micApply(){
+  const M=micChain; if(!M||!AC) return;
+  const t=AC.currentTime, v=id=>parseFloat($(id).value);
+  M.in.gain.setTargetAtTime(v('micGain'),t,0.02);
+  M.hp.frequency.setTargetAtTime(v('micHp'),t,0.02);
+  M.lp.frequency.setTargetAtTime(v('micLp'),t,0.02);
+  const c=v('micComp');
+  M.comp.threshold.setTargetAtTime(-6-c*40,t,0.02);
+  M.comp.ratio.setTargetAtTime(1.5+c*14,t,0.02);
+  M.comp.attack.setTargetAtTime(0.004,t,0.02);
+  M.comp.release.setTargetAtTime(0.12+c*0.2,t,0.02);
+  M.sib.gain.setTargetAtTime(-v('micSib')*14,t,0.02);
+  M.lo.gain.setTargetAtTime(v('micLo'),t,0.02);
+  M.mid.gain.setTargetAtTime(v('micMid'),t,0.02);
+  M.hi.gain.setTargetAtTime(v('micHi'),t,0.02);
+  const d=v('micDrive');
+  M.drive.curve = d>0.001 ? makeDriveCurve(d) : null;
+  M.dblWet.gain.setTargetAtTime(v('micDbl')*0.8,t,0.02);
+  M.rsend.gain.setTargetAtTime(v('micRev'),t,0.02);
+  M.dsend.gain.setTargetAtTime(v('micDly'),t,0.02);
+  micLabels();
+}
+function micLabels(){
+  const f=(id,txt)=>{ const e=$(id+'V'); if(e) e.textContent=txt; };
+  f('micGain',(+$('micGain').value).toFixed(1)+'×');
+  f('micHp',Math.round(+$('micHp').value)+'Hz');
+  const lp=+$('micLp').value; f('micLp', lp>=17500?'off':(lp>=1000?(lp/1000).toFixed(1)+'kHz':Math.round(lp)+'Hz'));
+  ['micGate','micComp','micSib','micDrive','micDbl','micRev','micDly'].forEach(id=>f(id,Math.round(+$(id).value*100)+'%'));
+  ['micLo','micMid','micHi'].forEach(id=>{ const x=+$(id).value; f(id,(x>0?'+':'')+x.toFixed(1)+'dB'); });
+}
+function micMeter(){
+  if(!micOn||!micChain){ micVuRAF=0; return; }
+  micVuRAF=requestAnimationFrame(micMeter);
+  micChain.an.getFloatTimeDomainData(micAn);
+  let pk=0, sum=0;
+  for(let i=0;i<micAn.length;i++){ const a=Math.abs(micAn[i]); if(a>pk) pk=a; sum+=micAn[i]*micAn[i]; }
+  const rms=Math.sqrt(sum/micAn.length);
+  // gate on the pre-shaping level, so what you see is what opens it
+  const th=parseFloat($('micGate').value)*0.35;
+  const open = th<=0.0005 || rms>th;
+  micChain.gate.gain.setTargetAtTime(open?1:0.0001, AC.currentTime, open?0.005:0.05);
+  micPeakHold=Math.max(pk, micPeakHold*0.93);
+  const bar=$('micBar').firstElementChild;
+  bar.style.width=Math.min(100,micPeakHold*140)+'%';
+  bar.classList.toggle('hot', micPeakHold>0.5 && micPeakHold<=0.94);
+  bar.classList.toggle('clip', micPeakHold>0.94);
+  const db = micPeakHold>0.0005 ? (20*Math.log10(micPeakHold)).toFixed(0)+' dB' : '—';
+  $('micPeakV').textContent = micPeakHold>0.94 ? 'CLIP' : db;
+}
+
+async function micEnable(){
+  ensureAudio();
+  lcd('ASKING FOR THE MICROPHONE …');
+  const dev=$('micIn').value;
+  const con={audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}};
+  if(dev && dev!=='default') con.audio.deviceId={exact:dev};
+  try{ micStreamIn=await openMicStream(con); }
+  catch(err){ lcd(err.message); return; }
+  try{ micChain=micBuild(); }
+  catch(e){ lcd('MIC SETUP FAILED: '+e.message); micDisable(); return; }
+  micOn=true;
+  $('btnMicOn').classList.add('on'); $('btnMicOn').innerHTML='&#9673; MIC IS ON — TAP TO STOP';
+  micApply(); micMeter(); micListDevices();
+  lcd('MIC ON — shape the voice, then RECORD. Headphones before MONITOR.');
+}
+function micDisable(){
+  micOn=false;
+  if(micVuRAF) cancelAnimationFrame(micVuRAF); micVuRAF=0;
+  if(micRec && micRec.state==='recording'){ try{ micRec.stop(); }catch(e){} }
+  if(micChain){ try{ micChain.src.disconnect(); micChain.out.disconnect(); micChain.mon.disconnect();
+    micChain.dblLfo.stop(); micChain.dblLfo.disconnect(); }catch(e){} }
+  micChain=null;
+  if(micStreamIn){ micStreamIn.getTracks().forEach(t=>t.stop()); micStreamIn=null; }
+  $('btnMicOn').classList.remove('on'); $('btnMicOn').innerHTML='&#9673; TURN THE MIC ON';
+  $('btnMicMon').classList.remove('on');
+  const bar=$('micBar'); if(bar&&bar.firstElementChild) bar.firstElementChild.style.width='0%';
+  $('micPeakV').textContent='—';
+  resumeSession();
+}
+async function micListDevices(){
+  try{
+    const ds=await navigator.mediaDevices.enumerateDevices();
+    const sel=$('micIn'), cur=sel.value;
+    const ins=ds.filter(d=>d.kind==='audioinput');
+    if(!ins.length) return;
+    sel.innerHTML='<option value="default">Default microphone</option>';
+    ins.forEach((d,i)=>{ const o=document.createElement('option'); o.value=d.deviceId;
+      o.textContent=d.label||('Microphone '+(i+1)); sel.appendChild(o); });
+    sel.value=cur;
+    if(sel.selectedIndex<0) sel.value='default';
+  }catch(e){}
+}
+
+/* RECORD — nothing armed, nothing rolling. Captures the shaped channel (or the
+   raw mic, if asked) and drops the take on a tape lane or the selected pad. */
+function micNextLane(){
+  for(let i=0;i<S.trax.length;i++) if(S.trax[i].bufId<0) return i;
+  return -1;
+}
+async function micRecordStart(){
+  if(!micOn||!micChain){ lcd('TURN THE MIC ON FIRST.'); return; }
+  const wet=$('micWet').checked;
+  const stream = wet ? micChain.dest.stream : micStreamIn;
+  let mr; try{ mr=new MediaRecorder(stream); }
+  catch(e){ lcd('This browser cannot record from the microphone (no MediaRecorder).'); return; }
+  const chunks=[];
+  mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+  mr.onstop=async ()=>{
+    clearInterval(micRecTimer); micRecTimer=0;
+    $('btnMicRec').classList.remove('on'); $('btnMicRec').innerHTML='&#9679; RECORD';
+    micRec=null;
+    if(!chunks.length){ $('micRecInfo').textContent='nothing captured'; lcd('NOTHING CAPTURED — too short?'); return; }
+    $('micRecInfo').textContent='decoding…';
+    try{
+      const buf=await AC.decodeAudioData(await new Blob(chunks).arrayBuffer());
+      micPlaceTake(buf);
+    }catch(err){ lcd('COULD NOT DECODE THE RECORDING: '+(err.message||err)); $('micRecInfo').textContent='failed'; }
+  };
+  micRec=mr; micRecT0=performance.now();
+  mr.start();
+  $('btnMicRec').classList.add('on'); $('btnMicRec').innerHTML='&#9632; STOP';
+  micRecTimer=setInterval(()=>{
+    const s=(performance.now()-micRecT0)/1000;
+    $('micRecInfo').textContent='recording '+s.toFixed(1)+'s';
+  },100);
+  lcd('RECORDING — tap STOP when you are done.');
+}
+function micPlaceTake(buf){
+  S.buffers.push(buf); const bid=S.buffers.length-1;
+  const dur=buf.duration.toFixed(1)+'s';
+  if($('micDest').value==='pad'){
+    const pad=S.editPad, p=S.pads[pad];
+    p.bufId=bid; p.start=0; p.end=1; p.warped=false; p.name=p.name||'voice';
+    delete warpOrig[pad];
+    drawPads(); drawEdit(); dirty();
+    $('micRecInfo').textContent=dur+' → '+padName(pad);
+    lcd('TAKE → '+padName(pad)+' · '+dur+' — play the pad, or open it in SMPL to chop it.');
+    return;
+  }
+  const lane=micNextLane();
+  if(lane<0){ $('micRecInfo').textContent='all lanes full';
+    lcd('EVERY TAPE LANE IS FULL — clear one in TRAX, or set GOES TO: the selected pad.'); return; }
+  const tr=S.trax[lane];
+  tr.bufId=bid; tr.name='voice'; tr.gain=tr.gain||0.9;
+  drawTrax(); dirty();
+  $('micRecInfo').textContent=dur+' → T'+(lane+1);
+  lcd('TAKE → TAPE LANE '+(lane+1)+' · '+dur+' — it plays with the song; FX and TO PAD are in TRAX.');
+}
+
+$('btnMicOn').addEventListener('click',()=>{ if(micOn) { micDisable(); lcd('MIC OFF.'); } else micEnable(); });
+$('btnMicMon').addEventListener('click',()=>{
+  if(!micChain){ lcd('TURN THE MIC ON FIRST.'); return; }
+  const on=!$('btnMicMon').classList.contains('on');
+  $('btnMicMon').classList.toggle('on',on);
+  micChain.mon.gain.setTargetAtTime(on?1:0,AC.currentTime,0.02);
+  $('micMonHint').textContent = on ? 'on — if it howls, you are on speakers: turn this off'
+                                   : 'off — headphones only, or it will feed back';
+  lcd(on?'MONITOR ON — headphones only.':'MONITOR OFF.');
+});
+$('micIn').addEventListener('change',()=>{ if(micOn){ micDisable(); micEnable(); } });
+['micGain','micHp','micLp','micGate','micComp','micSib','micLo','micMid','micHi','micDrive','micDbl','micRev','micDly']
+  .forEach(id=>$(id).addEventListener('input',()=>{ $('micPreset').value=$('micPreset').value; micApply(); }));
+$('micPreset').addEventListener('change',e=>{
+  const P=MIC_PRESETS[e.target.value]; if(!P) return;
+  const set=(id,v)=>{ $(id).value=String(v); };
+  set('micGain',P.gain); set('micHp',P.hp); set('micLp',P.lp); set('micGate',P.gate);
+  set('micComp',P.comp); set('micSib',P.sib); set('micLo',P.lo); set('micMid',P.mid);
+  set('micHi',P.hi); set('micDrive',P.drive); set('micDbl',P.dbl); set('micRev',P.rev); set('micDly',P.dly);
+  micApply();
+  lcd('VOICE: '+e.target.selectedOptions[0].textContent);
+});
+$('btnMicRec').addEventListener('click',()=>{
+  if(micRec && micRec.state==='recording'){ try{ micRec.stop(); }catch(e){} return; }
+  micRecordStart();
+});
+micLabels();
+
+
 /* ---------------- tabs ---------------- */
 /* The bar scrolls sideways now, so a tab you switch to from anywhere else —
    the tour, a "go to SMPL" shortcut — has to be brought into view or it just
@@ -2353,6 +2664,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
   if(b.dataset.v==='trax'){ drawTrax(); }
   if(b.dataset.v==='live'){ drawLive(); }
   if(b.dataset.v==='amp'){ ampListDevices(); }
+  if(b.dataset.v==='mic'){ micLabels(); if(micOn) micListDevices(); }
   a11yPass($('v-'+b.dataset.v));
 }));
 

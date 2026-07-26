@@ -57,6 +57,7 @@ await new Promise(r => server.listen(0, '127.0.0.1', r));
 const base = 'http://127.0.0.1:' + server.address().port;
 
 const problems = [];
+let tabCount = 0;
 const browser = await chromium.launch({ executablePath: exe, args: ['--autoplay-policy=no-user-gesture-required'] });
 try {
   const ctx = await browser.newContext({ viewport: { width: 430, height: 932 } });
@@ -77,6 +78,7 @@ try {
     out.missing = ['padPress', 'drawSeq', 'startSeq', 'morphPattern', 'preVerb', 'euclid', 'makeIR', 'a11yPass']
       .filter(n => typeof window[n] !== 'function');
     out.tabs = [];
+    out.nTabs = document.querySelectorAll('#tabs button').length;
     for (const b of document.querySelectorAll('#tabs button')) {
       try { b.click(); await new Promise(r => setTimeout(r, 60));
         if (!document.querySelector('.view.on')) out.tabs.push(b.dataset.v);
@@ -96,6 +98,8 @@ try {
   if (r.tabs.length) problems.push('tabs that failed to open: ' + r.tabs.join(', '));
   if (!r.svelte) problems.push('the Svelte component did not mount');
   if (!r.playing) problems.push('the sequencer did not run' + (r.audioErr ? ' (' + r.audioErr + ')' : ''));
+  tabCount = r.nTabs;
+  if (!(r.nTabs >= 10)) problems.push('only ' + r.nTabs + ' tabs rendered');
 } catch (e) {
   problems.push('smoke test crashed: ' + e.message);
 } finally {
@@ -108,5 +112,5 @@ if (problems.length) {
   console.error('\nThe live app is untouched. The failing build is at index.next.html.\n');
   process.exit(1);
 }
-console.log('smoke   booted, 10 tabs, audio ran, Svelte mounted');
+console.log('smoke   booted, ' + tabCount + ' tabs, audio ran, Svelte mounted');
 promote();

@@ -164,8 +164,11 @@ h3 span{font-weight:400}
   background:var(--amber);box-shadow:0 0 4px var(--amber)}
 #editpanel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px}
 .pslider{display:flex;align-items:center;gap:8px;margin-bottom:2px}
-.pslider .lbl{min-width:44px}
-.pslider .val{min-width:44px;text-align:right;font-size:11px;color:var(--lcd)}
+/* A flex item shrinks below its content by default, so longer names
+   ("SIBILANCE", "CHARACTER") were being squeezed and clipped. The label and the
+   readout hold their width; the slider takes whatever is left. */
+.pslider .lbl{min-width:78px;flex:none}
+.pslider .val{min-width:52px;flex:none;text-align:right;font-size:var(--fs-xs);color:var(--lcd)}
 
 
 /* Deliberately compact controls opt out of the comfortable minimum: these are
@@ -203,6 +206,14 @@ h3 span{font-weight:400}
 #wave{width:100%;height:130px;display:block;touch-action:none}
 #miclvl{height:6px;background:var(--line);border-radius:3px;overflow:hidden;flex:1}
 #miclvl>div{height:100%;width:0%;background:var(--green)}
+
+/* mic */
+#micBar{flex:1;height:10px;background:#000;border-radius:5px;overflow:hidden;position:relative}
+#micBar>div{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--green);
+  transition:width .05s linear,background .12s linear}
+#micBar>div.hot{background:var(--amber)}
+#micBar>div.clip{background:var(--red)}
+#micPeakV{font-family:var(--f-mono);min-width:54px}
 
 /* sequencer */
 #stepgrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:8px 0}
