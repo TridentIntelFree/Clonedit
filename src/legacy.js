@@ -890,8 +890,33 @@
      than added to the engine. The banner is hidden on short screens: it is
      worth a strip of a tall phone, but on a sideways one it cost a tenth of the
      app for a portrait-time action, which the landscape layout test caught.
+   - R101: CALMER, AND EASIER TO WORK IN. Everything was 8-12px monospace with a
+     1px line around it, which reads as technical and cold and is genuinely hard
+     on the eyes. The biggest single change is two typefaces instead of one:
+     words use the system UI face, and monospace is kept for the things that ARE
+     data — the LCD, numeric readouts, meters, the rhythm previews — where fixed
+     width means something. On top of that, one type scale and one spacing
+     rhythm instead of sizes chosen ad hoc, a 40px minimum on controls (grids
+     and strips opt out, since a step is square by definition), softer surfaces,
+     rounder corners, and headings that separate sections by weight and space
+     rather than a rule drawn across the panel.
+     The tab bar now scrolls sideways with comfortable targets. Ten tabs already
+     crowded a phone and an eleventh would not have fitted at all; switching to
+     a tab from elsewhere scrolls it into view, or it would appear to do nothing.
+     Four things the bigger type broke, each caught by measuring rather than by
+     eye: "BANK A" wrapped onto two lines (the row is now labelled BANK once,
+     with A/B/C/D beside it, which was inconsistent anyway); the tempo readout
+     clipped to "92." because the shared input padding ate the last digit; the
+     header overflowed a narrow phone and pushed the record button off-screen,
+     because both sides were fixed-width and neither could shrink; and a blanket
+     white-space:nowrap fixed the first of those while shoving EXPORT COMPRESSED
+     400px wide on a 375px screen, so it is now applied only to the rows that
+     need it. The hint clamp had to be re-derived too — it is sized to the
+     line-height, and changing the type size silently started it cutting through
+     the middle of a line again, exactly as in R95. Both the app rule and the
+     test now compute from the line-height instead of a magic number.
    ================================================================ */
-const BUILD = 'JBH-88 · R100 · 2026-07-25 · add to home screen';
+const BUILD = 'JBH-88 · R101 · 2026-07-25 · calmer, easier to read';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2307,7 +2332,12 @@ function a11yWatch(){
 }
 
 /* ---------------- tabs ---------------- */
+/* The bar scrolls sideways now, so a tab you switch to from anywhere else —
+   the tour, a "go to SMPL" shortcut — has to be brought into view or it just
+   appears to do nothing. */
+function tabIntoView(b){ try{ b.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'}); }catch(e){} }
 document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',()=>{
+  tabIntoView(b);
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   $('v-'+b.dataset.v).classList.add('on');
