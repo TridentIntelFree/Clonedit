@@ -942,8 +942,30 @@
      item shrinks below its content by default, so longer names (SIBILANCE,
      CHARACTER) were being squeezed and clipped. Labels and readouts now hold
      their width and the slider takes what is left.
+   - R103: SECTIONS WERE PAINTING ON TOP OF EACH OTHER. Reported as crowded,
+     overlapping text at the top of the MIX tab in landscape, and the cause runs
+     deeper than it looks. A .view is a flex child, so its height is DEFINITE;
+     when a grid container has a definite block size and its auto rows overflow
+     it, the browser shrinks those rows toward each item's MIN-content
+     contribution — and an element with overflow:hidden or overflow:auto has a
+     min-content HEIGHT of zero. So the clamped hint got a 22px row and the
+     mixer strips a 12px row, and every section after them was drawn over the
+     one before. grid-auto-rows:max-content sizes each row to its item and lets
+     the panel scroll, which is what a scrolling panel wanted anyway.
+     This also explains R95: the hint being squashed there was the same bug, and
+     align-items:start only stopped the ITEM shrinking into the too-small row —
+     it never fixed the row. The layout suite had checked for sideways overflow
+     but never for overlap, which is how it survived two releases; it now walks
+     every tab at six sizes and fails if any two sections intersect. Confirmed
+     by reverting the fix and watching four of the six sizes fail — including
+     iPad portrait, where the sampler's download list was sitting on top of the
+     waveform, which nobody had reported.
+     Also: the mixer's vertical faders were the only native-blue controls in an
+     otherwise amber app, because -webkit-appearance:slider-vertical opts a
+     range back into the platform look. writing-mode does the rotating without
+     giving up the custom thumb.
    ================================================================ */
-const BUILD = 'JBH-88 · R102 · 2026-07-26 · MIC tab';
+const BUILD = 'JBH-88 · R103 · 2026-07-26 · landscape overlap fix';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);

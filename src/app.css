@@ -78,7 +78,13 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 .mstrip .mfarea{display:flex;gap:4px;align-items:stretch;height:120px}
 .mstrip .mmtr{width:6px;background:#000;border-radius:3px;position:relative;overflow:hidden}
 .mstrip .mmtr>div{position:absolute;left:0;right:0;bottom:0;height:0%;background:var(--green)}
-.mstrip input[type=range].vf{-webkit-appearance:slider-vertical;writing-mode:vertical-lr;direction:rtl;width:22px;height:120px;background:transparent}
+/* writing-mode does the rotating; -webkit-appearance:slider-vertical would
+   also work but it opts the control back into the native look, so the faders
+   were the only blue OS thumbs in an otherwise amber app. */
+.mstrip input[type=range].vf{-webkit-appearance:none;appearance:none;
+  writing-mode:vertical-lr;direction:rtl;width:24px;height:120px;background:transparent}
+.mstrip input[type=range].vf::-webkit-slider-runnable-track{width:5px;height:auto;background:var(--edge);border-radius:3px}
+.mstrip input[type=range].vf::-webkit-slider-thumb{margin-top:0;margin-left:-10px}
 .mstrip .mpan{width:100%}
 .mstrip .mpan input[type=range]{height:18px}
 .mstrip .mbtns{display:flex;gap:3px;width:100%}
@@ -290,10 +296,18 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
    that need room. The result halves the scrolling without reflowing any of the
    markup, and it degrades to the original single column below the breakpoint. */
 @media (min-width:760px){
-  /* align-items:start matters — a grid item defaults to stretching to its row,
-     and an overflow:hidden box has a min-content height of 0, so the clamped
-     hint got squashed instead of showing its two lines. */
-  .view{grid-template-columns:1fr 1fr;gap:0 16px;align-content:start;align-items:start}
+  /* grid-auto-rows:max-content is load-bearing, and the reason is subtle.
+     .view is a flex child, so its height is DEFINITE. When a grid container has
+     a definite block size and its auto rows overflow it, the browser shrinks
+     those rows toward each item's MIN-content contribution — and an element
+     with overflow:hidden or auto has a min-content height of ZERO. So the
+     clamped hint got a 22px row and the mixer strips a 12px row, and every
+     section after them painted on top of the one before. Pinning rows to
+     max-content sizes each to its item and lets the panel scroll, which is what
+     a scrolling panel wants anyway.
+     align-items:start then stops an item stretching to a taller neighbour. */
+  .view{grid-template-columns:1fr 1fr;gap:0 16px;
+    grid-auto-rows:max-content;align-content:start;align-items:start}
   .view.on{display:grid}
   .view > *{grid-column:1 / -1;min-width:0}
   .view > .row,.view > .pslider{grid-column:auto}
