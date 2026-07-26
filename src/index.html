@@ -966,15 +966,28 @@
   </div>
   <textarea id="docText" spellcheck="false" placeholder='Tap SPEC → copy the whole thing → paste it to any AI and ask for a beat → paste the AI&apos;s reply back here → tap LOAD DOC. (Code fences / extra text are fine.)'></textarea>
   <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px"><b>SPEC</b> puts a ready-to-paste prompt (with a working example) in the box — hand it to an AI, paste the reply back, LOAD. The loader pulls the JSON out even if the AI wraps it in ```json or adds chatter. EXPORT lets an AI remix what you made. Console: <span style="color:var(--lcd)">window.JBH.load / .export / .play / .spec</span></div>
-  <h3>BETA FEEDBACK <span style="color:var(--txt-dim);letter-spacing:0">— private; packaged and sent only to the developer</span></h3>
+  <h3>REPORT A PROBLEM <span style="color:var(--txt-dim);letter-spacing:0">— somewhere it can actually be read</span></h3>
   <div class="row">
     <span class="lbl">TYPE</span>
     <select id="fbCat"><option value="bug">BUG</option><option value="crash">CRASH / SILENCE</option><option value="audio">AUDIO GLITCH</option><option value="idea">IDEA / REQUEST</option><option value="other">OTHER</option></select>
-    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px;margin-left:auto"><input type="checkbox" id="fbDiag" checked> attach diagnostics</label>
+    <label style="font-size:11px;color:var(--txt-dim);display:flex;align-items:center;gap:5px;margin-left:auto"><input type="checkbox" id="fbDiag" checked> attach diagnostics</label>
   </div>
-  <textarea id="fbText" spellcheck="true" maxlength="1400" placeholder="What happened? What did you expect? Steps to reproduce if you can. Your report is packaged privately — other testers never see it, and it goes only to the developer."></textarea>
-  <div class="row"><button id="fbSubmit" class="grow">&#128232; PACKAGE &amp; SEND REPORT</button></div>
-  <div id="fbMsg" style="font-size:10px;color:var(--lcd);margin:2px 0 6px">Reports are anonymous unless you add your name. Version + optional diagnostics are attached automatically.</div>
+  <textarea id="fbText" spellcheck="true" maxlength="1400" placeholder="What happened? What did you expect instead? If you can, how to make it happen again."></textarea>
+  <div class="row">
+    <button id="fbSubmit" class="grow on">&#128172; POST TO THE ISSUE TRACKER</button>
+  </div>
+  <div class="row">
+    <button id="fbCopy" class="grow">&#128203; COPY IT INSTEAD</button>
+    <button id="fbPreview">PREVIEW</button>
+  </div>
+  <div id="fbMsg" style="font-size:11px;color:var(--lcd);margin:2px 0 6px"></div>
+  <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
+    <b>POST</b> opens the project&rsquo;s issue tracker with the whole report already written out &mdash; press Submit
+    there and it can be read straight away, with no file to pass around. It needs a GitHub account, and the
+    project is <b>public</b>, so treat what you write as public too.
+    <b>COPY</b> puts the same report on your clipboard as plain text, to send privately instead.
+    Diagnostics are engine state only &mdash; pad slots, levels, errors. No project names, no sample names, no audio.
+  </div>
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>

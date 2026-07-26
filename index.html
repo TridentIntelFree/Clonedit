@@ -982,15 +982,28 @@
   </div>
   <textarea id="docText" spellcheck="false" placeholder='Tap SPEC → copy the whole thing → paste it to any AI and ask for a beat → paste the AI&apos;s reply back here → tap LOAD DOC. (Code fences / extra text are fine.)'></textarea>
   <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px"><b>SPEC</b> puts a ready-to-paste prompt (with a working example) in the box — hand it to an AI, paste the reply back, LOAD. The loader pulls the JSON out even if the AI wraps it in ```json or adds chatter. EXPORT lets an AI remix what you made. Console: <span style="color:var(--lcd)">window.JBH.load / .export / .play / .spec</span></div>
-  <h3>BETA FEEDBACK <span style="color:var(--txt-dim);letter-spacing:0">— private; packaged and sent only to the developer</span></h3>
+  <h3>REPORT A PROBLEM <span style="color:var(--txt-dim);letter-spacing:0">— somewhere it can actually be read</span></h3>
   <div class="row">
     <span class="lbl">TYPE</span>
     <select id="fbCat"><option value="bug">BUG</option><option value="crash">CRASH / SILENCE</option><option value="audio">AUDIO GLITCH</option><option value="idea">IDEA / REQUEST</option><option value="other">OTHER</option></select>
-    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px;margin-left:auto"><input type="checkbox" id="fbDiag" checked> attach diagnostics</label>
+    <label style="font-size:11px;color:var(--txt-dim);display:flex;align-items:center;gap:5px;margin-left:auto"><input type="checkbox" id="fbDiag" checked> attach diagnostics</label>
   </div>
-  <textarea id="fbText" spellcheck="true" maxlength="1400" placeholder="What happened? What did you expect? Steps to reproduce if you can. Your report is packaged privately — other testers never see it, and it goes only to the developer."></textarea>
-  <div class="row"><button id="fbSubmit" class="grow">&#128232; PACKAGE &amp; SEND REPORT</button></div>
-  <div id="fbMsg" style="font-size:10px;color:var(--lcd);margin:2px 0 6px">Reports are anonymous unless you add your name. Version + optional diagnostics are attached automatically.</div>
+  <textarea id="fbText" spellcheck="true" maxlength="1400" placeholder="What happened? What did you expect instead? If you can, how to make it happen again."></textarea>
+  <div class="row">
+    <button id="fbSubmit" class="grow on">&#128172; POST TO THE ISSUE TRACKER</button>
+  </div>
+  <div class="row">
+    <button id="fbCopy" class="grow">&#128203; COPY IT INSTEAD</button>
+    <button id="fbPreview">PREVIEW</button>
+  </div>
+  <div id="fbMsg" style="font-size:11px;color:var(--lcd);margin:2px 0 6px"></div>
+  <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
+    <b>POST</b> opens the project&rsquo;s issue tracker with the whole report already written out &mdash; press Submit
+    there and it can be read straight away, with no file to pass around. It needs a GitHub account, and the
+    project is <b>public</b>, so treat what you write as public too.
+    <b>COPY</b> puts the same report on your clipboard as plain text, to send privately instead.
+    Diagnostics are engine state only &mdash; pad slots, levels, errors. No project names, no sample names, no audio.
+  </div>
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>
@@ -2325,8 +2338,29 @@ Object.assign(globalThis, __JBH_PURE);})();
      to come from a user. It now reads the canvas: hits must light the rings well
      beyond the ring-label baseline, no playhead may be painted while stopped,
      and one must be painted on every frame while playing, moving as it goes.
+   - R105: REPORTS YOU CAN ACTUALLY READ. Feedback was packaged into an opaque
+     jbhfb1 base64 blob and handed to the share sheet, which on a phone means a
+     FILE with nowhere sensible to send it — and even once it arrived it needed
+     feedback/decode.js to read. Reports are plain Markdown now: what happened,
+     the build, the device, and the engine diagnostics folded into a details
+     block. Nothing to decode.
+     POST TO THE ISSUE TRACKER opens a prefilled GitHub issue, labelled 'beta
+     report'; the tester presses Submit and it is immediately readable and
+     repliable, with no relay to deploy and no file to pass around. COPY IT
+     INSTEAD puts the identical text on the clipboard for anyone without a
+     GitHub account or who would rather send it privately, and PREVIEW prints
+     the exact report into the diagnostic log so nobody has to take on trust
+     what is being sent. The body is built to a character budget so the issue
+     URL stays inside what GitHub accepts, and it says when the diagnostics had
+     to be trimmed rather than dropping them silently.
+     The panel used to promise the report was 'private; sent only to the
+     developer' and that 'other testers never see it'. The repository is PUBLIC,
+     so that claim would have been false the moment reports became issues. It
+     now says the project is public, says what the diagnostics contain (engine
+     state — pad slots, levels, errors; no project names, no sample names, no
+     audio), and offers COPY as the genuinely private route.
    ================================================================ */
-const BUILD = 'JBH-88 · R104 · 2026-07-26 · morph no longer hijacks the grid';
+const BUILD = 'JBH-88 · R105 · 2026-07-26 · readable bug reports';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -9229,45 +9263,102 @@ const FEEDBACK_ENDPOINT='';   // ← paste your deployed Worker URL here to turn
 // You can also set it without editing this file:  localStorage.setItem('jbh_fb_endpoint','https://…')
 function feedbackEndpoint(){ try{ return (localStorage.getItem('jbh_fb_endpoint')||'').trim()||FEEDBACK_ENDPOINT; }catch(e){ return FEEDBACK_ENDPOINT; } }
 let lastFbT=0;
-function encodeFeedback(obj){
-  const j=JSON.stringify(obj);
-  try{ return 'jbhfb1:'+btoa(unescape(encodeURIComponent(j))); }catch(e){ return 'jbhfb1:'+btoa(j); }
+
+/* A report is only useful if somebody can READ it. The old one was packaged as
+   an opaque base64 blob and handed to the share sheet, which on a phone means a
+   file with nowhere sensible to send it — and even when it arrived, it needed a
+   decoder. Reports are plain Markdown now, and the main path files them on the
+   project's issue tracker, where they can be read immediately and replied to.
+
+   COPY stays for anyone without a GitHub account, or who would rather send it
+   privately: the same text, no encoding. */
+const FEEDBACK_REPO='TridentIntelFree/Clonedit';   // where POST files the issue
+
+function fbDevice(){
+  const bits=[];
+  try{ bits.push(detectPlatform(navigator.userAgent, navigator.vendor).id); }catch(e){}
+  bits.push(innerWidth+'×'+innerHeight+(devicePixelRatio>1?(' @'+devicePixelRatio+'x'):''));
+  try{ bits.push(isInstalled()?'installed to home screen':'browser tab'); }catch(e){}
+  if(AC) bits.push(Math.round(AC.sampleRate)+'Hz · audio '+AC.state);
+  bits.push(seqView+' view');
+  return bits.join(' · ');
 }
-async function fbShareFallback(blob,cat,hasDiag){
-  const shareText='JBH-88 beta report ['+cat.toUpperCase()+'] — please forward to the developer:\n\n'+blob;
-  if(navigator.share){
-    try{ await navigator.share({title:'JBH-88 beta feedback',text:shareText}); $('fbMsg').textContent='✓ Report shared — thank you!'+(hasDiag?' (version + diagnostics included.)':''); $('fbText').value=''; return; }
-    catch(e){ if(e&&e.name==='AbortError'){ $('fbMsg').textContent='Share cancelled — tap SEND again to retry.'; lastFbT=0; return; } }
+
+/* Markdown, so it is readable both as an issue and as pasted text. */
+function fbReport(cat,msg,hasDiag,maxChars){
+  const label={bug:'Bug',crash:'Crash / silence',audio:'Audio glitch',idea:'Idea / request',other:'Other'}[cat]||cat;
+  let out='**What happened**\n\n'+msg+'\n\n---\n\n'
+    +'| | |\n|---|---|\n'
+    +'| **Type** | '+label+' |\n'
+    +'| **Build** | '+BUILD+' |\n'
+    +'| **When** | '+new Date().toISOString()+' |\n'
+    +'| **Device** | '+fbDevice()+' |\n';
+  if(hasDiag){
+    let d=''; try{ d=diagDump('report')||''; }catch(e){ d='(diagnostics unavailable: '+e.message+')'; }
+    if(d){
+      const room = maxChars ? maxChars-out.length-120 : 1e9;
+      if(d.length>room && room>200) d=d.slice(0,room)+'\n… truncated to fit';
+      if(d.length<=room)
+        out+='\n<details><summary>Diagnostics — engine state only</summary>\n\n```\n'+d+'\n```\n\n</details>\n';
+      else
+        out+='\nDiagnostics were too long to include here; ask for them with the COPY button.\n';
+    }
   }
-  try{ await navigator.clipboard.writeText(shareText); $('fbMsg').textContent='✓ Report copied — paste it to the developer (message/email). Thank you!'; $('fbText').value=''; }
-  catch(e){ $('fbText').value=shareText; $('fbMsg').textContent='Report ready in the box above — copy it and send to the developer.'; }
+  return out;
 }
-$('fbSubmit').addEventListener('click',async ()=>{
+function fbTitle(cat,msg){
+  const one=msg.replace(/\s+/g,' ').trim();
+  return '['+cat.toUpperCase()+'] '+(one.length>72?one.slice(0,69)+'…':one);
+}
+function fbValidate(){
   const msg=$('fbText').value.trim();
-  if(msg.length<4){ $('fbMsg').textContent='Add a few words about what happened first.'; return; }
+  if(msg.length<4){ $('fbMsg').textContent='Say a few words about what happened first.'; return null; }
   const now=Date.now();
-  if(now-lastFbT<15000){ $('fbMsg').textContent='One report every 15 seconds, please (keeps things tidy).'; return; }
-  const cat=$('fbCat').value, hasDiag=$('fbDiag').checked;
-  const report={ f:'jbhfb1', v:BUILD, t:new Date().toISOString(), cat, msg:msg.slice(0,1400) };
-  if(hasDiag){ try{ report.diag=diagDump('feedback'); }catch(e){} }
-  const blob=encodeFeedback(report);
-  lastFbT=now;
-  // ONLINE inbox path (capped at 100 server-side); fall back to share on any failure
-  const endpoint=feedbackEndpoint();
-  if(endpoint && navigator.onLine){
-    $('fbMsg').textContent='Sending …';
-    try{
-      const ctrl=('AbortController' in window)?new AbortController():null;
-      const to=ctrl?setTimeout(()=>ctrl.abort(),12000):0;
-      const res=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({blob}),signal:ctrl?ctrl.signal:undefined});
-      if(to) clearTimeout(to);
-      if(res.ok){ $('fbMsg').textContent='✓ Sent — thank you! Your report reached the developer’s inbox.'; $('fbText').value=''; return; }
-      if(res.status===429){ $('fbMsg').textContent='Inbox is rate-limited right now — please try again in a bit.'; lastFbT=0; return; }
-      // other status → fall through to share so nothing is lost
-    }catch(e){ /* offline/blocked/timeout → fall through to share */ }
+  if(now-lastFbT<8000){ $('fbMsg').textContent='One report every few seconds, please.'; return null; }
+  return { msg, cat:$('fbCat').value, diag:$('fbDiag').checked };
+}
+
+$('fbSubmit').addEventListener('click',()=>{
+  const r=fbValidate(); if(!r) return;
+  // GitHub rejects very long URLs, so build the body to fit and say so if the
+  // diagnostics had to be trimmed rather than silently dropping them
+  const base='https://github.com/'+FEEDBACK_REPO+'/issues/new';
+  const title=fbTitle(r.cat,r.msg);
+  let body=fbReport(r.cat,r.msg,r.diag,5200);
+  const url=base+'?labels='+encodeURIComponent('beta report')
+    +'&title='+encodeURIComponent(title)+'&body='+encodeURIComponent(body);
+  lastFbT=Date.now();
+  let w=null;
+  try{ w=window.open(url,'_blank','noopener'); }catch(e){}
+  if(w){ $('fbMsg').textContent='Opened the issue tracker — press Submit there to post it.'; }
+  else{
+    // popup blocked: give them the link rather than losing the report
+    $('fbMsg').innerHTML='Your browser blocked the new tab. <a href="'+url.replace(/"/g,'&quot;')
+      +'" target="_blank" rel="noopener" style="color:var(--sel)">Open the report here</a>, then press Submit.';
   }
-  await fbShareFallback(blob,cat,hasDiag);
 });
+
+$('fbCopy').addEventListener('click',async ()=>{
+  const r=fbValidate(); if(!r) return;
+  const text='JBH-88 report\n\n'+fbReport(r.cat,r.msg,r.diag);
+  lastFbT=Date.now();
+  try{
+    await navigator.clipboard.writeText(text);
+    $('fbMsg').textContent='Copied — paste it into a message or email. It is plain text, so it reads as-is.';
+  }catch(e){
+    $('fbText').value=text;
+    $('fbMsg').textContent='Clipboard unavailable — the full report is in the box above, ready to copy.';
+  }
+});
+
+$('fbPreview').addEventListener('click',()=>{
+  const msg=$('fbText').value.trim();
+  if(msg.length<4){ $('fbMsg').textContent='Write something first and PREVIEW will show exactly what gets sent.'; return; }
+  const text=fbReport($('fbCat').value,msg,$('fbDiag').checked);
+  plog('--- report preview ---\n'+text);
+  $('fbMsg').textContent='Printed below in the diagnostic log — that is exactly what gets sent, nothing hidden.';
+});
+
 $('libIn').addEventListener('change',async e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;
   try{
