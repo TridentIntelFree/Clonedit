@@ -883,8 +883,9 @@
   <div class="pslider"><span class="lbl">TRIM</span><input type="range" id="mTrim" min="-24" max="12" step="0.1" value="0"><span class="val" id="mTrimV">0.0dB</span></div>
   <div class="row">
     <button id="btnMAuto">AUTO</button>
-    <span style="font-size:11px;color:var(--txt-dim);flex:1">AUTO renders the mix, finds its loudest peak and sets TRIM so that peak lands
-      exactly on the ceiling &mdash; nothing clips, and the limiter is left with nothing to do.</span>
+    <span style="font-size:11px;color:var(--txt-dim);flex:1">AUTO listens to the whole arrangement &mdash; the song if you have one, else the chain,
+      else this pattern &mdash; at its loudest possible pass, and sets TRIM so that peak lands on the ceiling. Nothing clips and the
+      limiter is left with nothing to do.</span>
   </div>
 <h3>MASTER</h3>
   <div class="pslider"><span class="lbl">VOLUME</span><input type="range" id="mxVol" min="0" max="2" step="0.01"><span class="val" id="mxVolV"></span></div>

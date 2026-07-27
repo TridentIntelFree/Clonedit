@@ -1122,8 +1122,36 @@
      the label says. The help text no longer claims a 20:1 limiter is a
      brickwall — the soft clipper after it is what guarantees 0dBFS is
      unreachable, and it says so.
+   - R111: AUTO LISTENS TO THE WHOLE PIECE. Reported: it wasn't hearing enough
+     to judge fairly. It wasn't. Two things were wrong.
+     SCOPE. It rendered whatever BOUNCE's source dropdown said, which lives on
+     another tab and ships set to CURRENT PATTERN — so a trim meant to protect a
+     whole song was being decided by one pattern, and the chorus sailed straight
+     past it. AUTO now ignores that dropdown and takes the fullest arrangement
+     there is: the song if you have one, else the chain, else this pattern. It
+     says which, and how much music that is, before it starts.
+     SAMPLING. Worse, one pass systematically UNDER-reads. Probability locks
+     skip hits and humanize scales velocities down — neither can ever make a
+     render louder, only quieter — so measuring one ordinary take and trusting
+     it guarantees the next bounce is hotter than the trim allowed for. The
+     analysis pass now pins both to their loudest setting: every probability
+     step fires, no velocity thinning. Deterministic, so pressing AUTO twice
+     gives the same number.
+     What that still cannot bound is humanize's TIMING jitter, which can push a
+     peak up rather than down — nudge two hits a few milliseconds apart and
+     their transients may line up better than they do on the exact grid.
+     Sampling it properly means rendering the whole piece several times over, at
+     roughly twice realtime, behind a button; not worth it. So it is given room
+     instead, scaled to the humanize setting, and the limiter downstream absorbs
+     what an unlucky take does with the rest.
+     The analysis also drops the reverb tail — a convolution tail is loudest
+     where it starts, under the music that made it, so cutting it cannot lower
+     the peak — which halves the wait on a single pattern. A full song is still
+     a real wait, but the render runs on the audio thread: measured zero
+     main-thread stalls across a 30-second analysis, so the app stays usable
+     throughout, and the LCD says so rather than looking hung.
    ================================================================ */
-const BUILD = 'JBH-88 · R110 · 2026-07-27 · sharper canvases, bigger targets, AUTO trim';
+const BUILD = 'JBH-88 · R111 · 2026-07-27 · AUTO judges the whole arrangement';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -3168,25 +3196,59 @@ $('btnMFlat').addEventListener('click',()=>{
 let mAutoBusy=false;
 $('btnMAuto').addEventListener('click',async ()=>{
   if(mAutoBusy) return;
-  mAutoBusy=true; $('btnMAuto').classList.add('on'); lcd('AUTO — rendering the mix to measure it …');
+  mAutoBusy=true; $('btnMAuto').classList.add('on');
+  /* Judge the whole piece, not whichever pattern is selected. A trim set from
+     one pattern is no use the moment the chorus arrives, and BOUNCE's source
+     dropdown lives on another tab and defaults to CURRENT PATTERN — so AUTO
+     picks the fullest arrangement there is and ignores it. */
+  const src = S.song.length ? 'song' : (S.chain.length ? 'chain' : 'pat');
+  const heard = src==='song' ? 'the whole song ('+S.song.reduce((a,x)=>a+Math.max(1,x.reps||1),0)+' patterns)'
+    : src==='chain' ? 'the whole chain ('+S.chain.length+' patterns)'
+    : 'pattern '+(S.pattern+1);
+  /* Say how much music this is before disappearing into it. A full song renders
+     at roughly twice realtime, so a two-minute piece is the better part of a
+     minute — worth waiting for, but only if you know that is what is happening.
+     The render itself runs on the audio thread, so the app stays usable
+     throughout; nothing here freezes. */
+  let secs=0;
+  try{ secs=bounceSeq(src).reduce((a,sq)=>
+    a+patLen(sq.pat)*(60/Math.abs((S.ptnBpm&&sq.pat.bpm)?sq.pat.bpm:S.bpm)/4),0); }catch(e){}
+  const howLong = secs>1 ? ', '+(secs<60?Math.round(secs)+'s':Math.round(secs/60)+' min')+' of music' : '';
   try{
-    const r=await renderMix(null,null,{preLimit:true,loops:1});
-    if(!r){ lcd('AUTO — nothing to measure. Put something in the pattern or a tape track first.'); return; }
-    let pk=0;
-    for(let ch=0;ch<r.numberOfChannels;ch++){ const d=r.getChannelData(ch);
-      for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>pk) pk=a; } }
+    lcd('AUTO — listening to '+heard.replace(/\)$/, howLong+')')+' … the app stays usable.');
+    await new Promise(r=>setTimeout(r,0));            // let that message paint before the render blocks
+    const peakOf=b=>{ let pk=0;
+      for(let ch=0;ch<b.numberOfChannels;ch++){ const d=b.getChannelData(ch);
+        for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>pk) pk=a; } }
+      return pk; };
+    const rendered=await renderMix(null,null,{preLimit:true,worstCase:true,noTail:true,loops:1,src});
+    if(!rendered){ lcd('AUTO — nothing to measure. Put something in the pattern or a tape track first.'); return; }
+    const pk=peakOf(rendered);
     if(!(pk>1e-6)){ lcd('AUTO — that render came out silent, so there is nothing to set.'); return; }
+
+    /* The worst-case pass covers the two things that only ever make a render
+       QUIETER — skipped probability steps and thinned velocities. It cannot
+       cover humanize's timing JITTER, which can push a peak up: nudge two hits
+       a few milliseconds apart and their transients may line up better than
+       they do on the exact grid. Nothing finite bounds that, and sampling it
+       properly would mean rendering the whole piece several times over, which
+       at roughly twice realtime is not a thing to do behind a button. So it is
+       given room instead — measured at 0.5dB with humanize at its default and
+       under 1dB at the top of the range — and the limiter, which is still
+       downstream, absorbs whatever an unlucky take does with the rest. */
+    const margin = S.human>0 ? Math.min(1, 1.5*S.human) : 0;
     /* The measurement was taken with the trim at unity, so the answer is the
        setting itself — not an adjustment to the setting it already had. */
-    const want=20*Math.log10(dbLin(S.mCeil)/pk);
+    const want=20*Math.log10(dbLin(S.mCeil)/pk)-margin;
     const before=S.mTrim;
     S.mTrim=clamp(Math.round(want*10)/10,-24,12);
     outWrite(); applyMaster(); dirty();
     const moved=S.mTrim-before;
     const over=20*Math.log10(pk*dbLin(before))-S.mCeil;   // how far past the ceiling it WAS
-    const at=' Peak now sits on the '+S.mCeil.toFixed(1)+'dB ceiling.';
+    const at=' Loudest point of '+heard+' now sits on the '+S.mCeil.toFixed(1)+'dB ceiling'
+      +(margin?', with '+margin.toFixed(1)+'dB spare for humanize.':'.');
     if(want<-24 || want>12)
-      lcd('AUTO — the mix needs '+dbText(want)+' and TRIM only goes to '+dbText(S.mTrim)
+      lcd('AUTO — '+heard+' needs '+dbText(want)+' and TRIM only goes to '+dbText(S.mTrim)
         +'. Move the master volume and press AUTO again.');
     else if(moved<-0.05)
       lcd('AUTO — down '+Math.abs(moved).toFixed(1)+'dB. You were '+over.toFixed(1)+'dB into the limiter;'
@@ -8287,12 +8349,21 @@ function bounceSeq(src){
    the safety clipper, with the trim itself at unity. That is the only place the
    true overshoot is still visible; downstream of it everything is squashed to
    the ceiling by design. AUTO is the only caller.
-   opt.loops — override the bounce length. Repeating a loop cannot make it peak
-   any higher, so AUTO only ever needs one. */
+   opt.src / opt.loops — render something other than what the BOUNCE controls
+   say. AUTO uses this to judge the whole arrangement rather than whichever
+   pattern happens to be selected on another tab.
+   opt.worstCase — pin the per-render randomness to its loudest setting: every
+   probability step fires, and humanize does not thin the velocities. Both of
+   those can only ever make a pass QUIETER — skipped hits and scaled-down
+   velocities — so sampling one ordinary render systematically under-reads the
+   peak, and AUTO would set a trim that the next bounce sails past. One
+   deterministic worst case instead: whatever you actually render can only come
+   out at or below it, and pressing AUTO twice gives the same answer. */
 async function renderMix(padSet, traxSet, opt){
   ensureSpeedCaches();   // bake pitch-locked stretches so the offline render matches what you hear live
+  const worst=!!(opt&&opt.worstCase);
   const loops=(opt&&opt.loops)||parseInt($('bLoops').value,10);
-  const src=$('bSrc').value;
+  const src=(opt&&opt.src)||$('bSrc').value;
   const seq=bounceSeq(src);
   const events=[], tempoSeg=[], autoEvents=[]; let t=0.05, absB=0;
   for(let l=0;l<loops;l++){
@@ -8310,10 +8381,10 @@ async function renderMix(padSet, traxSet, opt){
           const L=trackLen(pat,p), idx=posMod(rev?-(absB+st):(absB+st),L);
           const v=pat.steps[p][idx]; if(!(v>0)) continue;
           const lk=pat.locks&&pat.locks[p+':'+idx];
-          if(lk && lk.prob!=null && Math.random()>lk.prob) continue;
+          if(!worst && lk && lk.prob!=null && Math.random()>lk.prob) continue;
           let when=t+st*sd+swing; if(lk&&lk.nudge) when+=lk.nudge*sd;
           let hv=v;
-          if(S.human>0){ when=Math.max(0.01,when+(Math.random()*2-1)*S.human*0.012);   // same humanize as live playback
+          if(!worst && S.human>0){ when=Math.max(0.01,when+(Math.random()*2-1)*S.human*0.012);   // same humanize as live playback
             hv=clamp(v*(1-Math.random()*S.human*0.22),0.05,1); }
           const chord=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0], rat=(lk&&lk.rat>1)?lk.rat:1;
           const isChord=chord.length>1;                            // NOTES-lane harmony bakes into the bounce too
@@ -8340,7 +8411,12 @@ async function renderMix(padSet, traxSet, opt){
   });
   if(!events.length && !trax.length) return null;
   let dur=t; trax.forEach(x=>{ dur=Math.max(dur,0.05+x.b.duration); });
-  const SR=44100, total=dur+Math.max(3.0,S.revSize+0.5);
+  /* The reverb tail is most of a short render — 3.7s of decay after a 2.7s
+     pattern. A bounce needs it. AUTO does not: a convolution tail is loudest
+     where it starts, under the music that produced it, and only decays from
+     there, so cutting it cannot lower the peak being measured. It roughly
+     halves the wait on a one-pattern analysis. */
+  const SR=44100, total=dur+((opt&&opt.noTail)?0.35:Math.max(3.0,S.revSize+0.5));
   const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
   const g=buildGraph(oc);
   applyMasterG(g,oc);          // the bounce gets the same master chain as the speakers
