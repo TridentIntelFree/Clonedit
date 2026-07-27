@@ -1054,8 +1054,34 @@
      values, or an older one with no mic/amp keys at all, still loads: an
      unrecognised preset falls back to a real option rather than leaving the
      control blank.
+   - R109: THE OUT TAB — a mastering stage you can see. The mix went from the
+     pads straight into a compressor and out; there was nowhere to shape the
+     whole thing and nothing to look at while deciding. OUT adds a log-frequency
+     spectrum, peak/RMS/loudness/mono-safe meters with a plain-English line
+     underneath, and a master chain sitting between the performance filter and
+     the compressor: three-band EQ, mid/side width, a bass-mono crossover and an
+     adjustable output ceiling. MASTER, REVERB and DELAY moved here from MIX,
+     which was carrying two jobs.
+     The chain is built inside buildGraph and driven by one applyMasterG(g,ctx),
+     so the bounce gets the identical treatment — a master you cannot export is
+     decoration. The bass-mono stage is a real Linkwitz-Riley crossover (two
+     cascaded Butterworth sections each side): the mix is split, the low band is
+     summed to the centre, the high band goes on to the width stage, and the two
+     add back flat. A single lowpass/highpass pair leaves a +3dB bump right at
+     the crossover, and — the first version's actual bug — filtering a band off
+     to the side without summing it does not centre anything at all.
+     BYPASS A/Bs the tone, image and bass mono only. The ceiling stays engaged
+     through it, because a comparison button that can clip the speakers is a
+     trap rather than a feature.
+     Gain and volume now run 0–200% instead of stopping at unity — pad gain,
+     instrument and mixer volume, reverb send, and the MIDI CC scalings that
+     feed them — with the ceiling there to catch what that invites. Readouts are
+     percentages, so a fader says 140% rather than 1.4.
+     Exported WAVs get TPDF dither before the 16-bit rounding, which trades a
+     hiss well below the last bit for the quantisation distortion that otherwise
+     lands on quiet fades.
    ================================================================ */
-const BUILD = 'JBH-88 · R108 · 2026-07-26 · mic + amp settings persist';
+const BUILD = 'JBH-88 · R109 · 2026-07-27 · OUT tab: master chain, meters, spectrum';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1095,7 +1121,10 @@ const S = {
   scOn:false, scTrig:0, scDepth:0.6, scRel:0.25,
   autoTarget:'mfilt',
   song:[], songOn:false, songLoop:true,
-  morph:{ on:false, from:0, to:1, bars:8, curve:'weight', mode:'once', vel:true, amt:0, pos:0 }
+  morph:{ on:false, from:0, to:1, bars:8, curve:'weight', mode:'once', vel:true, amt:0, pos:0 },
+  /* master chain (OUT tab). Neutral by default: flat EQ, natural width, and a
+     ceiling just under 0 so nothing changes until it is asked to. */
+  mEqLo:0, mEqMid:0, mEqHi:0, mWidth:1, mCeil:-1.0, mMono:0, mByp:false
 };
 const revCache = {};      // bufId -> reversed AudioBuffer
 
@@ -1234,12 +1263,71 @@ function buildGraph(ctx){
   // brickwall limiter — catches summed-voice peaks so dense/fast playing
   // doesn't clip into the destination (hard-clip = the clicking/distortion)
   g.limiter=ctx.createDynamicsCompressor();
-  g.limiter.threshold.value=-1.5; g.limiter.knee.value=0; g.limiter.ratio.value=20;
+  g.limiter.threshold.value=S.mCeil; g.limiter.knee.value=0; g.limiter.ratio.value=20;
   g.limiter.attack.value=0.001; g.limiter.release.value=0.05;
   // final soft-clip safety: preserves levels <0.7, saturates smoothly toward
   // ~0.93 and clamps anything above — output can never hard-clip the destination
   g.softclip=ctx.createWaveShaper(); g.softclip.curve=makeSoftClip(); g.softclip.oversample='2x';
-  g.master.connect(g.perfFilt); g.perfFilt.connect(g.perfGain); g.perfGain.connect(g.comp);
+  /* MASTER CHAIN (OUT tab) — inserted between the performance filter and the
+     compressor, because EQ and imaging belong before dynamics, and because it
+     is built HERE it exists identically in the offline bounce. What you hear is
+     what the WAV contains. */
+  g.mLo =ctx.createBiquadFilter(); g.mLo.type='lowshelf';  g.mLo.frequency.value=110;
+  g.mMid=ctx.createBiquadFilter(); g.mMid.type='peaking';  g.mMid.frequency.value=1000; g.mMid.Q.value=0.7;
+  g.mHi =ctx.createBiquadFilter(); g.mHi.type='highshelf'; g.mHi.frequency.value=6500;
+
+  /* Mono-maker: everything below this frequency is summed to the centre. A
+     mastering habit rather than a gimmick — wide bass smears on a club system
+     and disappears on a phone speaker. 10 Hz = off.
+
+     A real crossover, not a filter bolted on the side: the mix is SPLIT here,
+     the low band is summed to mono, the high band goes on to the width stage,
+     and the two are added back at the compressor. Both halves are two cascaded
+     Butterworth sections (Q=1/sqrt2), i.e. Linkwitz-Riley 4th order, which is
+     the pairing that sums back to flat — a single lowpass/highpass pair leaves
+     a +3dB bump right at the crossover. */
+  const lr=(type)=>{ const f=ctx.createBiquadFilter(); f.type=type;
+    f.frequency.value=10; f.Q.value=Math.SQRT1_2; return f; };
+  g.mMonoLo=lr('lowpass');  g.mMonoLo2=lr('lowpass');
+  g.mMonoHi=lr('highpass'); g.mMonoHi2=lr('highpass');
+  /* the low band, folded to the centre: L and R at half each into one channel,
+     which the stereo bus below then feeds equally to both speakers */
+  g.mMonoSplit=ctx.createChannelSplitter(2);
+  g.mMonoL=ctx.createGain(); g.mMonoL.gain.value=0.5;
+  g.mMonoR=ctx.createGain(); g.mMonoR.gain.value=0.5;
+  g.mMonoSum=ctx.createGain();
+  g.mMonoLo.connect(g.mMonoLo2); g.mMonoLo2.connect(g.mMonoSplit);
+  g.mMonoSplit.connect(g.mMonoL,0); g.mMonoSplit.connect(g.mMonoR,1);
+  g.mMonoL.connect(g.mMonoSum);    g.mMonoR.connect(g.mMonoSum);
+  g.mMonoHi.connect(g.mMonoHi2);
+
+  /* Mid/side width. M=(L+R)/2, S=(L-R)/2, then L=M+wS and R=M-wS, so w=1 is
+     bit-for-bit unchanged, 0 is mono and 2 is wide. */
+  g.wSplit=ctx.createChannelSplitter(2);
+  g.wMidL=ctx.createGain(); g.wMidL.gain.value=0.5;
+  g.wMidR=ctx.createGain(); g.wMidR.gain.value=0.5;
+  g.wMid =ctx.createGain();
+  g.wSideL=ctx.createGain(); g.wSideL.gain.value=0.5;
+  g.wSideR=ctx.createGain(); g.wSideR.gain.value=-0.5;
+  g.wSide=ctx.createGain();
+  g.wAmt =ctx.createGain(); g.wAmt.gain.value=S.mWidth;
+  g.wNeg =ctx.createGain(); g.wNeg.gain.value=-1;
+  g.wOutL=ctx.createGain(); g.wOutR=ctx.createGain();
+  g.wMerge=ctx.createChannelMerger(2);
+  g.wSplit.connect(g.wMidL,0);  g.wSplit.connect(g.wMidR,1);
+  g.wMidL.connect(g.wMid);      g.wMidR.connect(g.wMid);
+  g.wSplit.connect(g.wSideL,0); g.wSplit.connect(g.wSideR,1);
+  g.wSideL.connect(g.wSide);    g.wSideR.connect(g.wSide);
+  g.wSide.connect(g.wAmt);
+  g.wMid.connect(g.wOutL);  g.wAmt.connect(g.wOutL);            // L = M + wS
+  g.wMid.connect(g.wOutR);  g.wAmt.connect(g.wNeg); g.wNeg.connect(g.wOutR);   // R = M - wS
+  g.wOutL.connect(g.wMerge,0,0); g.wOutR.connect(g.wMerge,0,1);
+
+  g.master.connect(g.perfFilt); g.perfFilt.connect(g.perfGain);
+  g.perfGain.connect(g.mLo); g.mLo.connect(g.mMid); g.mMid.connect(g.mHi);
+  g.mHi.connect(g.mMonoHi); g.mHi.connect(g.mMonoLo);            // split at the mono frequency
+  g.mMonoHi2.connect(g.wSplit);                                  // above it: stereo width
+  g.wMerge.connect(g.comp); g.mMonoSum.connect(g.comp);          // below it: centred, added back
   g.comp.connect(g.limiter); g.limiter.connect(g.softclip);
   g.softclip.connect(ctx.destination);
   // stereo master meter taps — from the limiter (the final-stage level, and a
@@ -1907,7 +1995,9 @@ function drawEditTitleOnly(){ $('epTitle').textContent=padName(S.editPad)+(S.pad
 function drawEdit(){
   const p=S.pads[S.editPad];
   drawEditTitleOnly();
-  $('epGain').value=p.gain; $('epGainV').textContent=p.gain.toFixed(2);
+  // percent, to match the mixer and the master — a level is a level wherever
+  // you touch it, and 0-200% is easier to reason about than 0.00-2.00
+  $('epGain').value=p.gain; $('epGainV').textContent=Math.round(p.gain*100)+'%';
   $('epPitch').value=p.pitch; $('epPitchV').textContent=(p.pitch>0?'+':'')+p.pitch+' st';
   $('epFine').value=p.fine; $('epFineV').textContent=(p.fine>0?'+':'')+p.fine+' ct';
   { const sp=padSpeed(p); $('epSpeed').value=sp; $('epSpeedV').textContent=sp.toFixed(2)+'×';
@@ -2184,7 +2274,7 @@ function drawMixer(){
     const farea=document.createElement('div'); farea.className='mfarea';
     const mtr=document.createElement('div'); mtr.className='mmtr'; const fill=document.createElement('div'); mtr.appendChild(fill);
     const fader=document.createElement('input'); fader.type='range'; fader.className='vf';
-    fader.min=0; fader.max=1.2; fader.step=0.01; fader.value= idx<0?S.masterVol:p.gain;
+    fader.min=0; fader.max=2; fader.step=0.01; fader.value= idx<0?S.masterVol:p.gain;
     const chan = idx<0 ? 'master' : (padName(idx)+(p.name?' '+p.name:''));
     fader.setAttribute('aria-label','Level, '+chan);
     el.setAttribute('role','group'); el.setAttribute('aria-label','Channel strip, '+chan);
@@ -2832,6 +2922,169 @@ MIC_CTRLS.concat(AMP_CTRLS,['micWet']).forEach(id=>{
 });
 ['ampCab','ampChorus'].forEach(id=>{ const e=$(id); if(e) e.addEventListener('click',()=>dirty()); });
 
+
+/* ---------------- OUT — spectrum, meters, and the master controls -------------
+   The numbers matter more than the picture, so the analyser is the smallest
+   part of this. PEAK says whether it will clip; LOUD says whether it will sit
+   at the right level next to other music; WIDTH says whether it survives being
+   folded to mono on a phone speaker. All three are read off the same taps the
+   level meter already uses. */
+let outRAF=0, specData=null, mPeakHold=0, kL=null, kR=null, kAn=null;
+
+/* Loudness needs the signal K-weighted first (BS.1770): a high shelf for the
+   head's response and a highpass for the body's. This is short-term and
+   ungated, so it is labelled approximate rather than pretending to be a
+   certified LUFS reading. */
+function buildLoudTap(){
+  if(!AC||!LIVE||kAn) return;
+  try{
+    kL=AC.createBiquadFilter(); kL.type='highshelf'; kL.frequency.value=1500; kL.gain.value=4;
+    kR=AC.createBiquadFilter(); kR.type='highpass';  kR.frequency.value=38;   kR.Q.value=0.5;
+    kAn=AC.createAnalyser(); kAn.fftSize=2048;
+    LIVE.limiter.connect(kL); kL.connect(kR); kR.connect(kAn);
+  }catch(e){ kAn=null; }
+}
+function outDraw(){
+  const cv=$('spectrum');
+  if(!cv || !document.getElementById('v-out').classList.contains('on')){ outRAF=0; return; }
+  outRAF=requestAnimationFrame(outDraw);
+  const cx=cv.getContext('2d'), W=cv.width, H=cv.height;
+  cx.fillStyle='#120d04'; cx.fillRect(0,0,W,H);
+  if(!AC||!LIVE){ cx.fillStyle='rgba(255,180,84,0.5)'; cx.font='16px system-ui,sans-serif';
+    cx.textAlign='center'; cx.fillText('press PLAY to see the output', W/2, H/2); return; }
+  buildLoudTap();
+  const an=LIVE.meterL;
+  if(!specData || specData.length!==an.frequencyBinCount) specData=new Uint8Array(an.frequencyBinCount);
+  an.getByteFrequencyData(specData);
+
+  // log frequency axis: linear bins squash everything musical into the left edge
+  const nyq=AC.sampleRate/2, f0=30, f1=Math.min(18000,nyq);
+  const bars=76;
+  for(let i=0;i<bars;i++){
+    const fa=f0*Math.pow(f1/f0,i/bars), fb=f0*Math.pow(f1/f0,(i+1)/bars);
+    let lo=Math.floor(fa/nyq*specData.length), hi=Math.max(lo+1,Math.ceil(fb/nyq*specData.length));
+    let v=0; for(let k=lo;k<hi&&k<specData.length;k++) if(specData[k]>v) v=specData[k];
+    const h=(v/255)*(H-14), x=i*(W/bars);
+    /* colour by level, but never red: a loud BAND is not clipping, and painting
+       it red would say "danger" about a perfectly healthy bass drum. Clipping
+       is the PEAK readout's job, where it means something. */
+    cx.fillStyle = v>210 ? '#ff8c2e' : (v>140 ? 'rgba(255,160,60,0.85)' : 'rgba(255,180,84,0.55)');
+    cx.fillRect(x+1, H-h, (W/bars)-2, h);
+  }
+  // octave guides, so the picture can be read as frequency rather than shape
+  cx.fillStyle='rgba(255,255,255,0.28)'; cx.font='11px ui-monospace'; cx.textAlign='center';
+  [100,1000,10000].forEach(f=>{
+    const x=(Math.log(f/f0)/Math.log(f1/f0))*W;
+    cx.fillRect(x,0,1,H-13);
+    cx.fillText(f>=1000?(f/1000)+'k':String(f), x, H-2);
+  });
+  outMeters();
+}
+function outMeters(){
+  const L=LIVE.meterL, R=LIVE.meterR;
+  const n=L.fftSize;
+  const a=new Float32Array(n), b=new Float32Array(n);
+  L.getFloatTimeDomainData(a); R.getFloatTimeDomainData(b);
+  let pk=0, sum=0, sl=0, sr=0, sc=0;
+  for(let i=0;i<n;i++){
+    const l=a[i], r=b[i];
+    const m=Math.max(Math.abs(l),Math.abs(r)); if(m>pk) pk=m;
+    sum+=(l*l+r*r)/2; sl+=l*l; sr+=r*r; sc+=l*r;
+  }
+  const rms=Math.sqrt(sum/n);
+  mPeakHold=Math.max(pk,mPeakHold*0.95);
+  const dB=v=>v>1e-6?(20*Math.log10(v)):-Infinity;
+  const fmt=v=>v===-Infinity?'—':(v>=0?'+':'')+v.toFixed(1);
+  $('mPeakV').textContent=fmt(dB(mPeakHold));
+  $('mPeakV').style.color = mPeakHold>0.995 ? 'var(--red)' : (mPeakHold>0.85?'var(--amber)':'var(--lcd)');
+  $('mRmsV').textContent=fmt(dB(rms));
+
+  // approximate short-term loudness off the K-weighted tap
+  let loud=-Infinity;
+  if(kAn){
+    const k=new Float32Array(kAn.fftSize); kAn.getFloatTimeDomainData(k);
+    let ks=0; for(let i=0;i<k.length;i++) ks+=k[i]*k[i];
+    const kr=Math.sqrt(ks/k.length);
+    if(kr>1e-6) loud=-0.691+10*Math.log10(kr*kr*2);
+  }
+  $('mLufsV').textContent = loud===-Infinity ? '—' : loud.toFixed(1);
+
+  // correlation: +1 is mono, 0 is wide, negative means it will cancel in mono
+  const corr=(sl>1e-9&&sr>1e-9)?(sc/Math.sqrt(sl*sr)):1;
+  $('mCorrV').textContent=corr.toFixed(2);
+  $('mCorrV').style.color = corr<0 ? 'var(--red)' : (corr<0.3?'var(--amber)':'var(--lcd)');
+
+  // one line of plain English, because a number only helps if you know the target
+  let msg='';
+  if(mPeakHold>0.995) msg='Clipping. Lower CEILING, or turn the master down.';
+  else if(corr<0) msg='Parts of this will cancel out in mono. Try less WIDTH, or BASS MONO.';
+  else if(loud>-9) msg='Very loud — fine for a club, crushed for streaming.';
+  else if(loud>-16 && loud<-11) msg='Sitting about right for streaming.';
+  else if(loud<-22 && loud>-Infinity) msg='Quiet. Push the master, the ceiling will hold it.';
+  else if(loud===-Infinity) msg='Press PLAY to read the output.';
+  else msg='Peak ' + fmt(dB(mPeakHold)) + ' dB · nothing is clipping.';
+  $('outAdvice').textContent=msg;
+}
+function outLabels(){
+  const f=(id,txt)=>{ const e=$(id+'V'); if(e) e.textContent=txt; };
+  ['mEqLo','mEqMid','mEqHi'].forEach(id=>{ const v=parseFloat($(id).value); f(id,(v>0?'+':'')+v.toFixed(1)+'dB'); });
+  f('mWidth',Math.round(parseFloat($('mWidth').value)*100)+'%');
+  const mono=parseFloat($('mMono').value);
+  f('mMono', mono<25?'off':Math.round(mono)+'Hz');
+  f('mCeil',parseFloat($('mCeil').value).toFixed(1)+'dB');
+}
+function outRead(){
+  S.mEqLo=parseFloat($('mEqLo').value); S.mEqMid=parseFloat($('mEqMid').value); S.mEqHi=parseFloat($('mEqHi').value);
+  S.mWidth=parseFloat($('mWidth').value);
+  const mono=parseFloat($('mMono').value); S.mMono = mono<25 ? 0 : mono;
+  S.mCeil=parseFloat($('mCeil').value);
+  outLabels(); applyMaster(); dirty();
+}
+function outWrite(){
+  $('mEqLo').value=S.mEqLo; $('mEqMid').value=S.mEqMid; $('mEqHi').value=S.mEqHi;
+  $('mWidth').value=S.mWidth; $('mMono').value=S.mMono||0; $('mCeil').value=S.mCeil;
+  $('btnMByp').classList.toggle('on',!!S.mByp);
+  outLabels();
+}
+['mEqLo','mEqMid','mEqHi','mWidth','mMono','mCeil'].forEach(id=>
+  $(id).addEventListener('input',outRead));
+$('btnMByp').addEventListener('click',()=>{
+  S.mByp=!S.mByp; $('btnMByp').classList.toggle('on',S.mByp);
+  applyMaster(); dirty();
+  lcd(S.mByp?'MASTER CHAIN BYPASSED — hearing it raw.':'MASTER CHAIN ON.');
+});
+$('btnMFlat').addEventListener('click',()=>{
+  S.mEqLo=S.mEqMid=S.mEqHi=0; S.mWidth=1; S.mMono=0; S.mCeil=-1; S.mByp=false;
+  outWrite(); applyMaster(); dirty(); lcd('MASTER CHAIN RESET to flat.');
+});
+outLabels();
+
+
+/* ---------------- MASTER CHAIN — applied to any graph, live or offline -------
+   Written as apply(g) so the live graph and the bounce get the same treatment
+   from the same code. A master you cannot export is decoration. */
+function applyMasterG(g, ctx){
+  if(!g || !g.mLo) return;
+  const t=ctx?ctx.currentTime:0, byp=S.mByp;
+  const set=(param,v)=>{ try{ param.setTargetAtTime(v,t,0.02); }catch(e){ param.value=v; } };
+  set(g.mLo.gain,  byp?0:S.mEqLo);
+  set(g.mMid.gain, byp?0:S.mEqMid);
+  set(g.mHi.gain,  byp?0:S.mEqHi);
+  set(g.wAmt.gain, byp?1:S.mWidth);
+  // 10Hz is below anything audible: the mono band collects nothing and the
+  // width path carries the whole mix, which is what "off" has to mean. It has
+  // to be this low — at 20Hz the 4th-order slope is still shaving ~1.5dB off
+  // 30Hz content, which you would hear on a sub as the crossover "off".
+  const mono=byp?10:Math.max(10,S.mMono||10);
+  [g.mMonoLo,g.mMonoLo2,g.mMonoHi,g.mMonoHi2].forEach(f=>set(f.frequency,mono));
+  // The ceiling is NOT part of the bypass. BYPASS is an A/B of the tone shaping
+  // — EQ, width, bass mono — so you can hear what you did. The limiter is the
+  // safety rail on the way out; lifting it on bypass would let an A/B clip the
+  // speakers, which is the one thing a bypass button must never do.
+  try{ g.limiter.threshold.setTargetAtTime(S.mCeil, t, 0.02); }catch(e){ g.limiter.threshold.value=S.mCeil; }
+}
+function applyMaster(){ if(LIVE&&AC) applyMasterG(LIVE,AC); }
+
 /* ---------------- tabs ---------------- */
 /* The bar scrolls sideways now, so a tab you switch to from anywhere else —
    the tour, a "go to SMPL" shortcut — has to be brought into view or it just
@@ -2855,6 +3108,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
   if(b.dataset.v==='live'){ drawLive(); }
   if(b.dataset.v==='amp'){ ampListDevices(); }
   if(b.dataset.v==='mic'){ micLabels(); if(micOn) micListDevices(); }
+  if(b.dataset.v==='out'){ outWrite(); if(!outRAF) outDraw(); }
   a11yPass($('v-'+b.dataset.v));
 }));
 
@@ -6550,7 +6804,7 @@ const autoTargets={
     get:()=>LIVE?LIVE.perfFilt.frequency.value:18000, fmt:v=>Math.round(v)+'Hz',
     apply:v=>{ if(LIVE) LIVE.perfFilt.frequency.setTargetAtTime(clamp(v,120,18500),AC.currentTime,0.02); },
     applyG:(g,v,t)=>{ try{ g.perfFilt.frequency.setValueAtTime(clamp(v,120,18500),t); }catch(e){} }},
-  mvol:{name:'MASTER VOLUME',fromNorm:x=>x*1.2,toNorm:v=>clamp(v,0,1.2)/1.2,
+  mvol:{name:'MASTER VOLUME',fromNorm:x=>x*2,toNorm:v=>clamp(v,0,2)/2,
     get:()=>S.masterVol, fmt:v=>Math.round(v/1.2*100)+'%',
     apply:v=>{ S.masterVol=v; if(LIVE) LIVE.master.gain.setTargetAtTime(v,AC.currentTime,0.02); },
     applyG:(g,v,t)=>{ try{ g.master.gain.setValueAtTime(v,t); }catch(e){} }},
@@ -6558,7 +6812,7 @@ const autoTargets={
     get:()=>S.delayFb, fmt:v=>Math.round(v/0.85*100)+'%',
     apply:v=>{ S.delayFb=v; if(LIVE){ LIVE.dlyFb.gain.setTargetAtTime(v,AC.currentTime,0.02); if(LIVE.dlyFb2) LIVE.dlyFb2.gain.setTargetAtTime(v,AC.currentTime,0.02); } },
     applyG:(g,v,t)=>{ try{ g.dlyFb.gain.setValueAtTime(v,t); if(g.dlyFb2) g.dlyFb2.gain.setValueAtTime(v,t); }catch(e){} }},
-  rev:{name:'REVERB LEVEL',fromNorm:x=>x*1.2,toNorm:v=>clamp(v,0,1.2)/1.2,
+  rev:{name:'REVERB LEVEL',fromNorm:x=>x*2,toNorm:v=>clamp(v,0,2)/2,
     get:()=>S.revLvl, fmt:v=>Math.round(v/1.2*100)+'%',
     apply:v=>{ S.revLvl=v; if(LIVE) LIVE.revRet.gain.setTargetAtTime(v,AC.currentTime,0.02); },
     applyG:(g,v,t)=>{ try{ g.revRet.gain.setValueAtTime(v,t); }catch(e){} }},
@@ -7101,13 +7355,13 @@ function onClockTick(){
 function applyCc(cc,val){
   const t=S.ccMaps[cc]; if(!t) return;
   const x=val/127;
-  if(t==='m:vol'){ S.masterVol=x*1.2; if(LIVE) LIVE.master.gain.setTargetAtTime(S.masterVol,AC.currentTime,0.02); }
+  if(t==='m:vol'){ S.masterVol=x*2; if(LIVE) LIVE.master.gain.setTargetAtTime(S.masterVol,AC.currentTime,0.02); }
   else if(t==='m:bpm'){ setBpm(40+x*200); }
   else if(t==='m:swing'){ S.swing=x*0.6; $('swing').value=S.swing; $('swingV').textContent=Math.round(S.swing*100)+'%'; }
   else if(t==='m:dfb'){ S.delayFb=x*0.85; if(LIVE){ LIVE.dlyFb.gain.setTargetAtTime(S.delayFb,AC.currentTime,0.02); if(LIVE.dlyFb2) LIVE.dlyFb2.gain.setTargetAtTime(S.delayFb,AC.currentTime,0.02); } }
   else{
     const p=S.pads[S.editPad], n=LIVE?LIVE.pads[S.editPad]:null;
-    if(t==='p:gain'){ p.gain=x*1.2; logGain(S.editPad,p.gain,'MIDI CC#'+cc); if(n) n.ch.gain.setTargetAtTime(p.gain,AC.currentTime,0.02); }
+    if(t==='p:gain'){ p.gain=x*2; logGain(S.editPad,p.gain,'MIDI CC#'+cc); if(n) n.ch.gain.setTargetAtTime(p.gain,AC.currentTime,0.02); }
     else if(t==='p:pitch'){ p.pitch=Math.round(x*24-12); }
     else if(t==='p:pan'){ p.pan=x*2-1; if(n&&n.pan) n.pan.pan.setTargetAtTime(p.pan,AC.currentTime,0.02); }
     else if(t==='p:rev'){ p.rev=x; if(n) n.rev.gain.setTargetAtTime(x,AC.currentTime,0.02); }
@@ -7167,7 +7421,9 @@ $('btnSave').addEventListener('click',()=>{
     scaleLock:S.scaleLock, scaleRoot:S.scaleRoot, scaleName:S.scaleName,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
-    trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(), scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
+    trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
+    mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp,
+    scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
   const blob=new Blob([JSON.stringify(doc)],{type:'application/json'});
@@ -7230,6 +7486,11 @@ function applySessionDoc(doc, bufs){
   traxArm=-1; traxSolo=-1;
   S.inst=Object.assign({},INSTDEF,doc.inst||{});
   try{ applyMicSettings(doc.mic); applyAmpSettings(doc.amp); }catch(e){}
+  { const num=(v,d,lo,hi)=>{ const n=parseFloat(v); return isFinite(n)?clamp(n,lo,hi):d; };
+    S.mEqLo =num(doc.mEqLo, 0,-12,12); S.mEqMid=num(doc.mEqMid,0,-12,12); S.mEqHi=num(doc.mEqHi,0,-12,12);
+    S.mWidth=num(doc.mWidth,1,0,2);    S.mMono =num(doc.mMono, 0,0,300);
+    S.mCeil =num(doc.mCeil,-1,-12,0);  S.mByp  =!!doc.mByp;
+    try{ outWrite(); applyMaster(); }catch(e){} }
   S.scOn=!!doc.scOn; S.scTrig=clamp(doc.scTrig|0,0,NPADS-1);
   S.scDepth=(doc.scDepth!=null)?doc.scDepth:0.6; S.scRel=(doc.scRel!=null)?doc.scRel:0.25;
   S.song=Array.isArray(doc.song)?doc.song.map(x=>({pat:clamp(x.pat|0,0,NPAT-1),reps:clamp(x.reps|0,1,64)})):[];
@@ -7415,7 +7676,9 @@ function snapshotSession(){
     scaleLock:S.scaleLock, scaleRoot:S.scaleRoot, scaleName:S.scaleName,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
-    trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(), scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
+    trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
+    mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp,
+    scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
 }
@@ -7443,7 +7706,9 @@ function undoSnap(){
     scaleLock:S.scaleLock, scaleRoot:S.scaleRoot, scaleName:S.scaleName,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
-    trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(), scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
+    trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
+    mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp,
+    scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns };
 }
@@ -7729,10 +7994,18 @@ function encodeWav(buf){
   dv.setUint32(24,sr,true); dv.setUint32(28,sr*nCh*2,true); dv.setUint16(32,nCh*2,true); dv.setUint16(34,16,true);
   ws(36,'data'); dv.setUint32(40,len*nCh*2,true);
   const L=buf.getChannelData(0), R=buf.numberOfChannels>1?buf.getChannelData(1):L;
+  /* TPDF dither — the actual last step of finishing a 16-bit master.
+     Rounding 32-bit float to 16-bit quantises, and quantisation error that
+     CORRELATES with the signal is heard as a grainy fizz on reverb and fades.
+     Adding a triangular sub-LSB noise before rounding decorrelates it: the
+     error becomes steady, inaudible hiss instead. It costs about -93dB of
+     noise, which is a fair price and what every mastering chain does. */
+  const q=1/32767, tpdf=()=>(Math.random()-Math.random())*q;
+  const clip=v=>v<-1?-1:(v>1?1:v);
   let o=44;
   for(let i=0;i<len;i++){
-    dv.setInt16(o,Math.max(-32768,Math.min(32767,Math.round(L[i]*32767))),true); o+=2;
-    dv.setInt16(o,Math.max(-32768,Math.min(32767,Math.round(R[i]*32767))),true); o+=2;
+    dv.setInt16(o,Math.round(clip(L[i]+tpdf())*32767),true); o+=2;
+    dv.setInt16(o,Math.round(clip(R[i]+tpdf())*32767),true); o+=2;
   }
   return new Blob([ab],{type:'audio/wav'});
 }
@@ -7870,6 +8143,7 @@ async function renderMix(padSet, traxSet){
   const SR=44100, total=dur+Math.max(3.0,S.revSize+0.5);
   const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
   const g=buildGraph(oc);
+  applyMasterG(g,oc);          // the bounce gets the same master chain as the speakers
   scApplyRoutingG(g,oc);
   if(!padSet){ for(let i=0;i<NPADS;i++){ if(g.pads[i]&&g.pads[i].mute) g.pads[i].mute.gain.value = padAudible(i)?1:0; } }   // master bounce honors mixer mute/solo (stems ignore it)
   for(const a of autoEvents){ try{ autoTargets[a.id].applyG(g,a.v,a.when); }catch(e){} }

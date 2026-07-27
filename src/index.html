@@ -86,6 +86,7 @@
   <button role="tab" aria-label="Amp and guitar input" data-v="amp">AMP</button>
   <button role="tab" aria-label="DJ decks" data-v="dj">DJ</button>
   <button role="tab" aria-label="Mixer" data-v="mix">MIX</button>
+  <button role="tab" aria-label="Master output" data-v="out">OUT</button>
   <button role="tab" aria-label="MIDI" data-v="midi">MIDI</button>
   <button role="tab" aria-label="Projects and export" data-v="proj">PROJ</button>
 </div>
@@ -110,7 +111,7 @@
       <span class="grow"></span>
       <button id="epClear">CLEAR</button>
     </div>
-    <div class="pslider"><span class="lbl">GAIN</span><input type="range" id="epGain" min="0" max="1.2" step="0.01"><span class="val" id="epGainV"></span></div>
+    <div class="pslider"><span class="lbl">GAIN</span><input type="range" id="epGain" min="0" max="2" step="0.01"><span class="val" id="epGainV"></span></div>
     <div class="pslider"><span class="lbl">PITCH</span><input type="range" id="epPitch" min="-12" max="12" step="1"><span class="val" id="epPitchV"></span></div>
     <div class="pslider"><span class="lbl">FINE</span><input type="range" id="epFine" min="-100" max="100" step="1"><span class="val" id="epFineV"></span></div>
     <div class="pslider"><span class="lbl">SPEED</span><input type="range" id="epSpeed" min="0.25" max="4" step="0.01"><span class="val" id="epSpeedV"></span></div>
@@ -726,7 +727,7 @@
   <div class="row" id="fluteopts" style="display:none">
     <button id="instBreath" class="grow">BREATH CONTROL (MIC) — blow to play</button>
   </div>
-  <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="instVol" min="0" max="1.2" step="0.01"><span class="val" id="instVolV"></span></div>
+  <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="instVol" min="0" max="2" step="0.01"><span class="val" id="instVolV"></span></div>
   <div class="pslider"><span class="lbl">REV</span><input type="range" id="instRev" min="0" max="1" step="0.01"><span class="val" id="instRevV"></span></div>
   <div class="pslider"><span class="lbl">DLY</span><input type="range" id="instDly" min="0" max="1" step="0.01"><span class="val" id="instDlyV"></span></div>
   <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
@@ -824,9 +825,6 @@
   <div class="hint"><b>MIXER</b> — one strip per in-use pad: live meter, fader, pan, <b>M</b>ute / <b>S</b>olo, and REV/DLY sends. Tap a strip's name to edit that pad. Master + global FX below. Everything bakes into the bounce.</div>
   <h3>CHANNELS <span id="mixCount" style="color:var(--txt-dim);letter-spacing:0"></span></h3>
   <div id="mixStrips"></div>
-  <h3>MASTER</h3>
-  <div class="pslider"><span class="lbl">VOLUME</span><input type="range" id="mxVol" min="0" max="1.2" step="0.01"><span class="val" id="mxVolV"></span></div>
-  <div class="pslider"><span class="lbl">COMP</span><input type="range" id="mxComp" min="0" max="1" step="0.01"><span class="val" id="mxCompV"></span></div>
   <h3>SIDECHAIN <span style="color:var(--txt-dim);letter-spacing:0">— trigger pad ducks pads &amp; live instruments (the pump)</span></h3>
   <div class="row">
     <button id="mxScOn">SIDECHAIN</button>
@@ -835,6 +833,55 @@
   </div>
   <div class="pslider"><span class="lbl">DEPTH</span><input type="range" id="mxScDepth" min="0" max="0.95" step="0.01"><span class="val" id="mxScDepthV"></span></div>
   <div class="pslider"><span class="lbl">RECOVER</span><input type="range" id="mxScRel" min="0.05" max="0.6" step="0.01"><span class="val" id="mxScRelV"></span></div>
+  <h3>SELECTED PAD SENDS <span id="mxPad" style="color:var(--amber)"></span></h3>
+  <div class="pslider"><span class="lbl">REV</span><input type="range" id="mxPadRev" min="0" max="1" step="0.01"><span class="val" id="mxPadRevV"></span></div>
+  <div class="pslider"><span class="lbl">DLY</span><input type="range" id="mxPadDly" min="0" max="1" step="0.01"><span class="val" id="mxPadDlyV"></span></div>
+  <div style="font-size:10px;color:var(--txt-dim);margin-top:8px">Send levels for every pad live in PADS → EDIT. Everything here bakes into the WAV bounce.</div>
+</div>
+
+<!-- OUT -->
+<div class="view" role="tabpanel" aria-label="Master output" id="v-out">
+  <div class="hint"><b>THE FINISHED MIX.</b> Everything here runs on the whole song, and it is built into the
+  bounce as well &mdash; what you hear is what the WAV contains. Start with <b>BYPASS</b> to hear the
+  difference, and watch the meters rather than trusting the loudness.</div>
+
+  <canvas id="spectrum" role="img" aria-label="Live frequency spectrum of the master output. The meters below carry the same information as numbers." width="900" height="260"></canvas>
+  <div id="outMeters">
+    <span class="lbl">PEAK dB</span><span class="lbl">RMS dB</span><span class="lbl">LOUDNESS</span><span class="lbl">MONO-SAFE</span>
+    <span class="val" id="mPeakV">&mdash;</span><span class="val" id="mRmsV">&mdash;</span>
+    <span class="val" id="mLufsV">&mdash;</span><span class="val" id="mCorrV">&mdash;</span>
+  </div>
+  <div id="outAdvice" style="font-size:11px;color:var(--txt-dim);margin:0 0 8px">Press PLAY to read the output.</div>
+
+  <div class="row">
+    <button id="btnMByp">BYPASS</button>
+    <button id="btnMFlat">RESET</button>
+    <span style="font-size:11px;color:var(--txt-dim);flex:1">BYPASS A/Bs the tone, image and bass&nbsp;mono without changing your settings. The ceiling stays on so a comparison can never clip.</span>
+  </div>
+
+  <h3>TONE <span style="color:var(--txt-dim);letter-spacing:0">&mdash; broad strokes on the whole mix</span></h3>
+  <div class="pslider"><span class="lbl">LOW</span><input type="range" id="mEqLo" min="-12" max="12" step="0.5" value="0"><span class="val" id="mEqLoV">0dB</span></div>
+  <div class="pslider"><span class="lbl">MID</span><input type="range" id="mEqMid" min="-12" max="12" step="0.5" value="0"><span class="val" id="mEqMidV">0dB</span></div>
+  <div class="pslider"><span class="lbl">HIGH</span><input type="range" id="mEqHi" min="-12" max="12" step="0.5" value="0"><span class="val" id="mEqHiV">0dB</span></div>
+
+  <h3>IMAGE <span style="color:var(--txt-dim);letter-spacing:0">&mdash; how wide it sits</span></h3>
+  <div class="pslider"><span class="lbl">WIDTH</span><input type="range" id="mWidth" min="0" max="2" step="0.01" value="1"><span class="val" id="mWidthV">100%</span></div>
+  <div class="pslider"><span class="lbl">BASS MONO</span><input type="range" id="mMono" min="0" max="300" step="5" value="0"><span class="val" id="mMonoV">off</span></div>
+  <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
+    100% width is untouched; 0% is mono. <b>BASS MONO</b> centres everything below the chosen frequency &mdash;
+    wide bass smears on a big system and thins out on a phone speaker. 120Hz is a safe habit.
+  </div>
+
+  <h3>OUTPUT <span style="color:var(--txt-dim);letter-spacing:0">&mdash; the last thing before it leaves</span></h3>
+  <div class="pslider"><span class="lbl">CEILING</span><input type="range" id="mCeil" min="-12" max="0" step="0.1" value="-1"><span class="val" id="mCeilV">-1.0dB</span></div>
+  <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
+    Nothing gets past this level, so pushing gain makes the mix louder instead of breaking it.
+    &minus;1dB is a good default; &minus;0.3dB is as close to the edge as is sensible for a file that will be
+    converted to MP3 or AAC later.
+  </div>
+<h3>MASTER</h3>
+  <div class="pslider"><span class="lbl">VOLUME</span><input type="range" id="mxVol" min="0" max="2" step="0.01"><span class="val" id="mxVolV"></span></div>
+  <div class="pslider"><span class="lbl">COMP</span><input type="range" id="mxComp" min="0" max="1" step="0.01"><span class="val" id="mxCompV"></span></div>
   <h3>REVERB</h3>
   <div class="row">
     <span class="lbl">TYPE</span>
@@ -847,7 +894,7 @@
       <option value="gated">GATED 80s</option>
     </select>
   </div>
-  <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="mxRevLvl" min="0" max="1.2" step="0.01"><span class="val" id="mxRevLvlV"></span></div>
+  <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="mxRevLvl" min="0" max="2" step="0.01"><span class="val" id="mxRevLvlV"></span></div>
   <div class="pslider"><span class="lbl">SIZE</span><input type="range" id="mxRevSize" min="0.8" max="6" step="0.1"><span class="val" id="mxRevSizeV"></span></div>
   <h3>DELAY</h3>
   <div class="row">
@@ -868,12 +915,8 @@
     <span style="font-size:10px;color:var(--txt-dim)">tempo-synced</span>
   </div>
   <div class="pslider"><span class="lbl">FEEDBK</span><input type="range" id="mxDlyFb" min="0" max="0.85" step="0.01"><span class="val" id="mxDlyFbV"></span></div>
-  <div class="pslider"><span class="lbl">TONE</span><input type="range" id="mxDlyTone" min="500" max="12000" step="100"><span class="val" id="mxDlyToneV"></span></div>
-  <h3>SELECTED PAD SENDS <span id="mxPad" style="color:var(--amber)"></span></h3>
-  <div class="pslider"><span class="lbl">REV</span><input type="range" id="mxPadRev" min="0" max="1" step="0.01"><span class="val" id="mxPadRevV"></span></div>
-  <div class="pslider"><span class="lbl">DLY</span><input type="range" id="mxPadDly" min="0" max="1" step="0.01"><span class="val" id="mxPadDlyV"></span></div>
-  <div style="font-size:10px;color:var(--txt-dim);margin-top:8px">Send levels for every pad live in PADS → EDIT. Everything here bakes into the WAV bounce.</div>
-</div>
+  <div class="pslider"><span class="lbl">TONE</span><input aria-label="Delay tone" type="range" id="mxDlyTone" min="500" max="12000" step="100"><span class="val" id="mxDlyToneV"></span></div>
+  </div>
 
 <!-- MIDI -->
 <div class="view" role="tabpanel" aria-label="MIDI" id="v-midi">

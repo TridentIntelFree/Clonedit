@@ -213,6 +213,16 @@ h3 span{font-weight:400}
 #miclvl{height:6px;background:var(--line);border-radius:3px;overflow:hidden;flex:1}
 #miclvl>div{height:100%;width:0%;background:var(--green)}
 
+/* out */
+#spectrum{width:100%;height:auto;display:block;background:var(--lcd-bg);
+  border:1px solid var(--edge);border-radius:var(--r-md);margin-bottom:var(--sp-2)}
+/* four label/value pairs that stay paired instead of wrapping apart */
+#outMeters{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--sp-1) var(--sp-2);
+  margin-bottom:var(--sp-1);align-items:baseline}
+#outMeters .lbl{min-width:0;font-size:10px}
+#outMeters .val{font-family:var(--f-mono);min-width:0;text-align:left;
+  color:var(--lcd);font-size:var(--fs-md)}
+
 /* mic */
 #micBar{flex:1;height:10px;background:#000;border-radius:5px;overflow:hidden;position:relative}
 #micBar>div{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--green);
