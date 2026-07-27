@@ -1022,8 +1022,22 @@
      gained "type": "module", which made its require() calls illegal. Nobody
      noticed because there were no reports to read. Rewritten as ESM, taught the
      new format, and now covered by the suite.
+   - R107: IN-APP REPORTING REMOVED. Three releases chased the same goal — let a
+     tester type a few words somewhere they can actually be read — and every
+     route carried a cost that was not worth paying. A file from the share sheet
+     had nowhere useful to go. An issue on the tracker needed a GitHub account
+     and made the report public. A relay solved both but needed a token, a
+     Cloudflare deploy and a URL pasted back in: a lot of standing machinery for
+     a handful of beta testers who can simply send a message.
+     So the panel, the relay, the decoder and the inbox are gone. DIAG in the
+     PROJ tab still prints the same engine state into the diagnostic log, so
+     anyone hitting a problem can copy that in alongside their own words — which
+     is what happened in practice anyway. The room in PROJ is free for something
+     worth having.
+     Kept in git history rather than erased from it: feedback/worker.js and
+     decode.js are one revert away if a real inbox is ever wanted.
    ================================================================ */
-const BUILD = 'JBH-88 · R106 · 2026-07-26 · reporting without an account';
+const BUILD = 'JBH-88 · R107 · 2026-07-26 · in-app reporting removed';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -7911,168 +7925,6 @@ $('btnDocExport').addEventListener('click',()=>{
 });
 $('btnDocSpec').addEventListener('click',()=>{ $('docText').value=SONGDOC_SPEC; lcd('SPEC + example in the box — copy ALL of it to an AI, ask for a beat, paste the reply back, tap LOAD DOC.'); });
 $('btnDiag').addEventListener('click',()=>{ const d=diagDump('manual'); $('docText').value=d; lcd('DIAG in the text box + PROJ log — screenshot or copy it when reporting a bug.'); });
-/* BETA FEEDBACK — private, un-spammable, offline-safe.
-   Each report is packaged into an opaque 'jbhfb1:' blob (base64 — hides the
-   text, resists casual tampering).
-   ONLINE INBOX: if FEEDBACK_ENDPOINT is set (a small relay you deploy — see
-   feedback/worker.js) and the tester is online, the blob is POSTed to it. The
-   relay appends to feedback/inbox.json in the repo as a RING BUFFER capped at
-   100 reports, so even a spam flood can never store more than 100 short
-   messages. I read that file on request.
-   OFFLINE / no endpoint: falls back to the OS share sheet / clipboard so the
-   tester forwards the blob to the developer directly. Either way there is no
-   public write path to abuse. */
-/* FEEDBACK_ENDPOINT + feedbackEndpoint() are defined with the rest of the
-   reporting code below. */
-let lastFbT=0;
-
-/* A report is only useful if somebody can READ it. The old one was packaged as
-   an opaque base64 blob and handed to the share sheet, which on a phone means a
-   file with nowhere sensible to send it — and even when it arrived, it needed a
-   decoder. Reports are plain Markdown now, and the main path files them on the
-   project's issue tracker, where they can be read immediately and replied to.
-
-   COPY stays for anyone without a GitHub account, or who would rather send it
-   privately: the same text, no encoding. */
-const FEEDBACK_REPO='TridentIntelFree/Clonedit';   // where the issue-tracker route files to
-
-/* Paste a deployed relay URL here (feedback/worker.js) and SEND becomes a
-   single tap that needs no account at all: the app POSTs the report, the relay
-   writes it into feedback/inbox.json in the repo, and it can be read from
-   there. Empty = no relay, and SEND falls back to the issue tracker, which does
-   need a GitHub account.
-   Settable without a rebuild:  localStorage.setItem('jbh_fb_endpoint','https://…') */
-const FEEDBACK_ENDPOINT='';
-function feedbackEndpoint(){
-  try{ return (localStorage.getItem('jbh_fb_endpoint')||'').trim()||FEEDBACK_ENDPOINT; }
-  catch(e){ return FEEDBACK_ENDPOINT; }
-}
-/* The button can only promise what is actually wired up, so it says which. */
-function fbRefreshUI(){
-  const relay=!!feedbackEndpoint();
-  const b=$('fbSubmit'); if(!b) return;
-  b.innerHTML = relay ? '&#128232; SEND REPORT' : '&#128172; POST TO THE ISSUE TRACKER';
-  const n=$('fbRouteNote');
-  if(n) n.innerHTML = relay
-    ? 'Goes straight to the developer &mdash; no account, no file to pass around. '
-      + 'Diagnostics are engine state only: pad slots, levels, errors. No project names, no sample names, no audio.'
-    : '<b>SEND</b> opens the project&rsquo;s issue tracker with the report already written out; press Submit there. '
-      + 'That needs a GitHub account, and the project is <b>public</b>, so treat what you write as public too. '
-      + '<b>COPY</b> puts the same report on your clipboard to send privately instead. '
-      + 'Diagnostics are engine state only: pad slots, levels, errors. No project names, no sample names, no audio.';
-}
-
-function fbDevice(){
-  const bits=[];
-  try{ bits.push(detectPlatform(navigator.userAgent, navigator.vendor).id); }catch(e){}
-  bits.push(innerWidth+'×'+innerHeight+(devicePixelRatio>1?(' @'+devicePixelRatio+'x'):''));
-  try{ bits.push(isInstalled()?'installed to home screen':'browser tab'); }catch(e){}
-  if(AC) bits.push(Math.round(AC.sampleRate)+'Hz · audio '+AC.state);
-  bits.push(seqView+' view');
-  return bits.join(' · ');
-}
-
-/* Markdown, so it is readable both as an issue and as pasted text. */
-function fbReport(cat,msg,hasDiag,maxChars){
-  const label={bug:'Bug',crash:'Crash / silence',audio:'Audio glitch',idea:'Idea / request',other:'Other'}[cat]||cat;
-  let out='**What happened**\n\n'+msg+'\n\n---\n\n'
-    +'| | |\n|---|---|\n'
-    +'| **Type** | '+label+' |\n'
-    +'| **Build** | '+BUILD+' |\n'
-    +'| **When** | '+new Date().toISOString()+' |\n'
-    +'| **Device** | '+fbDevice()+' |\n';
-  if(hasDiag){
-    let d=''; try{ d=diagDump('report')||''; }catch(e){ d='(diagnostics unavailable: '+e.message+')'; }
-    if(d){
-      const room = maxChars ? maxChars-out.length-120 : 1e9;
-      if(d.length>room && room>200) d=d.slice(0,room)+'\n… truncated to fit';
-      if(d.length<=room)
-        out+='\n<details><summary>Diagnostics — engine state only</summary>\n\n```\n'+d+'\n```\n\n</details>\n';
-      else
-        out+='\nDiagnostics were too long to include here; ask for them with the COPY button.\n';
-    }
-  }
-  return out;
-}
-function fbTitle(cat,msg){
-  const one=msg.replace(/\s+/g,' ').trim();
-  return '['+cat.toUpperCase()+'] '+(one.length>72?one.slice(0,69)+'…':one);
-}
-function fbValidate(){
-  const msg=$('fbText').value.trim();
-  if(msg.length<4){ $('fbMsg').textContent='Say a few words about what happened first.'; return null; }
-  const now=Date.now();
-  if(now-lastFbT<8000){ $('fbMsg').textContent='One report every few seconds, please.'; return null; }
-  return { msg, cat:$('fbCat').value, diag:$('fbDiag').checked };
-}
-
-async function fbSendViaRelay(endpoint,r){
-  $('fbMsg').textContent='Sending …';
-  const report=fbReport(r.cat,r.msg,r.diag,8000);
-  const ctrl=('AbortController' in window)?new AbortController():null;
-  const to=ctrl?setTimeout(()=>ctrl.abort(),12000):0;
-  try{
-    const res=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({report}),signal:ctrl?ctrl.signal:undefined});
-    if(to) clearTimeout(to);
-    if(res.ok){
-      $('fbMsg').textContent='Sent — thank you. The developer can read it now.';
-      $('fbText').value='';
-      return true;
-    }
-    if(res.status===429){ $('fbMsg').textContent='Just a moment between reports, please — try again shortly.'; lastFbT=0; return true; }
-    return false;                        // any other status: fall through, lose nothing
-  }catch(e){ if(to) clearTimeout(to); return false; }
-}
-
-$('fbSubmit').addEventListener('click',async ()=>{
-  const r=fbValidate(); if(!r) return;
-  // the account-free route, when a relay is configured
-  const endpoint=feedbackEndpoint();
-  if(endpoint && navigator.onLine){
-    lastFbT=Date.now();
-    if(await fbSendViaRelay(endpoint,r)) return;
-    $('fbMsg').textContent='Could not reach the developer — opening the issue tracker instead …';
-  }
-  // GitHub rejects very long URLs, so build the body to fit and say so if the
-  // diagnostics had to be trimmed rather than silently dropping them
-  const base='https://github.com/'+FEEDBACK_REPO+'/issues/new';
-  const title=fbTitle(r.cat,r.msg);
-  let body=fbReport(r.cat,r.msg,r.diag,5200);
-  const url=base+'?labels='+encodeURIComponent('beta report')
-    +'&title='+encodeURIComponent(title)+'&body='+encodeURIComponent(body);
-  lastFbT=Date.now();
-  let w=null;
-  try{ w=window.open(url,'_blank','noopener'); }catch(e){}
-  if(w){ $('fbMsg').textContent='Opened the issue tracker — press Submit there to post it.'; }
-  else{
-    // popup blocked: give them the link rather than losing the report
-    $('fbMsg').innerHTML='Your browser blocked the new tab. <a href="'+url.replace(/"/g,'&quot;')
-      +'" target="_blank" rel="noopener" style="color:var(--sel)">Open the report here</a>, then press Submit.';
-  }
-});
-
-$('fbCopy').addEventListener('click',async ()=>{
-  const r=fbValidate(); if(!r) return;
-  const text='JBH-88 report\n\n'+fbReport(r.cat,r.msg,r.diag);
-  lastFbT=Date.now();
-  try{
-    await navigator.clipboard.writeText(text);
-    $('fbMsg').textContent='Copied — paste it into a message or email. It is plain text, so it reads as-is.';
-  }catch(e){
-    $('fbText').value=text;
-    $('fbMsg').textContent='Clipboard unavailable — the full report is in the box above, ready to copy.';
-  }
-});
-
-fbRefreshUI();
-$('fbPreview').addEventListener('click',()=>{
-  const msg=$('fbText').value.trim();
-  if(msg.length<4){ $('fbMsg').textContent='Write something first and PREVIEW will show exactly what gets sent.'; return; }
-  const text=fbReport($('fbCat').value,msg,$('fbDiag').checked);
-  plog('--- report preview ---\n'+text);
-  $('fbMsg').textContent='Printed below in the diagnostic log — that is exactly what gets sent, nothing hidden.';
-});
 
 $('libIn').addEventListener('change',async e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;

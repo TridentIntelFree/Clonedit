@@ -15,7 +15,6 @@ connection and nothing sent anywhere.
 | `standalone.html` | A frozen, hand-written snapshot of R96, kept as a build-free fallback. See below. |
 | `samples/` | Bundled CC0 sound packs (VSCO-2 CE, plus synthesized drums). |
 | `icons/`, `manifest.webmanifest`, `sw.js` | PWA install and offline shell. |
-| `feedback/` | Beta feedback inbox and the decoder for reading it. |
 
 ## Building and running
 
@@ -110,7 +109,7 @@ stay stable, those scripts validate every step.
 2. ~~Extract the pure logic into modules that can be unit-tested in Node.~~
    **Started (R99)** — euclid, groove, pattern model, scale, morph, IR sizing
    and numeric helpers are in `src/pure/` with 46 tests. Still to move: the WAV
-   encoder's byte packing, the feedback codec, and the DSP maths (time-stretch,
+   encoder's byte packing and the DSP maths (time-stretch,
    peak/RMS analysis) once buffer access is abstracted.
 3. Convert the UI tab by tab into Svelte components.
 
