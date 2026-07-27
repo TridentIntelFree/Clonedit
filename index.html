@@ -2369,8 +2369,26 @@ Object.assign(globalThis, __JBH_PURE);})();
      worth having.
      Kept in git history rather than erased from it: feedback/worker.js and
      decode.js are one revert away if a real inbox is ever wanted.
+   - R108: MIC + AMP SETTINGS LIVE WITH THE PROJECT. Twenty-nine controls
+     between the two tabs, and every one of them was thrown away on reload —
+     you re-dialled your voice or your amp from scratch every session, which
+     made both tabs feel disposable. They now save and restore the way S.inst
+     already did: a flat map of control id → value, read off the DOM and written
+     back, including the CAB and CHORUS toggle buttons, which are buttons rather
+     than inputs and would otherwise have been missed. The readouts are redrawn
+     on restore, since each control's own listener normally writes them and a
+     restored slider would otherwise sit next to the previous project's number.
+     Two things are deliberately not stored. The input device, because a
+     deviceId from one phone is meaningless on another. And MONITOR — reopening
+     a project with the mic monitor already live would howl through the speakers
+     before anyone could reach a control.
+     Restoring reaches the live audio when the mic or amp is already open, and
+     does nothing but fill the controls when it is not. A document with junk
+     values, or an older one with no mic/amp keys at all, still loads: an
+     unrecognised preset falls back to a real option rather than leaving the
+     control blank.
    ================================================================ */
-const BUILD = 'JBH-88 · R107 · 2026-07-26 · in-app reporting removed';
+const BUILD = 'JBH-88 · R108 · 2026-07-26 · mic + amp settings persist';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -4073,6 +4091,79 @@ $('btnMicRec').addEventListener('click',()=>{
 });
 micLabels();
 
+
+
+/* ---------------- MIC + AMP settings live with the project --------------------
+   Twenty-nine controls between them, and every one was thrown away on reload —
+   you re-dialled your voice or your amp from scratch every session. They are
+   stored the way S.inst already was: a flat map of control id → value, read off
+   the DOM and written back.
+
+   Two things are deliberately NOT stored. The input device, because a deviceId
+   from one phone means nothing on another. And the MONITOR state — reopening a
+   project with the mic monitor already live would howl through the speakers
+   before anyone could reach a control. */
+const MIC_CTRLS=['micPreset','micGain','micHp','micLp','micGate','micComp','micSib',
+  'micLo','micMid','micHi','micDrive','micDbl','micRev','micDly','micDest'];
+const AMP_CTRLS=['ampModel','ampPreset','ampGain','ampLevel','ampGate',
+  'ampBass','ampMid','ampTreb','ampChDepth','ampDly','ampRev'];
+
+function readCtrls(ids){
+  const o={};
+  ids.forEach(id=>{ const e=$(id); if(!e) return;
+    o[id]=(e.type==='checkbox')?!!e.checked:e.value; });
+  return o;
+}
+function writeCtrls(ids,vals){
+  if(!vals) return;
+  ids.forEach(id=>{ const e=$(id); if(!e || !(id in vals)) return;
+    if(e.type==='checkbox'){ e.checked=!!vals[id]; return; }
+    e.value=String(vals[id]);
+    // a saved value that no longer exists (a renamed preset, a removed option)
+    // must not leave the control blank
+    if(e.tagName==='SELECT' && e.selectedIndex<0) e.selectedIndex=0;
+  });
+}
+/* the readouts are updated inline by each control's own listener, so after a
+   restore they have to be redrawn or they show the previous project's numbers */
+function ampLabels(){
+  const pct=id=>{ const e=$(id+'V'); if(e) e.textContent=Math.round(parseFloat($(id).value)*100)+'%'; };
+  const db =id=>{ const e=$(id+'V'); if(e){ const v=parseFloat($(id).value); e.textContent=(v>0?'+':'')+v; } };
+  ['ampGain','ampLevel','ampChDepth','ampDly','ampRev'].forEach(pct);
+  ['ampBass','ampMid','ampTreb'].forEach(db);
+  const g=$('ampGateV'); if(g){ const v=parseFloat($('ampGate').value); g.textContent=v<=0?'off':Math.round(v*100)+'%'; }
+}
+function micSettings(){
+  const o=readCtrls(MIC_CTRLS);
+  o.wet=$('micWet')?!!$('micWet').checked:true;
+  return o;
+}
+function ampSettings(){
+  const o=readCtrls(AMP_CTRLS);
+  o.cab   =$('ampCab')?$('ampCab').classList.contains('on'):true;       // toggle buttons, not inputs
+  o.chorus=$('ampChorus')?$('ampChorus').classList.contains('on'):false;
+  return o;
+}
+function applyMicSettings(v){
+  if(!v) return;
+  writeCtrls(MIC_CTRLS,v);
+  if($('micWet') && 'wet' in v) $('micWet').checked=!!v.wet;
+  try{ micLabels(); }catch(e){}
+  if(micChain){ try{ micApply(); }catch(e){} }      // only touches audio if the mic is open
+}
+function applyAmpSettings(v){
+  if(!v) return;
+  writeCtrls(AMP_CTRLS,v);
+  if($('ampCab') && 'cab' in v) $('ampCab').classList.toggle('on',!!v.cab);
+  if($('ampChorus') && 'chorus' in v) $('ampChorus').classList.toggle('on',!!v.chorus);
+  try{ ampLabels(); }catch(e){}
+  if(ampNodes){ try{ ampApplyModel(); ampApplyTone(); ampApplyFx(); }catch(e){} }
+}
+/* touching any of them marks the project dirty, so they autosave like the rest */
+MIC_CTRLS.concat(AMP_CTRLS,['micWet']).forEach(id=>{
+  const e=$(id); if(e) e.addEventListener('change',()=>dirty());
+});
+['ampCab','ampChorus'].forEach(id=>{ const e=$(id); if(e) e.addEventListener('click',()=>dirty()); });
 
 /* ---------------- tabs ---------------- */
 /* The bar scrolls sideways now, so a tab you switch to from anywhere else —
@@ -8409,7 +8500,7 @@ $('btnSave').addEventListener('click',()=>{
     scaleLock:S.scaleLock, scaleRoot:S.scaleRoot, scaleName:S.scaleName,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
-    trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
+    trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(), scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
   const blob=new Blob([JSON.stringify(doc)],{type:'application/json'});
@@ -8471,6 +8562,7 @@ function applySessionDoc(doc, bufs){
     tr.loop=!!tr.loop; if(tr.ftype==null)tr.ftype='off'; if(tr.fcut==null)tr.fcut=1; if(tr.rev==null)tr.rev=0; if(tr.dly==null)tr.dly=0; });
   traxArm=-1; traxSolo=-1;
   S.inst=Object.assign({},INSTDEF,doc.inst||{});
+  try{ applyMicSettings(doc.mic); applyAmpSettings(doc.amp); }catch(e){}
   S.scOn=!!doc.scOn; S.scTrig=clamp(doc.scTrig|0,0,NPADS-1);
   S.scDepth=(doc.scDepth!=null)?doc.scDepth:0.6; S.scRel=(doc.scRel!=null)?doc.scRel:0.25;
   S.song=Array.isArray(doc.song)?doc.song.map(x=>({pat:clamp(x.pat|0,0,NPAT-1),reps:clamp(x.reps|0,1,64)})):[];
@@ -8656,7 +8748,7 @@ function snapshotSession(){
     scaleLock:S.scaleLock, scaleRoot:S.scaleRoot, scaleName:S.scaleName,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
-    trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
+    trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(), scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
 }
@@ -8684,7 +8776,7 @@ function undoSnap(){
     scaleLock:S.scaleLock, scaleRoot:S.scaleRoot, scaleName:S.scaleName,
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
-    trax:S.trax, inst:S.inst, scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
+    trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(), scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns };
 }
