@@ -1150,8 +1150,33 @@
      a real wait, but the render runs on the audio thread: measured zero
      main-thread stalls across a 30-second analysis, so the app stays usable
      throughout, and the LCD says so rather than looking hung.
+   - R112: THE RECIPE BOOK. The tour explains what things are; nobody learned a
+     groovebox from a glossary. Five recipes now walk you through actual work —
+     a beat from one sound, your voice on a pad, a loop turned into an
+     arrangement, a live take on tape, and mastering and exporting a file —
+     each ending in something that exists rather than a page you have read.
+     They run on the tour's own machinery: same overlay, same spotlight, same
+     tab-switching. What is new is that a step can WATCH. Fourteen of the thirty
+     steps name a condition — a sample on a pad, two patterns in the chain, the
+     transport rolling — poll it four times a second, and move on by themselves
+     when it comes true. NEXT still works, because a guide that traps you is
+     worse than one you ignore, and leaving mid-recipe keeps everything you made.
+     Alongside them, one line of suggestion under the tabs, drawn from the state
+     of the project: an empty bank is told where sounds come from, a kit with no
+     pattern is pointed at EUCLID, width up with bass mono off gets flagged, a
+     mix slammed into the limiter is pointed at AUTO. Rules, not a model — the
+     app has a finite number of states worth commenting on, every line names a
+     control that exists, and a small language model would have invented
+     controls that do not. SHOW ME borrows the spotlight for a second. Dismiss
+     silences one for the session; the checkbox in the ? menu silences the lot
+     for good, and that choice survives a reload.
+     The ? button is now the single door to all of it — tour, recipes, and the
+     switch — which meant the card had to hold a lot more than it used to. It
+     scrolls its BODY rather than itself, so SKIP and NEXT stay on screen: at
+     40vh on a phone held sideways the exits had ended up below the fold, and a
+     dialog you can only leave by scrolling is a trap.
    ================================================================ */
-const BUILD = 'JBH-88 · R111 · 2026-07-27 · AUTO judges the whole arrangement';
+const BUILD = 'JBH-88 · R112 · 2026-07-27 · the recipe book';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -3363,6 +3388,9 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
   if(b.dataset.v==='mic'){ micLabels(); if(micOn) micListDevices(); }
   if(b.dataset.v==='out'){ outWrite(); if(!outRAF) outDraw(); }
   a11yPass($('v-'+b.dataset.v));
+  // a tab switch is a natural pause, and evaluating here bounds how often a
+  // suggestion can appear at all — defined further down, so guard the boot pass
+  try{ coachRefresh(); }catch(e){}
 }));
 
 /* ---------------- sampler ---------------- */
@@ -8807,6 +8835,42 @@ const TOUR=[
     body:'Press <b>&#9654;</b> to start playing. Your work saves itself as you go, and the <b>PROJ</b> tab keeps named projects, undo history and the bounce/export tools.<br><br>Have fun. Replay this any time with <b>?</b>.' }
 ];
 let tourAt=-1;
+/* ---------------- guides: the tour, and the recipe book ----------------------
+   One runner, two kinds of content. The tour explains; a recipe is followed —
+   it watches for you to actually do each step and moves on by itself when you
+   have. NEXT still works, because a guide that traps you is worse than one you
+   ignore.
+   RECIPES live in `recipeBook`. Deliberately five: this is a way in, not a
+   manual, and the moment it becomes a manual nobody reads it. */
+let guideRecipe=null, guideLabel='TOUR', guideTimer=0;
+function guideSteps(){ return guideRecipe ? guideRecipe.steps : TOUR; }
+
+/* A step with a `done` predicate waits for the real thing to happen — a sample
+   landing on a pad, the transport rolling — rather than trusting that a tap on
+   NEXT means you did it. Polled rather than hooked into every control: one
+   timer against a handful of cheap reads costs nothing and needs no listener
+   on all 300 controls. */
+function guideWatch(st){
+  clearTimeout(guideTimer);
+  const w=$('tourWait');
+  if(!st || typeof st.done!=='function'){ w.style.display='none'; return; }
+  w.style.display='';
+  const at=tourAt;
+  const poll=()=>{
+    if(tourAt!==at || !$('tour').classList.contains('on')) return;
+    let ok=false; try{ ok=!!st.done(); }catch(e){ ok=false; }
+    if(ok){
+      w.className='done'; w.textContent='✓ '+(st.didIt||'Done.');
+      $('tourNext').classList.add('on');
+      guideTimer=setTimeout(()=>{ if(tourAt===at) tourShow(at+1); }, 900);
+      return;
+    }
+    w.className=''; w.textContent='Waiting for you: '+st.waitFor;
+    guideTimer=setTimeout(poll,250);
+  };
+  poll();
+}
+
 function tourTarget(st){
   if(!st || !st.el) return null;
   const id = (typeof st.el==='function') ? st.el() : st.el;
@@ -8816,7 +8880,7 @@ function tourTarget(st){
   return (r.width>0 && r.height>0) ? e : null;   // hidden targets fall back to a centred card
 }
 function tourPlace(){
-  const st=TOUR[tourAt]; if(!st) return;
+  const st=guideSteps()[tourAt]; if(!st) return;
   const spot=$('tourSpot'), card=$('tourCard');
   const el=tourTarget(st);
   const vh=window.innerHeight, ch=card.offsetHeight||160, pad=6, gap=12, edge=8;
@@ -8855,15 +8919,17 @@ function tourPlace(){
 }
 function tourShow(i){
   if(i<0) i=0;
-  if(i>=TOUR.length){ tourClose(true); return; }
+  const steps=guideSteps();
+  if(i>=steps.length){ tourClose(true); return; }
   tourAt=i;
-  const st=TOUR[i];
+  const st=steps[i];
   if(st.tab){ const b=document.querySelector('#tabs button[data-v="'+st.tab+'"]'); if(b && !b.classList.contains('on')) b.click(); }
-  $('tourStep').textContent = 'STEP '+(i+1)+' OF '+TOUR.length;
+  $('tourStep').textContent = guideLabel+' · STEP '+(i+1)+' OF '+steps.length;
   $('tourTitle').innerHTML  = st.title;
   $('tourBody').innerHTML   = st.body;
   $('tourBack').style.visibility = i===0 ? 'hidden' : 'visible';
-  $('tourNext').textContent = (i===TOUR.length-1) ? 'DONE' : 'NEXT';
+  $('tourNext').textContent = (i===steps.length-1) ? 'DONE' : 'NEXT';
+  guideWatch(st);
   const el=tourTarget(st);
   if(el){
     const tall = el.getBoundingClientRect().height > window.innerHeight*0.42;
@@ -8876,6 +8942,8 @@ function tourShow(i){
 function tourOpen(i){
   $('tour').classList.add('on');
   $('tour').setAttribute('aria-hidden','false');
+  $('tourNext').style.display='';        // the menu hides these; a guide needs them back
+  $('tourSkip').textContent='SKIP';
   tourShow(typeof i==='number' ? i : 0);
 }
 function tourClose(finished){
@@ -8883,23 +8951,284 @@ function tourClose(finished){
   $('tour').setAttribute('aria-hidden','true');
   $('tourSpot').classList.remove('on');
   tourAt=-1;
+  clearTimeout(guideTimer);
+  const wasRecipe=guideRecipe;
+  guideRecipe=null; guideLabel='TOUR';
+  if(wasRecipe){
+    lcd(finished ? ('RECIPE DONE — '+wasRecipe.name+'. The ? button has four more.')
+                 : ('Left the recipe. Everything you did is still there.'));
+    coachRefresh();
+    return;
+  }
   try{ localStorage.setItem(TOUR_KEY, finished?'done':'skipped'); }catch(e){}
   if(finished) lcd('TOUR COMPLETE · replay it any time with ?');
 }
 function tourSeen(){ try{ return !!localStorage.getItem(TOUR_KEY); }catch(e){ return true; } }
+
+/* ---------------- the recipe book -------------------------------------------
+   Five workflows, each ending in something that exists: a loop playing, a take
+   on a pad, a file on your phone. Every step names a real control and, where
+   the result is checkable, watches for it.
+   Predicates are cheap reads of live state, called four times a second while a
+   step is open, so they must not allocate or render. */
+const padsLoaded=()=>S.pads.filter(p=>p.bufId>=0).length;
+const patHits=()=>{ const pt=curPat(); let n=0;
+  for(let p=0;p<NPADS;p++) for(let s=0;s<pt.plen;s++) if(pt.steps[p][s]>0) n++;
+  return n; };
+const recipeBook=[
+{ id:'beat', name:'A beat from one sound',
+  blurb:'Turn a single sample into a full kit, put a rhythm under it, and hear it loop. Two minutes.',
+  steps:[
+  { title:'A BEAT FROM ONE SOUND', body:'Four steps. Each one waits for you to actually do it, so you can take as long as you like — and everything you make here stays when you finish.' },
+  { tab:'smpl', el:'packPick', title:'PICK ONE SOUND',
+    body:'Choose a pack, then tap any sound in the list to send it to the selected pad.<br><br>It does not matter much which — a kick or a short percussive hit gives the best kit.',
+    waitFor:'a sound on a pad.', didIt:'That sound is on a pad.',
+    done:()=>padsLoaded()>0 },
+  { tab:'smpl', el:'btnKitBuild', title:'GROW IT INTO A KIT',
+    body:'Now press <b>BUILD KIT</b>. It carves that one sound into a kick, snare, hats, toms and percussion by filtering, pitching and reshaping it — and lays a starter beat in the current pattern while it is at it.',
+    waitFor:'a bank with a kit in it.', didIt:'You have a kit.',
+    done:()=>padsLoaded()>=6 },
+  { tab:'seq', el:'euPreset', title:'GIVE IT A RHYTHM',
+    body:'The selected pad gets its own row of steps. <b>EUCLID</b> spreads a number of hits evenly across the bar — the pattern behind most dance and folk music.<br><br>Pick a preset and it writes itself onto the pad you have selected.',
+    waitFor:'hits in the pattern.', didIt:'There is a pattern.',
+    done:()=>patHits()>0 },
+  { el:'btnPlay', title:'PRESS PLAY',
+    body:'That is a beat. It loops until you stop it.<br><br>While it runs: tap steps in the grid to add or remove hits, and tap a pad label to move to that pad&rsquo;s row.',
+    waitFor:'the transport to roll.', didIt:'It is playing.',
+    done:()=>playing },
+  { title:'THAT IS THE LOOP', body:'Everything else in the app hangs off what you just did: <b>MIC</b> records your own sounds onto pads, <b>TRAX</b> records performances over the top, <b>OUT</b> masters it and <b>PROJ</b> exports it.<br><br>The <b>?</b> button has a recipe for each of those.' }]},
+
+{ id:'voice', name:'Your own voice on a pad',
+  blurb:'Record something through the mic, shape it, and play it from a pad like any other sample.',
+  steps:[
+  { title:'YOUR OWN VOICE ON A PAD', body:'Anything the microphone hears can become an instrument. Works just as well on a room, a table, or a guitar.' },
+  { tab:'pads', el:'padgrid', title:'PICK WHERE IT GOES',
+    body:'Tap the small <b>label</b> under a pad to select it — a blue ring marks the one you have chosen. That is where the recording will land.<br><br>An empty pad is the safe choice; recording over a full one replaces its sound.' },
+  { tab:'mic', el:'btnMicOn', title:'TURN THE MIC ON',
+    body:'Your browser will ask permission the first time. Nothing is sent anywhere — the audio never leaves the device.',
+    waitFor:'the microphone to be live.', didIt:'The mic is on.',
+    done:()=>micBusy },
+  { tab:'mic', el:'micPreset', title:'GIVE IT A CHARACTER',
+    body:'The presets are starting points, not decoration — <b>RADIO</b> and <b>TELEPHONE</b> in particular turn a plain voice into something that sits in a track.<br><br>The meter above shows what is coming in. Aim for the bar dancing around the middle, not pinned at the top.' },
+  { tab:'mic', el:'micDest', title:'SEND IT TO THE PAD',
+    body:'Set <b>GOES TO</b> to <b>the selected pad</b> — that is the one you ringed a moment ago.<br><br>Leave the checkbox below ticked and the shaping is baked in; untick it to keep the raw mic and shape it later.',
+    waitFor:'GOES TO set to the selected pad.', didIt:'It will land on your pad.',
+    done:()=>$('micDest').value==='pad' },
+  { tab:'mic', el:'btnMicRec', title:'RECORD',
+    body:'Press <b>RECORD</b>, make your noise, press it again to stop. Short is better — a single word or hit plays back best from a pad.',
+    waitFor:'a recording on the pad.', didIt:'It is on the pad.',
+    done:()=>{ const p=S.pads[S.editPad]; return p && p.bufId>=0; } },
+  { tab:'pads', el:'padgrid', title:'PLAY IT',
+    body:'Tap the pad. That is your sound, playable like anything else — and everything in the pad editor works on it: pitch, reverse, filter, the lot.<br><br>To put it in the beat, go to <b>SEQ</b> and write its row.' }]},
+
+{ id:'arrange', name:'From a loop to an arrangement',
+  blurb:'Use more than one pattern and chain them, so the track goes somewhere instead of repeating.',
+  steps:[
+  { title:'FROM A LOOP TO AN ARRANGEMENT', body:'A loop is not a track. This turns what you have into something with a shape.<br><br>Start with a pattern you already like playing.' },
+  { tab:'seq', el:'patrow', title:'MAKE A SECOND PATTERN',
+    body:'Patterns are numbered along this row. Tap an empty one to move to it, then write something different — sparser, or busier, or the same beat with a break in it.<br><br><b>COPY</b> duplicates the one you are on, which is usually the fast way to a variation.' },
+  { tab:'seq', el:'chainrow', title:'CHAIN THEM',
+    body:'<b>+PTN</b> adds the pattern you are on to the end of the chain. Move to your other pattern and add that too.<br><br>The chain is the running order — the same pattern can appear more than once.',
+    waitFor:'at least two patterns in the chain.', didIt:'You have a running order.',
+    done:()=>S.chain.length>=2 },
+  { tab:'seq', el:'btnChainOn', title:'TURN THE CHAIN ON',
+    body:'With <b>CHAIN</b> lit, PLAY walks the running order instead of looping one pattern.',
+    waitFor:'CHAIN to be on.', didIt:'Chain engaged.',
+    done:()=>S.chainOn },
+  { el:'btnPlay', title:'LISTEN TO IT MOVE',
+    body:'That is an arrangement. For something longer, <b>SONG</b> holds sections with repeat counts, so eight bars of one thing and four of another is two entries rather than twelve.',
+    waitFor:'the transport to roll.', didIt:'It is playing.',
+    done:()=>playing }]},
+
+{ id:'take', name:'Play a take over the top',
+  blurb:'Record yourself performing over the beat onto a tape lane, and keep it as audio.',
+  steps:[
+  { title:'PLAY A TAKE OVER THE TOP', body:'<b>TRAX</b> is a tape recorder running alongside the sequencer. Anything you play while it rolls is captured as audio — no steps, no quantising.' },
+  { tab:'trax', el:'traxSrc', title:'CHOOSE WHAT IT RECORDS',
+    body:'<b>LIVE ONLY</b> is the one you want here: it records what <i>you</i> play — pads you hit, the LIVE instruments, the AMP input — and treats the sequencer as silent backing you can hear but do not capture.<br><br><b>MASTER BUS</b> records everything instead, which is for bouncing rather than performing.',
+    waitFor:'SOURCE set to LIVE ONLY.', didIt:'It will capture just your playing.',
+    done:()=>$('traxSrc').value==='live' },
+  { tab:'trax', el:'traxlist', title:'ARM A LANE',
+    body:'Tap the <b>&#9679;</b> on any empty lane. Armed lanes are the ones that will record.',
+    waitFor:'a lane to be armed.', didIt:'Lane armed.',
+    done:()=>traxArm>=0 },
+  { el:'btnPlay', title:'PLAY, AND PERFORM',
+    body:'PLAY rolls the beat and starts recording at the same time. Hit pads, play the LIVE tab, make a mess — you can do it again.<br><br>Press <b>STOP</b> when you are finished and the take commits to the lane.',
+    waitFor:'the transport to roll.', didIt:'Recording.',
+    done:()=>playing },
+  { tab:'trax', el:'traxlist', title:'KEEP IT, OR DO IT AGAIN',
+    body:'Press <b>STOP</b> to commit. The lane now holds your take — <b>&infin;</b> loops it, <b>M</b> and <b>S</b> mute and solo it, and <b>FX</b> gives it filter, pan and sends.<br><br><b>FX &rarr; TO PAD</b> moves the take onto a pad, so a phrase you played once becomes something you can trigger.' }]},
+
+{ id:'finish', name:'Finish it and get a file',
+  blurb:'Set the master so nothing clips, then export a WAV you can send to anyone.',
+  steps:[
+  { title:'FINISH IT AND GET A FILE', body:'The mix is done; this is the part that makes it sound finished and gets it off the device.' },
+  { tab:'out', el:'spectrum', title:'LOOK AT THE OUTPUT',
+    body:'Press <b>PLAY</b> and watch. The spectrum shows what is actually leaving, and the four numbers under it read peak, average, loudness and how well it survives being folded to mono.<br><br>The line under those says, in words, what it thinks.',
+    waitFor:'the transport to roll.', didIt:'You can see it.',
+    done:()=>playing },
+  { tab:'out', el:'btnMAuto', title:'LET AUTO SET THE LEVEL',
+    body:'<b>AUTO</b> renders your whole arrangement, finds its loudest moment and sets <b>TRIM</b> so that moment lands exactly on the ceiling — loud, with nothing clipping and the limiter left with nothing to do.<br><br>It says what it listened to and what it changed. Take a look at TRIM afterwards; it is an ordinary slider you can overrule.' },
+  { tab:'out', el:'mMono', title:'MIND THE BOTTOM END',
+    body:'<b>BASS MONO</b> at around <b>120Hz</b> pulls everything below that to the centre. Wide bass smears on a big system and thins out on a phone speaker; centring it is a habit worth having.<br><br><b>WIDTH</b> above 100% opens the sides out — useful in small doses, and the MONO-SAFE number tells you when you have gone too far.' },
+  { tab:'proj', el:'bSrc', title:'CHOOSE WHAT TO BOUNCE',
+    body:'<b>CURRENT PATTERN</b> is the loop you are on; <b>CHAIN</b> and <b>SONG</b> render the arrangement. <b>LOOPS</b> repeats the whole thing.' },
+  { tab:'proj', el:'btnBounce', title:'BOUNCE IT',
+    body:'This renders offline — faster than realtime — through the exact chain you have been listening to, and saves a 44.1k 16-bit WAV.<br><br><b>EXPORT COMPRESSED</b> below gives a much smaller M4A or WEBM, which is the one to send in a message.' },
+  { title:'THAT IS A FINISHED TRACK', body:'Worth knowing: <b>SAVE</b> in PROJ keeps the whole session — samples included — on the device, and <b>EXPORT JSON</b> writes it to a file you can move to another phone.' }]}
+];
+
+function recipeStart(id){
+  const r=recipeBook.find(x=>x.id===id); if(!r) return;
+  guideRecipe=r; guideLabel=r.name.toUpperCase();
+  tourOpen(0);
+}
+
+/* The ? button is the one door to all of this — the tour, the recipes, and the
+   switch that turns the suggestions off. Rendered into the guide card rather
+   than given markup of its own. */
+function guideMenu(){
+  guideRecipe=null; guideLabel='HELP';
+  $('tour').classList.add('on');
+  $('tour').setAttribute('aria-hidden','false');
+  $('tourSpot').classList.remove('on');
+  tourAt=-1;
+  clearTimeout(guideTimer);
+  $('tourWait').style.display='none';
+  $('tourStep').textContent='HELP';
+  $('tourTitle').textContent='WHAT DO YOU WANT TO DO?';
+  $('tourBody').innerHTML =
+    '<button class="rcp" data-go="tour"><b>Take the tour</b><span>Every tab, one minute. What things are, rather than how to use them.</span></button>'
+    + recipeBook.map(r=>'<button class="rcp" data-go="'+r.id+'"><b>'+r.name+'</b><span>'+r.blurb+'</span></button>').join('')
+    + '<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:11px;color:var(--txt-dim)">'
+    + '<input type="checkbox" id="coachOn"'+(coachEnabled()?' checked':'')+'>'
+    + 'Suggest things as I work &mdash; one line under the tabs, based on what is actually in the project.</label>';
+  $('tourBack').style.visibility='hidden';
+  $('tourNext').style.display='none';
+  $('tourSkip').textContent='CLOSE';
+  $('tourCard').style.top='12px';
+  $('tourBody').querySelectorAll('.rcp').forEach(b=>b.addEventListener('click',()=>{
+    const go=b.dataset.go;
+    $('tourNext').style.display=''; $('tourSkip').textContent='SKIP';
+    if(go==='tour'){ guideRecipe=null; guideLabel='TOUR'; tourShow(0); }
+    else recipeStart(go);
+  }));
+  $('coachOn').addEventListener('change',e=>{
+    try{ localStorage.setItem(COACH_KEY, e.target.checked?'on':'off'); }catch(err){}
+    coachRefresh();
+    lcd(e.target.checked?'SUGGESTIONS ON.':'SUGGESTIONS OFF — the ? button turns them back on.');
+  });
+}
 $('tourNext').addEventListener('click',()=>tourShow(tourAt+1));
 $('tourBack').addEventListener('click',()=>tourShow(tourAt-1));
 $('tourSkip').addEventListener('click',()=>tourClose(false));
-$('btnTour').addEventListener('click',()=>tourOpen(0));
+$('btnTour').addEventListener('click',guideMenu);
 window.addEventListener('resize',()=>{ if(tourAt>=0) tourPlace(); });
 document.addEventListener('keydown',e=>{
-  if(tourAt<0) return;
-  if(e.key==='Escape'){ tourClose(false); }
-  else if(e.key==='ArrowRight'||e.key==='Enter'){ tourShow(tourAt+1); }
+  if(!$('tour').classList.contains('on')) return;
+  if(e.key==='Escape'){ tourClose(false); return; }      // also closes the menu, where tourAt is -1
+  if(tourAt<0) return;                                   // the menu has no next/back
+  if(e.key==='ArrowRight'||e.key==='Enter'){ tourShow(tourAt+1); }
   else if(e.key==='ArrowLeft'){ tourShow(tourAt-1); }
 });
 /* short screens clamp the per-tab hint to two lines — tapping one opens it. */
 document.querySelectorAll('.hint').forEach(h=>h.addEventListener('click',()=>h.classList.toggle('open')));
+
+/* ---------------- suggestions -----------------------------------------------
+   One line, drawn from what is actually in the project. Rules, not a model:
+   the app has a finite number of states worth commenting on, every answer here
+   names a control that exists, and it costs nothing to run.
+   Evaluated on tab switch — a natural pause, and it bounds how often anything
+   can appear. Dismissing one silences it for the session; the toggle silences
+   the lot for good. */
+const COACH_KEY='jbh_coach_v1';
+const coachEnabled=()=>{ try{ return localStorage.getItem(COACH_KEY)!=='off'; }catch(e){ return true; } };
+const coachSeen={};
+let coachCur=null;
+const COACH_TIPS=[
+  { id:'empty', tab:'smpl',
+    when:()=>padsLoaded()===0,
+    say:'Every pad is empty. Pick a <b>pack</b> below and tap a sound to put it on the selected pad.',
+    go:{tab:'smpl',el:'packPick'} },
+  { id:'onesound', tab:'smpl',
+    when:()=>padsLoaded()>0 && padsLoaded()<4,
+    say:'<b>BUILD KIT</b> turns one sound into a whole kit — kick, snare, hats, toms.',
+    go:{tab:'smpl',el:'btnKitBuild'} },
+  { id:'nosteps', tab:'seq',
+    when:()=>padsLoaded()>0 && patHits()===0,
+    say:'You have sounds but no pattern. <b>EUCLID</b> writes a rhythm onto the selected pad in one tap.',
+    go:{tab:'seq',el:'euPreset'} },
+  { id:'longpat', tab:'seq',
+    when:()=>{ const pt=curPat(); if(pt.plen<=16) return false;
+      let last=-1;
+      for(let p=0;p<NPADS;p++) for(let s=0;s<pt.plen;s++) if(pt.steps[p][s]>0 && s>last) last=s;
+      return last>=0 && last<pt.plen/2-1; },
+    say:'This pattern is <b>0</b> steps but everything happens in the first half — a shorter <b>PTN</b> would tighten the loop.',
+    go:{tab:'seq',el:'patLenSel'} },
+  { id:'limiting', tab:'out',
+    when:()=>S.mTrim===0 && mPeakHold>0.92,
+    say:'You are pushing hard into the limiter. <b>AUTO</b> sets the level so nothing has to be squashed.',
+    go:{tab:'out',el:'btnMAuto'} },
+  { id:'widebass', tab:'out',
+    when:()=>!S.mMono && S.mWidth>1.15,
+    say:'Width is up with <b>BASS MONO</b> off — wide bass smears on a big system. 120Hz is a safe habit.',
+    go:{tab:'out',el:'mMono'} },
+  { id:'unsaved', tab:'proj',
+    when:()=>padsLoaded()>=4 && patHits()>0,
+    say:'Worth a <b>SAVE</b> — it keeps the samples too, so the project opens exactly like this.',
+    go:{tab:'proj',el:'btnSave'} },
+  { id:'monitor', tab:'mic',
+    when:()=>micBusy && $('btnMicMon') && $('btnMicMon').classList.contains('on'),
+    say:'<b>MONITOR</b> is on. Headphones only from here, or it will feed back through the speaker.',
+    go:{tab:'mic',el:'btnMicMon'} },
+];
+function coachPick(tab){
+  if(!coachEnabled()) return null;
+  for(const t of COACH_TIPS){
+    if(t.tab && t.tab!==tab) continue;
+    if(coachSeen[t.id]) continue;
+    let ok=false; try{ ok=!!t.when(); }catch(e){ ok=false; }
+    if(ok) return t;
+  }
+  return null;
+}
+function coachRefresh(){
+  const bar=$('coachBar'); if(!bar) return;
+  const on=document.querySelector('#tabs button.on');
+  const t=coachPick(on?on.dataset.v:null);
+  coachCur=t;
+  if(!t){ bar.style.display='none'; return; }
+  // the LEN tip needs the live number, which the rule cannot know when declared
+  let say=t.say;
+  if(t.id==='longpat') say=say.replace('<b>0</b>','<b>'+curPat().plen+'</b>');
+  $('coachText').innerHTML=say;
+  $('coachGo').style.display=t.go?'':'none';
+  bar.style.display='flex';
+}
+$('coachHide').addEventListener('click',()=>{
+  if(coachCur) coachSeen[coachCur.id]=1;
+  $('coachBar').style.display='none';
+});
+$('coachGo').addEventListener('click',()=>{
+  const t=coachCur; if(!t||!t.go) return;
+  coachSeen[t.id]=1;
+  $('coachBar').style.display='none';
+  guideRecipe=null; guideLabel='SUGGESTION';
+  const b=document.querySelector('#tabs button[data-v="'+t.go.tab+'"]');
+  if(b && !b.classList.contains('on')) b.click();
+  const el=$(t.go.el);
+  if(el){
+    try{ el.scrollIntoView({block:'center'}); }catch(e){}
+    // borrow the tour's spotlight for a moment — no card, just "here"
+    const r=el.getBoundingClientRect(), spot=$('tourSpot');
+    $('tour').classList.add('on'); $('tourCard').style.display='none'; $('tourDim').style.opacity='0';
+    spot.classList.add('on');
+    spot.style.left=Math.round(r.left-6)+'px'; spot.style.top=Math.round(r.top-6)+'px';
+    spot.style.width=Math.round(r.width+12)+'px'; spot.style.height=Math.round(r.height+12)+'px';
+    setTimeout(()=>{ spot.classList.remove('on'); $('tour').classList.remove('on');
+      $('tourCard').style.display=''; $('tourDim').style.opacity=''; }, 1600);
+  }
+});
 
 function tourMaybeAutoStart(){
   if(tourSeen()) return;

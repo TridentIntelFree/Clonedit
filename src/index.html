@@ -23,6 +23,7 @@
     <div id="tourStep"></div>
     <h3 id="tourTitle"></h3>
     <div id="tourBody"></div>
+    <div id="tourWait" style="display:none"></div>
     <div class="row" style="margin-top:8px">
       <button id="tourSkip">SKIP</button>
       <span class="grow"></span>
@@ -89,6 +90,15 @@
   <button role="tab" aria-label="Master output" data-v="out">OUT</button>
   <button role="tab" aria-label="MIDI" data-v="midi">MIDI</button>
   <button role="tab" aria-label="Projects and export" data-v="proj">PROJ</button>
+</div>
+
+<!-- One suggestion at a time, drawn from the actual state of the project.
+     A normal flex item rather than a floating toast, so it never covers a
+     control; when there is nothing worth saying it is not in the layout. -->
+<div id="coachBar" style="display:none" role="status">
+  <span id="coachText"></span>
+  <button id="coachGo">SHOW ME</button>
+  <button id="coachHide" aria-label="Dismiss this suggestion">&times;</button>
 </div>
 
 <!-- PADS -->
