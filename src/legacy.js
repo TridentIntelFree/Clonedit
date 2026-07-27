@@ -1225,8 +1225,26 @@
      The recipe gained a step for it, too: after the mic goes on it will not
      move on until the meter actually shows signal, which is the step that would
      have stopped this happening in the first place.
+   - R115: THE SAME SILENT TAKE, ONE LAYER DOWN. Reported again: passed the new
+     meter check, recorded, still nothing on the pad. R114 defaulted the GATE
+     slider off — and then every one of the eight character presets set it
+     straight back, between .05 and .2. The MIC recipe tells you to pick a
+     preset, so the fix was undone by the step immediately after it.
+     Presets shape TONE. None of them touches the gate any more.
+     The threshold was wrong as well, not just its default. It was the slider
+     value times 0.35 compared against RMS, which made 12% mean -27dBFS — a
+     level a phone with autoGainControl off does not reach — so the bottom third
+     of the travel was indistinguishable from mute. Squared and rescaled, 12% is
+     now about -49dBFS, a genuine noise floor, while full travel still gates
+     hard at -12dBFS. That also quietly rescues any project saved with the old
+     numbers in it.
+     The test that let this through twice tested the mic, never the recipe. The
+     new one records through all eight presets and checks each take has audio,
+     then does it again with GAIN wound down to stand in for a phone at arm's
+     length — the condition under which the gate never opened. Against the build
+     that was reported, it fails.
    ================================================================ */
-const BUILD = 'JBH-88 · R114 · 2026-07-27 · the mic gate no longer eats your take';
+const BUILD = 'JBH-88 · R115 · 2026-07-27 · presets no longer re-arm the mic gate';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2789,15 +2807,19 @@ function a11yWatch(){
 let micOn=false, micChain=null, micStreamIn=null, micVuRAF=0, micAn=null, micPeakHold=0;
 let micRec=null, micRecT0=0, micRecTimer=0;
 
+/* Character presets shape TONE. Not one of them arms the gate any more: they
+   all used to set it between .05 and .2, so the MIC recipe told you to pick a
+   preset and that put back the very thing that had just been defaulted off —
+   a silent take, twice over. A gate is opt-in, and only ever from its slider. */
 const MIC_PRESETS={
-  natural:{gain:1,  hp:80,  lp:18000, gate:.12, comp:.35, sib:0,  lo:0,  mid:0,   hi:1,  drive:0,   dbl:0,  rev:.10, dly:0},
-  warm:   {gain:1.2,hp:70,  lp:12000, gate:.12, comp:.45, sib:.2, lo:3,  mid:-1,  hi:-1, drive:.10, dbl:0,  rev:.14, dly:0},
-  bright: {gain:1.1,hp:95,  lp:18000, gate:.14, comp:.35, sib:.3, lo:-1, mid:1,   hi:4,  drive:0,   dbl:0,  rev:.12, dly:0},
-  radio:  {gain:1.6,hp:120, lp:14000, gate:.18, comp:.85, sib:.35,lo:2,  mid:2,   hi:3,  drive:.25, dbl:0,  rev:.04, dly:0},
-  phone:  {gain:1.4,hp:400, lp:3000,  gate:.18, comp:.7,  sib:0,  lo:-8, mid:6,   hi:-6, drive:.15, dbl:0,  rev:0,   dly:0},
-  mega:   {gain:1.8,hp:350, lp:4000,  gate:.2,  comp:.8,  sib:0,  lo:-6, mid:8,   hi:-4, drive:.75, dbl:0,  rev:.05, dly:0},
-  whisper:{gain:2.2,hp:110, lp:18000, gate:.05, comp:.75, sib:.4, lo:-2, mid:0,   hi:5,  drive:0,   dbl:.2, rev:.35, dly:.08},
-  huge:   {gain:1.2,hp:75,  lp:18000, gate:.12, comp:.5,  sib:.25,lo:2,  mid:0,   hi:2,  drive:.08, dbl:.55,rev:.5,  dly:.22},
+  natural:{gain:1,  hp:80,  lp:18000, gate:0,    comp:.35, sib:0,  lo:0,  mid:0,   hi:1,  drive:0,   dbl:0,  rev:.10, dly:0},
+  warm:   {gain:1.2,hp:70,  lp:12000, gate:0,    comp:.45, sib:.2, lo:3,  mid:-1,  hi:-1, drive:.10, dbl:0,  rev:.14, dly:0},
+  bright: {gain:1.1,hp:95,  lp:18000, gate:0,    comp:.35, sib:.3, lo:-1, mid:1,   hi:4,  drive:0,   dbl:0,  rev:.12, dly:0},
+  radio:  {gain:1.6,hp:120, lp:14000, gate:0,    comp:.85, sib:.35,lo:2,  mid:2,   hi:3,  drive:.25, dbl:0,  rev:.04, dly:0},
+  phone:  {gain:1.4,hp:400, lp:3000,  gate:0,    comp:.7,  sib:0,  lo:-8, mid:6,   hi:-6, drive:.15, dbl:0,  rev:0,   dly:0},
+  mega:   {gain:1.8,hp:350, lp:4000,  gate:0,     comp:.8,  sib:0,  lo:-6, mid:8,   hi:-4, drive:.75, dbl:0,  rev:.05, dly:0},
+  whisper:{gain:2.2,hp:110, lp:18000, gate:0,    comp:.75, sib:.4, lo:-2, mid:0,   hi:5,  drive:0,   dbl:.2, rev:.35, dly:.08},
+  huge:   {gain:1.2,hp:75,  lp:18000, gate:0,    comp:.5,  sib:.25,lo:2,  mid:0,   hi:2,  drive:.08, dbl:.55,rev:.5,  dly:.22},
 };
 
 /* Opening a microphone on iOS has more failure modes than it has successes, and
@@ -2917,8 +2939,15 @@ function micMeter(){
      the recording came out silent with nothing on screen saying why.
      It defaults to off now, and when it IS closing on real signal it says so
      where the level is, instead of leaving you to work it out. */
-  const th=parseFloat($('micGate').value)*0.35;
-  const gateOff = th<=0.0005;
+  /* Squared, not linear. At value*0.35 the slider was a cliff rather than a
+     control: 12% already meant -27dBFS RMS, which a phone with autoGainControl
+     off does not reach, so the bottom third of the range was indistinguishable
+     from "mute". Squaring spreads it out — 12% is now about -49dBFS, a true
+     noise floor, and the top of the travel is still aggressive at -12dBFS.
+     It also rescues projects saved before this, which carry the old numbers. */
+  const gv=parseFloat($('micGate').value)||0;
+  const th=gv*gv*0.25;
+  const gateOff = gv<=0;
   const open = gateOff || rms>th;
   micChain.gate.gain.setTargetAtTime(open?1:0.0001, AC.currentTime, open?0.005:0.05);
   micPeakHold=Math.max(pk, micPeakHold*0.93);
