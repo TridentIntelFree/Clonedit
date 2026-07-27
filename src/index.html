@@ -220,7 +220,7 @@
   <h3>KITS <span style="color:var(--txt-dim);letter-spacing:0">— one tap fills bank A with sounds + a starter beat</span></h3>
   <div class="row" id="kitRow" style="flex-wrap:wrap;gap:5px"></div>
   <label class="row" style="font-size:10px;color:var(--txt-dim);gap:5px;cursor:pointer">
-    <input type="checkbox" id="kitBeat" checked style="width:auto"> also lay a starter beat in the current pattern (clears it)
+    <input type="checkbox" id="kitBeat" checked> also lay a starter beat in the current pattern (clears it)
   </label>
   <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">— download online, stored on-device, used offline</span></h3>
   <div class="row">
@@ -321,7 +321,7 @@
   <div class="pslider"><span class="lbl">DECAY</span><input type="range" id="kbDecay" min="0.4" max="2.2" step="0.05" value="1"><span class="val" id="kbDecayV">1.00×</span></div>
   <div class="pslider"><span class="lbl">SNAP</span><input type="range" id="kbSnap" min="0" max="1" step="0.05" value="0.5"><span class="val" id="kbSnapV">50%</span></div>
   <div class="row">
-    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="kbBeat" checked style="width:auto"> lay a starter beat too</label>
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="kbBeat" checked> lay a starter beat too</label>
     <span class="grow"></span>
     <button id="btnKitBuild" class="grow">&#9881; BUILD KIT &#8594; PADS</button>
   </div>
@@ -454,7 +454,7 @@
   <div id="seqModeBadge" style="display:none"></div>
   <div id="stepgrid"></div>
   <div id="circlewrap" style="display:none">
-    <canvas id="circle" role="img" aria-label="Circular view of the pattern. Switch VIEW to GRID for the same pattern as a list of step buttons." width="760" height="760" style="width:100%;height:auto;display:block;background:var(--lcd-bg);border:1px solid var(--line);border-radius:10px;touch-action:none"></canvas>
+    <canvas id="circle" role="img" aria-label="Circular view of the pattern. Switch VIEW to GRID for the same pattern as a list of step buttons." width="760" height="760" style="width:100%;aspect-ratio:1;display:block;background:var(--lcd-bg);border:1px solid var(--line);border-radius:10px;touch-action:none"></canvas>
     <div style="font-size:10px;color:var(--txt-dim);margin:4px 0 6px">Outer ring = the selected track — tap its segments to place hits. Inner rings are the other tracks; <b>tap one to select it</b>. Each ring turns at its own LEN, so polymeter is something you can watch.</div>
   </div>
   <div class="row">
@@ -496,7 +496,7 @@
       <option value="merge">ADD to row</option>
       <option value="remove">REMOVE from row</option>
     </select>
-    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="euSetLen" style="width:auto"> set track LEN (polymeter)</label>
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="euSetLen"> set track LEN (polymeter)</label>
   </div>
   <div class="row">
     <button id="btnEuApply" class="grow">APPLY TO TRACK</button>
@@ -522,7 +522,7 @@
   </div>
   <div class="pslider"><span class="lbl">AMOUNT</span><input aria-label="Groove amount" type="range" id="grvAmt" min="0" max="1" step="0.05" value="1"><span class="val" id="grvAmtV">100%</span></div>
   <div class="row">
-    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="grvVel" checked style="width:auto"> apply accents (velocity)</label>
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="grvVel" checked> apply accents (velocity)</label>
     <span class="grow"></span>
     <button id="btnGrvTrack">THIS TRACK</button>
     <button id="btnGrvAll">ALL TRACKS</button>
@@ -875,9 +875,16 @@
   <h3>OUTPUT <span style="color:var(--txt-dim);letter-spacing:0">&mdash; the last thing before it leaves</span></h3>
   <div class="pslider"><span class="lbl">CEILING</span><input type="range" id="mCeil" min="-12" max="0" step="0.1" value="-1"><span class="val" id="mCeilV">-1.0dB</span></div>
   <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
-    Nothing gets past this level, so pushing gain makes the mix louder instead of breaking it.
-    &minus;1dB is a good default; &minus;0.3dB is as close to the edge as is sensible for a file that will be
-    converted to MP3 or AAC later.
+    The limiter grips here, so pushing gain makes the mix louder instead of breaking it, and a soft clipper
+    after it means the output can never reach 0dBFS whatever you do. Anything already below this level is
+    left alone. &minus;1dB is a good default; &minus;0.3dB is as close to the edge as is sensible for a file
+    that will be converted to MP3 or AAC later.
+  </div>
+  <div class="pslider"><span class="lbl">TRIM</span><input type="range" id="mTrim" min="-24" max="12" step="0.1" value="0"><span class="val" id="mTrimV">0.0dB</span></div>
+  <div class="row">
+    <button id="btnMAuto">AUTO</button>
+    <span style="font-size:11px;color:var(--txt-dim);flex:1">AUTO renders the mix, finds its loudest peak and sets TRIM so that peak lands
+      exactly on the ceiling &mdash; nothing clips, and the limiter is left with nothing to do.</span>
   </div>
 <h3>MASTER</h3>
   <div class="pslider"><span class="lbl">VOLUME</span><input type="range" id="mxVol" min="0" max="2" step="0.01"><span class="val" id="mxVolV"></span></div>

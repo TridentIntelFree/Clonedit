@@ -39,6 +39,12 @@ button.on{background:var(--amber-soft);border-color:var(--amber);color:#120d04;f
 button.rec.on{background:var(--red);border-color:var(--red);color:#fff}
 select,input[type=text],input[type=number]{background:var(--lcd-bg);color:var(--lcd);border:1px solid var(--edge);
   border-radius:var(--r-sm);font-family:var(--f-ui);font-size:var(--fs-md);padding:9px 10px;min-height:var(--tap)}
+/* A native checkbox renders at 13x13 — half of the 24px WCAG 2.2 asks for, and
+   the only control in the app that was ignoring --tap. Four of the six sit
+   inside a <label>, so their text is tappable too; these two sizes are what the
+   other two rely on entirely. */
+input[type=checkbox]{width:24px;height:24px;flex:none;margin:0 2px 0 0;
+  accent-color:var(--amber);cursor:pointer}
 input[type=range]{-webkit-appearance:none;width:100%;height:32px;background:transparent}
 input[type=range]::-webkit-slider-runnable-track{height:5px;background:var(--edge);border-radius:3px}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;
@@ -70,7 +76,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 /* mixer channel strips */
 #mixStrips{display:flex;gap:6px;overflow-x:auto;padding:4px 2px 8px;-webkit-overflow-scrolling:touch}
 #mixStrips:empty::after{content:'No channels yet — load a sample or a KIT.';font-size:11px;color:var(--txt-dim)}
-.mstrip{flex:0 0 auto;width:62px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+/* 66px, not 62: the M/S pair inside splits the content box between them, and at
+   62 they came out 23.5px wide — just under the 24px touch floor. */
+.mstrip{flex:0 0 auto;width:66px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
   padding:6px 5px;display:flex;flex-direction:column;align-items:center;gap:5px}
 .mstrip.master{background:var(--panel2);border-color:var(--amber-soft)}
 .mstrip .mnm{font-size:9px;color:var(--txt);width:100%;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
@@ -88,7 +96,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 .mstrip .mpan{width:100%}
 .mstrip .mpan input[type=range]{height:18px}
 .mstrip .mbtns{display:flex;gap:3px;width:100%}
-.mstrip .mbtns button{flex:1;padding:4px 0;font-size:9px;border-radius:4px}
+/* min-height clears the 24px floor — these were 24x20, the only buttons short
+   enough to fail it */
+.mstrip .mbtns button{flex:1;padding:4px 0;font-size:9px;border-radius:4px;min-height:26px}
 .mstrip .msend{display:flex;align-items:center;gap:3px;width:100%}
 .mstrip .msend span{font-size:8px;color:var(--txt-dim);width:8px}
 .mstrip .msend input[type=range]{height:14px}
@@ -214,7 +224,10 @@ h3 span{font-weight:400}
 #miclvl>div{height:100%;width:0%;background:var(--green)}
 
 /* out */
-#spectrum{width:100%;height:auto;display:block;background:var(--lcd-bg);
+/* aspect-ratio, not height:auto — the height has to come from the CSS width.
+   fitCanvas resizes the backing store to the real device pixels, and an auto
+   height derived from that backing store would chase its own tail. */
+#spectrum{width:100%;aspect-ratio:900/260;display:block;background:var(--lcd-bg);
   border:1px solid var(--edge);border-radius:var(--r-md);margin-bottom:var(--sp-2)}
 /* four label/value pairs that stay paired instead of wrapping apart */
 #outMeters{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--sp-1) var(--sp-2);

@@ -1080,8 +1080,50 @@
      Exported WAVs get TPDF dither before the 16-bit rounding, which trades a
      hiss well below the last bit for the quantisation distortion that otherwise
      lands on quiet fades.
+   - R110: SHARPER, BIGGER, CONSISTENT — and a CEILING that means it.
+     Four bits of polish and one real bug underneath them.
+     CANVASES now match the screen. Every canvas is drawn in the fixed logical
+     space its width/height attributes describe, and CSS stretched that to fit;
+     on a phone in portrait the ratio happened to land near 2x, but in landscape
+     and on iPad it did not — the waveform and the spectrum ran at 0.73x on an
+     iPad Pro, i.e. drawn with fewer pixels than the screen was showing, then
+     upscaled. fitCanvas keeps the logical space exactly as it was, so no
+     drawing code changed, and only resizes the backing store to the real
+     device pixels. Every canvas is now 2x on every screen tested; the cap is
+     deliberate, since 3x costs 2.25x the fill rate of 2x on canvases that
+     redraw every frame, for a difference nobody can see on a spectrum bar.
+     TOUCH TARGETS. The six checkboxes rendered at the browser default 13x13 —
+     half of WCAG 2.2's floor and the only controls in the app ignoring --tap.
+     They are 24x24 now. The mixer's M/S pair came out 23.5px wide because two
+     buttons and a gap were splitting a 50px content box; the strip is 66px
+     instead of 62. Nothing in any tab is below 24x24 any more.
+     ONE SEND, ONE UNIT. Reverb and delay sends read "0.35" in the pad editor,
+     the mixer's pad strip and TRAX FX, but "35%" on the instrument, the amp,
+     the mic and the master return — the same knob speaking two languages
+     depending on which tab you found it in. All percentages now. Pan reads
+     L50 / C / R75 rather than -0.50, which says where the sound is instead of
+     what the number is.
+     AUTO + TRIM. A master trim between the compressor and the limiter, and a
+     button that sets it so the loudest peak in the mix lands on the ceiling.
+     AUTO renders the mix offline and taps it where the trim leaves off, BEFORE
+     the limiter and the safety clipper, because those two are exactly what hide
+     the overshoot being measured — ask the finished bounce how loud it is and
+     it will always answer "the ceiling". One press writes one number into a
+     slider you can see and move yourself; it undoes and saves like anything
+     else, rather than being a process quietly riding your master.
+     And the bug AUTO turned up: CEILING RAN BACKWARDS. A DynamicsCompressor
+     applies makeup gain of its own, scaled to the threshold, so lowering the
+     ceiling made everything LOUDER — a mix 20dB below the threshold, nowhere
+     near it, came out 6.6dB hotter at a -12dB ceiling than at -0.5dB, and
+     nothing was ever held at the stated level. The amount is
+     implementation-defined, so it is now measured in whatever browser is
+     running rather than assumed, and cancelled. A mix under the ceiling is
+     untouched by it at any setting; a hot one is held to within a dB of what
+     the label says. The help text no longer claims a 20:1 limiter is a
+     brickwall — the soft clipper after it is what guarantees 0dBFS is
+     unreachable, and it says so.
    ================================================================ */
-const BUILD = 'JBH-88 · R109 · 2026-07-27 · OUT tab: master chain, meters, spectrum';
+const BUILD = 'JBH-88 · R110 · 2026-07-27 · sharper canvases, bigger targets, AUTO trim';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1090,6 +1132,21 @@ const $ = id => document.getElementById(id);
 const lcd = m => { $('lcdmsg').textContent = m; };
 /* clamp, posMod, clampBpm, mulberry32 → src/pure/math.js */
 function bpmAbs(){ return Math.abs(S.bpm); }
+
+/* ---------------- how a value reads ----------------
+   One send level, one way of writing it. Reverb and delay sends used to read
+   "0.35" on a pad, in the pad's mixer strip and on a tape track, but "35%" on
+   the instrument, the amp, the mic and the master return — the same knob
+   speaking two languages depending on which tab you found it in.
+   Pan is written the way every mixer writes it, because "-0.50" tells you a
+   number and "L50" tells you where the sound is. */
+const sendText = v => Math.round((+v||0)*100)+'%';
+const dbLin = db => Math.pow(10, (+db||0)/20);
+const dbText = db => ((+db||0)>0?'+':'')+(+db||0).toFixed(1)+'dB';
+function panText(v){
+  const n=+v||0, a=Math.round(Math.abs(n)*100);
+  return a<3 ? 'C' : (n<0?'L':'R')+a;
+}
 
 /* ---------------- state ---------------- */
 /* NPADS/NSTEPS/NPAT/MAXSTEPS/PATLENS, patLen → src/pure/pattern.js */
@@ -1124,7 +1181,7 @@ const S = {
   morph:{ on:false, from:0, to:1, bars:8, curve:'weight', mode:'once', vel:true, amt:0, pos:0 },
   /* master chain (OUT tab). Neutral by default: flat EQ, natural width, and a
      ceiling just under 0 so nothing changes until it is asked to. */
-  mEqLo:0, mEqMid:0, mEqHi:0, mWidth:1, mCeil:-1.0, mMono:0, mByp:false
+  mEqLo:0, mEqMid:0, mEqHi:0, mWidth:1, mCeil:-1.0, mMono:0, mByp:false, mTrim:0
 };
 const revCache = {};      // bufId -> reversed AudioBuffer
 
@@ -1268,6 +1325,9 @@ function buildGraph(ctx){
   // final soft-clip safety: preserves levels <0.7, saturates smoothly toward
   // ~0.93 and clamps anything above — output can never hard-clip the destination
   g.softclip=ctx.createWaveShaper(); g.softclip.curve=makeSoftClip(); g.softclip.oversample='2x';
+  g.mTrim=ctx.createGain(); g.mTrim.gain.value=dbLin(S.mTrim);
+  // cancels the limiter's own makeup gain, so CEILING means what it says
+  g.limComp=ctx.createGain(); g.limComp.gain.value=1/makeupAt(S.mCeil);
   /* MASTER CHAIN (OUT tab) — inserted between the performance filter and the
      compressor, because EQ and imaging belong before dynamics, and because it
      is built HERE it exists identically in the offline bounce. What you hear is
@@ -1328,7 +1388,12 @@ function buildGraph(ctx){
   g.mHi.connect(g.mMonoHi); g.mHi.connect(g.mMonoLo);            // split at the mono frequency
   g.mMonoHi2.connect(g.wSplit);                                  // above it: stereo width
   g.wMerge.connect(g.comp); g.mMonoSum.connect(g.comp);          // below it: centred, added back
-  g.comp.connect(g.limiter); g.limiter.connect(g.softclip);
+  // master trim — the one gain AUTO moves. It sits after the compressor and
+  // before the limiter, so it changes how hard the limiter is driven without
+  // changing how much the compressor does; pulling it down makes the limiter
+  // stop working rather than making it work on a quieter signal.
+  g.comp.connect(g.mTrim); g.mTrim.connect(g.limiter);
+  g.limiter.connect(g.limComp); g.limComp.connect(g.softclip);
   g.softclip.connect(ctx.destination);
   // stereo master meter taps — from the limiter (the final-stage level, and a
   // node that survives the softclip re-routing in ensureAudio/rebuildOut)
@@ -1788,6 +1853,37 @@ function ensureAudio(){
   lcd('AUDIO ONLINE · '+Math.round(AC.sampleRate)+' Hz · state:'+AC.state);
 }
 
+/* ---------------- canvases at the screen's real resolution -------------------
+   Every canvas here is drawn in the fixed logical coordinate space it was
+   authored with — the width/height attributes on the tag — and CSS then
+   stretches that to whatever the layout gives it. On a phone that meant a
+   760-wide circle painted into ~1200 device pixels: the browser upscaled it and
+   everything looked soft next to the crisp HTML around it.
+
+   fitCanvas keeps the logical space exactly as it was, so no drawing code has
+   to change, and only makes the backing store match the real pixels underneath,
+   scaling the context by the same amount. Per-axis, so a canvas whose CSS box
+   has a slightly different aspect ratio than its logical one keeps the geometry
+   it has today rather than shifting.
+
+   Capped at 2x on purpose: a 3x phone would cost 2.25x the fill rate of 2x for
+   a difference you cannot see on a spectrum bar or a waveform edge, and these
+   redraw every frame. */
+const canvasBase=new WeakMap();
+function fitCanvas(cv){
+  let base=canvasBase.get(cv);
+  if(!base){ base={w:cv.width||1, h:cv.height||1}; canvasBase.set(cv,base); }
+  const r=cv.getBoundingClientRect();
+  const dpr=Math.min(2, window.devicePixelRatio||1);
+  if(r.width>0 && r.height>0){
+    const w=Math.max(1,Math.round(r.width*dpr)), h=Math.max(1,Math.round(r.height*dpr));
+    if(cv.width!==w || cv.height!==h){ cv.width=w; cv.height=h; }   // resizing also clears it
+  }
+  const cx=cv.getContext('2d');
+  cx.setTransform(cv.width/base.w, 0, 0, cv.height/base.h, 0, 0);
+  return {cx, W:base.w, H:base.h};
+}
+
 /* ---------------- master level meter (feels-solid feedback) ---------------- */
 let meterRAF=0, mClipHold=0, _mbufL=null, _mbufR=null;
 function paintBar(el,rms,pk){
@@ -2007,9 +2103,9 @@ function drawEdit(){
     // loaded sample) — build it now so the next hit is pitch-locked, not varispeed
     if(p.keepPitch && p.bufId>=0 && Math.abs(sp-1)>0.001 && !speedCache[speedKey(p.bufId,!!p.reverse,sp)])
       buildSpeedStretch(p.bufId,!!p.reverse,sp); }
-  $('epPan').value=p.pan; $('epPanV').textContent=p.pan.toFixed(2);
-  $('epRev').value=p.rev; $('epRevV').textContent=p.rev.toFixed(2);
-  $('epDly').value=p.dly; $('epDlyV').textContent=p.dly.toFixed(2);
+  $('epPan').value=p.pan; $('epPanV').textContent=panText(p.pan);
+  $('epRev').value=p.rev; $('epRevV').textContent=sendText(p.rev);
+  $('epDly').value=p.dly; $('epDlyV').textContent=sendText(p.dly);
   $('epAtt').value=p.att; $('epAttV').textContent=Math.round(p.att*1000)+'ms';
   $('epRel').value=p.rel; $('epRelV').textContent=Math.round(p.rel*1000)+'ms';
   $('epChoke').value=String(p.choke);
@@ -2044,8 +2140,8 @@ function drawEdit(){
   $('smTarget').textContent=padName(S.editPad);
   $('seqPadName').textContent=padName(S.seqPad);
   $('mxPad').textContent=padName(S.editPad);
-  $('mxPadRev').value=p.rev; $('mxPadRevV').textContent=p.rev.toFixed(2);
-  $('mxPadDly').value=p.dly; $('mxPadDlyV').textContent=p.dly.toFixed(2);
+  $('mxPadRev').value=p.rev; $('mxPadRevV').textContent=sendText(p.rev);
+  $('mxPadDly').value=p.dly; $('mxPadDlyV').textContent=sendText(p.dly);
 }
 function bindEdit(id, key, fmt, applyLive){
   $(id).addEventListener('input',e=>{
@@ -2233,10 +2329,10 @@ $('mxDlyMode').addEventListener('change',e=>{ S.dlyMode=e.target.value;
   if(LIVE) buildDelayNet(AC,LIVE);
   dirty(); lcd('DELAY: '+e.target.selectedOptions[0].textContent); });
 $('mxPadRev').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.rev=parseFloat(e.target.value); dirty();
-  $('mxPadRevV').textContent=p.rev.toFixed(2);
+  $('mxPadRevV').textContent=sendText(p.rev);
   if(LIVE) LIVE.pads[S.editPad].rev.gain.setTargetAtTime(p.rev,AC.currentTime,0.01); });
 $('mxPadDly').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.dly=parseFloat(e.target.value); dirty();
-  $('mxPadDlyV').textContent=p.dly.toFixed(2);
+  $('mxPadDlyV').textContent=sendText(p.dly);
   if(LIVE) LIVE.pads[S.editPad].dly.gain.setTargetAtTime(p.dly,AC.currentTime,0.01); });
 $('epClear').addEventListener('click',()=>{ const i=S.editPad; stopPadVoices(i); S.pads[i]=newPad(i); delete warpOrig[i];
   // remove the pad from the sequencer entirely — clearing a sound must leave no ghost steps/locks that keep triggering
@@ -2948,7 +3044,7 @@ function outDraw(){
   const cv=$('spectrum');
   if(!cv || !document.getElementById('v-out').classList.contains('on')){ outRAF=0; return; }
   outRAF=requestAnimationFrame(outDraw);
-  const cx=cv.getContext('2d'), W=cv.width, H=cv.height;
+  const {cx,W,H}=fitCanvas(cv);
   cx.fillStyle='#120d04'; cx.fillRect(0,0,W,H);
   if(!AC||!LIVE){ cx.fillStyle='rgba(255,180,84,0.5)'; cx.font='16px system-ui,sans-serif';
     cx.textAlign='center'; cx.fillText('press PLAY to see the output', W/2, H/2); return; }
@@ -3032,21 +3128,24 @@ function outLabels(){
   const mono=parseFloat($('mMono').value);
   f('mMono', mono<25?'off':Math.round(mono)+'Hz');
   f('mCeil',parseFloat($('mCeil').value).toFixed(1)+'dB');
+  f('mTrim',dbText(parseFloat($('mTrim').value)));
 }
 function outRead(){
   S.mEqLo=parseFloat($('mEqLo').value); S.mEqMid=parseFloat($('mEqMid').value); S.mEqHi=parseFloat($('mEqHi').value);
   S.mWidth=parseFloat($('mWidth').value);
   const mono=parseFloat($('mMono').value); S.mMono = mono<25 ? 0 : mono;
   S.mCeil=parseFloat($('mCeil').value);
+  S.mTrim=parseFloat($('mTrim').value);
   outLabels(); applyMaster(); dirty();
 }
 function outWrite(){
   $('mEqLo').value=S.mEqLo; $('mEqMid').value=S.mEqMid; $('mEqHi').value=S.mEqHi;
   $('mWidth').value=S.mWidth; $('mMono').value=S.mMono||0; $('mCeil').value=S.mCeil;
+  $('mTrim').value=S.mTrim||0;
   $('btnMByp').classList.toggle('on',!!S.mByp);
   outLabels();
 }
-['mEqLo','mEqMid','mEqHi','mWidth','mMono','mCeil'].forEach(id=>
+['mEqLo','mEqMid','mEqHi','mWidth','mMono','mCeil','mTrim'].forEach(id=>
   $(id).addEventListener('input',outRead));
 $('btnMByp').addEventListener('click',()=>{
   S.mByp=!S.mByp; $('btnMByp').classList.toggle('on',S.mByp);
@@ -3054,11 +3153,99 @@ $('btnMByp').addEventListener('click',()=>{
   lcd(S.mByp?'MASTER CHAIN BYPASSED — hearing it raw.':'MASTER CHAIN ON.');
 });
 $('btnMFlat').addEventListener('click',()=>{
-  S.mEqLo=S.mEqMid=S.mEqHi=0; S.mWidth=1; S.mMono=0; S.mCeil=-1; S.mByp=false;
+  S.mEqLo=S.mEqMid=S.mEqHi=0; S.mWidth=1; S.mMono=0; S.mCeil=-1; S.mByp=false; S.mTrim=0;
   outWrite(); applyMaster(); dirty(); lcd('MASTER CHAIN RESET to flat.');
 });
-outLabels();
 
+/* AUTO — set TRIM so the loudest peak in the mix lands exactly on the ceiling.
+   It renders the mix offline and taps it where the trim leaves off, BEFORE the
+   limiter and the safety clipper, because those two are precisely what hide the
+   overshoot you are trying to measure: ask the finished bounce how loud it is
+   and it will always answer "the ceiling".
+   One press, one number, written into a slider you can see and move yourself —
+   not a process quietly riding your master. It is undoable and it saves with
+   the project like any other control. */
+let mAutoBusy=false;
+$('btnMAuto').addEventListener('click',async ()=>{
+  if(mAutoBusy) return;
+  mAutoBusy=true; $('btnMAuto').classList.add('on'); lcd('AUTO — rendering the mix to measure it …');
+  try{
+    const r=await renderMix(null,null,{preLimit:true,loops:1});
+    if(!r){ lcd('AUTO — nothing to measure. Put something in the pattern or a tape track first.'); return; }
+    let pk=0;
+    for(let ch=0;ch<r.numberOfChannels;ch++){ const d=r.getChannelData(ch);
+      for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>pk) pk=a; } }
+    if(!(pk>1e-6)){ lcd('AUTO — that render came out silent, so there is nothing to set.'); return; }
+    /* The measurement was taken with the trim at unity, so the answer is the
+       setting itself — not an adjustment to the setting it already had. */
+    const want=20*Math.log10(dbLin(S.mCeil)/pk);
+    const before=S.mTrim;
+    S.mTrim=clamp(Math.round(want*10)/10,-24,12);
+    outWrite(); applyMaster(); dirty();
+    const moved=S.mTrim-before;
+    const over=20*Math.log10(pk*dbLin(before))-S.mCeil;   // how far past the ceiling it WAS
+    const at=' Peak now sits on the '+S.mCeil.toFixed(1)+'dB ceiling.';
+    if(want<-24 || want>12)
+      lcd('AUTO — the mix needs '+dbText(want)+' and TRIM only goes to '+dbText(S.mTrim)
+        +'. Move the master volume and press AUTO again.');
+    else if(moved<-0.05)
+      lcd('AUTO — down '+Math.abs(moved).toFixed(1)+'dB. You were '+over.toFixed(1)+'dB into the limiter;'
+        +' it has nothing left to do.'+at);
+    else if(moved>0.05)
+      lcd('AUTO — up '+moved.toFixed(1)+'dB. You had that much headroom going spare.'+at);
+    else lcd('AUTO — already right where it should be.'+at);
+  }catch(e){ lcd('AUTO failed: '+e.message); logErr('auto trim: '+e.message); }
+  finally{ mAutoBusy=false; $('btnMAuto').classList.remove('on'); }
+});
+outLabels();
+// off the boot path — the app is usable while this runs, and applyMaster() at
+// the end of it folds the result into whatever graph exists by then
+setTimeout(()=>{ measureMakeup(); }, 0);
+
+
+/* ---------------- what the CEILING costs you ---------------------------------
+   A DynamicsCompressor applies makeup gain of its own, scaled to the threshold,
+   and that made CEILING run backwards: a mix 20dB below the threshold — nowhere
+   near it, nothing to limit — came out 6.6dB LOUDER at a -12dB ceiling than at
+   -0.5dB, and nothing was ever actually held at the stated level.
+
+   The amount is implementation-defined, so it is measured here rather than
+   assumed: a tone 40dB below the threshold, through a compressor with these
+   exact settings. That far down nothing else is acting on it, so whatever comes
+   back is the makeup gain alone. Thirteen tiny offline renders, once, off the
+   critical path; a straight line between them everywhere in between.
+
+   Until the table exists the compensation is 1, which is exactly the behaviour
+   the app had before — so a slow or failed measurement costs nothing. */
+const MAKEUP=[];
+async function measureMakeup(){
+  for(let c=0;c>=-12.0001;c-=1){
+    try{
+      const sr=44100, n=4096, a=Math.pow(10,(c-40)/20);
+      const oc=new OfflineAudioContext(1,n,sr);
+      const k=oc.createDynamicsCompressor();
+      k.threshold.value=c; k.knee.value=0; k.ratio.value=20;
+      k.attack.value=0.001; k.release.value=0.05;
+      const b=oc.createBuffer(1,n,sr), d=b.getChannelData(0);
+      for(let i=0;i<n;i++) d[i]=Math.sin(2*Math.PI*440*i/sr)*a;
+      const src=oc.createBufferSource(); src.buffer=b;
+      src.connect(k); k.connect(oc.destination); src.start();
+      const out=await oc.startRendering(), o=out.getChannelData(0);
+      let pk=0; for(let i=n>>1;i<n;i++) pk=Math.max(pk,Math.abs(o[i]));
+      if(pk>0) MAKEUP.push([c,pk/a]);
+    }catch(e){ return; }                 // no table = no compensation, as before
+  }
+  try{ applyMaster(); }catch(e){}        // the live graph picks it up immediately
+}
+function makeupAt(ceil){
+  if(MAKEUP.length<2) return 1;
+  const c=clamp(ceil,MAKEUP[MAKEUP.length-1][0],MAKEUP[0][0]);
+  for(let i=1;i<MAKEUP.length;i++){
+    const [c1,g1]=MAKEUP[i];
+    if(c>=c1){ const [c0,g0]=MAKEUP[i-1], f=(c-c1)/(c0-c1); return g1+(g0-g1)*f; }
+  }
+  return MAKEUP[MAKEUP.length-1][1];
+}
 
 /* ---------------- MASTER CHAIN — applied to any graph, live or offline -------
    Written as apply(g) so the live graph and the bounce get the same treatment
@@ -3077,11 +3264,15 @@ function applyMasterG(g, ctx){
   // 30Hz content, which you would hear on a sub as the crossover "off".
   const mono=byp?10:Math.max(10,S.mMono||10);
   [g.mMonoLo,g.mMonoLo2,g.mMonoHi,g.mMonoHi2].forEach(f=>set(f.frequency,mono));
+  // Trim is a level control, not tone, so it stays put through a bypass — an
+  // A/B that jumps in volume tells you nothing about the tone.
+  set(g.mTrim.gain, dbLin(S.mTrim));
   // The ceiling is NOT part of the bypass. BYPASS is an A/B of the tone shaping
   // — EQ, width, bass mono — so you can hear what you did. The limiter is the
   // safety rail on the way out; lifting it on bypass would let an A/B clip the
   // speakers, which is the one thing a bypass button must never do.
   try{ g.limiter.threshold.setTargetAtTime(S.mCeil, t, 0.02); }catch(e){ g.limiter.threshold.value=S.mCeil; }
+  if(g.limComp) set(g.limComp.gain, 1/makeupAt(S.mCeil));
 }
 function applyMaster(){ if(LIVE&&AC) applyMasterG(LIVE,AC); }
 
@@ -3350,10 +3541,10 @@ function zeroCross(norm){ // snap a normalized position to nearest zero crossing
 }
 function drawWave(){
   try{ pvInfo(); }catch(e){}
-  const cv=$('wave'), cx=cv.getContext('2d');
-  cx.fillStyle='#120d04'; cx.fillRect(0,0,cv.width,cv.height);
-  if(!workBuf){ cx.fillStyle='#8a6530'; cx.font='20px ui-monospace'; cx.fillText('NO SAMPLE — import or record',20,cv.height/2); return; }
-  const W=cv.width, H=cv.height, mid=H/2;
+  const cv=$('wave'), {cx,W,H}=fitCanvas(cv);
+  cx.fillStyle='#120d04'; cx.fillRect(0,0,W,H);
+  if(!workBuf){ cx.fillStyle='#8a6530'; cx.font='20px ui-monospace'; cx.fillText('NO SAMPLE — import or record',20,H/2); return; }
+  const mid=H/2;
   // selected slice highlight behind waveform
   if(selSlice>=0 && slices[selSlice]){
     const sl=slices[selSlice];
@@ -5074,7 +5265,7 @@ function circleTracks(){
 }
 function drawCircle(){
   const cv=$('circle'); if(!cv || seqView!=='circle') return;
-  const cx=cv.getContext('2d'), W=cv.width, H=cv.height, ccx=W/2, ccy=H/2;
+  const {cx,W,H}=fitCanvas(cv), ccx=W/2, ccy=H/2;
   cx.fillStyle='#120d04'; cx.fillRect(0,0,W,H);
   const pat=curPat(), tracks=circleTracks();
   const outer=Math.min(W,H)*0.46, inner=Math.min(W,H)*0.14;
@@ -5122,7 +5313,9 @@ function drawCircle(){
 }
 function circleTap(clientX,clientY){
   const cv=$('circle'), r=cv.getBoundingClientRect();
-  const sx=cv.width/r.width, sy=cv.height/r.height;
+  // CIRC.rings are in the canvas's logical space, not its backing pixels
+  const base=canvasBase.get(cv)||{w:cv.width,h:cv.height};
+  const sx=base.w/r.width, sy=base.h/r.height;
   const x=(clientX-r.left)*sx-CIRC.cx, y=(clientY-r.top)*sy-CIRC.cy;
   const rad=Math.hypot(x,y);
   const ring=CIRC.rings.find(g=>rad>=g.r0-2 && rad<=g.r1+2);
@@ -5456,20 +5649,20 @@ function drawTraxFx(){
   $('tfxTitle').textContent='T'+(i+1)+(tr.name?' \u00b7 '+tr.name:'');
   $('tfxType').value=tr.ftype||'off';
   $('tfxCut').value=tr.fcut; $('tfxCutV').textContent=Math.round(cutHz(tr.fcut))+'Hz';
-  $('tfxPan').value=tr.pan||0; $('tfxPanV').textContent=(tr.pan||0).toFixed(2);
-  $('tfxRev').value=tr.rev||0; $('tfxRevV').textContent=(tr.rev||0).toFixed(2);
-  $('tfxDly').value=tr.dly||0; $('tfxDlyV').textContent=(tr.dly||0).toFixed(2);
+  $('tfxPan').value=tr.pan||0; $('tfxPanV').textContent=panText(tr.pan);
+  $('tfxRev').value=tr.rev||0; $('tfxRevV').textContent=sendText(tr.rev);
+  $('tfxDly').value=tr.dly||0; $('tfxDlyV').textContent=sendText(tr.dly);
 }
 $('tfxType').addEventListener('change',e=>{ S.trax[traxFxSel].ftype=e.target.value; applyTraxFx(traxFxSel); dirty();
   lcd('TRACK FILTER '+e.target.value.toUpperCase()+' — on/off takes effect on next PLAY.'); });
 $('tfxCut').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.fcut=parseFloat(e.target.value);
   $('tfxCutV').textContent=Math.round(cutHz(tr.fcut))+'Hz'; applyTraxFx(traxFxSel); dirty(); });
 $('tfxPan').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.pan=parseFloat(e.target.value);
-  $('tfxPanV').textContent=tr.pan.toFixed(2); applyTraxFx(traxFxSel); dirty(); });
+  $('tfxPanV').textContent=panText(tr.pan); applyTraxFx(traxFxSel); dirty(); });
 $('tfxRev').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.rev=parseFloat(e.target.value);
-  $('tfxRevV').textContent=tr.rev.toFixed(2); applyTraxFx(traxFxSel); dirty(); });
+  $('tfxRevV').textContent=sendText(tr.rev); applyTraxFx(traxFxSel); dirty(); });
 $('tfxDly').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.dly=parseFloat(e.target.value);
-  $('tfxDlyV').textContent=tr.dly.toFixed(2); applyTraxFx(traxFxSel); dirty(); });
+  $('tfxDlyV').textContent=sendText(tr.dly); applyTraxFx(traxFxSel); dirty(); });
 $('tfxPad').addEventListener('click',()=>{
   const tr=S.trax[traxFxSel];
   if(tr.bufId<0){ lcd('TRACK '+(traxFxSel+1)+' IS EMPTY.'); return; }
@@ -5879,7 +6072,7 @@ function drawKeysGrid(){
 /* surface: theremin field / harp strings */
 let harpLast=-1;
 function drawSurf(px,py){
-  const cv=$('liveSurf'), cx=cv.getContext('2d'), W=cv.width, H=cv.height;
+  const cv=$('liveSurf'), {cx,W,H}=fitCanvas(cv);
   cx.fillStyle='#120d04'; cx.fillRect(0,0,W,H);
   const set=scaleMidis(15), lo=48+S.inst.key;
   if(S.inst.mode==='harp'){
@@ -7422,7 +7615,7 @@ $('btnSave').addEventListener('click',()=>{
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
-    mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp,
+    mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp, mTrim:S.mTrim,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
@@ -7490,6 +7683,7 @@ function applySessionDoc(doc, bufs){
     S.mEqLo =num(doc.mEqLo, 0,-12,12); S.mEqMid=num(doc.mEqMid,0,-12,12); S.mEqHi=num(doc.mEqHi,0,-12,12);
     S.mWidth=num(doc.mWidth,1,0,2);    S.mMono =num(doc.mMono, 0,0,300);
     S.mCeil =num(doc.mCeil,-1,-12,0);  S.mByp  =!!doc.mByp;
+    S.mTrim =num(doc.mTrim, 0,-24,12);
     try{ outWrite(); applyMaster(); }catch(e){} }
   S.scOn=!!doc.scOn; S.scTrig=clamp(doc.scTrig|0,0,NPADS-1);
   S.scDepth=(doc.scDepth!=null)?doc.scDepth:0.6; S.scRel=(doc.scRel!=null)?doc.scRel:0.25;
@@ -7677,7 +7871,7 @@ function snapshotSession(){
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
-    mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp,
+    mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp, mTrim:S.mTrim,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
@@ -7707,7 +7901,7 @@ function undoSnap(){
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
-    mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp,
+    mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp, mTrim:S.mTrim,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns };
@@ -8089,9 +8283,15 @@ function bounceSeq(src){
 
 /* shared offline render — padSet/traxSet null = all; a Set restricts to those
    indices (Set() = none). Used by the master bounce and per-stem export. */
-async function renderMix(padSet, traxSet){
+/* opt.preLimit — tap the mix where the trim leaves off, before the limiter and
+   the safety clipper, with the trim itself at unity. That is the only place the
+   true overshoot is still visible; downstream of it everything is squashed to
+   the ceiling by design. AUTO is the only caller.
+   opt.loops — override the bounce length. Repeating a loop cannot make it peak
+   any higher, so AUTO only ever needs one. */
+async function renderMix(padSet, traxSet, opt){
   ensureSpeedCaches();   // bake pitch-locked stretches so the offline render matches what you hear live
-  const loops=parseInt($('bLoops').value,10);
+  const loops=(opt&&opt.loops)||parseInt($('bLoops').value,10);
   const src=$('bSrc').value;
   const seq=bounceSeq(src);
   const events=[], tempoSeg=[], autoEvents=[]; let t=0.05, absB=0;
@@ -8144,6 +8344,7 @@ async function renderMix(padSet, traxSet){
   const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
   const g=buildGraph(oc);
   applyMasterG(g,oc);          // the bounce gets the same master chain as the speakers
+  if(opt&&opt.preLimit){ try{ g.mTrim.gain.value=1; g.mTrim.disconnect(); g.mTrim.connect(oc.destination); }catch(e){} }
   scApplyRoutingG(g,oc);
   if(!padSet){ for(let i=0;i<NPADS;i++){ if(g.pads[i]&&g.pads[i].mute) g.pads[i].mute.gain.value = padAudible(i)?1:0; } }   // master bounce honors mixer mute/solo (stems ignore it)
   for(const a of autoEvents){ try{ autoTargets[a.id].applyG(g,a.v,a.when); }catch(e){} }
