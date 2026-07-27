@@ -195,9 +195,16 @@ h3 span{font-weight:400}
 #patrow button,#chainrow button,#silrow .step,#songlist button,#traxlist button{min-height:0}
 
 /* sampler */
-#tour{position:fixed;inset:0;z-index:9000;display:none}
+/* Only the CARD takes clicks. Everything else in the overlay lets them through
+   to the app underneath, because a recipe step asks you to press a real control
+   — and a full-screen dim that eats the tap makes that impossible. That is what
+   turned the recipes into a slideshow. */
+#tour{position:fixed;inset:0;z-index:9000;display:none;pointer-events:none}
 #tour.on{display:block}
-#tourDim{position:absolute;inset:0;background:rgba(0,0,0,.72)}
+/* Shown only when there is nothing to spotlight. With a spotlight up, the ring's
+   own 9999px shadow does the dimming AND leaves a hole you can reach through. */
+#tourDim{position:absolute;inset:0;background:rgba(0,0,0,.72);pointer-events:none}
+#tourDim.off{display:none}
 #tourSpot{position:absolute;border:2px solid var(--sel);border-radius:10px;pointer-events:none;
   box-shadow:0 0 0 9999px rgba(0,0,0,.72),0 0 18px rgba(74,163,255,.8);transition:all .22s ease;display:none}
 #tourSpot.on{display:block}
@@ -208,7 +215,7 @@ h3 span{font-weight:400}
    min-height:0 is what lets the body actually shrink inside the flex column. */
 #tourCard{position:absolute;left:10px;right:10px;background:var(--panel);border:1px solid var(--sel);
   border-radius:12px;padding:12px;box-shadow:0 10px 40px rgba(0,0,0,.7);max-width:420px;margin:0 auto;
-  display:flex;flex-direction:column;max-height:calc(100vh - 24px)}
+  display:flex;flex-direction:column;max-height:calc(100vh - 24px);pointer-events:auto}
 #tourCard > .row{flex:none}
 #tourStep{font-size:10px;color:var(--sel);letter-spacing:1px;margin-bottom:2px}
 #tourCard h3{margin:0 0 6px;font-size:14px;color:var(--lcd);letter-spacing:.5px}
