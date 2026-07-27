@@ -1203,8 +1203,30 @@
      clicking the real buttons at real coordinates, and one that opens every
      watched step on the untouched demo project and fails if any of them
      advances while nobody is touching anything.
+   - R114: THE MIC RECIPE LEFT A SILENT PAD. Reported, and reproduced: the
+     noise gate shipped at 12%, and its threshold is that number times 0.35
+     compared against RMS — so it only opened above about -27dBFS RMS. With
+     autoGainControl deliberately off, a phone at arm's length does not get
+     there, so the gate never opened and RECORD captured the shaped channel
+     downstream of it: a buffer of digital silence, placed on a pad, announced
+     as "TAKE → A04".
+     Three things were wrong and all three are fixed.
+     The gate now ships OFF. A gate is something you dial in while watching the
+     meter, not something that eats your first take before you know it exists.
+     The meter lied by omission. It reads PEAK while the gate compares RMS, and
+     on a voice those are far apart — the bar danced convincingly while nothing
+     got through. A held gate now says GATE SHUT where the level is and stripes
+     the bar red, so the one number you are looking at stops disagreeing with
+     what the audio is doing.
+     And a silent take is no longer reported as a success. TRAX has guarded this
+     since R44; the mic never did. The take is kept — it is still your
+     recording — but the message says it is empty and names the likely cause,
+     the gate or the level, depending on which one it actually is.
+     The recipe gained a step for it, too: after the mic goes on it will not
+     move on until the meter actually shows signal, which is the step that would
+     have stopped this happening in the first place.
    ================================================================ */
-const BUILD = 'JBH-88 · R113 · 2026-07-27 · the recipes actually guide';
+const BUILD = 'JBH-88 · R114 · 2026-07-27 · the mic gate no longer eats your take';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2875,7 +2897,10 @@ function micLabels(){
   f('micGain',(+$('micGain').value).toFixed(1)+'×');
   f('micHp',Math.round(+$('micHp').value)+'Hz');
   const lp=+$('micLp').value; f('micLp', lp>=17500?'off':(lp>=1000?(lp/1000).toFixed(1)+'kHz':Math.round(lp)+'Hz'));
-  ['micGate','micComp','micSib','micDrive','micDbl','micRev','micDly'].forEach(id=>f(id,Math.round(+$(id).value*100)+'%'));
+  ['micComp','micSib','micDrive','micDbl','micRev','micDly'].forEach(id=>f(id,Math.round(+$(id).value*100)+'%'));
+  // a gate at zero is OFF, and saying so is the difference between "I have not
+  // set this" and "this is what is eating my voice"
+  { const g=+$('micGate').value; f('micGate', g<=0 ? 'off' : Math.round(g*100)+'%'); }
   ['micLo','micMid','micHi'].forEach(id=>{ const x=+$(id).value; f(id,(x>0?'+':'')+x.toFixed(1)+'dB'); });
 }
 function micMeter(){
@@ -2885,17 +2910,26 @@ function micMeter(){
   let pk=0, sum=0;
   for(let i=0;i<micAn.length;i++){ const a=Math.abs(micAn[i]); if(a>pk) pk=a; sum+=micAn[i]*micAn[i]; }
   const rms=Math.sqrt(sum/micAn.length);
-  // gate on the pre-shaping level, so what you see is what opens it
+  /* The gate compares RMS, and the meter beside it shows PEAK — which are a
+     long way apart on a voice. At the old 12% default the gate only opened
+     above about -27dBFS RMS, and with autoGainControl off a phone held at
+     arm's length rarely gets there: the bar danced, the gate stayed shut, and
+     the recording came out silent with nothing on screen saying why.
+     It defaults to off now, and when it IS closing on real signal it says so
+     where the level is, instead of leaving you to work it out. */
   const th=parseFloat($('micGate').value)*0.35;
-  const open = th<=0.0005 || rms>th;
+  const gateOff = th<=0.0005;
+  const open = gateOff || rms>th;
   micChain.gate.gain.setTargetAtTime(open?1:0.0001, AC.currentTime, open?0.005:0.05);
   micPeakHold=Math.max(pk, micPeakHold*0.93);
   const bar=$('micBar').firstElementChild;
   bar.style.width=Math.min(100,micPeakHold*140)+'%';
   bar.classList.toggle('hot', micPeakHold>0.5 && micPeakHold<=0.94);
   bar.classList.toggle('clip', micPeakHold>0.94);
+  bar.classList.toggle('shut', !open && micPeakHold>0.02);
   const db = micPeakHold>0.0005 ? (20*Math.log10(micPeakHold)).toFixed(0)+' dB' : '—';
-  $('micPeakV').textContent = micPeakHold>0.94 ? 'CLIP' : db;
+  $('micPeakV').textContent = micPeakHold>0.94 ? 'CLIP'
+    : (!open && micPeakHold>0.02) ? 'GATE SHUT' : db;
 }
 
 async function micEnable(){
@@ -2975,16 +3009,36 @@ async function micRecordStart(){
   },100);
   lcd('RECORDING — tap STOP when you are done.');
 }
+/* A take that came back empty is the one outcome that must never be reported as
+   success — TRAX has guarded this since R44 and the mic never did, so "TAKE →
+   A04" was printed over a silent buffer and the pad simply did nothing.
+   Kept rather than discarded: it is still your recording, and the reason is
+   nearly always one of two things you can fix in a second. */
+function micTakeSilent(buf){
+  let pk=0;
+  for(let ch=0;ch<buf.numberOfChannels;ch++){ const d=buf.getChannelData(ch);
+    for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>pk) pk=a; } }
+  if(pk>=0.004) return false;
+  const gated=parseFloat($('micGate').value)>0;
+  plog('SILENT MIC TAKE: peak '+pk.toFixed(5)+'. '+(gated
+    ? 'GATE is at '+Math.round(parseFloat($('micGate').value)*100)+'% — it was probably never opening.'
+    : 'Nothing reached the microphone.')+' Kept anyway.');
+  lcd('⚠ THAT TAKE IS SILENT — '+(gated
+    ? 'turn GATE down to off and watch the meter, then record again.'
+    : 'check the meter moves while you talk, and raise GAIN if it barely does.'));
+  return true;
+}
 function micPlaceTake(buf){
   S.buffers.push(buf); const bid=S.buffers.length-1;
   const dur=buf.duration.toFixed(1)+'s';
+  const silent=micTakeSilent(buf);
   if($('micDest').value==='pad'){
     const pad=S.editPad, p=S.pads[pad];
     p.bufId=bid; p.start=0; p.end=1; p.warped=false; p.name=p.name||'voice';
     delete warpOrig[pad];
     drawPads(); drawEdit(); dirty();
-    $('micRecInfo').textContent=dur+' → '+padName(pad);
-    lcd('TAKE → '+padName(pad)+' · '+dur+' — play the pad, or open it in SMPL to chop it.');
+    $('micRecInfo').textContent=(silent?'⚠ silent · ':'')+dur+' → '+padName(pad);
+    if(!silent) lcd('TAKE → '+padName(pad)+' · '+dur+' — play the pad, or open it in SMPL to chop it.');
     return;
   }
   const lane=micNextLane();
@@ -2993,8 +3047,8 @@ function micPlaceTake(buf){
   const tr=S.trax[lane];
   tr.bufId=bid; tr.name='voice'; tr.gain=tr.gain||0.9;
   drawTrax(); dirty();
-  $('micRecInfo').textContent=dur+' → T'+(lane+1);
-  lcd('TAKE → TAPE LANE '+(lane+1)+' · '+dur+' — it plays with the song; FX and TO PAD are in TRAX.');
+  $('micRecInfo').textContent=(silent?'⚠ silent · ':'')+dur+' → T'+(lane+1);
+  if(!silent) lcd('TAKE → TAPE LANE '+(lane+1)+' · '+dur+' — it plays with the song; FX and TO PAD are in TRAX.');
 }
 
 $('btnMicOn').addEventListener('click',()=>{ if(micOn) { micDisable(); lcd('MIC OFF.'); } else micEnable(); });
@@ -9063,8 +9117,12 @@ const recipeBook=[
     body:'Your browser will ask permission the first time. Nothing is sent anywhere — the audio never leaves the device.',
     waitFor:'press TURN THE MIC ON.', didIt:'The mic is on.',
     tap:'btnMicOn', done:()=>micBusy },
+  { tab:'mic', el:'micBar', title:'CHECK IT CAN HEAR YOU',
+    body:'Say something. The bar should move.<br><br>If it barely does, raise <b>GAIN</b> below until talking normally pushes it around the middle. If it turns into red stripes and reads <b>GATE SHUT</b>, turn <b>GATE</b> down to off — it is holding back everything you say.<br><br>This step is here because a mic that looks fine and records silence is the easiest way to waste ten minutes.',
+    waitFor:'make some noise — I want to see that meter move.', didIt:'It can hear you.',
+    done:()=>micPeakHold>0.02 },
   { tab:'mic', el:'micPreset', title:'GIVE IT A CHARACTER',
-    body:'The presets are starting points, not decoration — <b>RADIO</b> and <b>TELEPHONE</b> in particular turn a plain voice into something that sits in a track.<br><br>The meter above shows what is coming in. Aim for the bar dancing around the middle, not pinned at the top.' },
+    body:'The presets are starting points, not decoration — <b>RADIO</b> and <b>TELEPHONE</b> in particular turn a plain voice into something that sits in a track.<br><br>Aim for the bar dancing around the middle, not pinned at the top.' },
   { tab:'mic', el:'micDest', title:'SEND IT TO THE PAD',
     body:'Set <b>GOES TO</b> to <b>the selected pad</b> — that is the one you ringed a moment ago.<br><br>Leave the checkbox below ticked and the shaping is baked in; untick it to keep the raw mic and shape it later.',
     waitFor:'set GOES TO to the selected pad.', didIt:'It will land on your pad.',

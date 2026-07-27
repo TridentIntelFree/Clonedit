@@ -275,6 +275,9 @@ h3 span{font-weight:400}
   transition:width .05s linear,background .12s linear}
 #micBar>div.hot{background:var(--amber)}
 #micBar>div.clip{background:var(--red)}
+/* signal arriving but the gate is holding it shut — the bar is showing you a
+   level that is not getting through */
+#micBar>div.shut{background:repeating-linear-gradient(45deg,var(--red) 0 4px,#3a1010 4px 8px)}
 #micPeakV{font-family:var(--f-mono);min-width:54px}
 
 #seqModeBadge{font-size:var(--fs-xs);color:var(--sel);background:rgba(74,163,255,.10);
