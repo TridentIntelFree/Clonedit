@@ -1243,8 +1243,27 @@
      then does it again with GAIN wound down to stand in for a phone at arm's
      length — the condition under which the gate never opened. Against the build
      that was reported, it fails.
+   - R116: THE MICROPHONE WAS WIRED INTO ITS OWN FEEDBACK LOOP. Reported: the
+     take came back as howling rather than a voice, and the phone forced its
+     volume up a notch.
+     The mic's reverb and delay sends branched from M.out — UPSTREAM of the
+     MONITOR gate — and REVERB ships at 10%. So an open microphone was
+     permanently 10% live into the global reverb, out through the master, into
+     the speaker and back into the microphone, with a 3.2s tail to make it
+     build. MONITOR could not switch it off, and its own hint read "off —
+     headphones only, or it will feed back", which was a promise the routing
+     never kept. Measured on the reported build: an open mic with MONITOR off
+     puts -38dB at the master continuously, with nothing playing.
+     Both sends now hang off the MONITOR gate. Nothing is lost from the take —
+     RECORD captures M.dest, fed dry from M.out, so the sends were only ever
+     monitoring. With MONITOR off the master is silent; with it on the mic comes
+     through as before. The hint says what is now true, and the warning moved to
+     the state that can actually howl.
+     The volume being forced up is iOS: an active capture session changes the
+     audio route, and it is not something the app can decline while it is also
+     playing back. With the loop closed it is a nuisance rather than a howl.
    ================================================================ */
-const BUILD = 'JBH-88 · R115 · 2026-07-27 · presets no longer re-arm the mic gate';
+const BUILD = 'JBH-88 · R116 · 2026-07-27 · the mic no longer feeds back through the reverb';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2883,10 +2902,18 @@ function micBuild(){
   M.sib.connect(M.lo); M.lo.connect(M.mid); M.mid.connect(M.hi); M.hi.connect(M.drive);
   M.drive.connect(M.dry); M.dry.connect(M.out);
   M.drive.connect(M.dblDelay); M.dblDelay.connect(M.dblWet); M.dblWet.connect(M.out);
+  /* EVERYTHING audible hangs off the MONITOR gate — including the sends.
+     They used to branch from M.out, upstream of it, and REVERB ships at 10%:
+     so an open microphone was permanently 10% live into the reverb, out of the
+     speaker and back into itself, tail and all. That is an acoustic feedback
+     loop that MONITOR could not switch off, while its own hint said "off —
+     headphones only, or it will feed back".
+     Nothing is lost from the take by moving them: RECORD captures M.dest, which
+     is fed dry from M.out, so the sends were only ever monitoring. */
   M.out.connect(M.mon); M.mon.connect(LIVE.master);
-  if(LIVE.liveBus) M.out.connect(LIVE.liveBus);
-  M.out.connect(M.rsend); M.rsend.connect(LIVE.revIn);
-  M.out.connect(M.dsend); M.dsend.connect(LIVE.dlyIn);
+  M.mon.connect(M.rsend); M.rsend.connect(LIVE.revIn);
+  M.mon.connect(M.dsend); M.dsend.connect(LIVE.dlyIn);
+  if(LIVE.liveBus) M.out.connect(LIVE.liveBus);   // a recording bus, not a speaker
   M.out.connect(M.dest);
   micAn=new Float32Array(M.an.fftSize);
   return M;
@@ -3086,8 +3113,8 @@ $('btnMicMon').addEventListener('click',()=>{
   const on=!$('btnMicMon').classList.contains('on');
   $('btnMicMon').classList.toggle('on',on);
   micChain.mon.gain.setTargetAtTime(on?1:0,AC.currentTime,0.02);
-  $('micMonHint').textContent = on ? 'on — if it howls, you are on speakers: turn this off'
-                                   : 'off — headphones only, or it will feed back';
+  $('micMonHint').textContent = on ? 'on — headphones only, or it will feed back'
+                                   : 'off — nothing from the mic reaches the speaker';
   lcd(on?'MONITOR ON — headphones only.':'MONITOR OFF.');
 });
 $('micIn').addEventListener('change',()=>{ if(micOn){ micDisable(); micEnable(); } });
