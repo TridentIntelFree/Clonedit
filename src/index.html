@@ -201,7 +201,12 @@
 <div class="view" role="tabpanel" aria-label="Sampler" id="v-smpl">
   <div class="hint"><b>GET A SOUND ONTO THE TARGET PAD</b> — IMPORT FILE, REC MIC, pick a PRESET, or GET a PACK sample then tap <b>&#8594; PAD</b>. Then CHOP and <b>ASSIGN SLICES</b> to spread one sample across pads.</div>
   <div class="row">
-    <span class="lbl">TARGET</span><span id="smTarget" style="color:var(--amber)">A01</span>
+    <span class="lbl">TARGET</span>
+    <select id="smPad" class="shrink" aria-label="Which pad the next sound goes to"></select>
+    <button id="smNextEmpty" title="jump the target to the first pad with nothing on it">NEXT EMPTY</button>
+  </div>
+  <div id="smTargetInfo"><span id="smTarget"></span></div>
+  <div class="row">
     <span class="grow"></span>
     <button id="btnFreeSounds" title="open free CC0 sound libraries in a new tab">&#127760; FREE SOUNDS</button>
     <button id="btnImport">IMPORT FILE</button>

@@ -1474,8 +1474,28 @@
      comparing samples: the engine's own run-to-run noise is -75dB, a hit
      written past the end moves the output by exactly that much — nothing — and
      a hit the grid shows moves it 4102x more.
+   - R127: THE SAMPLER NOW SAYS — AND LETS YOU CHOOSE — WHERE A SOUND LANDS.
+     Reported: SMPL was not preferring empty pads, and there was no way to pick
+     the destination without leaving for PADS, tapping one, and coming back.
+     The empty-pad rule was in fact working. pickTargetPad has always skipped to
+     an empty pad; what was wrong is that TARGET displayed S.editPad — the
+     SELECTION — while the send used pickTargetPad's answer, which is often a
+     different pad. Label and behaviour disagreed, so the rule looked broken
+     while it was quietly being applied somewhere you could not see. Same shape
+     as the mic gate and the arrangement: the app doing something reasonable
+     without saying so.
+     TARGET is now the pad that will actually receive, asked of the same
+     function the send calls, with a peek flag so reading it does not consume
+     the deliberate-tap state. It is a dropdown of all 64 pads marked in use or
+     empty, so the choice is made where the work is. NEXT EMPTY jumps to the
+     first free pad and reports ALL FULL when there is none.
+     And it warns before it costs you anything: choosing an occupied pad turns
+     the line red and names the sound about to be replaced, with NEXT EMPTY one
+     tap away.
+     Tested including the part that matters most — that the pad TARGET promises
+     is the pad the send actually writes to.
    ================================================================ */
-const BUILD = 'JBH-88 · R126 · 2026-07-28 · shown, played and saved are one and the same';
+const BUILD = 'JBH-88 · R127 · 2026-07-28 · the sampler says where the sound is going';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2395,14 +2415,63 @@ function writeLiveStep(idx, vel, when){ // quantize a live hit onto the grid (LI
    a fresh tap (e.g. right after loading), the auto plan still fills an empty
    pad so quick sampling never clobbers a used pad by accident. */
 let manualPad=false;
-function pickTargetPad(){
-  const chosen=manualPad; manualPad=false;                 // honor a deliberate tap once, then back to auto
+/* Where the next sound lands. `peek` answers the same question WITHOUT
+   consuming the deliberate-tap flag, so the TARGET readout can show the truth.
+   It used to show S.editPad while this function frequently returned a different
+   pad, so the label and the behaviour disagreed — the app looked like it was
+   ignoring the empty-pad rule when it was in fact applying it somewhere you
+   could not see. */
+function pickTargetPad(peek){
+  const chosen=manualPad; if(!peek) manualPad=false;       // honor a deliberate tap once, then back to auto
   if(S.pads[S.editPad].bufId<0) return S.editPad;          // selected pad is empty — land here
   if(chosen) return S.editPad;                             // you tapped this (full) pad on purpose — overwrite it
   for(let s2=0;s2<16;s2++){ const i=S.bank*16+s2; if(S.pads[i].bufId<0) return i; }   // else first empty (this bank)
   for(let i=0;i<NPADS;i++) if(S.pads[i].bufId<0) return i;                            // …then any empty
   return S.editPad;                                        // no empty pad left — fall back to the selection
 }
+function firstEmptyPad(){
+  for(let s2=0;s2<16;s2++){ const i=S.bank*16+s2; if(S.pads[i].bufId<0) return i; }
+  for(let i=0;i<NPADS;i++) if(S.pads[i].bufId<0) return i;
+  return -1;
+}
+/* The sampler's own pad chooser. Picking a sound used to mean leaving SMPL for
+   PADS, tapping a pad, and coming back — for a screen whose whole job is
+   putting a sound on a pad. */
+function drawSmTarget(){
+  const sel=$('smPad'); if(!sel) return;
+  if(sel.options.length!==NPADS){
+    sel.innerHTML='';
+    for(let i=0;i<NPADS;i++){ const o=document.createElement('option'); o.value=String(i); sel.appendChild(o); }
+  }
+  for(let i=0;i<NPADS;i++){
+    const p=S.pads[i];
+    sel.options[i].textContent=padName(i)+(p.bufId>=0 ? ' · '+(p.name||'in use') : ' — empty');
+  }
+  const dest=pickTargetPad(true);
+  sel.value=String(dest);
+  const p=S.pads[dest], full=p.bufId>=0, info=$('smTargetInfo');
+  info.classList.toggle('occupied',full);
+  $('smTarget').innerHTML = full
+    ? 'Next sound REPLACES what is on <b>'+padName(dest)+'</b>'+(p.name?' ('+p.name+')':'')+'. Pick another pad, or NEXT EMPTY.'
+    : 'Next sound goes to <b>'+padName(dest)+'</b>, which is empty.';
+  const e=firstEmptyPad();
+  $('smNextEmpty').disabled = e<0 || e===dest;
+  $('smNextEmpty').textContent = e<0 ? 'ALL FULL' : 'NEXT EMPTY';
+}
+$('smPad').addEventListener('change',e=>{
+  const i=clamp(parseInt(e.target.value,10)||0,0,NPADS-1);
+  S.editPad=i; S.bank=Math.floor(i/16); manualPad=true;   // an explicit pick is deliberate: it may overwrite
+  drawPads(); drawEdit(); drawSmTarget();
+  const p=S.pads[i];
+  lcd('TARGET '+padName(i)+(p.bufId>=0?' — holds '+(p.name||'a sound')+'; the next send replaces it.':' — empty.'));
+});
+$('smNextEmpty').addEventListener('click',()=>{
+  const i=firstEmptyPad();
+  if(i<0){ lcd('EVERY PAD IS FULL — pick one to replace, or CLEAR one first.'); return; }
+  S.editPad=i; S.bank=Math.floor(i/16); manualPad=true;
+  drawPads(); drawEdit(); drawSmTarget();
+  lcd('TARGET '+padName(i)+' — empty, nothing to lose.');
+});
 function hitLive(idx, vel, pitchOff){
   ensureAudio();
   if(silGateDown && LIVE){ silRestore(LIVE, AC.currentTime); silGateDown=false; }
@@ -2574,7 +2643,7 @@ function drawEdit(){
   $('epLfoDepth').value=p.lfoDepth||0; $('epLfoDepthV').textContent=Math.round((p.lfoDepth||0)*100)+'%';
   $('epWarpBeats').value=String(p.warpBeats||4);
   $('epWarpInfo').textContent = p.bufId>=0 ? (S.buffers[p.bufId].duration.toFixed(2)+'s'+(p.warped?(' · WARPED to '+p.warpBeats+' beats @ '+S.bpm.toFixed(1)):'')) : 'load a sample first';
-  $('smTarget').textContent=padName(S.editPad);
+  drawSmTarget();   // the sampler's TARGET is wherever the next send will land, not just the selection
   $('seqPadName').textContent=padName(S.seqPad);
   $('mxPad').textContent=padName(S.editPad);
   $('mxPadRev').value=p.rev; $('mxPadRevV').textContent=sendText(p.rev);

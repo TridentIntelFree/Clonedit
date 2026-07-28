@@ -60,6 +60,12 @@ select,input[type=text],input[type=number]{background:var(--lcd-bg);color:var(--
 #arrWarn span{flex:1}
 #arrWarn b{color:var(--amber)}
 #arrWarn button{min-height:26px;padding:3px 8px;font-size:10px;flex:none}
+/* Where the next sound is going, and whether that costs you anything. Amber
+   when the pad is empty, red when landing there would replace a sound. */
+#smTargetInfo{font-size:11px;line-height:1.4;margin:0 0 var(--sp-2);color:var(--txt-dim)}
+#smTargetInfo b{color:var(--amber)}
+#smTargetInfo.occupied{color:var(--red)}
+#smTargetInfo.occupied b{color:var(--red)}
 .stepper{display:inline-flex;align-items:center;gap:2px;flex:none}
 .stepper>span{min-width:24px;text-align:center;color:var(--lcd);font-size:12px}
 .shrink{min-width:0;flex:1 1 auto}
