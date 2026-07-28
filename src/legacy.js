@@ -1402,8 +1402,26 @@
      Neither is proof of what happened, but both turn that failure from a
      mystery into a sentence — and a silent restore is the one outcome this app
      must never produce without explaining itself.
+   - R123: ONE TAP BEFORE PRESSING RESTORE DESTROYED THE SESSION. Found from an
+     exported project: blank, zero buffers, all 64 pads at bufId -1, and a
+     single tapped step at pad 0. Blank is the tell — a FAILED restore falls
+     back to the factory demo and its sixteen samples, so nothing-at-all is not
+     a failed load. It is a good session overwritten by an empty one.
+     'last' is a single slot and the autosave fires 1.5s after any edit. Open
+     the app, be offered your last session, touch ANYTHING before pressing
+     RESTORE, and the blank startup session was written straight over it — while
+     the bar was still on screen offering it. One tap was enough. Reproduced
+     exactly: sixteen buffers in the vault, tap one step, sixteen become zero.
+     Blocking the autosave while the bar is up would only move the loss: ignore
+     the bar, work for twenty minutes, and none of THAT gets saved. So the
+     offered session is filed into REWIND the moment new work would replace it,
+     and the app says where it went. Dismissing with × files it too — that is a
+     small target to hit by accident, and it means "not now", not "destroy it".
+     Verified on all three routes out of the bar: press RESTORE and it loads;
+     press × or ignore it and edit, and the old session is still recoverable
+     from a checkpoint. No route loses it.
    ================================================================ */
-const BUILD = 'JBH-88 · R122 · 2026-07-27 · a failed save or short restore now says so';
+const BUILD = 'JBH-88 · R123 · 2026-07-28 · the offered session can no longer be overwritten';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -8552,9 +8570,33 @@ let autosaving=false, saveBroken=false;
    stopped accepting anything, and only find out when a restore came back short.
    Reported on the way into failure and again on recovery, never once per
    attempt: this runs about every two seconds. */
+/* The session being OFFERED for restore is not yet safe.
+   'last' is a single slot, and the autosave fires 1.5s after any edit. So
+   opening the app, being offered your last session, and touching ANYTHING
+   before pressing RESTORE wrote the blank startup session straight over it —
+   destroying the work while the bar was still on screen offering it. One tap
+   was enough, and nothing said a word.
+   Blocking the autosave instead would be worse: ignore the bar and work for
+   twenty minutes and none of THAT gets saved either. So the old session is
+   filed into REWIND first, where it is one tap from coming back, and the offer
+   updates to say where it went. */
+let pendingRestore=null;
+async function stashPendingRestore(){
+  const doc=pendingRestore; if(!doc) return;
+  pendingRestore=null;
+  try{ await idbPut('ckpt:'+(doc.t||Date.now()), doc); }catch(e){}
+  try{
+    const bar=$('restoreBar');
+    if(bar) bar.style.display='none';
+    plog('The offered session was not restored and new work has replaced the autosave slot, so it was filed into REWIND ('
+      +ageText(Date.now()-(doc.t||Date.now()))+') rather than dropped.');
+    lcd('YOUR PREVIOUS SESSION MOVED TO PROJ ▸ REWIND — new work is saving now, and that one is still one tap away.');
+  }catch(e){}
+}
 async function autosave(){
   if(autosaving) return;
   autosaving=true;
+  await stashPendingRestore();
   try{
     await idbPut('last',snapshotSession());
     if(saveBroken){ saveBroken=false;
@@ -8675,15 +8717,26 @@ async function offerRestore(){
   const bar=$('restoreBar');
   $('restoreAge').textContent=(doc.name?doc.name+' · ':'')+ageText(Date.now()-doc.t);
   bar.style.display='flex';
+  pendingRestore=doc;          // guarded until you accept it or wave it away
   $('btnRestore').onclick=()=>{
     try{
+      pendingRestore=null;
       applySessionDoc(doc,docToBuffers(doc));
       curProjId=doc.projId||null; drawProjects();
       bar.style.display='none';
       lcd('SESSION RESTORED · '+ageText(Date.now()-doc.t));
     }catch(err){ lcd('RESTORE FAILED: '+err.message); }
   };
-  $('btnRestoreX').onclick=()=>{ bar.style.display='none'; };
+  /* Dismissing means "not now", not "destroy it" — and it is a small × that is
+     easy to hit by accident. File it into REWIND quietly so no route out of
+     this bar can lose a session. */
+  $('btnRestoreX').onclick=()=>{
+    bar.style.display='none';
+    const d=pendingRestore; pendingRestore=null;
+    if(d) idbPut('ckpt:'+(d.t||Date.now()), d)
+      .then(()=>{ plog('Dismissed session filed into REWIND ('+ageText(Date.now()-(d.t||Date.now()))+') — nothing is thrown away here.'); })
+      .catch(()=>{});
+  };
 }
 /* ---------------- PROJECT LIBRARY (many named projects on-device) ----------------
    Full docs live under 'proj:<id>' in the session store; a small 'projIndex'
