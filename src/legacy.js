@@ -1550,8 +1550,26 @@
      234px of card. The menu also clears any inline side-placement a previous
      step left on the card, so opening HELP after a step no longer pins it to
      one edge at a step's width.
+   - R130: "REV" MEANT TWO THINGS. Reported: a pad reading REV in green, on a
+     track that is not reversed, noticed while working with varispeed.
+     Nothing was wrong with the pad. The speed controls write p.speed and
+     nothing else — measured, both the slider and the KEEP PITCH toggle. What
+     was wrong is the word. R128 put a bare "REV" on the pad face for a REVERB
+     SEND, and this app's EDIT panel has a REV slider three rows above a REVERSE
+     button. On a pad, with no label beside it, "REV" reads as REVERSED. A
+     reasonable person reading a confusing screen correctly.
+     Fixed at the source rather than explained away. The four send sliders that
+     said REV now say REVERB, and their DLY partners say DELAY — matching the
+     mic and amp panels, which already spelled it out. On the pad the tag leads
+     with an arrow: →RVB, →DLY, →D+R. An arrow means it is going somewhere,
+     which a state never is, and that is legible before the letters are.
+     And REVERSE, the thing the word was taken for, had no marker at all — half
+     of why the send was mistaken for it. It gets one now: an amber ◀ in the
+     opposite corner, a different colour and a different shape, plus the pad's
+     accessible name. Turning it on also redraws the pad grid, which it never
+     did, so the state and the face could disagree indefinitely.
    ================================================================ */
-const BUILD = 'JBH-88 · R129 · 2026-07-28 · the help menu fits a sideways phone';
+const BUILD = 'JBH-88 · R130 · 2026-07-28 · a send reads as a send, not as reversed';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2588,7 +2606,7 @@ function buildPads(){
   for(let i=0;i<16;i++){
     const el=document.createElement('div'); el.className='pad';
     el.setAttribute('role','button'); el.tabIndex=0;
-    el.innerHTML='<div class="pn"></div><div class="led"></div><div class="snd"></div><div class="pname"></div>';
+    el.innerHTML='<div class="pn"></div><div class="led"></div><div class="rvs">◀</div><div class="snd"></div><div class="pname"></div>';
     el.addEventListener('keydown',e=>{
       if(e.key!==' ' && e.key!=='Enter' && e.key!=='Spacebar') return;
       e.preventDefault(); padPress(i,0.85);          // no Y position to read from
@@ -2676,12 +2694,21 @@ function drawPads(){
     // a send is the one thing a pad does that its own controls cannot explain
     const snd=sendTag(p);
     el.classList.toggle('send',!!snd);
-    el.querySelector('.snd').textContent=snd;
+    const sndEl=el.querySelector('.snd');
+    sndEl.textContent=snd;
+    sndEl.title=sendTitle(p);
+    // REVERSE is a real pad state and had no marker at all, which is half of why
+    // a send reading "REV" was taken for one. It gets its own mark, its own
+    // colour and its own corner, so the two can never be confused again.
+    const revd=p.bufId>=0 && !!p.reverse;
+    el.classList.toggle('revd',revd);
+    el.querySelector('.rvs').title=revd?'Plays backwards (REVERSE is on)':'';
     el.querySelector('.pn').textContent=padName(idx);
     el.querySelector('.pname').textContent=p.name||'';
     el.setAttribute('aria-label', 'Pad '+padName(idx)
       + (p.name?', '+p.name:', empty')
       + (idx===S.editPad?', selected':'')
+      + (revd?', plays backwards':'')
       + (p.bufId>=0 && pat.steps[idx].some(v=>v>0) ? ', plays in this pattern':'')
       + (snd?', sending to '+(p.dly>0.02?'delay':'')+(p.dly>0.02&&p.rev>0.02?' and ':'')+(p.rev>0.02?'reverb':''):''));
   }
@@ -2792,7 +2819,9 @@ bindEdit('epRel','rel',null,null);
 $('epChoke').addEventListener('change',e=>{ S.pads[S.editPad].choke=parseInt(e.target.value,10); dirty(); });
 $('epRevrs').addEventListener('click',()=>{ const p=S.pads[S.editPad]; p.reverse=!p.reverse; if(p.bufId>=0) getReversed(p.bufId);
   if(p.keepPitch && p.bufId>=0) buildSpeedStretch(p.bufId,!!p.reverse,padSpeed(p));   // stretch depends on direction
-  drawEdit(); dirty(); });
+  drawEdit(); drawPads(); dirty();          // the pad face carries REVERSE now
+  lcd(p.reverse?padName(S.editPad)+' — REVERSE on, the sample plays backwards.'
+                :padName(S.editPad)+' — REVERSE off, the sample plays forwards.'); });
 $('epMode').addEventListener('click',()=>{ const p=S.pads[S.editPad];
   p.mode = p.mode==='one' ? 'gate' : (p.mode==='gate' ? 'grain' : 'one');
   if(p.mode!=='grain') grainCut(S.editPad);
@@ -2875,11 +2904,22 @@ function applyPadVoice(id){
 function liveFx(){ const p=S.pads[S.editPad]; if(LIVE) applyPadFx(LIVE.pads[S.editPad],p,AC,true); drawPads(); drawEdit(); dirty(); }
 function hasFx(p){ return p.ftype!=='off' || p.drv>0 || p.crush<16 || !!(p.eqLo||p.eqMid||p.eqHi); }
 /* DLY first: a delay is the send you HEAR as a separate event, and it is the
-   one people go looking for in the pad's own EQ, where it can never be. */
+   one people go looking for in the pad's own EQ, where it can never be.
+   The arrow is not decoration. R128 wrote a bare "REV" on the pad face and it
+   was read — reasonably — as REVERSED, because a sampler pad plays backwards
+   and this one has a REVERSE button. A send goes somewhere; a state does not.
+   The arrow says which of the two this is, before the letters are read. */
 function sendTag(p){
   if(!p || p.bufId<0) return '';
-  if(p.dly>0.02) return p.rev>0.02?'D+R':'DLY';
-  return p.rev>0.02?'REV':'';
+  if(p.dly>0.02) return p.rev>0.02?'→D+R':'→DLY';
+  return p.rev>0.02?'→RVB':'';
+}
+function sendTitle(p){
+  if(!p) return '';
+  const bits=[];
+  if(p.dly>0.02) bits.push('delay '+Math.round(p.dly*100)+'%');
+  if(p.rev>0.02) bits.push('reverb '+Math.round(p.rev*100)+'%');
+  return bits.length?'Sending to '+bits.join(' and ')+' — these are made at the master, not on the pad':'';
 }
 /* Said once per pad per session. The shipped kits put a delay send on several
    pads, so a tap comes back a dotted-eighth later and nothing on the pad

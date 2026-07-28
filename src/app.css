@@ -227,11 +227,17 @@ h3 span{font-weight:400}
   background:var(--amber);box-shadow:0 0 4px var(--amber)}
 /* A pad feeding the REVERB or DELAY bus sounds nothing like its own settings —
    the repeat comes from the master, so hunting through the pad's EQ finds
-   nothing. Say it on the pad: "SND" means this one is sending. */
-.pad.send .snd{position:absolute;bottom:4px;right:5px;font-size:8px;font-weight:700;
-  letter-spacing:.5px;color:#7fd4c2;text-shadow:0 0 5px rgba(127,212,194,.7)}
-.pad .snd{display:none}
+   nothing. Say it on the pad. The leading arrow matters: a bare "REV" here was
+   read as REVERSED, which is a different control on the same panel. An arrow
+   means it is going somewhere, which a state never is. */
+.pad .snd{display:none;position:absolute;bottom:4px;right:5px;font-size:8px;font-weight:700;
+  letter-spacing:.3px;color:#7fd4c2;text-shadow:0 0 5px rgba(127,212,194,.7)}
 .pad.send .snd{display:block}
+/* …and REVERSE itself, which had no marker at all — different corner, different
+   colour, different shape, so the two can never be taken for each other. */
+.pad .rvs{display:none;position:absolute;bottom:4px;left:5px;font-size:9px;line-height:1;
+  color:var(--amber);text-shadow:0 0 5px rgba(255,140,46,.8)}
+.pad.revd .rvs{display:block}
 #editpanel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px}
 .pslider{display:flex;align-items:center;gap:8px;margin-bottom:2px}
 /* A flex item shrinks below its content by default, so longer names
