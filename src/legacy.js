@@ -7086,11 +7086,12 @@ function noteOffsets(){ // semitone offset per row, TOP row first
 }
 function drawNotes(){
   const panel=$('notesPanel'); if(!panel || panel.style.display==='none') return;
-  const gr=$('notegrid'); gr.innerHTML='';
   const pat=curPat(), row=pat.steps[S.seqPad], L=trackLen(pat,S.seqPad);
-  gr.style.gridTemplateColumns='30px repeat('+L+',1fr)';
   $('noteScale').value=S.scaleName in SCALES ? S.scaleName : 'minor';
   $('noteOctV').textContent=(noteOct>0?'+':'')+noteOct;
+  if(noteView==='circle'){ drawNoteCircle(); return; }
+  const gr=$('notegrid'); gr.innerHTML='';
+  gr.style.gridTemplateColumns='30px repeat('+L+',1fr)';
   const offs=noteOffsets();
   offs.forEach((off,r)=>{
     const lbl=document.createElement('div'); lbl.className='nlbl';
@@ -7108,6 +7109,85 @@ function drawNotes(){
     }
   });
 }
+/* ---------------- NOTES, as a circle ----------------------------------------
+   The same notes the grid holds, wrapped round a bar so the shape of a line is
+   visible as a shape rather than as a row of boxes — and so the NOTES lane
+   matches the sequencer sitting above it, which has had GRID and CIRCLE since
+   R33. Rings are scale notes with the root outermost; segments are steps.
+   Deliberately reuses the grid's own toggleNote, so both views write exactly
+   the same pitch locks and neither can drift from the other. */
+const NCIRC={rings:[],cx:0,cy:0};
+function drawNoteCircle(){
+  const cv=$('notecircle'); if(!cv || noteView!=='circle') return;
+  const {cx,W,H}=fitCanvas(cv), ccx=W/2, ccy=H/2;
+  cx.fillStyle='#120d04'; cx.fillRect(0,0,W,H);
+  const pat=curPat(), row=pat.steps[S.seqPad], L=trackLen(pat,S.seqPad);
+  const offs=noteOffsets();                       // TOP row first = highest note
+  const outer=Math.min(W,H)*0.46, inner=Math.min(W,H)*0.13;
+  const span=(outer-inner)/Math.max(1,offs.length);
+  NCIRC.rings=[]; NCIRC.cx=ccx; NCIRC.cy=ccy;
+  offs.forEach((off,ri)=>{
+    const r1=outer-ri*span, r0=r1-span*0.74;
+    NCIRC.rings.push({off,r0,r1});
+    for(let i=0;i<L;i++){
+      const a0=-Math.PI/2+(i/L)*Math.PI*2, a1=-Math.PI/2+((i+1)/L)*Math.PI*2;
+      const lk=pat.locks && pat.locks[S.seqPad+':'+i];
+      const on=row[i]>0 && notePitches(lk,row[i]).includes(off);
+      cx.beginPath();
+      cx.arc(ccx,ccy,r1,a0+0.012,a1-0.012);
+      cx.arc(ccx,ccy,r0,a1-0.012,a0+0.012,true);
+      cx.closePath();
+      cx.fillStyle = on ? (off===0?'#ffb454':'#ff8c2e')
+        : (off===0 ? 'rgba(255,180,84,0.16)' : (i%4===0?'rgba(255,255,255,0.09)':'rgba(255,255,255,0.045)'));
+      cx.fill();
+      if(on){ cx.strokeStyle='rgba(255,220,150,0.9)'; cx.lineWidth=2; cx.stroke(); }
+    }
+  });
+  // the playhead, so the circle reads in time like the sequencer's does
+  if(playing){
+    const st=posMod(curStep,L), a=-Math.PI/2+((st+0.5)/L)*Math.PI*2;
+    cx.strokeStyle='rgba(74,163,255,0.9)'; cx.lineWidth=3;
+    cx.beginPath(); cx.moveTo(ccx+Math.cos(a)*(inner*0.6), ccy+Math.sin(a)*(inner*0.6));
+    cx.lineTo(ccx+Math.cos(a)*(outer+6), ccy+Math.sin(a)*(outer+6)); cx.stroke();
+  }
+  cx.textAlign='center';
+  cx.fillStyle='#8a6530'; cx.font='24px ui-monospace';
+  cx.fillText(padName(S.seqPad), ccx, ccy-8);
+  cx.fillStyle='#ffb454'; cx.font='bold 26px ui-monospace';
+  cx.fillText(scaleLabel?scaleLabel():(S.scaleName||''), ccx, ccy+22);
+}
+function noteCircleTap(clientX,clientY){
+  const cv=$('notecircle'), r=cv.getBoundingClientRect();
+  const base=canvasBase.get(cv)||{w:cv.width,h:cv.height};
+  const x=(clientX-r.left)*(base.w/r.width)-NCIRC.cx, y=(clientY-r.top)*(base.h/r.height)-NCIRC.cy;
+  const rad=Math.hypot(x,y);
+  const ring=NCIRC.rings.find(g=>rad>=g.r0-2 && rad<=g.r1+2);
+  if(!ring) return;
+  const L=trackLen(curPat(),S.seqPad);
+  let a=Math.atan2(y,x)+Math.PI/2; if(a<0) a+=Math.PI*2;
+  toggleNote(Math.min(L-1,Math.floor(a/(Math.PI*2)*L)), ring.off);
+}
+let noteView='grid';
+function setNoteView(v){
+  noteView=v;
+  $('notegrid').style.display = v==='grid' ? '' : 'none';
+  $('notecirclewrap').style.display = v==='circle' ? '' : 'none';
+  $('btnNoteGrid').classList.toggle('on',v==='grid');
+  $('btnNoteCircle').classList.toggle('on',v==='circle');
+  $('noteViewHint').textContent = v==='circle'
+    ? 'rings are scale notes, root outermost' : 'rows of scale notes';
+  drawNotes();
+  try{ localStorage.setItem('jbh_noteview',v); }catch(e){}
+}
+$('btnNoteGrid').addEventListener('click',()=>setNoteView('grid'));
+$('btnNoteCircle').addEventListener('click',()=>setNoteView('circle'));
+{ const cv=$('notecircle');
+  cv.addEventListener('click',e=>noteCircleTap(e.clientX,e.clientY));
+  cv.addEventListener('touchstart',e=>{ e.preventDefault();
+    const t=e.changedTouches[0]; noteCircleTap(t.clientX,t.clientY); },{passive:false});
+  try{ const nv=localStorage.getItem('jbh_noteview'); if(nv==='circle') setNoteView('circle'); }catch(e){}
+}
+
 function notePitches(lk,rowv){   // the pitch offsets active in a NOTES column (a chord may hold several)
   if(!(rowv>0)) return [];
   if(lk && lk.pitches && lk.pitches.length) return lk.pitches.slice();

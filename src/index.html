@@ -549,11 +549,20 @@
   <div id="notesPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
     <div class="row" style="margin-bottom:6px">
       <span class="lbl">SCALE</span>
-      <select id="noteScale"><option value="major">MAJOR</option><option value="minor">MINOR</option><option value="dorian">DORIAN</option><option value="mixo">MIXOLYD</option><option value="pmaj">PENT MAJ</option><option value="pmin">PENT MIN</option><option value="blues">BLUES</option></select>
+      <select id="noteScale" class="shrink"><option value="major">MAJOR</option><option value="minor">MINOR</option><option value="dorian">DORIAN</option><option value="mixo">MIXOLYD</option><option value="pmaj">PENT MAJ</option><option value="pmin">PENT MIN</option><option value="blues">BLUES</option></select>
       <span class="lbl">OCT</span>
-      <button aria-label="Octave down" id="noteOctDn">&#8722;</button><span id="noteOctV" style="min-width:24px;text-align:center;color:var(--lcd);font-size:12px">0</span><button aria-label="Octave up" id="noteOctUp">+</button>
+      <span class="stepper"><button aria-label="Octave down" id="noteOctDn">&#8722;</button><span id="noteOctV">0</span><button aria-label="Octave up" id="noteOctUp">+</button></span>
+    </div>
+    <div class="row" style="margin-bottom:6px">
+      <span class="lbl">VIEW</span>
+      <button id="btnNoteGrid" class="on">GRID</button>
+      <button id="btnNoteCircle">CIRCLE</button>
+      <span id="noteViewHint" style="font-size:10px;color:var(--txt-dim);flex:1">rows of scale notes</span>
     </div>
     <div id="notegrid"></div>
+    <div id="notecirclewrap" style="display:none">
+      <canvas id="notecircle" role="img" aria-label="Circular view of this pad's notes. Rings are scale notes, segments are steps. Switch VIEW to GRID for the same notes as a list of buttons." width="760" height="760" style="width:100%;aspect-ratio:1;display:block;background:var(--lcd-bg);border:1px solid var(--line);border-radius:10px;touch-action:none"></canvas>
+    </div>
     <div style="font-size:10px;color:var(--txt-dim);margin-top:4px">Rows are scale notes for THIS pad (root = the sample's own pitch). Tap to place, tap again to remove. <b>Stack several notes in the same column for a chord</b> — they fire together as harmony. Written as pitch locks, so chords bounce + export to MIDI.</div>
   </div>
   <h3>SILENCER <span style="color:var(--txt-dim);letter-spacing:0">— place a cut; everything drops out until the next hit</span></h3>

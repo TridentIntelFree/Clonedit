@@ -43,6 +43,15 @@ select,input[type=text],input[type=number]{background:var(--lcd-bg);color:var(--
    the only control in the app that was ignoring --tap. Four of the six sit
    inside a <label>, so their text is tappable too; these two sizes are what the
    other two rely on entirely. */
+/* A −/value/+ stepper is one control, so it must never be split across a line
+   wrap. On a 375px screen the octave stepper in NOTES broke apart: the minus
+   stayed beside the readout and the plus wrapped to the far left of the row
+   below, where it no longer read as belonging to anything — it looked like the
+   octave only went down. Anything paired with it gets `shrink` so the row gives
+   up width there instead. */
+.stepper{display:inline-flex;align-items:center;gap:2px;flex:none}
+.stepper>span{min-width:24px;text-align:center;color:var(--lcd);font-size:12px}
+.shrink{min-width:0;flex:1 1 auto}
 input[type=checkbox]{width:24px;height:24px;flex:none;margin:0 2px 0 0;
   accent-color:var(--amber);cursor:pointer}
 input[type=range]{-webkit-appearance:none;width:100%;height:32px;background:transparent}
