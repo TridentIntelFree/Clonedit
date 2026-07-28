@@ -1255,15 +1255,36 @@
      never kept. Measured on the reported build: an open mic with MONITOR off
      puts -38dB at the master continuously, with nothing playing.
      Both sends now hang off the MONITOR gate. Nothing is lost from the take —
-     RECORD captures M.dest, fed dry from M.out, so the sends were only ever
+     RECORD taps M.out directly, so the sends were only ever
      monitoring. With MONITOR off the master is silent; with it on the mic comes
      through as before. The hint says what is now true, and the warning moved to
      the state that can actually howl.
      The volume being forced up is iOS: an active capture session changes the
      audio route, and it is not something the app can decline while it is also
      playing back. With the loop closed it is a nuisance rather than a howl.
+   - R117: RECORD WAS ROUTED THROUGH A NODE WEBKIT SHIPS SILENT. Four reports of
+     the same silent pad, and the first three fixes were all real bugs but none
+     of them was THE bug.
+     The mic recorded like this: MediaRecorder → MediaStreamAudioDestinationNode
+     → Blob → decodeAudioData. Three of those four can hand back silence without
+     raising anything, and WebKit's MediaStreamAudioDestinationNode has produced
+     a dead stream for years. Every check the app could make passed — the meter
+     reads an analyser, the take arrived with a plausible duration, the pad had a
+     buffer — and every sample in it was zero.
+     It cannot be reproduced in Chromium, which implements that node correctly.
+     That is exactly why three rounds of testing here missed it, and why the
+     right move was to stop trusting the path rather than keep inspecting it.
+     RECORD now uses makeCaptureTap — the same in-graph tap TRAX and the black
+     box have always used, reading real samples out of the audio graph. No
+     MediaRecorder, no MediaStream, no container, no decode. Four failure points
+     removed, and the remaining path cannot go quiet without also breaking TRAX,
+     which works.
+     The test that finally pins it disconnects the MediaStream destination to
+     mimic WebKit and asserts a take still arrives with audio in it. Against the
+     build that was reported it fails with the exact symptom: no buffer, and
+     "COULD NOT DECODE THE RECORDING".
    ================================================================ */
-const BUILD = 'JBH-88 · R116 · 2026-07-27 · the mic no longer feeds back through the reverb';
+const BUILD = 'JBH-88 · R117 · 2026-07-27 · RECORD taps the graph, not a MediaStream';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2824,7 +2845,7 @@ function a11yWatch(){
    without phase trouble. It is labelled for what it does rather than what it
    is not: it takes the edge off harsh S sounds at the cost of some air. ---- */
 let micOn=false, micChain=null, micStreamIn=null, micVuRAF=0, micAn=null, micPeakHold=0;
-let micRec=null, micRecT0=0, micRecTimer=0;
+let micRec=null, micCap=null, micRecT0=0, micRecTimer=0;
 
 /* Character presets shape TONE. Not one of them arms the gate any more: they
    all used to set it between .05 and .2, so the MIC recipe told you to pick a
@@ -2892,7 +2913,8 @@ function micBuild(){
   M.mon=AC.createGain(); M.mon.gain.value=0;      // silence until asked: feedback
   M.rsend=AC.createGain(); M.rsend.gain.value=0;
   M.dsend=AC.createGain(); M.dsend.gain.value=0;
-  M.dest=AC.createMediaStreamDestination();       // what RECORD captures
+  // No MediaStreamAudioDestinationNode here any more: RECORD taps the graph
+  // directly, because WebKit's version of that node hands back a silent stream.
 
   M.dblLfo.connect(M.dblDepth); M.dblDepth.connect(M.dblDelay.delayTime); M.dblLfo.start();
   M.src.connect(M.in);
@@ -2908,13 +2930,12 @@ function micBuild(){
      speaker and back into itself, tail and all. That is an acoustic feedback
      loop that MONITOR could not switch off, while its own hint said "off —
      headphones only, or it will feed back".
-     Nothing is lost from the take by moving them: RECORD captures M.dest, which
-     is fed dry from M.out, so the sends were only ever monitoring. */
+     Nothing is lost from the take by moving them: RECORD taps M.out directly,
+     so the sends were only ever monitoring. */
   M.out.connect(M.mon); M.mon.connect(LIVE.master);
   M.mon.connect(M.rsend); M.rsend.connect(LIVE.revIn);
   M.mon.connect(M.dsend); M.dsend.connect(LIVE.dlyIn);
   if(LIVE.liveBus) M.out.connect(LIVE.liveBus);   // a recording bus, not a speaker
-  M.out.connect(M.dest);
   micAn=new Float32Array(M.an.fftSize);
   return M;
 }
@@ -3006,7 +3027,7 @@ async function micEnable(){
 function micDisable(){
   micOn=false;
   if(micVuRAF) cancelAnimationFrame(micVuRAF); micVuRAF=0;
-  if(micRec && micRec.state==='recording'){ try{ micRec.stop(); }catch(e){} }
+  if(micRec) micRecordStop();          // commit whatever was captured before the chain goes
   if(micChain){ try{ micChain.src.disconnect(); micChain.out.disconnect(); micChain.mon.disconnect();
     micChain.dblLfo.stop(); micChain.dblLfo.disconnect(); }catch(e){} }
   micChain=null;
@@ -3037,33 +3058,55 @@ function micNextLane(){
   for(let i=0;i<S.trax.length;i++) if(S.trax[i].bufId<0) return i;
   return -1;
 }
-async function micRecordStart(){
+/* Captured with the same in-graph tap TRAX and the black box have always used,
+   reading real samples out of the audio graph.
+
+   It used to go MediaRecorder → MediaStreamAudioDestinationNode → a Blob →
+   decodeAudioData. Three of those four are places a browser can hand back
+   silence without erroring, and WebKit is one that does: its
+   MediaStreamAudioDestinationNode has shipped producing a dead stream for
+   years. Every check passed — the meter reads an analyser, the take arrived
+   with a real duration, the pad had a buffer — and the samples were zero. It
+   also cannot be caught in Chromium, which implements that node properly,
+   which is why three rounds of fixes here missed it.
+   Nothing about this path can go quiet without also breaking TRAX. */
+const MIC_MAX_S=180;
+function micRecordStart(){
   if(!micOn||!micChain){ lcd('TURN THE MIC ON FIRST.'); return; }
   const wet=$('micWet').checked;
-  const stream = wet ? micChain.dest.stream : micStreamIn;
-  let mr; try{ mr=new MediaRecorder(stream); }
-  catch(e){ lcd('This browser cannot record from the microphone (no MediaRecorder).'); return; }
-  const chunks=[];
-  mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
-  mr.onstop=async ()=>{
-    clearInterval(micRecTimer); micRecTimer=0;
-    $('btnMicRec').classList.remove('on'); $('btnMicRec').innerHTML='&#9679; RECORD';
-    micRec=null;
-    if(!chunks.length){ $('micRecInfo').textContent='nothing captured'; lcd('NOTHING CAPTURED — too short?'); return; }
-    $('micRecInfo').textContent='decoding…';
-    try{
-      const buf=await AC.decodeAudioData(await new Blob(chunks).arrayBuffer());
-      micPlaceTake(buf);
-    }catch(err){ lcd('COULD NOT DECODE THE RECORDING: '+(err.message||err)); $('micRecInfo').textContent='failed'; }
-  };
-  micRec=mr; micRecT0=performance.now();
-  mr.start();
+  const from = wet ? micChain.out : micChain.src;
+  const cap={L:[],R:[],len:0,from};
+  try{
+    cap.ct=makeCaptureTap(AC,(l,r,frames)=>{
+      cap.L.push(new Float32Array(l)); cap.R.push(new Float32Array(r));
+      cap.len+=frames;
+      if(cap.len>=AC.sampleRate*MIC_MAX_S) micRecordStop();
+    });
+    from.connect(cap.ct.node);
+  }catch(e){ lcd('COULD NOT START RECORDING: '+(e.message||e)); return; }
+  micCap=cap;
+  micRec={state:'recording'};              // the button reads this to know it is rolling
+  micRecT0=performance.now();
   $('btnMicRec').classList.add('on'); $('btnMicRec').innerHTML='&#9632; STOP';
   micRecTimer=setInterval(()=>{
     const s=(performance.now()-micRecT0)/1000;
     $('micRecInfo').textContent='recording '+s.toFixed(1)+'s';
   },100);
   lcd('RECORDING — tap STOP when you are done.');
+}
+function micRecordStop(){
+  const cap=micCap; micCap=null; micRec=null;
+  clearInterval(micRecTimer); micRecTimer=0;
+  $('btnMicRec').classList.remove('on'); $('btnMicRec').innerHTML='&#9679; RECORD';
+  if(!cap) return;
+  try{ cap.from.disconnect(cap.ct.node); }catch(e){}
+  try{ cap.ct.stop(); }catch(e){}
+  if(!cap.len){ $('micRecInfo').textContent='nothing captured'; lcd('NOTHING CAPTURED — too short?'); return; }
+  const buf=AC.createBuffer(2, cap.len, AC.sampleRate);
+  const L=buf.getChannelData(0), R=buf.getChannelData(1);
+  let o=0;
+  for(let i=0;i<cap.L.length;i++){ L.set(cap.L[i],o); R.set(cap.R[i],o); o+=cap.L[i].length; }
+  micPlaceTake(buf);
 }
 /* A take that came back empty is the one outcome that must never be reported as
    success — TRAX has guarded this since R44 and the mic never did, so "TAKE →
@@ -3130,7 +3173,7 @@ $('micPreset').addEventListener('change',e=>{
   lcd('VOICE: '+e.target.selectedOptions[0].textContent);
 });
 $('btnMicRec').addEventListener('click',()=>{
-  if(micRec && micRec.state==='recording'){ try{ micRec.stop(); }catch(e){} return; }
+  if(micRec){ micRecordStop(); return; }
   micRecordStart();
 });
 micLabels();
