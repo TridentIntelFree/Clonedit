@@ -2760,8 +2760,26 @@ Object.assign(globalThis, __JBH_PURE);})();
      differ from CLEAN, the three that promise movement really drive the LFO,
      CLEAN switches it back off, mix and identity survive all fourteen, and a
      voice survives a save and restore intact.
+   - R120: THE OCTAVE ONLY WENT DOWN, AND NOTES GOT A CIRCLE.
+     Reported: in the sequencer's NOTES lane you could go down an octave but
+     never back up. Both buttons and both handlers existed — the row was simply
+     too wide. On a 375px screen SCALE and the OCT stepper overflowed and the
+     PLUS wrapped to the far left of the line below, where it no longer read as
+     belonging to anything. On a 430px screen it fitted, which is exactly why it
+     looked fine here and broken on a phone.
+     A −/value/+ stepper is one control and must never be split by a wrap, so it
+     is an unbreakable unit now and the select beside it gives up the width
+     instead. Checked at four widths: same line, adjacent, on screen, clickable.
+     And NOTES can be a circle, matching the sequencer above it, which has had
+     GRID and CIRCLE since R33. Rings are the scale notes with the root
+     outermost, segments are steps, and the playhead sweeps it while the pattern
+     runs — a melody reads as a shape rather than a row of boxes. It reuses the
+     grid's own toggleNote, so both views write identical pitch locks and cannot
+     drift apart, and it inherits the R110 canvas sizing, so it is 2x sharp on
+     every screen without doing anything.
+     The view is remembered, and switching between the two never alters a note.
    ================================================================ */
-const BUILD = 'JBH-88 · R119 · 2026-07-27 · pad voices';
+const BUILD = 'JBH-88 · R120 · 2026-07-27 · octave up works; NOTES as a circle';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
