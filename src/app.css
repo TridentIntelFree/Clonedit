@@ -225,6 +225,13 @@ h3 span{font-weight:400}
   font-size:8px;font-weight:700;letter-spacing:.5px;color:var(--sel);text-shadow:0 0 6px rgba(74,163,255,.8)}
 .pad.fx::after{content:'';position:absolute;top:8px;right:19px;width:5px;height:5px;border-radius:50%;
   background:var(--amber);box-shadow:0 0 4px var(--amber)}
+/* A pad feeding the REVERB or DELAY bus sounds nothing like its own settings —
+   the repeat comes from the master, so hunting through the pad's EQ finds
+   nothing. Say it on the pad: "SND" means this one is sending. */
+.pad.send .snd{position:absolute;bottom:4px;right:5px;font-size:8px;font-weight:700;
+  letter-spacing:.5px;color:#7fd4c2;text-shadow:0 0 5px rgba(127,212,194,.7)}
+.pad .snd{display:none}
+.pad.send .snd{display:block}
 #editpanel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px}
 .pslider{display:flex;align-items:center;gap:8px;margin-bottom:2px}
 /* A flex item shrinks below its content by default, so longer names
@@ -456,8 +463,12 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      portrait-time action anyway — and PROJ still explains how. It comes back
      the moment the phone is turned upright. */
   #installBar{display:none}
-  /* the tour card has to leave room for what it is pointing at */
-  #tourCard{padding:9px 11px;max-height:min(70vh,calc(100vh - 24px))}
+  /* The tour card has to leave room for what it is pointing at, and on a
+     sideways phone a full-width target (the tape lanes, the pad grid) leaves
+     under half the screen. 70vh was no cap at all here — the card grew to its
+     content and there was nowhere left to put it. Cap it hard and let the body
+     scroll; a step you can read in two swipes beats one that hides its subject. */
+  #tourCard{padding:9px 11px;max-height:min(36vh,calc(100vh - 24px))}
   #tourCard h3{font-size:12px;margin:0 0 4px}
   #tourBody{font-size:11px;line-height:1.42}
   #tourCard .row{margin-top:6px}

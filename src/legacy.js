@@ -1494,8 +1494,51 @@
      tap away.
      Tested including the part that matters most — that the pad TARGET promises
      is the pad the send actually writes to.
+   - R128: THE POP WHEN THINGS SWITCH, AND THE ECHO NOTHING OWNED UP TO.
+     Reported: "sometimes there is a pop of distortion when stuff is switching",
+     and separately "strange echo when I click pad, not reverb, exact echo".
+     The pop was hardSet. It wrote a new value onto a live AudioParam in one
+     sample — a step of 0.313 where the waveform's own slope was 0.012, which is
+     exactly what a click is. It is the function that pushes a whole project's
+     channel state onto the running graph, so every restore, every NEW, every
+     reapplyLivePads cracked. It now ramps over 5ms: still instant to a human,
+     silent to a speaker. Measured against the previous build across three runs,
+     the same switch scored 9.8, 16.0 and 16.0 times the local slope before, and
+     1.00 after — every run.
+     The insert FX (drive curve, bitcrush curve, filter type) get a 4ms dip of
+     their own gain, on a node added for the purpose, so the user's fader and
+     its LFO are never touched. It only arms for a genuinely discontinuous
+     change — drive by more than 0.15, crush by 2 bits, a filter type swap — so
+     dragging a slider still sweeps continuously instead of stuttering.
+     The first three attempts at measuring this were wrong in the same way:
+     drive and bitcrush make the WHOLE waveform steep, so "steeper than the
+     clean sine before the switch" flags the sound itself, not a click. The
+     honest question is whether the jump at the switch beats the biggest jump
+     the sound makes once settled. By that test the curve swaps were never
+     popping; hardSet always was.
+     The echo was the DELAY send. The shipped kits put one on several pads —
+     A08 12%, A11 25%, A12 20% — so a tap comes back a dotted eighth later and
+     repeats, and nothing on the pad said so. Hunting for it in the pad's EQ
+     could never find it, because the repeat is made at the master. A pad that
+     feeds a bus now says DLY, REV or D+R on its face and in its accessible
+     name, and the first tap on a delay-sending pad spells it out with the time
+     and how to switch it off. Same lesson as every other report in this run:
+     the app was doing something reasonable and not saying so.
+     DIAG grew the two lines that would have answered both in one message: the
+     mic state with its monitor gain and every pad sending to delay, and a
+     warning when the context is running under 32kHz. The report that led here
+     said 16000Hz — telephone rate for the WHOLE instrument, nothing above 8kHz
+     surviving, and until now completely invisible.
+     Also, the guided tour on a sideways phone. A landscape screen has 430px of
+     height and 932 of width; the card and the tape-lane list cannot both have
+     the height. The card now sits BESIDE its target when there is room to the
+     side, and is capped at 36vh with a scrolling body when the target is full
+     width — 70vh was no cap at all, so the card grew to its content and left
+     nowhere to put it. The old test only checked vertical separation, which is
+     why a card sitting neatly to one side read as a failure; it checks the
+     rectangles now.
    ================================================================ */
-const BUILD = 'JBH-88 · R127 · 2026-07-28 · the sampler says where the sound is going';
+const BUILD = 'JBH-88 · R128 · 2026-07-28 · switching is silent, and the echo has a name';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1669,12 +1712,49 @@ function makeSoftClip(){ // identity below 0.7, smooth knee to ~0.93, clamps pea
   return c;
 }
 
-function applyPadFx(n, p, ctx){
-  n.drv.curve = makeDriveCurve(p.drv);
-  n.crush.curve = makeCrushCurve(p.crush);
-  if(p.ftype==='off'){ n.flt.type='peaking'; n.flt.gain.value=0; n.flt.frequency.value=1000; n.flt.Q.value=0.5; }
-  else{ n.flt.type=p.ftype; n.flt.gain.value=0; n.flt.frequency.value=cutHz(p.fcut); n.flt.Q.value=p.fres; }
-  if(n.eqLo){ n.eqLo.gain.value=p.eqLo||0; n.eqMid.gain.value=p.eqMid||0; n.eqHi.gain.value=p.eqHi||0; }
+/* Applying pad FX to a channel that is already sounding used to click, because
+   every line here wrote a value between two samples. Measured against a steady
+   tone: DRIVE 0.271, FILTER 0.326, CRUSH 0.109 — against a local slope of about
+   0.005, so 20x to 60x.
+   Two different problems, two different answers.
+   Anything continuous — cutoff, resonance, EQ — now RAMPS. A slider drag calls
+   this on every input event, so those must stay smooth and must never gate.
+   A WaveShaper curve swap and a biquad TYPE change are discontinuous by nature:
+   the transfer function is replaced, and changing a filter's type resets its
+   internal state. Those get a 4ms dip through a gain that exists only for this,
+   so the edge lands while the channel is silent. The dip is only taken when the
+   change is actually abrupt — a big jump in drive, a real change of bit depth,
+   or a new filter type — so dragging a slider stays continuous. */
+function applyPadFx(n, p, ctx, live){
+  const t=ctx?ctx.currentTime:0;
+  const ramp=(param,v)=>{ try{ param.setTargetAtTime(v,t,0.008); }catch(e){ param.value=v; } };
+  const typ = p.ftype==='off' ? 'peaking' : p.ftype;
+  const drv=+p.drv||0, crush=p.crush|0;
+  const abrupt = Math.abs(drv-(n._drv==null?drv:n._drv))>0.15
+    || Math.abs(crush-(n._crush==null?crush:n._crush))>=2
+    || n.flt.type!==typ;
+  const write=()=>{
+    n.drv.curve = makeDriveCurve(drv);
+    n.crush.curve = makeCrushCurve(crush);
+    n.flt.type=typ;
+    if(p.ftype==='off'){ ramp(n.flt.gain,0); ramp(n.flt.frequency,1000); ramp(n.flt.Q,0.5); }
+    else{ ramp(n.flt.gain,0); ramp(n.flt.frequency,cutHz(p.fcut)); ramp(n.flt.Q,p.fres); }
+    if(n.eqLo){ ramp(n.eqLo.gain,p.eqLo||0); ramp(n.eqMid.gain,p.eqMid||0); ramp(n.eqHi.gain,p.eqHi||0); }
+    n._drv=drv; n._crush=crush;
+  };
+  if(!live || !n.fxg || !abrupt){ write(); n._drv=drv; n._crush=crush; return; }
+  const g=n.fxg.gain, dip=0.004;
+  try{
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value,t);
+    g.linearRampToValueAtTime(0.0001,t+dip);
+  }catch(e){}
+  setTimeout(()=>{
+    write();
+    try{ const t2=ctx.currentTime;
+      g.cancelScheduledValues(t2); g.setValueAtTime(0.0001,t2);
+      g.linearRampToValueAtTime(1,t2+dip); }catch(e){}
+  }, dip*1000+2);
 }
 const LFO_BEATS={'1/1':4,'1/2':2,'1/4':1,'1/8':0.5,'1/16':0.25};
 function lfoHz(p){
@@ -1838,7 +1918,11 @@ function buildGraph(ctx){
     const pan=ctx.createStereoPanner ? ctx.createStereoPanner() : null;
     const rev=ctx.createGain(); rev.gain.value=p.rev;
     const dly=ctx.createGain(); dly.gain.value=p.dly;
-    drv.connect(crush); crush.connect(flt); flt.connect(eqLo); eqLo.connect(eqMid); eqMid.connect(eqHi); eqHi.connect(ch);
+    // a gain that exists only to be dipped for 4ms around a discontinuous FX
+    // change, so the user's own fader (and its vol-LFO) is never touched
+    const fxg=ctx.createGain(); fxg.gain.value=1;
+    drv.connect(crush); crush.connect(flt); flt.connect(eqLo); eqLo.connect(eqMid); eqMid.connect(eqHi);
+    eqHi.connect(fxg); fxg.connect(ch);
     let tail=ch;
     if(pan){ pan.pan.value=p.pan; ch.connect(pan); tail=pan; }
     // mixer mute/solo gate — downstream of the fader (ch.gain) and its vol-LFO,
@@ -1854,7 +1938,7 @@ function buildGraph(ctx){
     // per-pad LFO — one oscillator + depth gain, routed to the chosen param
     const lfoOsc=ctx.createOscillator(), lfoAmp=ctx.createGain(); lfoAmp.gain.value=0;
     lfoOsc.connect(lfoAmp); try{ lfoOsc.start(); }catch(e){}
-    const node={in:drv,drv,crush,flt,eqLo,eqMid,eqHi,ch,pan,rev,dly,dryDuck,dryDir,mute,meterAn,lfoOsc,lfoAmp};
+    const node={in:drv,drv,crush,flt,eqLo,eqMid,eqHi,fxg,ch,pan,rev,dly,dryDuck,dryDir,mute,meterAn,lfoOsc,lfoAmp};
     applyPadFx(node,p,ctx);
     applyPadLfo(node,p,ctx);
     g.pads.push(node);
@@ -2491,7 +2575,7 @@ function buildPads(){
   for(let i=0;i<16;i++){
     const el=document.createElement('div'); el.className='pad';
     el.setAttribute('role','button'); el.tabIndex=0;
-    el.innerHTML='<div class="pn"></div><div class="led"></div><div class="pname"></div>';
+    el.innerHTML='<div class="pn"></div><div class="led"></div><div class="snd"></div><div class="pname"></div>';
     el.addEventListener('keydown',e=>{
       if(e.key!==' ' && e.key!=='Enter' && e.key!=='Spacebar') return;
       e.preventDefault(); padPress(i,0.85);          // no Y position to read from
@@ -2562,6 +2646,7 @@ function padPress(slot,vel){
   const seqChanged = S.seqPad!==idx;
   S.editPad=idx; S.seqPad=idx; manualPad=true;
   if(seqChanged) seqSelStep=-1;
+  sendHint(idx);
   if(S.edit){ hitLive(idx,vel); drawPads(); drawEdit(); if(seqChanged) drawSeq(); return; }
   if(repOn && S.pads[idx].bufId>=0){ repStart(idx,vel); drawEditTitleOnly(); if(seqChanged) drawSeq(); return; }
   if(S.pads[idx].mode==='grain' && S.pads[idx].bufId>=0){ grainStart(idx,vel); drawEditTitleOnly(); if(seqChanged) drawSeq(); return; }
@@ -2575,12 +2660,17 @@ function drawPads(){
     el.classList.toggle('inseq',p.bufId>=0 && pat.steps[idx].some(v=>v>0));   // amber LED: this pad plays in the current pattern
     el.classList.toggle('sel',idx===S.editPad);   // the TARGET pad is always visible, even when empty
     el.classList.toggle('fx',hasFx(p));
+    // a send is the one thing a pad does that its own controls cannot explain
+    const snd=sendTag(p);
+    el.classList.toggle('send',!!snd);
+    el.querySelector('.snd').textContent=snd;
     el.querySelector('.pn').textContent=padName(idx);
     el.querySelector('.pname').textContent=p.name||'';
     el.setAttribute('aria-label', 'Pad '+padName(idx)
       + (p.name?', '+p.name:', empty')
       + (idx===S.editPad?', selected':'')
-      + (p.bufId>=0 && pat.steps[idx].some(v=>v>0) ? ', plays in this pattern':''));
+      + (p.bufId>=0 && pat.steps[idx].some(v=>v>0) ? ', plays in this pattern':'')
+      + (snd?', sending to '+(p.dly>0.02?'delay':'')+(p.dly>0.02&&p.rev>0.02?' and ':'')+(p.rev>0.02?'reverb':''):''));
   }
 }
 function flashPad(idx,vel){
@@ -2759,7 +2849,7 @@ function applyPadVoice(id){
   if(p.keepPitch && p.bufId>=0 && Math.abs(p.speed-1)>0.001)
     try{ buildSpeedStretch(p.bufId,!!p.reverse,p.speed); }catch(e){}
   if(LIVE){ const n=LIVE.pads[S.editPad];
-    try{ applyPadFx(n,p,AC); applyPadLfo(n,p,AC); }catch(e){} }
+    try{ applyPadFx(n,p,AC,true); applyPadLfo(n,p,AC); }catch(e){} }
   drawPads(); drawEdit(); dirty();
   lcd('VOICE: '+V.label.replace(/ —.*/,'')+' — every control it set is still yours to move.');
 }
@@ -2769,8 +2859,25 @@ function applyPadVoice(id){
   // resets to the prompt, so picking the same voice twice always re-applies it
   sel.addEventListener('change',e=>{ const id=e.target.value; e.target.value=''; if(id) applyPadVoice(id); });
 }
-function liveFx(){ const p=S.pads[S.editPad]; if(LIVE) applyPadFx(LIVE.pads[S.editPad],p,AC); drawPads(); drawEdit(); dirty(); }
+function liveFx(){ const p=S.pads[S.editPad]; if(LIVE) applyPadFx(LIVE.pads[S.editPad],p,AC,true); drawPads(); drawEdit(); dirty(); }
 function hasFx(p){ return p.ftype!=='off' || p.drv>0 || p.crush<16 || !!(p.eqLo||p.eqMid||p.eqHi); }
+/* DLY first: a delay is the send you HEAR as a separate event, and it is the
+   one people go looking for in the pad's own EQ, where it can never be. */
+function sendTag(p){
+  if(!p || p.bufId<0) return '';
+  if(p.dly>0.02) return p.rev>0.02?'D+R':'DLY';
+  return p.rev>0.02?'REV':'';
+}
+/* Said once per pad per session. The shipped kits put a delay send on several
+   pads, so a tap comes back a dotted-eighth later and nothing on the pad
+   accounts for it — the repeat is the master delay, not the pad. */
+const sendSaid={};
+function sendHint(idx){
+  const p=S.pads[idx]; if(!p || p.bufId<0 || !(p.dly>0.02) || sendSaid[idx]) return;
+  sendSaid[idx]=1;
+  lcd(padName(idx)+' · DLY '+Math.round(p.dly*100)+'% — the repeat you hear is the DELAY send'
+    +' ('+delayTime().toFixed(2)+'s), not reverb. EDIT ▸ DLY to 0 removes it.');
+}
 $('epFType').addEventListener('change',e=>{
   const p=S.pads[S.editPad]; p.ftype=e.target.value;
   // jump cutoff somewhere audible when enabling — 16kHz LP sounds like nothing
@@ -2985,7 +3092,7 @@ function drawMixer(){
         const s=document.createElement('span'); s.textContent=lbl;
         const inp=document.createElement('input'); inp.type='range'; inp.min=-12; inp.max=12; inp.step=0.5; inp.value=p[key]||0; inp.title='EQ '+lbl+' (±12dB)';
         inp.setAttribute('aria-label','EQ '+({L:'low',M:'mid',H:'high'}[lbl]||lbl)+', '+chan);
-        inp.addEventListener('input',e=>{ p[key]=parseFloat(e.target.value); if(LIVE) applyPadFx(LIVE.pads[idx],p,AC); if(idx===S.editPad) drawEdit(); dirty(); });
+        inp.addEventListener('input',e=>{ p[key]=parseFloat(e.target.value); if(LIVE) applyPadFx(LIVE.pads[idx],p,AC,true); if(idx===S.editPad) drawEdit(); dirty(); });
         r.append(s,inp); return r; };
       el.appendChild(mkEq('L','eqLo')); el.appendChild(mkEq('M','eqMid')); el.appendChild(mkEq('H','eqHi'));
     }else{
@@ -8474,13 +8581,18 @@ function mkAudioBuf(len,sr,nch){
 function hardSet(param,v){ // plain .value writes lose to earlier setTargetAtTime automation — cancel first
   const t=AC.currentTime;
   try{ param.cancelScheduledValues(t); }catch(e){}
-  param.setValueAtTime(v,t);
+  /* Ramped over 5ms rather than stepped. setValueAtTime moves a gain between
+     two samples, and a step edge in a signal that is already sounding is a
+     click — measured at 0.313 against a local slope of 0.012, i.e. 25x. Five
+     milliseconds is still instant for loading a project, and silent. */
+  try{ param.setValueAtTime(param.value,t); param.linearRampToValueAtTime(v,t+0.005); }
+  catch(e){ param.setValueAtTime(v,t); }
 }
 function reapplyLivePads(){   // push S.pads channel state onto the live graph (restore + NEW)
   if(!AC||!LIVE||!LIVE.pads) return;
   for(let i=0;i<NPADS;i++){ const p=S.pads[i], n=LIVE.pads[i]; if(!n) continue;
     hardSet(n.ch.gain,p.gain); if(n.pan)hardSet(n.pan.pan,p.pan); hardSet(n.rev.gain,p.rev); hardSet(n.dly.gain,p.dly);
-    applyPadFx(n,p,AC); applyPadLfo(n,p,AC); }
+    applyPadFx(n,p,AC,true); applyPadLfo(n,p,AC); }
   applyMixMutes();
 }
 function applySessionDoc(doc, bufs){
@@ -9606,7 +9718,16 @@ function diagDump(tag){
     const p0=LIVE?LIVE.pads[S.editPad]:null;
     const lines=[
       'DIAG('+tag+') '+BUILD,
-      'ctx:'+(AC?AC.state:'none')+' @'+(AC?Math.round(AC.sampleRate):0)+'Hz outDead:'+(AC?outIsDead():'-')+' playing:'+playing+' songPos:'+songPos+' ptn:'+(S.pattern+1),
+      // A context under 32k is telephone quality for EVERYTHING, not just the
+      // mic — on a phone it means the audio route switched to a mic-carrying
+      // device (an open mic, or a Bluetooth headset in hands-free mode). Worth
+      // saying out loud: it is invisible and it dulls the whole instrument.
+      'ctx:'+(AC?AC.state:'none')+' @'+(AC?Math.round(AC.sampleRate):0)+'Hz'
+        +(AC&&AC.sampleRate<32000?' ⚠LOW-RATE ROUTE (nothing above '+Math.round(AC.sampleRate/2000)+'kHz survives)':'')
+        +' outDead:'+(AC?outIsDead():'-')+' playing:'+playing+' songPos:'+songPos+' ptn:'+(S.pattern+1),
+      'mic:'+(micOn?'OPEN':'off')+' monitor:'+(micChain?g(micChain.mon):'-')
+        +' · sends — pads with DLY: '+(S.pads.map((pd,i)=>pd.bufId>=0&&pd.dly>0.02?padName(i)+':'+Math.round(pd.dly*100)+'%':null).filter(Boolean).join(' ')||'none')
+        +' · master delay '+delayTime().toFixed(3)+'s fb '+S.delayFb+' '+S.dlyMode,
       'buffers:'+S.buffers.length+' loadedPads:'+S.pads.filter(x=>x.bufId>=0).length+' dangling:'+(dang.length?dang.join(' '):'none')+' voices:'+acts,
       'gates — perf:'+(LIVE?g(LIVE.perfGain):'-')+' duck:'+(LIVE?g(LIVE.duckBus):'-')+' master:'+(LIVE?g(LIVE.master):'-')+' silGate:'+silGateDown,
       'selPad '+padName(S.editPad)+' — bufId:'+(p0?S.pads[S.editPad].bufId:'-')+' ch:'+(p0?g(p0.ch):'-')+' mute:'+(p0?g(p0.mute):'-')+' solo:'+S.pads.filter(x=>x.solo).length+' muted:'+S.pads.filter(x=>x.mute).length,
@@ -9740,7 +9861,7 @@ function tourTarget(st){
   const r = e.getBoundingClientRect();
   return (r.width>0 && r.height>0) ? e : null;   // hidden targets fall back to a centred card
 }
-function tourPlace(){
+function tourPlace(rescued){
   const st=guideSteps()[tourAt]; if(!st) return;
   const spot=$('tourSpot'), card=$('tourCard');
   const el=tourTarget(st);
@@ -9757,22 +9878,50 @@ function tourPlace(){
   let sTop=r.top-pad, sH=r.height+pad*2;
   if(sTop<edge){ sH-=(edge-sTop); sTop=edge; }                 // keep it on screen
   if(sTop+sH > vh-edge) sH = vh-edge-sTop;
-  // A card sitting on top of the thing it is pointing at is useless. On a short
-  // screen — a phone on its side — a full pad grid or tape-lane list is taller
-  // than the room left over, so highlight as much of it as still leaves space
-  // for the card rather than covering it.
-  // A card sitting on top of the thing it points at is useless, and on a short
-  // screen — a phone on its side — a pad grid or a tape-lane list is taller than
-  // the room left over. Try, in order: under the whole highlight, over it, under
-  // a highlight trimmed to the top of the target, and only then pinned low.
+  /* A phone on its side has 430px of height and nearly a thousand of width. The
+     card and the tape-lane list cannot both have the height, and no amount of
+     shuffling top values fixes that — so stop competing for the wrong axis and
+     put the card in the space nobody is using, BESIDE the target. */
+  const vw=window.innerWidth;
+  let side=null;
+  if(vw>=700 && vh<=560){
+    const roomL=r.left-edge*2, roomR=vw-r.right-edge*2;
+    const w=Math.min(380, Math.max(roomL,roomR)-gap);
+    if(w>=250) side = (roomR>=roomL) ? {at:'right', w} : {at:'left', w};
+  }
+  if(side){
+    card.style.margin='0'; card.style.width=side.w+'px'; card.style.maxWidth=side.w+'px';
+    if(side.at==='left'){ card.style.left=edge+'px'; card.style.right='auto'; }
+    else { card.style.right=edge+'px'; card.style.left='auto'; }
+  }else{
+    card.style.left=''; card.style.right=''; card.style.width='';
+    card.style.maxWidth=''; card.style.margin='';
+  }
+  const ch2=card.offsetHeight||ch;   // a narrower card is a taller one — re-measure
   let top;
-  if(sTop+sH+gap+ch+edge <= vh)      top = sTop+sH+gap;
-  else if(sTop-gap-ch >= edge)       top = sTop-gap-ch;
+  if(side){
+    // no vertical constraint left to satisfy: centre on the target, stay on screen
+    top = clamp(Math.round(r.top + r.height/2 - ch2/2), edge, Math.max(edge, vh-ch2-edge));
+  }
+  // A card sitting on top of the thing it points at is useless, and on a short
+  // screen a pad grid or a tape-lane list is taller than the room left over.
+  // Try, in order: under the whole highlight, over it, under a highlight
+  // trimmed to the top of the target, and only then pinned low.
+  else if(sTop+sH+gap+ch2+edge <= vh)  top = sTop+sH+gap;
+  else if(sTop-gap-ch2 >= edge)        top = sTop-gap-ch2;
   else {
-    const trimmed = vh-sTop-gap-ch-edge;      // how tall the highlight can be with the card below
+    const trimmed = vh-sTop-gap-ch2-edge;     // how tall the highlight can be with the card below
     if(trimmed >= 40){ sH = trimmed; top = sTop+sH+gap; }
-    else { top = Math.max(edge, vh-ch-edge);
+    else { top = Math.max(edge, vh-ch2-edge);
            sH = Math.max(28, Math.min(sH, top-gap-sTop)); }
+  }
+  /* Even then the card can land on the target when the target BEGINS below
+     where the card has to sit — a long tape-lane list scrolled halfway down.
+     Nothing about the card's position saves that, so move the target instead:
+     scroll it to the top of its container and lay the step out again, once. */
+  if(!rescued && !side && !(top+ch2 <= sTop || top >= sTop+sH)){
+    try{ el.scrollIntoView({block:'start',inline:'nearest'}); }catch(e){ try{ el.scrollIntoView(true); }catch(e2){} }
+    return tourPlace(true);
   }
   spot.classList.add('on');
   spot.style.left   = Math.round(r.left-pad)+'px';
