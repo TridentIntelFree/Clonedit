@@ -1358,14 +1358,57 @@
      drift apart, and it inherits the R110 canvas sizing, so it is 2x sharp on
      every screen without doing anything.
      The view is remembered, and switching between the two never alters a note.
+   - R121: A STATIC CIRCLE, AND WORDS NOBODY COULD READ.
+     Reported: the NOTES circle sat still, and the information under the logo
+     looked useful but could not be opened.
+     The circle drew a playhead but nothing repainted it. markStep only toggled
+     a class on the GRID lane — enough for a DOM grid, useless for a canvas —
+     and redrew the sequencer's circle without knowing the notes lane had grown
+     one. It repaints per step now: eight distinct frames out of eight sampled.
+     The second half is worse than it looks. #build and #lcdmsg both clip to one
+     line so the header can never push the transport off the edge, and that is
+     still right — but it meant everything the app SAYS was cut at about twenty
+     characters. AUTO's report of what it changed and why, the silent-take
+     warning and the fix for it, what a recipe just finished: all written, none
+     of it readable. Months of careful sentences going into a twenty-character
+     window.
+     Both are tappable now, with a chevron that appears only when something is
+     genuinely hidden — measured, not assumed, so a line that fits never
+     pretends to be a button. An opened message takes the full strip and drops
+     the tempo controls below it; left in the flex row it wrapped into a narrow
+     column and a sentence became nine lines of two words. The transport stays
+     reachable with both open, which is checked.
+     Worth recording as a mistake in its own right: the open rule was written as
+     .expandable.open, which loses to the #lcdmsg that sets the closed state, so
+     the first version marked things as clipped and then refused to open them.
    ================================================================ */
-const BUILD = 'JBH-88 · R120 · 2026-07-27 · octave up works; NOTES as a circle';
+const BUILD = 'JBH-88 · R121 · 2026-07-27 · the circle moves, the words open';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
 
 const $ = id => document.getElementById(id);
-const lcd = m => { $('lcdmsg').textContent = m; };
+/* A clipped one-liner you can open. Both the build line and the LCD have to
+   stay one line by default — the header cannot be allowed to grow and shove the
+   transport off the edge — but everything the app says was being cut at about
+   twenty characters, so the careful part of every message went unread.
+   The chevron appears only when text is genuinely hidden, measured rather than
+   assumed, so a line that already fits never looks tappable. */
+function expandable(el){
+  if(!el) return;
+  const mark=()=>{ if(el.classList.contains('open')) return;
+    el.classList.toggle('clipped', el.scrollWidth>el.clientWidth+1); };
+  el.addEventListener('click',()=>{ const on=el.classList.toggle('open');
+    if(el.parentElement) el.parentElement.classList.toggle('open-parent',on);
+    mark(); });
+  el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); el.click(); } });
+  el._jbhMark=mark;
+  requestAnimationFrame(mark);
+  addEventListener('resize',mark);
+}
+const lcd = m => { const e=$('lcdmsg'); e.textContent = m;
+  if(e._jbhMark) requestAnimationFrame(e._jbhMark); };
+expandable($('build')); expandable($('lcdmsg'));
 /* clamp, posMod, clampBpm, mulberry32 → src/pure/math.js */
 function bpmAbs(){ return Math.abs(S.bpm); }
 
@@ -5738,6 +5781,9 @@ function markStep(absStep){
   document.querySelectorAll('#silrow .step').forEach((el,i)=>el.classList.toggle('cur',i===cur16));
   if(notesMode) document.querySelectorAll('#notegrid .ncell').forEach(el=>el.classList.toggle('curcol',+el.dataset.col===cur));
   if(seqView==='circle') drawCircle();
+  // the NOTES circle draws its own playhead, so it has to repaint per step too —
+  // the grid lane above only needed a class toggled, which is why this was missed
+  if(notesMode && noteView==='circle') drawNoteCircle();
 }
 
 /* ---------------- CIRCLE VIEW — the same pattern, drawn as rings -------------

@@ -67,6 +67,27 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 #logo{font-weight:700;font-size:17px;letter-spacing:1.5px;color:var(--amber);white-space:nowrap}
 #build{font-size:10px;color:var(--txt-dim);line-height:1.3;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Tap a clipped line to read the rest of it.
+   The header and the LCD both clip to one line so the transport can never be
+   pushed off the edge — but that also meant every message the app writes was
+   cut at about twenty characters. AUTO's report of what it changed, the
+   silent-take warning and what to do about it, what a recipe just finished:
+   all of it was written and none of it could be read.
+   The cue only appears when something is actually hidden, so a line that fits
+   never pretends to be a button. */
+.expandable{cursor:pointer}
+.expandable.clipped::after{content:' ⌄';color:var(--amber);font-weight:700}
+/* Scoped by id on purpose: the closed state is set by #build and #lcdmsg, and a
+   two-class selector loses to an id however it is ordered. */
+#build.expandable.open,#lcdmsg.expandable.open{
+  white-space:normal;overflow:visible;text-overflow:clip;max-width:none}
+/* An opened message takes the whole strip and drops the tempo controls onto the
+   line below. Left in the flex row it wraps into a ~280px column beside them and
+   a long sentence becomes nine lines of two words. */
+#lcdstrip.open-parent{flex-wrap:wrap}
+#lcdmsg.expandable.open{flex:1 0 100%;margin-bottom:4px}
+.expandable.open::after{content:' ⌃';color:var(--amber);font-weight:700}
 #transport{display:flex;gap:var(--sp-1);margin-left:auto;flex:none}
 #transport button{width:40px;height:38px;min-height:0;font-size:16px;padding:0;border-radius:var(--r-sm)}
 #btnTour,#btnUndo,#btnRedo{width:32px;font-size:15px}

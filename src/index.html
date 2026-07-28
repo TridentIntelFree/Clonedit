@@ -36,7 +36,7 @@
 <div id="hdr">
   <div>
     <div id="logo">JBH-88</div>
-    <div id="build"></div>
+    <div id="build" class="expandable" role="button" tabindex="0" title="tap to read the whole line"></div>
   </div>
   <div id="transport">
     <button aria-label="Show me around — replay the guided tour" id="btnTour" title="show me around">?</button>
@@ -49,7 +49,7 @@
 </div>
 
 <div id="lcdstrip">
-  <div id="lcdmsg" role="status" aria-live="polite" aria-atomic="true">READY.</div>
+  <div id="lcdmsg" class="expandable" role="status" aria-live="polite" aria-atomic="true" tabindex="0" title="tap to read the whole message">READY.</div>
   <div id="bpmbox">
     <button aria-label="Tempo down" id="bpmDown">&#8722;</button>
     <input type="number" id="bpmval" min="-999" max="999" step="0.1" inputmode="decimal"
