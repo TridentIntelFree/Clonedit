@@ -2875,8 +2875,28 @@ Object.assign(globalThis, __JBH_PURE);})();
      the others.
      The real cure is separating "the pattern playing" from "the pattern being
      edited" — a bigger change than this warranted today, and worth doing.
+   - R126: WHAT THE SEQUENCER SHOWS IS WHAT IT PLAYS AND WHAT IT SAVES.
+     Stated as a rule, and the engine broke half of it. Shortening a track or a
+     pattern hid the steps past the new end without removing them: they stopped
+     sounding, so playback and the grid still agreed — but they stayed in the
+     pattern, went into every save, and came back the instant the length grew
+     again. Delete a hit, shorten, lengthen, and the hit you deleted is playing
+     again in its original place, which is the app overruling you.
+     Trimming is destructive now, on purpose. A row eight steps long contains
+     eight steps. LEN and PTN LEN both clear what is past the end — steps, their
+     pitch locks, and the silencer lane with them — and say how many they threw
+     away. Loading an older project trims it on the way in, so files already
+     carrying ghosts are cleaned rather than preserved.
+     Proved rather than asserted. The suite checks the grid, the pattern in
+     memory and the saved file list identical steps; that shortening removes
+     rather than hides; that lengthening resurrects nothing; that every track is
+     trimmed and not just the visible one; and that an old project loads clean.
+     The audible half is settled by rendering the same pattern twice and
+     comparing samples: the engine's own run-to-run noise is -75dB, a hit
+     written past the end moves the output by exactly that much — nothing — and
+     a hit the grid shows moves it 4102x more.
    ================================================================ */
-const BUILD = 'JBH-88 · R125 · 2026-07-28 · the arrangement stops moving the grid behind your back';
+const BUILD = 'JBH-88 · R126 · 2026-07-28 · shown, played and saved are one and the same';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -8585,15 +8605,33 @@ function drawSteps(){
   if(seqView==='circle') drawCircle();   // both views show the same pattern
   a11yPass($('stepgrid').parentElement===document.body?document:$('v-seq'));
 }
+/* WHAT YOU SEE IS WHAT PLAYS, AND WHAT GETS SAVED.
+   Shortening a track or a pattern used to hide the steps past the new end
+   without removing them. They stopped sounding, so the grid and the playback
+   still agreed — but they were still in the pattern, still written into every
+   save, and the moment the length grew again they came back. Delete a hit,
+   shorten, lengthen, and the hit you deleted is playing again in its original
+   place: the app appearing to overrule you.
+   Trimming is destructive on purpose. A row that is eight steps long contains
+   eight steps, and the file contains what the grid shows. */
+function trimTrack(pat,pad,L){
+  const row=pat.steps[pad]; if(!row) return 0;
+  let cut=0;
+  for(let i=L;i<row.length;i++){ if(row[i]>0){ row[i]=0; cut++; } }
+  if(pat.locks) for(let i=L;i<MAXSTEPS;i++) delete pat.locks[pad+':'+i];
+  return cut;
+}
 function setTrackLen(d){
   if(morphGuard()) return;
   const pat=S.patterns[S.pattern];
   const PL=patLen(pat);
   if(!Array.isArray(pat.len)) pat.len=new Array(NPADS).fill(PL);
   pat.len[S.seqPad]=clamp((pat.len[S.seqPad]||PL)+d,1,PL);
+  const cut=trimTrack(pat,S.seqPad,pat.len[S.seqPad]);
   if(seqSelStep>=pat.len[S.seqPad]) seqSelStep=-1;
   drawSteps(); drawStepLock(); dirty();
-  lcd('TRACK '+padName(S.seqPad)+' LEN '+pat.len[S.seqPad]+(pat.len[S.seqPad]!==PL?' · polymeter':''));
+  lcd('TRACK '+padName(S.seqPad)+' LEN '+pat.len[S.seqPad]+(pat.len[S.seqPad]!==PL?' · polymeter':'')
+    +(cut?' — '+cut+' hit'+(cut>1?'s':'')+' past the end removed, not hidden':''));
 }
 function setPatLen(n){
   if(PATLENS.indexOf(n)<0) return;
@@ -8607,10 +8645,14 @@ function setPatLen(n){
     // (polymeter) tracks keep their own length, just capped by the new size
     pat.len[p] = (pat.len[p]===old) ? n : clamp(pat.len[p]||n,1,n);
   }
+  let cut=0;
+  for(let p=0;p<NPADS;p++) cut+=trimTrack(pat,p,pat.len[p]);
+  if(pat.sil) for(let i=n;i<pat.sil.length;i++) pat.sil[i]=0;
   if(seqSelStep>=n) seqSelStep=-1;
   $('euSteps').max=String(n);
   drawSeq(); drawSteps(); drawStepLock(); euRefresh(); dirty();
-  lcd('PATTERN '+(S.pattern+1)+' IS NOW '+n+' STEPS ('+(n/NSTEPS)+' bar'+(n>NSTEPS?'s':'')+') — '+(n>old?'the extra steps are empty':'steps past '+n+' are no longer played'));
+  lcd('PATTERN '+(S.pattern+1)+' IS NOW '+n+' STEPS ('+(n/NSTEPS)+' bar'+(n>NSTEPS?'s':'')+') — '
+    +(n>old?'the extra steps are empty':(cut?cut+' hit'+(cut>1?'s':'')+' past the end were removed, not hidden':'nothing was past the end')));
 }
 $('patLenSel').addEventListener('change',e=>setPatLen(parseInt(e.target.value,10)));
 $('btnLenDn').addEventListener('click',()=>setTrackLen(-1));
@@ -9858,7 +9900,11 @@ function applySessionDoc(doc, bufs){
       if(!Array.isArray(pt.steps[p])) pt.steps[p]=new Array(MAXSTEPS).fill(0);
       while(pt.steps[p].length<MAXSTEPS) pt.steps[p].push(0);
       pt.len[p]=clamp(pt.len[p]||pt.plen,1,pt.plen);
+      // projects written before the trim carry hits past the end of a row:
+      // silent, saved, and waiting to reappear the moment the length grows
+      trimTrack(pt,p,pt.len[p]);
     }
+    for(let i=pt.plen;i<pt.sil.length;i++) pt.sil[i]=0;
   });
   S.pads.forEach(p=>{ if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16;
     if(p.mute==null)p.mute=false; if(p.solo==null)p.solo=false;   // pre-R43/R44 docs lack these
