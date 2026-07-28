@@ -2840,8 +2840,24 @@ Object.assign(globalThis, __JBH_PURE);})();
      Verified on all three routes out of the bar: press RESTORE and it loads;
      press × or ignore it and edit, and the old session is still recoverable
      from a checkpoint. No route loses it.
+   - R124: THE RESTORE OFFER WAS STANDING ITSELF DOWN. Reported: no restore was
+     offered, but the session was in REWIND. Both halves were the same cause.
+     Opening the app schedules an autosave of its own — boot calls setBpm, which
+     calls dirty() — so one fires about 1.5s after launch with nobody having
+     touched anything. Before R123 that silently overwrote the offered session,
+     which is the bug that lost the work in the first place. R123 filed it into
+     REWIND instead and took the bar off screen, so the loss stopped but the
+     offer now vanished on its own, every single boot, before it could be read.
+     An autosave with a pending offer and no audio in the live session has
+     nothing worth writing, so it now writes nothing: the offer stands until you
+     actually make something. Verified — open, wait five seconds, the bar is
+     still there, the vault is untouched, and RESTORE still loads it. Create
+     real audio and the offer stands down with the old session filed into
+     REWIND, exactly as R123 intended.
+     Worth noting what R123 got right: the reported session came back. The
+     safety net worked while the mechanism above it was still wrong.
    ================================================================ */
-const BUILD = 'JBH-88 · R123 · 2026-07-28 · the offered session can no longer be overwritten';
+const BUILD = 'JBH-88 · R124 · 2026-07-28 · the restore offer waits for you';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -10015,6 +10031,15 @@ async function stashPendingRestore(){
 }
 async function autosave(){
   if(autosaving) return;
+  /* Opening the app schedules an autosave of its own — boot calls setBpm, which
+     calls dirty() — so this fires about 1.5s after launch with nobody having
+     touched anything. That is what used to overwrite the offered session before
+     you could reach RESTORE, and after R123 it filed it into REWIND and took
+     the offer off screen instead: better, but the bar still vanished by itself.
+     While a real session is on offer and the live one holds no audio, there is
+     nothing here worth writing. Leave the offer alone and wait for you to
+     actually make something. */
+  if(pendingRestore && !S.buffers.length) return;
   autosaving=true;
   await stashPendingRestore();
   try{
