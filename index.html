@@ -2994,8 +2994,33 @@ Object.assign(globalThis, __JBH_PURE);})();
      opposite corner, a different colour and a different shape, plus the pad's
      accessible name. Turning it on also redraws the pad grid, which it never
      did, so the state and the face could disagree indefinitely.
+   - R131: A MIX SLAMMED INTO THE LIMITER NOW SAYS SO. Reported: "a strange
+     glitchy sound happens upon playback, it doesn't seem intentional", with a
+     DIAG showing pad A01 at 200% with a 97% DELAY send, A02 at 133% and the
+     master at 107%.
+     Rebuilding that session and measuring it: 2.57 arrives at a limiter set to
+     a -1dB ceiling. The limiter pulls the mix down 8.5dB at worst and 5.7dB on
+     average, and 29% of the sound ends up in the soft-clipper's saturation.
+     Sane gains on the same pattern: 0.79 in, 0.7dB of reduction, 5%. The
+     squashing and the saturation ARE the glitch.
+     Nothing clips — the soft-clip stage makes that impossible, output peaks at
+     0.932 — and that is exactly the trap. Every meter says nothing is clipping
+     while the sound falls apart, so there is no thread to pull on. There was a
+     hint for it, and it was scoped to the OUT tab: a tab you have no reason to
+     be on while you are hearing the problem. It now says so wherever you are,
+     after 3dB of reduction sustained for two and a half seconds, naming the
+     loudest pad and pointing at AUTO. At most once a minute.
+     (My first measurement said the output was clipping at 1.139. It was taken
+     at the limiter, which is upstream of the makeup-cancel and the soft-clip —
+     the two nodes that exist to undo precisely that. Measured at the end of the
+     chain, nothing is over.)
+     DIAG gained the two things that would have answered this from the paste.
+     The delay line now shows the bpm and division behind the time, and flags
+     the 1.9s clamp — 1.900s is also the ceiling, so a slow tempo and a bad
+     division were indistinguishable in a report. And a master line: ceiling,
+     trim, live limiter reduction, and every pad above 100%.
    ================================================================ */
-const BUILD = 'JBH-88 · R130 · 2026-07-28 · a send reads as a send, not as reversed';
+const BUILD = 'JBH-88 · R131 · 2026-07-28 · a squashed mix says so, wherever you are';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -3884,6 +3909,32 @@ function fitCanvas(cv){
 
 /* ---------------- master level meter (feels-solid feedback) ---------------- */
 let meterRAF=0, mClipHold=0, _mbufL=null, _mbufR=null;
+/* The output cannot clip — the soft-clip stage forbids it — so a mix driven far
+   too hard does not announce itself as clipping. It announces itself as the
+   limiter working flat out and the soft-clipper saturating on nearly a third of
+   the sound: distortion and pumping that a listener reasonably calls "glitchy"
+   and cannot find a cause for, because every meter says nothing is clipping.
+   There WAS a hint for this, on the OUT tab — a tab you have no reason to be on
+   while you are hearing it. Say it wherever you are, once a minute at most. */
+// -1e9, not 0: performance.now() starts near zero, so a "not in the last
+// minute" test against 0 silences the whole first minute of the session.
+let limHeavyT=0, limSaidT=-1e9;
+function limiterWatch(now){
+  if(!LIVE||!LIVE.limiter||!playing) { limHeavyT=0; return; }
+  let red=0; try{ red=LIVE.limiter.reduction; }catch(e){ return; }
+  if(red>-3){ limHeavyT=0; return; }          // under 3dB is a limiter doing its job
+  if(!limHeavyT){ limHeavyT=now; return; }
+  if(now-limHeavyT < 2500) return;            // sustained, not one loud transient
+  if(now-limSaidT < 60000) return;
+  limSaidT=now; limHeavyT=now;
+  // name the loudest offender, because "turn something down" is not actionable
+  let worst=-1, wg=0;
+  for(let i=0;i<NPADS;i++){ const q=S.pads[i];
+    if(q.bufId>=0 && !q.mute && q.gain>wg){ wg=q.gain; worst=i; } }
+  lcd('The limiter is pulling the mix down '+Math.abs(red).toFixed(1)+'dB — that squashing is what you hear.'
+    + (worst>=0 && wg>1.1 ? ' '+padName(worst)+' is at '+Math.round(wg*100)+'%.' : '')
+    + ' OUT ▸ AUTO sets the level so nothing has to be squashed.');
+}
 function paintBar(el,rms,pk){
   el.style.width=Math.min(100,Math.pow(rms,0.6)*128).toFixed(0)+'%';
   el.style.background = pk>=0.9?'var(--red)':pk>=0.7?'var(--lcd)':'var(--green)';
@@ -3903,6 +3954,7 @@ function meterLoop(){
   if(pk>0.02) lastLoudT=now;
   if(pk>=0.895) mClipHold=now;
   $('mClip').classList.toggle('on', now-mClipHold<800);
+  limiterWatch(now);
   // per-channel mixer meters — only when the MIX tab is visible
   if(mixMeters.length && $('v-mix') && $('v-mix').classList.contains('on')){
     for(const m of mixMeters){
@@ -11205,8 +11257,19 @@ function diagDump(tag){
         +(AC&&AC.sampleRate<32000?' ⚠LOW-RATE ROUTE (nothing above '+Math.round(AC.sampleRate/2000)+'kHz survives)':'')
         +' outDead:'+(AC?outIsDead():'-')+' playing:'+playing+' songPos:'+songPos+' ptn:'+(S.pattern+1),
       'mic:'+(micOn?'OPEN':'off')+' monitor:'+(micChain?g(micChain.mon):'-')
-        +' · sends — pads with DLY: '+(S.pads.map((pd,i)=>pd.bufId>=0&&pd.dly>0.02?padName(i)+':'+Math.round(pd.dly*100)+'%':null).filter(Boolean).join(' ')||'none')
-        +' · master delay '+delayTime().toFixed(3)+'s fb '+S.delayFb+' '+S.dlyMode,
+        +' · sends — pads with DLY: '+(S.pads.map((pd,i)=>pd.bufId>=0&&pd.dly>0.02?padName(i)+':'+Math.round(pd.dly*100)+'%':null).filter(Boolean).join(' ')||'none'),
+      // The computed delay time alone is unreadable: 1.900s is also the clamp
+      // ceiling, so it could be a slow tempo or a bad division being capped and
+      // there was no way to tell them apart from a report.
+      (function(){ const raw=60/bpmAbs()*S.delayDiv;
+        return 'delay '+delayTime().toFixed(3)+'s'+(raw>1.9?' ⚠CLAMPED from '+raw.toFixed(2)+'s':'')
+          +' = '+S.bpm+'bpm × div '+S.delayDiv+' · fb '+S.delayFb+' '+S.dlyMode; })(),
+      // How hard the master is being driven. The output CANNOT clip, so a mix
+      // pushed way too hard shows up as limiter reduction and nothing else.
+      (function(){ let red='-'; try{ red=LIVE?LIVE.limiter.reduction.toFixed(1)+'dB':'-'; }catch(e){}
+        return 'master — ceiling '+S.mCeil+'dB trim '+S.mTrim+'dB · limiter reduction now '+red
+          +' · vol '+S.masterVol+' · pads over 100%: '
+          +(S.pads.map((pd,i)=>pd.bufId>=0&&pd.gain>1?padName(i)+':'+Math.round(pd.gain*100)+'%':null).filter(Boolean).join(' ')||'none'); })(),
       'buffers:'+S.buffers.length+' loadedPads:'+S.pads.filter(x=>x.bufId>=0).length+' dangling:'+(dang.length?dang.join(' '):'none')+' voices:'+acts,
       'gates — perf:'+(LIVE?g(LIVE.perfGain):'-')+' duck:'+(LIVE?g(LIVE.duckBus):'-')+' master:'+(LIVE?g(LIVE.master):'-')+' silGate:'+silGateDown,
       'selPad '+padName(S.editPad)+' — bufId:'+(p0?S.pads[S.editPad].bufId:'-')+' ch:'+(p0?g(p0.ch):'-')+' mute:'+(p0?g(p0.mute):'-')+' solo:'+S.pads.filter(x=>x.solo).length+' muted:'+S.pads.filter(x=>x.mute).length,
