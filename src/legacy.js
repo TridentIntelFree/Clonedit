@@ -1283,8 +1283,39 @@
      mimic WebKit and asserts a take still arrives with audio in it. Against the
      build that was reported it fails with the exact symptom: no buffer, and
      "COULD NOT DECODE THE RECORDING".
+   - R118: MAKING A VOICE AUDIBLE ON A PHONE. Three things, after a vocal that
+     recorded correctly still sat weak in the mix.
+     TAPE LANES REACHED THE MASTER. They joined the graph at the compressor,
+     downstream of the whole OUT chain: a +12dB master LOW shelf moved a pad by
+     6.63dB and a tape lane by 0.00dB. Since vocals live on tape lanes, every
+     master tone control missed the one track most likely to need it. They now
+     join at mLo, the head of that chain — measured 6.58dB, matching the pad.
+     The old comment explained why it could not simply go to master: BUS
+     overdubs record from perfGain, so lanes feeding master would re-record
+     themselves on every overdub. mLo is downstream of that tap, so both hold —
+     verified, the lane is 0.69 at the output and exactly 0 at the record tap.
+     PRESENCE and BODY, on the mic chain and on every tape lane. A phone speaker
+     produces almost nothing below ~500Hz, so a voice fundamental at 85–255Hz is
+     simply not reproduced — which is why a take that sounded right while
+     recording plays back thin.
+     PRESENCE is a 3kHz lift: consonants live there and it is the one band a
+     small speaker is efficient in. Measured +10dB at 3kHz, +0.07dB at 200Hz.
+     BODY is the interesting half. The fundamental cannot be put back, so its
+     HARMONICS are generated instead and the ear supplies the missing pitch —
+     the same reason a telephone band-limited to 300Hz still sounds like a
+     person. The low band is split off, full-wave rectified, high-passed to drop
+     the DC and the original low energy, and mixed back. Measured on a 120Hz
+     tone: a second harmonic appears at 0.178 where there was none, and the
+     fundamental is untouched at 0.300 — weight, without asking the speaker for
+     bass it cannot make.
+     Neither is touched by the character presets. They correct for the speaker
+     you are listening on, not the voice, so a preset resetting them would be
+     the same trap the gate was.
+     And the mic chain was swept end to end: all nine controls — gain, rumble,
+     tone, low, high, presence, body, character, double — measurably change the
+     signal, which had never actually been checked.
    ================================================================ */
-const BUILD = 'JBH-88 · R117 · 2026-07-27 · RECORD taps the graph, not a MediaStream';
+const BUILD = 'JBH-88 · R118 · 2026-07-27 · vocals reach the master; PRESENCE + BODY';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -1571,10 +1602,19 @@ function buildGraph(ctx){
   g.revIn.connect(g.conv); g.conv.connect(g.revRet); g.revRet.connect(g.master);
   // delay (mode-dependent network)
   buildDelayNet(ctx,g);
-  // tape-track return — joins at the compressor, after the master tap
-  // point, so BUS overdubs never re-record existing tracks
+  /* Tape-track return. It has to join AFTER the point BUS overdubs record from
+     — perfGain — or every overdub would re-record the lanes already playing.
+     It used to satisfy that by jumping all the way to the compressor, which
+     also skipped the entire OUT master chain: a +12dB master LOW shelf moved a
+     pad by 6.6dB and a tape lane by exactly 0.00dB. Since vocals live on tape
+     lanes, none of the master tone controls reached the one thing most likely
+     to need them.
+     mLo is the head of that chain and still downstream of the tap, so lanes now
+     get the EQ, the width and the bass mono, and overdubs stay clean. The
+     performance filter and the SIL gate remain upstream and so remain
+     pad-and-sequencer effects, exactly as before. */
   g.trackBus=ctx.createGain();
-  g.trackBus.connect(g.comp);
+  g.trackBus.connect(g.mLo);
   // sidechain duck bus — everything routed here dips when the trigger pad fires;
   // the trigger pad itself takes the direct path to master (punches through)
   g.duckBus=ctx.createGain(); g.duckBus.connect(g.master);
@@ -2012,6 +2052,62 @@ function ensureAudio(){
   startMeter();
   bbStart();
   lcd('AUDIO ONLINE · '+Math.round(AC.sampleRate)+' Hz · state:'+AC.state);
+}
+
+/* ---------------- VOICE LIFT — making a voice audible on a phone -------------
+   A phone speaker produces almost nothing below about 500Hz. A man's voice
+   fundamental sits at 85–180Hz and a woman's at 165–255Hz, so on a phone the
+   fundamental is not reproduced at all — you are hearing its harmonics and
+   nothing else, which is why a take that sounded fine while recording turns
+   thin and far away on playback.
+
+   Two processors, because there are two separate problems.
+
+   PRESENCE is an EQ lift around 3kHz. Consonants live there, it is the one
+   region where a small speaker is actually efficient, and it buys more
+   intelligibility per dB than anything else you can do.
+
+   BODY is the interesting one. You cannot put back a fundamental the speaker
+   cannot move, so instead you generate its HARMONICS and let the ear put the
+   fundamental back for you — the missing-fundamental effect, the same reason a
+   telephone at 300Hz–3.4kHz still sounds like a person and not a whistle.
+   The low band is split off, full-wave rectified (which produces 2f, 4f, 6f …
+   of whatever went in), high-passed to throw away the DC and the original low
+   energy the speaker could not use anyway, and mixed back in. The result reads
+   as weight on a phone while adding nothing below where the speaker gives up.
+
+   Built once and used in both places a voice lives: the mic chain, and each
+   tape lane. */
+let voiceCurve=null;
+function makeRectifyCurve(){
+  if(voiceCurve) return voiceCurve;
+  const n=1024, c=new Float32Array(n);
+  for(let i=0;i<n;i++){ const x=i/(n-1)*2-1; c[i]=Math.abs(x)*2-1; }   // |x|, DC removed downstream
+  voiceCurve=c; return c;
+}
+function buildVoiceLift(ctx){
+  const V={};
+  V.in=ctx.createGain(); V.out=ctx.createGain();
+  V.pres=ctx.createBiquadFilter(); V.pres.type='peaking';
+  V.pres.frequency.value=3000; V.pres.Q.value=0.9; V.pres.gain.value=0;
+  V.bodyLo=ctx.createBiquadFilter(); V.bodyLo.type='lowpass';
+  V.bodyLo.frequency.value=220; V.bodyLo.Q.value=Math.SQRT1_2;
+  V.shape=ctx.createWaveShaper(); V.shape.curve=makeRectifyCurve(); V.shape.oversample='2x';
+  V.bodyHi=ctx.createBiquadFilter(); V.bodyHi.type='highpass';
+  V.bodyHi.frequency.value=200; V.bodyHi.Q.value=Math.SQRT1_2;
+  V.bodyAmt=ctx.createGain(); V.bodyAmt.gain.value=0;
+  V.in.connect(V.pres); V.pres.connect(V.out);                       // dry, EQ'd
+  V.pres.connect(V.bodyLo); V.bodyLo.connect(V.shape);               // harmonics, in parallel
+  V.shape.connect(V.bodyHi); V.bodyHi.connect(V.bodyAmt); V.bodyAmt.connect(V.out);
+  return V;
+}
+function applyVoiceLift(V,ctx,presDb,bodyAmt){
+  if(!V) return;
+  const t=ctx?ctx.currentTime:0;
+  const set=(p,v)=>{ try{ p.setTargetAtTime(v,t,0.02); }catch(e){ p.value=v; } };
+  set(V.pres.gain, clamp(+presDb||0,0,12));
+  // the rectifier runs hot, so the mix gain is scaled well down from the slider
+  set(V.bodyAmt.gain, clamp(+bodyAmt||0,0,1)*0.5);
 }
 
 /* ---------------- canvases at the screen's real resolution -------------------
@@ -2847,7 +2943,10 @@ function a11yWatch(){
 let micOn=false, micChain=null, micStreamIn=null, micVuRAF=0, micAn=null, micPeakHold=0;
 let micRec=null, micCap=null, micRecT0=0, micRecTimer=0;
 
-/* Character presets shape TONE. Not one of them arms the gate any more: they
+/* Character presets shape TONE. They deliberately do not touch the gate, nor
+   PRESENCE and BODY — those two correct for the speaker you are listening on,
+   not for the voice, so having a preset reset them would be the same trap the
+   gate was. Not one of them arms the gate any more: they
    all used to set it between .05 and .2, so the MIC recipe told you to pick a
    preset and that put back the very thing that had just been defaulted off —
    a silent take, twice over. A gate is opt-in, and only ever from its slider. */
@@ -2910,6 +3009,7 @@ function micBuild(){
   M.dblDepth=AC.createGain(); M.dblDepth.gain.value=0.0015;
   M.dblWet=AC.createGain(); M.dblWet.gain.value=0;
   M.out=AC.createGain();
+  M.voice=buildVoiceLift(AC);                     // PRESENCE + BODY, before the sends
   M.mon=AC.createGain(); M.mon.gain.value=0;      // silence until asked: feedback
   M.rsend=AC.createGain(); M.rsend.gain.value=0;
   M.dsend=AC.createGain(); M.dsend.gain.value=0;
@@ -2922,8 +3022,9 @@ function micBuild(){
   M.in.connect(M.gate);
   M.gate.connect(M.hp); M.hp.connect(M.lp); M.lp.connect(M.comp); M.comp.connect(M.sib);
   M.sib.connect(M.lo); M.lo.connect(M.mid); M.mid.connect(M.hi); M.hi.connect(M.drive);
-  M.drive.connect(M.dry); M.dry.connect(M.out);
-  M.drive.connect(M.dblDelay); M.dblDelay.connect(M.dblWet); M.dblWet.connect(M.out);
+  M.drive.connect(M.dry); M.dry.connect(M.voice.in);
+  M.drive.connect(M.dblDelay); M.dblDelay.connect(M.dblWet); M.dblWet.connect(M.voice.in);
+  M.voice.out.connect(M.out);
   /* EVERYTHING audible hangs off the MONITOR gate — including the sends.
      They used to branch from M.out, upstream of it, and REVERB ships at 10%:
      so an open microphone was permanently 10% live into the reverb, out of the
@@ -2958,6 +3059,7 @@ function micApply(){
   const d=v('micDrive');
   M.drive.curve = d>0.001 ? makeDriveCurve(d) : null;
   M.dblWet.gain.setTargetAtTime(v('micDbl')*0.8,t,0.02);
+  applyVoiceLift(M.voice,AC,v('micPres'),v('micBody'));
   M.rsend.gain.setTargetAtTime(v('micRev'),t,0.02);
   M.dsend.gain.setTargetAtTime(v('micDly'),t,0.02);
   micLabels();
@@ -2967,7 +3069,8 @@ function micLabels(){
   f('micGain',(+$('micGain').value).toFixed(1)+'×');
   f('micHp',Math.round(+$('micHp').value)+'Hz');
   const lp=+$('micLp').value; f('micLp', lp>=17500?'off':(lp>=1000?(lp/1000).toFixed(1)+'kHz':Math.round(lp)+'Hz'));
-  ['micComp','micSib','micDrive','micDbl','micRev','micDly'].forEach(id=>f(id,Math.round(+$(id).value*100)+'%'));
+  ['micComp','micSib','micDrive','micDbl','micRev','micDly','micBody'].forEach(id=>f(id,Math.round(+$(id).value*100)+'%'));
+  f('micPres', dbText(+$('micPres').value));
   // a gate at zero is OFF, and saying so is the difference between "I have not
   // set this" and "this is what is eating my voice"
   { const g=+$('micGate').value; f('micGate', g<=0 ? 'off' : Math.round(g*100)+'%'); }
@@ -3161,7 +3264,7 @@ $('btnMicMon').addEventListener('click',()=>{
   lcd(on?'MONITOR ON — headphones only.':'MONITOR OFF.');
 });
 $('micIn').addEventListener('change',()=>{ if(micOn){ micDisable(); micEnable(); } });
-['micGain','micHp','micLp','micGate','micComp','micSib','micLo','micMid','micHi','micDrive','micDbl','micRev','micDly']
+['micGain','micHp','micLp','micGate','micComp','micSib','micLo','micMid','micHi','micPres','micBody','micDrive','micDbl','micRev','micDly']
   .forEach(id=>$(id).addEventListener('input',()=>{ $('micPreset').value=$('micPreset').value; micApply(); }));
 $('micPreset').addEventListener('change',e=>{
   const P=MIC_PRESETS[e.target.value]; if(!P) return;
@@ -3190,7 +3293,7 @@ micLabels();
    from one phone means nothing on another. And the MONITOR state — reopening a
    project with the mic monitor already live would howl through the speakers
    before anyone could reach a control. */
-const MIC_CTRLS=['micPreset','micGain','micHp','micLp','micGate','micComp','micSib',
+const MIC_CTRLS=['micPreset','micGain','micHp','micLp','micGate','micComp','micSib','micPres','micBody',
   'micLo','micMid','micHi','micDrive','micDbl','micRev','micDly','micDest'];
 const AMP_CTRLS=['ampModel','ampPreset','ampGain','ampLevel','ampGate',
   'ampBass','ampMid','ampTreb','ampChDepth','ampDly','ampRev'];
@@ -5863,7 +5966,7 @@ $('btnJamPad').addEventListener('click',()=>{
 
 /* ---------------- TRAX — cakewalk-style tape lanes ---------------- */
 const NTRAX=8, TRAX_MAX_S=180;
-function newTrack(){ return {bufId:-1,name:'',gain:0.9,pan:0,mute:false,loop:false,ftype:'off',fcut:1,rev:0,dly:0}; }
+function newTrack(){ return {bufId:-1,name:'',gain:0.9,pan:0,mute:false,loop:false,ftype:'off',fcut:1,rev:0,dly:0,pres:0,body:0}; }
 S.trax=Array.from({length:NTRAX},()=>newTrack());
 let traxArm=-1, traxSolo=-1, traxVoices=[], traxCap=null, traxStream=null;
 
@@ -5920,6 +6023,8 @@ function drawTraxFx(){
   $('tfxTitle').textContent='T'+(i+1)+(tr.name?' \u00b7 '+tr.name:'');
   $('tfxType').value=tr.ftype||'off';
   $('tfxCut').value=tr.fcut; $('tfxCutV').textContent=Math.round(cutHz(tr.fcut))+'Hz';
+  $('tfxPres').value=tr.pres||0; $('tfxPresV').textContent=dbText(tr.pres||0);
+  $('tfxBody').value=tr.body||0; $('tfxBodyV').textContent=sendText(tr.body);
   $('tfxPan').value=tr.pan||0; $('tfxPanV').textContent=panText(tr.pan);
   $('tfxRev').value=tr.rev||0; $('tfxRevV').textContent=sendText(tr.rev);
   $('tfxDly').value=tr.dly||0; $('tfxDlyV').textContent=sendText(tr.dly);
@@ -5928,6 +6033,10 @@ $('tfxType').addEventListener('change',e=>{ S.trax[traxFxSel].ftype=e.target.val
   lcd('TRACK FILTER '+e.target.value.toUpperCase()+' — on/off takes effect on next PLAY.'); });
 $('tfxCut').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.fcut=parseFloat(e.target.value);
   $('tfxCutV').textContent=Math.round(cutHz(tr.fcut))+'Hz'; applyTraxFx(traxFxSel); dirty(); });
+$('tfxPres').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.pres=parseFloat(e.target.value);
+  $('tfxPresV').textContent=dbText(tr.pres); applyTraxFx(traxFxSel); dirty(); });
+$('tfxBody').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.body=parseFloat(e.target.value);
+  $('tfxBodyV').textContent=sendText(tr.body); applyTraxFx(traxFxSel); dirty(); });
 $('tfxPan').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.pan=parseFloat(e.target.value);
   $('tfxPanV').textContent=panText(tr.pan); applyTraxFx(traxFxSel); dirty(); });
 $('tfxRev').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.rev=parseFloat(e.target.value);
@@ -6008,6 +6117,10 @@ function wireTrack(ctx,g,tr,b,when,gainVal){ // shared by live transport and bou
     flt=ctx.createBiquadFilter(); flt.type=tr.ftype; flt.frequency.value=cutHz(tr.fcut); flt.Q.value=1.2;
     head.connect(flt); head=flt;
   }
+  // PRESENCE + BODY before the fader, so what you set is what the sends hear too
+  const vc=buildVoiceLift(ctx);
+  applyVoiceLift(vc,ctx,tr.pres||0,tr.body||0);
+  head.connect(vc.in); head=vc.out;
   const gn=ctx.createGain(); gn.gain.value=gainVal;
   head.connect(gn);
   const pn=ctx.createStereoPanner?ctx.createStereoPanner():null;
@@ -6019,7 +6132,7 @@ function wireTrack(ctx,g,tr,b,when,gainVal){ // shared by live transport and bou
   tail.connect(rv); tail.connect(dl);
   rv.connect(g.revIn); dl.connect(g.dlyIn);
   src.start(when);
-  return {src,gn,flt,pn,rv,dl};
+  return {src,gn,flt,pn,rv,dl,vc};
 }
 function startTrax(when){
   stopTraxVoices();
@@ -6042,6 +6155,7 @@ function applyTraxFx(i){ // live-adjust a playing lane's fx (filter on/off needs
     try{
       if(v.flt && tr.ftype!=='off'){ v.flt.type=tr.ftype; v.flt.frequency.setTargetAtTime(cutHz(tr.fcut),AC.currentTime,0.02); }
       if(v.pn) v.pn.pan.setTargetAtTime(tr.pan||0,AC.currentTime,0.02);
+      if(v.vc) applyVoiceLift(v.vc,AC,tr.pres||0,tr.body||0);
       v.rv.gain.setTargetAtTime(tr.rev||0,AC.currentTime,0.02);
       v.dl.gain.setTargetAtTime(tr.dly||0,AC.currentTime,0.02);
     }catch(e){}
@@ -7946,6 +8060,7 @@ function applySessionDoc(doc, bufs){
   S.trax=(Array.isArray(doc.trax)&&doc.trax.length)?doc.trax:Array.from({length:NTRAX},()=>newTrack());
   while(S.trax.length<NTRAX) S.trax.push(newTrack());
   S.trax.forEach(tr=>{ if(tr.gain==null)tr.gain=0.9; if(tr.pan==null)tr.pan=0; tr.mute=!!tr.mute; if(tr.bufId==null)tr.bufId=-1;
+    tr.pres=clamp(+tr.pres||0,0,12); tr.body=clamp(+tr.body||0,0,1);
     tr.loop=!!tr.loop; if(tr.ftype==null)tr.ftype='off'; if(tr.fcut==null)tr.fcut=1; if(tr.rev==null)tr.rev=0; if(tr.dly==null)tr.dly=0; });
   traxArm=-1; traxSolo=-1;
   S.inst=Object.assign({},INSTDEF,doc.inst||{});

@@ -594,6 +594,8 @@
       <select id="tfxType"><option value="off">OFF</option><option value="lowpass">LP</option><option value="highpass">HP</option><option value="bandpass">BP</option></select>
     </div>
     <div class="pslider"><span class="lbl">CUTOFF</span><input type="range" id="tfxCut" min="0" max="1" step="0.005"><span class="val" id="tfxCutV"></span></div>
+    <div class="pslider"><span class="lbl">PRESENCE</span><input type="range" id="tfxPres" min="0" max="12" step="0.5"><span class="val" id="tfxPresV"></span></div>
+    <div class="pslider"><span class="lbl">BODY</span><input type="range" id="tfxBody" min="0" max="1" step="0.01"><span class="val" id="tfxBodyV"></span></div>
     <div class="pslider"><span class="lbl">PAN</span><input type="range" id="tfxPan" min="-1" max="1" step="0.05"><span class="val" id="tfxPanV"></span></div>
     <div class="pslider"><span class="lbl">REV</span><input type="range" id="tfxRev" min="0" max="1" step="0.01"><span class="val" id="tfxRevV"></span></div>
     <div class="pslider"><span class="lbl">DLY</span><input type="range" id="tfxDly" min="0" max="1" step="0.01"><span class="val" id="tfxDlyV"></span></div>
@@ -650,6 +652,13 @@
   <div class="pslider"><span class="lbl">LOW</span><input type="range" id="micLo" min="-12" max="12" step="0.5" value="0"><span class="val" id="micLoV">0dB</span></div>
   <div class="pslider"><span class="lbl">MID</span><input type="range" id="micMid" min="-12" max="12" step="0.5" value="0"><span class="val" id="micMidV">0dB</span></div>
   <div class="pslider"><span class="lbl">HIGH</span><input type="range" id="micHi" min="-12" max="12" step="0.5" value="0"><span class="val" id="micHiV">0dB</span></div>
+  <div class="pslider"><span class="lbl">PRESENCE</span><input type="range" id="micPres" min="0" max="12" step="0.5" value="0"><span class="val" id="micPresV">0dB</span></div>
+  <div class="pslider"><span class="lbl">BODY</span><input type="range" id="micBody" min="0" max="1" step="0.01" value="0"><span class="val" id="micBodyV">0%</span></div>
+  <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
+    For playback on a phone. <b>PRESENCE</b> lifts around 3kHz, where consonants live and where a small speaker
+    actually works. <b>BODY</b> builds harmonics of the low fundamental a phone speaker cannot reproduce at all,
+    and lets your ear put the missing pitch back &mdash; weight without bass the speaker would swallow.
+  </div>
   <div class="pslider"><span class="lbl">CHARACTER</span><input type="range" id="micDrive" min="0" max="1" step="0.01" value="0"><span class="val" id="micDriveV">0%</span></div>
   <div class="pslider"><span class="lbl">DOUBLE</span><input type="range" id="micDbl" min="0" max="1" step="0.01" value="0"><span class="val" id="micDblV">0%</span></div>
   <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="micRev" min="0" max="1" step="0.01" value="0.1"><span class="val" id="micRevV">10%</span></div>
