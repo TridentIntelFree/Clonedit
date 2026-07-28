@@ -2857,8 +2857,26 @@ Object.assign(globalThis, __JBH_PURE);})();
      REWIND, exactly as R123 intended.
      Worth noting what R123 got right: the reported session came back. The
      safety net worked while the mechanism above it was still wrong.
+   - R125: A DELETED STEP THAT KEPT COMING BACK. Reported: remove a sound from
+     the sequence and it reappears — same pad, same spot. The exported session
+     had it exactly: CHAIN on, running PTN 1 → PTN 2, and pad 1 carrying hits in
+     BOTH patterns.
+     The editor and the transport share one "current pattern". While a chain or
+     song runs it calls selectPattern every bar, so the grid moves under you and
+     the step you tap next lands on whichever pattern arrived — not the one you
+     were looking at when you decided to tap. Delete a hit, let the arrangement
+     come round to the pattern that still has it, and the app looks like it
+     ignored you.
+     What the arrangement does is unchanged. It just cannot happen behind your
+     back now: while a chain or song is driving, the SEQ view says so, names the
+     pattern showing and the running order, and offers HOLD ONE PATTERN to turn
+     the arrangement off so the grid stays put. Editing a step while it runs
+     also reports which pattern took the edit, and that the pad may have hits in
+     the others.
+     The real cure is separating "the pattern playing" from "the pattern being
+     edited" — a bigger change than this warranted today, and worth doing.
    ================================================================ */
-const BUILD = 'JBH-88 · R124 · 2026-07-28 · the restore offer waits for you';
+const BUILD = 'JBH-88 · R125 · 2026-07-28 · the arrangement stops moving the grid behind your back';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
