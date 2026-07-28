@@ -121,6 +121,14 @@
       <span class="grow"></span>
       <button id="epClear">CLEAR</button>
     </div>
+    <div class="row">
+      <span class="lbl">VOICE</span>
+      <select id="epVoice" class="grow" aria-label="Pad voice preset"></select>
+    </div>
+    <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
+      A starting point, not a lock &mdash; each one just sets the controls below, and every one of them stays yours to move.
+      Your sample, level, pan and note are left alone.
+    </div>
     <div class="pslider"><span class="lbl">GAIN</span><input type="range" id="epGain" min="0" max="2" step="0.01"><span class="val" id="epGainV"></span></div>
     <div class="pslider"><span class="lbl">PITCH</span><input type="range" id="epPitch" min="-12" max="12" step="1"><span class="val" id="epPitchV"></span></div>
     <div class="pslider"><span class="lbl">FINE</span><input type="range" id="epFine" min="-100" max="100" step="1"><span class="val" id="epFineV"></span></div>

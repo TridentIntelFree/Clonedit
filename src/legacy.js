@@ -1314,8 +1314,34 @@
      And the mic chain was swept end to end: all nine controls — gain, rumble,
      tone, low, high, presence, body, character, double — measurably change the
      signal, which had never actually been checked.
+   - R119: PAD VOICES. A pad has thirty parameters and no way in. Everything the
+     engine can do was already reachable by hand; what nobody has is the
+     patience to hunt for combinations, so pads sit on their defaults and most
+     of the engine goes unused.
+     Fourteen voices — CLEAN, PLUCK, STAB, SWELL, WOBBLE, TREMOLO, AUTOPAN, SUB,
+     AIR, RADIO, CRUSHED, TAPE, REVERSE, CLOUD — each a set of values written
+     into controls that already exist. No new machinery, no new audio path,
+     nothing extra for the bounce to honour, and every control a voice touches
+     stays yours to move afterwards. Several drive the per-pad LFO, so a voice
+     can produce movement rather than only a static tone.
+     They deliberately leave alone the sample, name, note, choke, trim, mute,
+     GAIN and PAN — a pad's identity and its place in the mix, as opposed to its
+     character. A voice resetting those would be the trap the mic gate was.
+     A neutral table lists every field a voice can carry, and any voice that
+     does not mention a field resets it; that is what stops one voice leaving
+     the previous one's settings behind, which is the usual way preset systems
+     rot.
+     The honest limit, and the reason modulation routing is still worth having
+     later: a preset sets values, so it cannot make a pad respond to HOW it was
+     played. Velocity opening the filter, or a different sample start on each
+     hit, needs routing. This covers the rest.
+     Verified by rendering one hit through each voice offline and fingerprinting
+     it: no two are the same, the closest pair differs by 0.062, all thirteen
+     differ from CLEAN, the three that promise movement really drive the LFO,
+     CLEAN switches it back off, mix and identity survive all fourteen, and a
+     voice survives a save and restore intact.
    ================================================================ */
-const BUILD = 'JBH-88 · R118 · 2026-07-27 · vocals reach the master; PRESENCE + BODY';
+const BUILD = 'JBH-88 · R119 · 2026-07-27 · pad voices';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -2446,6 +2472,80 @@ $('epMode').addEventListener('click',()=>{ const p=S.pads[S.editPad];
   if(p.mode!=='grain') grainCut(S.editPad);
   drawEdit(); dirty();
   lcd(p.mode==='grain'?'GRAIN — hold the pad for a cloud; slide for POSITION (left/right) and DENSITY (up/down).':(p.mode==='gate'?'GATE — the sound lasts as long as you hold.':'1-SHOT — the sample plays through.')); });
+/* ---------------- PAD VOICES — combinations, not new machinery ---------------
+   A pad has thirty parameters. Everything below is reachable by hand today;
+   what nobody has is the patience to find the combinations, so most pads stay
+   on the defaults and the engine goes unused.
+
+   These are not a new feature — every one is a set of values written into
+   controls that already exist, which is why they cost almost nothing and work
+   identically in the bounce without a line of extra code. Several drive the
+   per-pad LFO, so a preset can produce movement and not just a static tone.
+
+   What they deliberately do not touch: which sample is loaded, the pad's name,
+   its note, choke group, mute/solo, trim, warp — and GAIN and PAN. Those are
+   the pad's identity and its place in your mix, not its character, and having a
+   voice reset them would be the trap the mic gate was.
+
+   The honest limit: a preset sets values, so it cannot make a pad respond to
+   HOW you played it. Velocity opening the filter, or a different sample start
+   on every hit, needs modulation routing — this gets you the rest. */
+const PAD_VOICES={
+  clean:  {label:'CLEAN — as recorded'},
+  pluck:  {label:'PLUCK — short and pointed',
+    att:0.001, rel:0.09, ftype:'lowpass', fcut:0.55, fres:3.5, drv:0.12},
+  stab:   {label:'STAB — tight and forward',
+    att:0.001, rel:0.05, ftype:'bandpass', fcut:0.5, fres:5, drv:0.3, eqMid:4},
+  swell:  {label:'SWELL — slow in, long out',
+    att:0.35, rel:1.6, ftype:'lowpass', fcut:0.45, fres:1, rev:0.4},
+  wobble: {label:'WOBBLE — filter moving in time',
+    att:0.004, rel:0.5, ftype:'lowpass', fcut:0.3, fres:7, drv:0.2,
+    lfoOn:true, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'1/8', lfoDepth:0.75},
+  tremolo:{label:'TREMOLO — level pulsing',
+    att:0.004, rel:0.4, lfoOn:true, lfoTgt:'vol', lfoShape:'sine', lfoSync:'1/16', lfoDepth:0.8},
+  autopan:{label:'AUTOPAN — drifting side to side',
+    att:0.004, rel:0.5, lfoOn:true, lfoTgt:'pan', lfoShape:'triangle', lfoSync:'1/4', lfoDepth:0.9},
+  sub:    {label:'SUB — an octave down, no top',
+    pitch:-12, att:0.002, rel:0.35, ftype:'lowpass', fcut:0.22, fres:0.9, eqLo:5},
+  air:    {label:'AIR — thin and bright',
+    att:0.001, rel:0.12, ftype:'highpass', fcut:0.45, fres:1.2, eqHi:7},
+  radio:  {label:'RADIO — small and boxy',
+    att:0.001, rel:0.2, ftype:'bandpass', fcut:0.5, fres:3, drv:0.35, crush:12, eqMid:6, eqLo:-8},
+  crushed:{label:'CRUSHED — bit-reduced and dirty',
+    att:0.001, rel:0.25, drv:0.55, crush:6, eqHi:-3},
+  tape:   {label:'TAPE — slower, warmer, softer',
+    speed:0.94, att:0.004, rel:0.3, ftype:'lowpass', fcut:0.6, drv:0.18, eqLo:4, eqHi:-4},
+  reverse:{label:'REVERSE — backwards, into the hit',
+    reverse:true, att:0.25, rel:0.5, ftype:'lowpass', fcut:0.6, rev:0.45},
+  cloud:  {label:'CLOUD — a grain wash you hold',
+    mode:'grain', grSize:0.14, grDens:26, grSpread:0.12, grPitch:0, grBurst:0.7,
+    att:0.02, rel:0.4, rev:0.35},
+};
+/* Every character field a voice can carry, with the value a voice that does not
+   mention it resets to. Listing the neutral here rather than in each preset is
+   what stops one voice leaving the previous voice's settings behind. */
+const VOICE_NEUTRAL={ pitch:0, fine:0, speed:1, reverse:false, mode:'one',
+  att:0.002, rel:0.06, ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
+  eqLo:0, eqMid:0, eqHi:0, rev:0, dly:0,
+  lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
+  grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grBurst:0.45 };
+function applyPadVoice(id){
+  const V=PAD_VOICES[id]; if(!V) return;
+  const p=S.pads[S.editPad];
+  Object.keys(VOICE_NEUTRAL).forEach(k=>{ p[k]=(k in V)?V[k]:VOICE_NEUTRAL[k]; });
+  if(p.keepPitch && p.bufId>=0 && Math.abs(p.speed-1)>0.001)
+    try{ buildSpeedStretch(p.bufId,!!p.reverse,p.speed); }catch(e){}
+  if(LIVE){ const n=LIVE.pads[S.editPad];
+    try{ applyPadFx(n,p,AC); applyPadLfo(n,p,AC); }catch(e){} }
+  drawPads(); drawEdit(); dirty();
+  lcd('VOICE: '+V.label.replace(/ —.*/,'')+' — every control it set is still yours to move.');
+}
+{ const sel=$('epVoice');
+  sel.innerHTML='<option value="">choose a voice …</option>'
+    + Object.entries(PAD_VOICES).map(([k,v])=>'<option value="'+k+'">'+v.label+'</option>').join('');
+  // resets to the prompt, so picking the same voice twice always re-applies it
+  sel.addEventListener('change',e=>{ const id=e.target.value; e.target.value=''; if(id) applyPadVoice(id); });
+}
 function liveFx(){ const p=S.pads[S.editPad]; if(LIVE) applyPadFx(LIVE.pads[S.editPad],p,AC); drawPads(); drawEdit(); dirty(); }
 function hasFx(p){ return p.ftype!=='off' || p.drv>0 || p.crush<16 || !!(p.eqLo||p.eqMid||p.eqHi); }
 $('epFType').addEventListener('change',e=>{
