@@ -1537,8 +1537,21 @@
      nowhere to put it. The old test only checked vertical separation, which is
      why a card sitting neatly to one side read as a failure; it checks the
      rectangles now.
+   - R129: THE HELP MENU, SIDEWAYS. Reported immediately after R128: "after
+     clicking ? the options are mashed together when sideways". Caused by R128.
+     Capping the tour card at 36vh was right for a step, which has to leave room
+     for the thing it points at. The HELP menu points at nothing — the card IS
+     the interaction — and the cap gave six options a 31px window to slide
+     through, so you saw slivers of two at a time. The menu now carries its own
+     class and keeps the full height; steps stay capped.
+     While it had the width: on a screen at least 560px across and no more than
+     560px tall, the options lay out in two columns. Six of them fit at once
+     with the close button below, where before there were 436px of content in
+     234px of card. The menu also clears any inline side-placement a previous
+     step left on the card, so opening HELP after a step no longer pins it to
+     one edge at a step's width.
    ================================================================ */
-const BUILD = 'JBH-88 · R128 · 2026-07-28 · switching is silent, and the echo has a name';
+const BUILD = 'JBH-88 · R129 · 2026-07-28 · the help menu fits a sideways phone';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -9935,6 +9948,7 @@ function tourShow(i){
   const steps=guideSteps();
   if(i>=steps.length){ tourClose(true); return; }
   tourAt=i;
+  $('tourCard').classList.remove('menu');   // a step points at something; the menu does not
   const st=steps[i];
   if(st.tab){ const b=document.querySelector('#tabs button[data-v="'+st.tab+'"]'); if(b && !b.classList.contains('on')) b.click(); }
   $('tourStep').textContent = guideLabel+' · STEP '+(i+1)+' OF '+steps.length;
@@ -10125,7 +10139,14 @@ function guideMenu(){
   $('tourBack').style.visibility='hidden';
   $('tourNext').style.display='none';
   $('tourSkip').textContent='CLOSE';
-  $('tourCard').style.top='12px';
+  /* The menu points at nothing, so it is not competing with a target for the
+     screen and must not be capped like a step is. It also has to shed whatever
+     a previous step's side-placement wrote inline, or it would open pinned to
+     one edge at a step's width. */
+  const mc=$('tourCard');
+  mc.classList.add('menu');
+  mc.style.left=''; mc.style.right=''; mc.style.width=''; mc.style.maxWidth=''; mc.style.margin='';
+  mc.style.top='12px';
   $('tourBody').querySelectorAll('.rcp').forEach(b=>b.addEventListener('click',()=>{
     const go=b.dataset.go;
     $('tourNext').style.display=''; $('tourSkip').textContent='SKIP';

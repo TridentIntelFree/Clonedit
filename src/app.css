@@ -469,9 +469,23 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
      content and there was nowhere left to put it. Cap it hard and let the body
      scroll; a step you can read in two swipes beats one that hides its subject. */
   #tourCard{padding:9px 11px;max-height:min(36vh,calc(100vh - 24px))}
+  /* …but the HELP menu points at nothing, so there is nothing to leave room
+     for. Capped, it gave six options a 31px window to slide through — the
+     whole card IS the interaction here, so let it have the screen. And with a
+     thousand pixels of width going spare, put the options in two columns
+     instead of one tall column nobody can see the end of. */
+  #tourCard.menu{max-height:calc(100vh - 24px)}
   #tourCard h3{font-size:12px;margin:0 0 4px}
   #tourBody{font-size:11px;line-height:1.42}
   #tourCard .row{margin-top:6px}
   #tourCard button{padding:6px 9px;font-size:11px}
   h3{margin:9px 0 5px}
+}
+/* A phone held sideways has a thousand pixels of width doing nothing. One tall
+   column of help options runs off a 430px screen; two short ones do not. */
+@media (max-height:560px) and (min-width:560px){
+  #tourCard.menu{max-width:min(680px, calc(100vw - 20px))}
+  #tourCard.menu #tourBody{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;align-content:start}
+  #tourCard.menu #tourBody .rcp{margin:0}
+  #tourCard.menu #tourBody > label{grid-column:1 / -1}
 }
