@@ -7053,6 +7053,30 @@ function selectPattern(i){
     liveDelaySync();
   }
 }
+/* The editor and the transport share one "current pattern". So when a CHAIN or a
+   SONG is running it moves the grid from under you every bar, and the step you
+   tap next lands on whichever pattern arrived — not the one you were looking at
+   when you decided to tap. Delete a hit, watch the arrangement come back round
+   to the pattern that still has it, and the app looks like it ignored you: the
+   sound returns on the same pad, in the same place.
+   Nothing here changes what the arrangement does. It just stops it happening
+   behind your back, and puts the way out within reach. */
+function arrDriving(){ return (S.chainOn && S.chain.length>1) || (S.songOn && S.song.length>1); }
+function drawArrWarn(){
+  const el=$('arrWarn'); if(!el) return;
+  if(!arrDriving()){ el.style.display='none'; return; }
+  const which=S.chainOn?'CHAIN':'SONG';
+  const list=S.chainOn ? S.chain.map(x=>x+1).join(' → ') : S.song.map(x=>x.pat+1).join(' → ');
+  $('arrWarnText').innerHTML = which+' is running ('+list+') — the grid follows it, so it is showing <b>PTN '
+    +(S.pattern+1)+'</b> and will move on. Edits land on whatever is showing at the time.';
+  el.style.display='flex';
+}
+$('arrWarnOff').addEventListener('click',()=>{
+  S.chainOn=false; S.songOn=false;
+  drawSeq(); drawSong(); dirty();
+  lcd('HELD ON PTN '+(S.pattern+1)+' — the arrangement is off, so the grid stays put while you edit. '
+    +'CHAIN turns it back on.');
+});
 function drawSeq(){
   const pr=$('patrow');
   pr.querySelectorAll('button').forEach(b=>b.remove());
@@ -7065,6 +7089,7 @@ function drawSeq(){
   }
   $('chainview').textContent=S.chain.length? S.chain.map(x=>x+1).join(' → ') : '—';
   $('btnChainOn').classList.toggle('on',S.chainOn);
+  drawArrWarn();
   // pad strip: 16 pads of current bank
   const st=$('seqpadstrip'); st.innerHTML='';
   for(let s=0;s<16;s++){
@@ -7102,9 +7127,14 @@ function drawSteps(){
       if(seqLockMode){ seqSelStep=i; drawSteps(); drawStepLock(); }
       else {
         const wasOn=row[i]>0;
+        const editedPat=S.pattern;                     // capture BEFORE the arrangement can move on
         row[i]=wasOn?0:parseFloat($('stepVel').value);
         if(wasOn && playing) stopPadVoices(S.seqPad);   // removing a step cuts its still-ringing voice — no ghost
         drawSteps(); dirty();
+        // say which pattern took the edit, because the arrangement is about to
+        // show you a different one and the change will look like it did not stick
+        if(arrDriving()) lcd((wasOn?'REMOVED from':'ADDED to')+' PTN '+(editedPat+1)+' · '+padName(S.seqPad)
+          +' step '+(i+1)+' — the '+(S.chainOn?'chain':'song')+' also plays other patterns, and this pad may have hits there too.');
       }
     });
     gr.appendChild(el);
