@@ -1381,8 +1381,29 @@
      Worth recording as a mistake in its own right: the open rule was written as
      .expandable.open, which loses to the #lcdmsg that sets the closed state, so
      the first version marked things as clipped and then refused to open them.
+   - R122: A RESTORE THAT CAME BACK SILENT, AND SAID NOTHING.
+     Reported: a session restored with the pattern showing but playback silent.
+     Not reproducible here — the round trip, the boot restore, NOTES pitch locks
+     and the tape lanes all survive intact, and are now permanently tested. But
+     the report exposed two real holes on the way past.
+     A SAVE COULD FAIL IN SILENCE. autosave was `catch(e){}`, empty. A refused
+     write — a full device, which a sample-heavy project on a phone reaches
+     easily — left the vault holding whatever it had before while you carried on
+     working against it, and the first you knew was a restore that came back
+     short. It now says so, once on the way into failure and once on recovery,
+     never per attempt: this runs every couple of seconds.
+     A RESTORE NEVER CHECKED ITS OWN WORK. Pads and lanes hold an index into the
+     buffer list and nothing verified the buffer at that index arrived. If the
+     audio came back short, every pad kept a bufId pointing at nothing: the
+     pattern drew, the notes drew, playback was silent, and no message appeared
+     anywhere. Orphans are now pointed at nothing so the app stays consistent,
+     and it says how many were lost and that PROJ ▸ REWIND holds checkpoints
+     from every three minutes.
+     Neither is proof of what happened, but both turn that failure from a
+     mystery into a sentence — and a silent restore is the one outcome this app
+     must never produce without explaining itself.
    ================================================================ */
-const BUILD = 'JBH-88 · R121 · 2026-07-27 · the circle moves, the words open';
+const BUILD = 'JBH-88 · R122 · 2026-07-27 · a failed save or short restore now says so';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -8369,6 +8390,23 @@ function applySessionDoc(doc, bufs){
   Object.keys(activeEnv).forEach(k=>delete activeEnv[k]);
   Object.keys(warpOrig).forEach(k=>delete warpOrig[k]);   // pre-warp originals belong to the outgoing session
   S.buffers=bufs;
+  /* A restore has to check its own work. Pads and lanes hold an index into the
+     buffer list, and nothing here ever verified the buffer at that index turned
+     up: if the saved audio came back short — a write that was refused, a doc
+     trimmed for space — every pad kept a bufId pointing at nothing. The pattern
+     drew, the notes drew, and playback was silent, with no message anywhere.
+     Point the orphans at nothing so the app is at least consistent, and say
+     plainly what was lost and where to get it back. */
+  { let lost=0;
+    const orphan=o=>{ if(o.bufId>=0 && !S.buffers[o.bufId]){ o.bufId=-1; lost++; } };
+    S.pads.forEach(orphan); S.trax.forEach(orphan);
+    if(lost){
+      plog('RESTORE INCOMPLETE: '+lost+' pad/lane'+(lost>1?'s':'')+' referenced audio that was not in the saved file ('
+        +S.buffers.length+' buffer'+(S.buffers.length===1?'':'s')+' present). Their samples are gone; everything else loaded.');
+      setTimeout(()=>lcd('⚠ RESTORE INCOMPLETE — '+lost+' pad'+(lost>1?'s':'')+' lost audio and will be silent. '
+        +'PROJ ▸ REWIND has checkpoints from every 3 minutes; try one from before this.'),50);
+    }
+  }
   // re-point the chop workspace at the restored target pad's sample —
   // nulling it left CHOP/TRANSIENT dead ("NO SAMPLE") after every restore
   slices=[]; selSlice=-1;
@@ -8506,11 +8544,31 @@ function snapshotSession(){
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
 }
-let autosaving=false;
+let autosaving=false, saveBroken=false;
+/* A save that fails must say so. This used to swallow the error whole, so if a
+   write was refused — a full device is the usual reason, and a sample-heavy
+   project on a phone gets there easily — the 'last' slot silently stayed at
+   whatever it held before. You would carry on working against a vault that had
+   stopped accepting anything, and only find out when a restore came back short.
+   Reported on the way into failure and again on recovery, never once per
+   attempt: this runs about every two seconds. */
 async function autosave(){
   if(autosaving) return;
   autosaving=true;
-  try{ await idbPut('last',snapshotSession()); }catch(e){}
+  try{
+    await idbPut('last',snapshotSession());
+    if(saveBroken){ saveBroken=false;
+      lcd('AUTOSAVE IS WORKING AGAIN — this session is being kept.');
+      plog('Autosave recovered.'); }
+  }catch(e){
+    if(!saveBroken){ saveBroken=true;
+      const full=/quota|full|storage/i.test(e.name+' '+e.message);
+      lcd('⚠ AUTOSAVE FAILED — '+(full
+        ? 'the device is out of room. Free space, or delete downloads in SMPL, then EXPORT JSON to be safe.'
+        : 'nothing is being written. EXPORT JSON in PROJ before you lose anything.'));
+      plog('AUTOSAVE FAILED: '+(e.name||'')+' '+(e.message||e)+' — the vault is not being updated.');
+    }
+  }
   autosaving=false;
 }
 /* iOS kills the page without letting the pagehide/hidden async IDB write
