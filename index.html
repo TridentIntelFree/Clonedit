@@ -3127,8 +3127,36 @@ Object.assign(globalThis, __JBH_PURE);})();
      STARTING now, and whichever branch runs writes READY only when it is true.
      Found because a test that writes steps during that window had its steps
      silently overwritten — which is exactly what would happen to a person.
+   - R136: "PRESS PLAY TO READ THE OUTPUT" — SAID TO SOMEONE WHO WAS PLAYING.
+     Reported with a screenshot: transport lit, spectrum moving, PEAK -21.8 and
+     RMS -32.1 both reading, LOUDNESS a dash — and the panel underneath saying
+     press play. The whole advice line was chosen from the loudness reading
+     alone, so one meter returning nothing was taken as evidence about the
+     transport. It reads the transport now, and when loudness cannot read while
+     playing it says which of the two things that means.
+     The loudness tap itself was rebuildable-once: the guard was `if(kAn) return`,
+     but the tap holds a connection to ONE graph's limiter. Replace the graph and
+     it keeps analysing a node nothing feeds, silently, forever — while PEAK and
+     RMS carry on because they look their analyser up fresh every frame. It
+     remembers which graph it belongs to now and re-binds. DIAG reports whether
+     the tap exists, whether it is bound to the current graph, and the TONE
+     settings.
+     (I could not reproduce the dash in Chromium — loudness reads there. So the
+     honest fix was the message and the guard, plus enough in DIAG to identify
+     it next time. Same shape as the mic: a WebKit-only silence that every check
+     passes through.)
+     Also reported: AUTO "bottomed out a lot of stuff it didn't seem to need to,
+     I was able to bring it way back up and still not clip." Measured, AUTO is
+     right. Its worst-case pass sits 0.67dB above the take you actually get and
+     0.12dB BELOW the loudest of ten random takes, so the safety margin is real
+     and small. What was missing is why it moved so far: TONE was at +11.5 /
+     +4 / +12dB, and TONE sits before the trim, so AUTO had to take that back
+     out again. It says so now when the boost is over 3dB.
+     And "still not clipping" is not evidence of headroom — nothing in this app
+     can clip, the soft-clip stage forbids it. That is the R131 trap, and the
+     limiter warning is what answers it.
    ================================================================ */
-const BUILD = 'JBH-88 · R135 · 2026-07-29 · the same project bounces the same take';
+const BUILD = 'JBH-88 · R136 · 2026-07-29 · one dash is not evidence about the transport';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -5481,14 +5509,23 @@ let outRAF=0, specData=null, mPeakHold=0, kL=null, kR=null, kAn=null;
    head's response and a highpass for the body's. This is short-term and
    ungated, so it is labelled approximate rather than pretending to be a
    certified LUFS reading. */
+/* Rebuilt-graph guard: the old test was `kAn` alone, so once the tap existed it
+   was never rebuilt — and it holds a connection to ONE graph's limiter. If the
+   graph is ever replaced the tap keeps analysing a node nothing feeds any more
+   and loudness reads silence forever, while PEAK and RMS carry on working
+   because they look their analyser up fresh every frame. Remember which graph
+   the tap belongs to, and say why if it could not be built at all. */
+let kGraph=null, kErr='';
 function buildLoudTap(){
-  if(!AC||!LIVE||kAn) return;
+  if(!AC||!LIVE) return;
+  if(kAn && kGraph===LIVE) return;
   try{
     kL=AC.createBiquadFilter(); kL.type='highshelf'; kL.frequency.value=1500; kL.gain.value=4;
     kR=AC.createBiquadFilter(); kR.type='highpass';  kR.frequency.value=38;   kR.Q.value=0.5;
     kAn=AC.createAnalyser(); kAn.fftSize=2048;
     LIVE.limiter.connect(kL); kL.connect(kR); kR.connect(kAn);
-  }catch(e){ kAn=null; }
+    kGraph=LIVE; kErr='';
+  }catch(e){ kAn=null; kGraph=null; kErr=(e&&e.message)||String(e); }
 }
 function outDraw(){
   const cv=$('spectrum');
@@ -5567,7 +5604,13 @@ function outMeters(){
   else if(loud>-9) msg='Very loud — fine for a club, crushed for streaming.';
   else if(loud>-16 && loud<-11) msg='Sitting about right for streaming.';
   else if(loud<-22 && loud>-Infinity) msg='Quiet. Push the master, the ceiling will hold it.';
-  else if(loud===-Infinity) msg='Press PLAY to read the output.';
+  /* This used to be the only test, so a silent LOUDNESS reading told anyone who
+     WAS playing to press play — while PEAK and RMS sat right beside it showing
+     real numbers. One dash is not evidence about the transport. */
+  else if(loud===-Infinity) msg = !playing
+    ? 'Press PLAY to read the output.'
+    : (kAn ? 'Playing, but loudness is reading nothing — check the mixer for a mute or a fader at zero.'
+           : 'Loudness is unavailable in this browser'+(kErr?' ('+kErr+')':'')+' — PEAK and RMS above are still true.');
   else msg='Peak ' + fmt(dB(mPeakHold)) + ' dB · nothing is clipping.';
   $('outAdvice').textContent=msg;
 }
@@ -5669,12 +5712,20 @@ $('btnMAuto').addEventListener('click',async ()=>{
     const over=20*Math.log10(pk*dbLin(before))-S.mCeil;   // how far past the ceiling it WAS
     const at=' Loudest point of '+heard+' now sits on the '+S.mCeil.toFixed(1)+'dB ceiling'
       +(margin?', with '+margin.toFixed(1)+'dB spare for humanize.':'.');
+    /* Say WHERE the level it removed came from. TONE sits before the trim, so
+       boosting the mix 12dB there means AUTO has to take 12dB back out — which
+       from the outside looks like AUTO bottoming everything for no reason.
+       Naming the cause turns an arbitrary-looking number into arithmetic. */
+    const boost=Math.max(S.mEqLo||0,S.mEqMid||0,S.mEqHi||0);
+    const why = boost>3
+      ? ' TONE is adding up to +'+boost.toFixed(1)+'dB before this point, which is most of what came back off.'
+      : '';
     if(want<-24 || want>12)
       lcd('AUTO — '+heard+' needs '+dbText(want)+' and TRIM only goes to '+dbText(S.mTrim)
         +'. Move the master volume and press AUTO again.');
     else if(moved<-0.05)
       lcd('AUTO — down '+Math.abs(moved).toFixed(1)+'dB. You were '+over.toFixed(1)+'dB into the limiter;'
-        +' it has nothing left to do.'+at);
+        +' it has nothing left to do.'+at+why);
     else if(moved>0.05)
       lcd('AUTO — up '+moved.toFixed(1)+'dB. You had that much headroom going spare.'+at);
     else lcd('AUTO — already right where it should be.'+at);
@@ -11461,6 +11512,10 @@ function diagDump(tag){
           +' = '+S.bpm+'bpm × div '+S.delayDiv+' · fb '+S.delayFb+' '+S.dlyMode; })(),
       // How hard the master is being driven. The output CANNOT clip, so a mix
       // pushed way too hard shows up as limiter reduction and nothing else.
+      'loudness tap: '+(kAn?'built':'MISSING')+(kErr?' err='+kErr:'')
+        +' · bound to current graph: '+(kGraph===LIVE)
+        +' · tone LOW '+S.mEqLo+'dB MID '+S.mEqMid+'dB HIGH '+S.mEqHi+'dB'
+        +' · width '+S.mWidth+' · mono '+S.mMono+'Hz',
       (function(){ let red='-'; try{ red=LIVE?LIVE.limiter.reduction.toFixed(1)+'dB':'-'; }catch(e){}
         return 'master — ceiling '+S.mCeil+'dB trim '+S.mTrim+'dB · limiter reduction now '+red
           +' · vol '+S.masterVol+' · pads over 100%: '
