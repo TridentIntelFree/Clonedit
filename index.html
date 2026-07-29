@@ -474,7 +474,7 @@
     <button id="btnNotes">NOTES</button>
     <span id="lockHint" style="font-size:10px;color:var(--txt-dim)">tap step to toggle</span>
   </div>
-  <div class="row adv">
+  <div class="row">
     <span class="lbl">VIEW</span>
     <button id="btnViewGrid" class="on">GRID</button>
     <button id="btnViewCircle">&#9711; CIRCLE</button>
@@ -568,7 +568,7 @@
     <button id="btnGrvAll">ALL TRACKS</button>
   </div>
   <div class="adv" id="grvInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">Groove writes per-step timing nudges (and accents) into the pattern — it bounces and exports exactly as you hear it. STRAIGHT clears them.</div>
-  <div class="adv" id="notesPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
+  <div id="notesPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
     <div class="row" style="margin-bottom:6px">
       <span class="lbl">SCALE</span>
       <select id="noteScale" class="shrink"><option value="major">MAJOR</option><option value="minor">MINOR</option><option value="dorian">DORIAN</option><option value="mixo">MIXOLYD</option><option value="pmaj">PENT MAJ</option><option value="pmin">PENT MIN</option><option value="blues">BLUES</option></select>
@@ -3046,8 +3046,21 @@ Object.assign(globalThis, __JBH_PURE);})();
      slideshow the tour was rebuilt to stop being. A guided step now un-folds
      the tab it needs and the tour puts it back on close — unless you had opened
      that tab yourself, in which case your choice stands.
+   - R133: ESSENTIALS WAS FOLDING THE NOTES PANEL. Reported within the hour:
+     "it hides the notes wheel even after NOTES is selected". Correct, and my
+     fault. R132 tagged the advanced sections by line range, and the NOTES panel
+     sits immediately after GROOVE in the markup without belonging to it, so it
+     was swept up. NOTES is not an advanced feature — it is how a melody gets
+     written — and the button stayed visible while the panel it opens did not.
+     Auditing the other 50 tags found one more of the same shape: the GRID /
+     CIRCLE toggle was folded, and jbh_seqview persists, so anyone who left the
+     sequencer in CIRCLE came back to a circle with no visible way back to the
+     grid. Both are out of the advanced set.
+     The new test taps NOTES in ESSENTIALS and checks the panel, the scale, the
+     octave steppers, both views and the wheel's drawn size — and starts from a
+     stored CIRCLE preference, which is the state that produced the trap.
    ================================================================ */
-const BUILD = 'JBH-88 · R132 · 2026-07-29 · ESSENTIALS — the second step is not a cliff';
+const BUILD = 'JBH-88 · R133 · 2026-07-29 · NOTES is not an advanced feature';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);

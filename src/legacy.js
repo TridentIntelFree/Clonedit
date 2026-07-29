@@ -1620,8 +1620,21 @@
      slideshow the tour was rebuilt to stop being. A guided step now un-folds
      the tab it needs and the tour puts it back on close — unless you had opened
      that tab yourself, in which case your choice stands.
+   - R133: ESSENTIALS WAS FOLDING THE NOTES PANEL. Reported within the hour:
+     "it hides the notes wheel even after NOTES is selected". Correct, and my
+     fault. R132 tagged the advanced sections by line range, and the NOTES panel
+     sits immediately after GROOVE in the markup without belonging to it, so it
+     was swept up. NOTES is not an advanced feature — it is how a melody gets
+     written — and the button stayed visible while the panel it opens did not.
+     Auditing the other 50 tags found one more of the same shape: the GRID /
+     CIRCLE toggle was folded, and jbh_seqview persists, so anyone who left the
+     sequencer in CIRCLE came back to a circle with no visible way back to the
+     grid. Both are out of the advanced set.
+     The new test taps NOTES in ESSENTIALS and checks the panel, the scale, the
+     octave steppers, both views and the wheel's drawn size — and starts from a
+     stored CIRCLE preference, which is the state that produced the trap.
    ================================================================ */
-const BUILD = 'JBH-88 · R132 · 2026-07-29 · ESSENTIALS — the second step is not a cliff';
+const BUILD = 'JBH-88 · R133 · 2026-07-29 · NOTES is not an advanced feature';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
