@@ -20,6 +20,9 @@
   /* Softer than a 1px line everywhere: surfaces separate by tone first and
      only draw an edge where one is genuinely needed. */
   --edge:#2b3038;
+  /* SEND — a level that leaves this channel and is made somewhere else. Used by
+     the pad face badge and the mixer send rows, so the two say the same thing. */
+  --send:#7fd4c2;
   --tap:40px;      /* comfortable minimum for a finger */
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -141,14 +144,41 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 .mstrip input[type=range].vf::-webkit-slider-runnable-track{width:5px;height:auto;background:var(--edge);border-radius:3px}
 .mstrip input[type=range].vf::-webkit-slider-thumb{margin-top:0;margin-left:-10px}
 .mstrip .mpan{width:100%}
-.mstrip .mpan input[type=range]{height:18px}
+/* The mini rows carried the app-wide 24px thumb inside a 14px box, stacked 19px
+   apart: four pairs of thumbs physically overlapped, which is most of why the
+   mixer read as a mess. The fix is not a smaller control — it is a smaller
+   DRAWING of one. The input keeps a finger-sized box (the whole box is the hit
+   area) and the visible thumb shrinks to fit the row. */
+.mstrip .mpan input[type=range],
+.mstrip .msend input[type=range]{height:22px}
+.mstrip .mpan input[type=range]::-webkit-slider-thumb,
+.mstrip .msend input[type=range]::-webkit-slider-thumb{
+  width:13px;height:13px;border-width:2px;margin-top:-4px}
+.mstrip .mpan input[type=range]::-webkit-slider-runnable-track,
+.mstrip .msend input[type=range]::-webkit-slider-runnable-track{height:4px}
+/* One colour for everything meant nothing read as more or less important: the
+   fader, the pan, both sends and three EQ bands were the same amber ring at the
+   same size. Three jobs, three weights.
+     amber, largest  = LEVEL — the thing you reach for
+     teal            = SEND  — goes somewhere else, and it is the same teal the
+                               pad face uses for →RVB / →DLY, so the two agree
+     dim, filled     = TONE  — shaping, not routing */
+.mstrip .msend.snd-send input[type=range]::-webkit-slider-thumb{
+  border-color:var(--send);background:var(--panel2)}
+.mstrip .msend.snd-eq input[type=range]::-webkit-slider-thumb{
+  border-color:var(--edge);background:var(--txt-dim);width:11px;height:11px;margin-top:-3px}
+/* the weight comes from the THUMB, not from dimming the label — #5f6472 on the
+   panel measures about 2.8:1, under the floor the rest of the app holds to */
+.mstrip .msend.snd-eq span{color:var(--txt-dim)}
+.mstrip .msend.snd-send span{color:var(--send)}
+.mstrip .mpan input[type=range]::-webkit-slider-thumb{
+  border-color:var(--edge);background:var(--panel2)}
 .mstrip .mbtns{display:flex;gap:3px;width:100%}
 /* min-height clears the 24px floor — these were 24x20, the only buttons short
    enough to fail it */
 .mstrip .mbtns button{flex:1;padding:4px 0;font-size:9px;border-radius:4px;min-height:26px}
 .mstrip .msend{display:flex;align-items:center;gap:3px;width:100%}
 .mstrip .msend span{font-size:8px;color:var(--txt-dim);width:8px}
-.mstrip .msend input[type=range]{height:14px}
 .mstrip .mval{font-size:8px;color:var(--lcd)}
 /* project library */
 .projrow{display:flex;align-items:center;gap:6px;padding:7px 8px;border:1px solid var(--line);border-radius:6px;margin-bottom:5px;background:var(--panel)}
@@ -215,9 +245,19 @@ h3 span{font-weight:400}
 .pad{aspect-ratio:1;background:var(--pad);border:1px solid var(--line);border-radius:10px;
   position:relative;touch-action:none;user-select:none;-webkit-user-select:none;
   display:flex;flex-direction:column;justify-content:flex-end;padding:6px;overflow:hidden}
-.pad .pn{position:absolute;top:5px;left:7px;font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--txt-dim)}
+/* Sits behind everything and takes the dead middle the labels were never using.
+   pointer-events:none so it is scenery, not a control. */
+.pad .pwave{position:absolute;left:4px;right:4px;top:50%;transform:translateY(-50%);
+  width:calc(100% - 8px);height:46%;pointer-events:none;opacity:.9}
+.pad.sel .pwave{opacity:1}
+.pad .pn{position:absolute;top:5px;left:7px;font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--txt-dim);z-index:1}
 .pad.loaded .pn{color:var(--txt)}
 .pad .pname{font-size:9px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The send badge is absolutely positioned over the bottom-right corner, so a
+   name of any length ran straight into it — 11 of 16 pads on the demo kit. The
+   name gives up the width instead and ellipses before it gets there. */
+.pad.send .pname{padding-right:34px}
+.pad.revd .pname{padding-left:12px}
 .pad.loaded{border-color:#4a5262}
 /* status LED: dark = empty · green = sample loaded · amber = playing in this pattern */
 .pad .led{position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;
@@ -241,7 +281,7 @@ h3 span{font-weight:400}
    read as REVERSED, which is a different control on the same panel. An arrow
    means it is going somewhere, which a state never is. */
 .pad .snd{display:none;position:absolute;bottom:4px;right:5px;font-size:8px;font-weight:700;
-  letter-spacing:.3px;color:#7fd4c2;text-shadow:0 0 5px rgba(127,212,194,.7)}
+  letter-spacing:.3px;color:var(--send);text-shadow:0 0 5px rgba(127,212,194,.7)}
 .pad.send .snd{display:block}
 /* …and REVERSE itself, which had no marker at all — different corner, different
    colour, different shape, so the two can never be taken for each other. */
@@ -412,9 +452,30 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
    which left no focus indication at all for anyone driving this from a keyboard. */
 :focus-visible{outline:2px solid var(--sel);outline-offset:2px;border-radius:4px}
 .pad:focus-visible,.step:focus-visible{outline:3px solid var(--sel);outline-offset:-3px}
+/* ---------------- motion ----------------
+   The app snapped between every state: tabs, panels, selection, mode switches.
+   Nothing was wrong with it and all of it felt mechanical. These are short
+   enough to read as the thing settling rather than as an animation — a tab
+   change is 140ms, everything else 120 — and none of them delays an action,
+   because a groovebox that makes you wait to hear something is a broken one.
+   Every rule here is switched off under prefers-reduced-motion below. */
+@keyframes viewIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.view.on{animation:viewIn .14s ease-out}
+.pad{transition:border-color .12s ease,box-shadow .12s ease,background .1s ease}
+.pad .snd,.pad .rvs{transition:opacity .12s ease}
+#tabs button{transition:color .12s ease,background .12s ease,border-bottom-color .12s ease}
+.mstrip{transition:border-color .12s ease}
+.denbar button,.hint{transition:background .12s ease,border-color .12s ease}
+input[type=range]::-webkit-slider-thumb{transition:border-color .12s ease,background .12s ease}
+/* the LED is state, so it should arrive rather than blink into place */
+.pad .led{transition:background .15s ease,box-shadow .15s ease,border-color .15s ease}
+
 @media (prefers-reduced-motion:reduce){
   #tourSpot{transition:none}
   #masterMeter .mbar>div{transition:none}
+  .view.on{animation:none}
+  .pad,.pad .snd,.pad .rvs,.pad .led,#tabs button,.mstrip,
+  .denbar button,.hint,input[type=range]::-webkit-slider-thumb{transition:none}
 }
 
 /* ---------------- wide screens: iPad, and any phone turned sideways ----------

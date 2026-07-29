@@ -1633,9 +1633,47 @@
      The new test taps NOTES in ESSENTIALS and checks the panel, the scale, the
      octave steppers, both views and the wheel's drawn size — and starts from a
      stored CIRCLE preference, which is the state that produced the trap.
+   - R134: A POLISH PASS, MEASURED RATHER THAN EYEBALLED.
+     Four defects, all of them things drawn on top of other things:
+     The MIXER's per-channel mini rows carried the app-wide 24px slider thumb
+     inside a 14px box, stacked 19px apart — four pairs of thumbs physically
+     overlapped, which is most of why that tab read as a mess. Fixed by drawing
+     a smaller thumb, not by making a smaller control: the input keeps a
+     finger-sized box (the whole box is the hit area, and it went UP from 14px
+     to 22px) while the visible thumb came down to 13px. Overlaps: four to zero.
+     The pad send badge sat over the bottom-right corner while the name ran the
+     full width beneath it, so 11 of the 16 demo pads had their name running
+     into →RVB or →D+R. The name yields the width now and ellipses before it.
+     The header build line clipped at 138px and opened with "JBH-88" — directly
+     under a logo that says JBH-88. A third of the width went on repeating the
+     app's name and the part saying what changed never appeared. Display only;
+     DIAG and every export still carry the full string.
+     And every loaded pad was 55% empty — a label on a box. The sample is
+     already in memory, so the middle now shows its waveform: a kick reads as a
+     spike, a cello as a block, a riser as a swell. Peaks are computed once per
+     buffer and cached, normalised for shape rather than level, and the canvas
+     is aria-hidden scenery behind the labels.
+     Then a visual language. Everything was the same amber ring at the same
+     size — fader, pan, both sends, three EQ bands — so nothing read as more or
+     less important. Three jobs, three weights: amber and largest for LEVEL,
+     teal for SEND (the same teal the pad face uses for →RVB, so the two agree),
+     dim and filled for TONE. The first pass dimmed the EQ labels to #5f6472 as
+     well, which measures ~2.8:1 on the panel — under the floor the rest of the
+     app holds to. The weight comes from the thumb; the label went back.
+     And motion. Every state change snapped. Tabs now settle in 140ms, pads,
+     LEDs, badges and thumbs in 120 — short enough to read as the thing arriving
+     rather than as an animation, and nothing delays an action, because a
+     groovebox that makes you wait to hear something is broken. All of it is off
+     under prefers-reduced-motion.
    ================================================================ */
-const BUILD = 'JBH-88 · R133 · 2026-07-29 · NOTES is not an advanced feature';
-document.getElementById('build').textContent = BUILD;
+const BUILD = 'JBH-88 · R134 · 2026-07-29 · every pad shows the sound it holds';
+/* The header line sits directly under a logo that already says JBH-88, and it
+   clips at 138px — so a third of the width it had was spent repeating the app
+   name, and the part that says what changed never appeared. The full string is
+   still what DIAG and every export report; only the display is trimmed, and
+   tapping the line still opens it in full. */
+document.getElementById('build').textContent =
+  BUILD.replace(/^JBH-88\s*·\s*/, '').replace(/^(R\d+)\s*·\s*\d{4}-\d{2}-\d{2}\s*·\s*/, '$1 · ');
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
 
@@ -2698,7 +2736,8 @@ function buildPads(){
   for(let i=0;i<16;i++){
     const el=document.createElement('div'); el.className='pad';
     el.setAttribute('role','button'); el.tabIndex=0;
-    el.innerHTML='<div class="pn"></div><div class="led"></div><div class="rvs">◀</div><div class="snd"></div><div class="pname"></div>';
+    el.innerHTML='<canvas class="pwave" width="120" height="48" aria-hidden="true"></canvas>'
+      +'<div class="pn"></div><div class="led"></div><div class="rvs">◀</div><div class="snd"></div><div class="pname"></div>';
     el.addEventListener('keydown',e=>{
       if(e.key!==' ' && e.key!=='Enter' && e.key!=='Spacebar') return;
       e.preventDefault(); padPress(i,0.85);          // no Y position to read from
@@ -2735,6 +2774,40 @@ function buildPads(){
     gr.appendChild(el); padEls.push(el);
   }
   drawPads();
+}
+/* A loaded pad was 55% empty — a label on a box. The sample is already in
+   memory, so the middle can show what the sound actually looks like: a kick
+   reads as a kick, a pad as a pad, a one-shot as a spike. Peaks are computed
+   once per buffer and cached; the pad only ever redraws from the cache. */
+const PAD_PK=48;                    // columns across a pad face
+const padPeaks={};                  // bufId -> Float32Array(PAD_PK) of |peak|
+function peaksFor(bufId){
+  if(padPeaks[bufId]) return padPeaks[bufId];
+  const buf=S.buffers[bufId]; if(!buf) return null;
+  const d=buf.getChannelData(0), out=new Float32Array(PAD_PK);
+  const spp=Math.max(1,Math.floor(d.length/PAD_PK));
+  let mx=0;
+  for(let x=0;x<PAD_PK;x++){
+    let m=0; const o=x*spp, e=Math.min(d.length,o+spp);
+    for(let i=o;i<e;i++){ const a=Math.abs(d[i]); if(a>m) m=a; }
+    out[x]=m; if(m>mx) mx=m;
+  }
+  if(mx>0) for(let x=0;x<PAD_PK;x++) out[x]/=mx;   // normalised: shape, not level
+  padPeaks[bufId]=out;
+  return out;
+}
+function drawPadWave(el,p){
+  const cv=el.querySelector('.pwave'); if(!cv) return;
+  const cx=cv.getContext('2d'); if(!cx) return;
+  cx.clearRect(0,0,cv.width,cv.height);
+  if(!p || p.bufId<0) return;
+  const pk=peaksFor(p.bufId); if(!pk) return;
+  const W=cv.width, H=cv.height, mid=H/2, cw=W/PAD_PK;
+  cx.fillStyle = p.mute ? 'rgba(123,128,144,0.30)' : 'rgba(255,180,84,0.30)';
+  for(let x=0;x<PAD_PK;x++){
+    const h=Math.max(1,pk[x]*mid*0.94);
+    cx.fillRect(x*cw, mid-h, Math.max(1,cw-0.6), h*2);
+  }
 }
 function padIndex(slot){ return S.bank*16+slot; }
 function padName(i){ return 'ABCD'[Math.floor(i/16)] + String(i%16+1).padStart(2,'0'); }
@@ -2797,6 +2870,7 @@ function drawPads(){
     el.querySelector('.rvs').title=revd?'Plays backwards (REVERSE is on)':'';
     el.querySelector('.pn').textContent=padName(idx);
     el.querySelector('.pname').textContent=p.name||'';
+    drawPadWave(el,p);
     el.setAttribute('aria-label', 'Pad '+padName(idx)
       + (p.name?', '+p.name:', empty')
       + (idx===S.editPad?', selected':'')
@@ -3226,14 +3300,16 @@ function drawMixer(){
       sb.setAttribute('aria-label','Solo '+chan); sb.classList.toggle('on',p.solo);
       sb.addEventListener('click',()=>{ p.solo=!p.solo; drawMixer(); applyMixMutes(); dirty(); });
       btns.append(mb,sb); el.appendChild(btns);
-      const mkSend=(lbl,key)=>{ const r=document.createElement('div'); r.className='msend';
+      // amber = level · teal = send · dim = tone. Three jobs, three weights, so
+      // the strip reads at a glance instead of as seven identical rings.
+      const mkSend=(lbl,key)=>{ const r=document.createElement('div'); r.className='msend snd-send';
         const s=document.createElement('span'); s.textContent=lbl;
         const inp=document.createElement('input'); inp.type='range'; inp.min=0; inp.max=1; inp.step=0.01; inp.value=p[key]; inp.title=(key==='rev'?'reverb':'delay')+' send';
         inp.setAttribute('aria-label',(key==='rev'?'Reverb':'Delay')+' send, '+chan);
         inp.addEventListener('input',e=>{ p[key]=parseFloat(e.target.value); if(LIVE) LIVE.pads[idx][key].gain.setTargetAtTime(p[key],AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); dirty(); });
         r.append(s,inp); return r; };
       el.appendChild(mkSend('R','rev')); el.appendChild(mkSend('D','dly'));
-      const mkEq=(lbl,key)=>{ const r=document.createElement('div'); r.className='msend';
+      const mkEq=(lbl,key)=>{ const r=document.createElement('div'); r.className='msend snd-eq';
         const s=document.createElement('span'); s.textContent=lbl;
         const inp=document.createElement('input'); inp.type='range'; inp.min=-12; inp.max=12; inp.step=0.5; inp.value=p[key]||0; inp.title='EQ '+lbl+' (±12dB)';
         inp.setAttribute('aria-label','EQ '+({L:'low',M:'mid',H:'high'}[lbl]||lbl)+', '+chan);
