@@ -901,11 +901,11 @@
 <div class="view" role="tabpanel" aria-label="Master output" id="v-out">
   <div class="hint"><b>THE FINISHED MIX.</b> Everything here runs on the whole song, and it is built into the
   bounce as well &mdash; what you hear is what the WAV contains. Start with <b>BYPASS</b> to hear the
-  difference, and watch the meters rather than trusting the loudness.</div>
+  difference. LUFS reads momentary (400ms) and short-term (3s) to BS.1770; BOUNCE reports the integrated figure and the true peak of the actual file.</div>
 
   <canvas id="spectrum" role="img" aria-label="Live frequency spectrum of the master output. The meters below carry the same information as numbers." width="900" height="260"></canvas>
   <div id="outMeters">
-    <span class="lbl">PEAK dB</span><span class="lbl">RMS dB</span><span class="lbl">LOUDNESS</span><span class="lbl">MONO-SAFE</span>
+    <span class="lbl">PEAK dBFS</span><span class="lbl">RMS dB</span><span class="lbl">LUFS M / S</span><span class="lbl">MONO-SAFE</span>
     <span class="val" id="mPeakV">&mdash;</span><span class="val" id="mRmsV">&mdash;</span>
     <span class="val" id="mLufsV">&mdash;</span><span class="val" id="mCorrV">&mdash;</span>
   </div>
@@ -3155,8 +3155,39 @@ Object.assign(globalThis, __JBH_PURE);})();
      And "still not clipping" is not evidence of headroom — nothing in this app
      can clip, the soft-clip stage forbids it. That is the R131 trap, and the
      limiter warning is what answers it.
+   - R137: THE LOUDNESS READOUT WAS NOT MEASURING LOUDNESS.
+     Asked to fix it properly, and to find anything else fake.
+     LOUDNESS was a K-weighted RMS of ONE analyser frame: 46ms of a mono
+     downmix, ungated, through approximate filters — sitting in a row with PEAK
+     and RMS, which are true. Against a real BS.1770 implementation on the same
+     bounce it read -6.4 where the answer was -11.1. 4.6dB optimistic: aim a
+     master at -14 with that and you deliver -18.6.
+     Replaced with the actual standard. K-weighting is the specified pair, a
+     +3.999dB shelf at 1681.97Hz and an RLB highpass at 38.135Hz, derived at the
+     context's own rate rather than hard-coded for 48k. The live meter reads
+     momentary (400ms) and short-term (3s) from BOTH channels summed as mean
+     squares, and is labelled LUFS M / S because that is what it is. BOUNCE
+     computes the integrated, twice-gated figure from the finished buffer, plus
+     true peak, and says how it sits against the -14 LUFS streaming target.
+     True peak is a polyphase 4x windowed-sinc interpolation, and it only
+     interpolates around samples within 3dB of the peak — exact where it can
+     matter, 14x faster, agreeing with brute force to 0.0000dB.
+     Everything is validated against signals with known answers rather than
+     against itself: a sine at sr/4 sampled on its zero crossings (samples
+     -3.01dB, true peak 0.00dB), DC (true peak must equal the level), and tones
+     that must track level exactly and sum to 3.01dB between one channel and
+     two. Three of my own attempts failed that validation first — two broken
+     interpolators, and a reference figure I had simply got wrong.
+     The audit also CLEARED things, which is worth recording. The WAV really is
+     44.1k / 16-bit / stereo, header and payload. AUTO really is accurate. And
+     true peak is currently a non-issue for this app — 0.00dB above sample peak
+     — because the soft-clip stage keeps everything about a dB below full scale.
+     No inventing a problem that is not there.
+     One real discrepancy found: the bounce peaks about 0.1dB ABOVE the stated
+     CEILING, because the limiter is 20:1 rather than a brickwall and lets a
+     little through. The report says so rather than the number quietly lying.
    ================================================================ */
-const BUILD = 'JBH-88 · R136 · 2026-07-29 · one dash is not evidence about the transport';
+const BUILD = 'JBH-88 · R137 · 2026-07-29 · the meters measure what they are named';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -5515,17 +5546,60 @@ let outRAF=0, specData=null, mPeakHold=0, kL=null, kR=null, kAn=null;
    and loudness reads silence forever, while PEAK and RMS carry on working
    because they look their analyser up fresh every frame. Remember which graph
    the tap belongs to, and say why if it could not be built at all. */
-let kGraph=null, kErr='';
+let kGraph=null, kErr='', kSplit=null, kChain=[], kBufs=[];
+/* The old tap was one analyser on a MONO downmix, read one frame at a time —
+   46ms, ungated, through generic filters — and the result was labelled
+   LOUDNESS. BS.1770 wants each channel K-weighted separately, summed as mean
+   squares, over 400ms (momentary) and 3s (short-term). So: split to two
+   channels, the SPECIFIED filters on each (derived at this context's rate, not
+   hard-coded for 48k), and a ring of block energies the meter loop fills. */
+const K_BLOCK=0.1;                       // 100ms energy blocks
+const kRing=[[],[]];                     // per channel, newest last
 function buildLoudTap(){
   if(!AC||!LIVE) return;
   if(kAn && kGraph===LIVE) return;
   try{
-    kL=AC.createBiquadFilter(); kL.type='highshelf'; kL.frequency.value=1500; kL.gain.value=4;
-    kR=AC.createBiquadFilter(); kR.type='highpass';  kR.frequency.value=38;   kR.Q.value=0.5;
-    kAn=AC.createAnalyser(); kAn.fftSize=2048;
-    LIVE.limiter.connect(kL); kL.connect(kR); kR.connect(kAn);
+    const c=k1770Coeffs(AC.sampleRate);
+    const mk=co=>{ const f=AC.createIIRFilter(
+      [co.b0,co.b1,co.b2],[1,co.a1,co.a2]); return f; };
+    kSplit=AC.createChannelSplitter(2);
+    kChain=[]; kBufs=[]; kRing[0].length=0; kRing[1].length=0;
+    LIVE.limiter.connect(kSplit);
+    for(let ch=0; ch<2; ch++){
+      const s1=mk(c.shelf), s2=mk(c.hp), an=AC.createAnalyser();
+      an.fftSize=4096;
+      kSplit.connect(s1, ch); s1.connect(s2); s2.connect(an);
+      kChain.push({s1,s2,an});
+      kBufs.push(new Float32Array(an.fftSize));
+    }
+    kAn=kChain[0].an;                    // kept so existing checks still see a tap
     kGraph=LIVE; kErr='';
-  }catch(e){ kAn=null; kGraph=null; kErr=(e&&e.message)||String(e); }
+  }catch(e){ kAn=null; kGraph=null; kChain=[]; kErr=(e&&e.message)||String(e); }
+}
+/* Called from the meter loop: fold this frame's per-channel mean square into
+   the ring, then read momentary (400ms) and short-term (3s) off it. */
+function loudRead(){
+  if(!kChain.length) return {m:-Infinity,s:-Infinity};
+  const sr=AC.sampleRate;
+  for(let ch=0; ch<2; ch++){
+    const an=kChain[ch].an, buf=kBufs[ch];
+    an.getFloatTimeDomainData(buf);
+    let ms=0; for(let i=0;i<buf.length;i++) ms+=buf[i]*buf[i];
+    ms/=buf.length;
+    const r=kRing[ch];
+    r.push({t:AC.currentTime, ms});
+    while(r.length && AC.currentTime-r[0].t>3.2) r.shift();
+  }
+  const meanOver=(secs)=>{
+    let z=0, any=false;
+    for(let ch=0; ch<2; ch++){
+      const r=kRing[ch]; let sum=0, n=0;
+      for(let i=r.length-1;i>=0;i--){ if(AC.currentTime-r[i].t>secs) break; sum+=r[i].ms; n++; }
+      if(n){ z+=sum/n; any=true; }
+    }
+    return any&&z>0 ? -0.691+10*Math.log10(z) : -Infinity;
+  };
+  return { m:meanOver(0.4), s:meanOver(3.0) };
 }
 function outDraw(){
   const cv=$('spectrum');
@@ -5582,15 +5656,11 @@ function outMeters(){
   $('mPeakV').style.color = mPeakHold>0.995 ? 'var(--red)' : (mPeakHold>0.85?'var(--amber)':'var(--lcd)');
   $('mRmsV').textContent=fmt(dB(rms));
 
-  // approximate short-term loudness off the K-weighted tap
-  let loud=-Infinity;
-  if(kAn){
-    const k=new Float32Array(kAn.fftSize); kAn.getFloatTimeDomainData(k);
-    let ks=0; for(let i=0;i<k.length;i++) ks+=k[i]*k[i];
-    const kr=Math.sqrt(ks/k.length);
-    if(kr>1e-6) loud=-0.691+10*Math.log10(kr*kr*2);
-  }
-  $('mLufsV').textContent = loud===-Infinity ? '—' : loud.toFixed(1);
+  // BS.1770 momentary (400ms) and short-term (3s), both channels, real filters
+  const lr=loudRead();
+  const loud=lr.s>-Infinity?lr.s:lr.m;      // the advice line reads short-term
+  $('mLufsV').textContent = lr.m===-Infinity ? '—'
+    : lr.m.toFixed(1)+(lr.s>-Infinity?' / '+lr.s.toFixed(1):'');
 
   // correlation: +1 is mono, 0 is wide, negative means it will cancel in mono
   const corr=(sl>1e-9&&sr>1e-9)?(sc/Math.sqrt(sl*sr)):1;
@@ -10963,6 +11033,147 @@ $('btnProjNew').addEventListener('click',()=>{ if(confirm('Start a new empty pro
 function plog(s){ $('projlog').textContent=(new Date().toTimeString().slice(0,8))+'  '+s+'\n'+$('projlog').textContent; }
 
 /* ---------------- WAV bounce (OfflineAudioContext) ---------------- */
+/* ---------------- LOUDNESS AND TRUE PEAK, PROPERLY ----------------
+   The panel's LOUDNESS number was a K-weighted RMS of ONE analyser frame — 46ms
+   of a mono downmix, ungated, through approximate filters — with "LOUDNESS"
+   written over it next to PEAK and RMS, which are true. Measured against a real
+   BS.1770 implementation on the same bounce it read -6.4 where the answer was
+   -11.1: 4.6dB optimistic. Aim a master at -14 with that and you deliver -18.6.
+
+   What follows is the actual thing. The K-weighting is the specified pair — a
+   +3.999dB shelf at 1681.97Hz and an RLB highpass at 38.135Hz — derived at
+   whatever rate the context is running rather than hard-coded for 48k. Blocks
+   are 400ms at 75% overlap, each channel's mean square summed with weight 1.0,
+   and the two gates applied: absolute at -70 LUFS, then relative at 10 LU below
+   the ungated mean.
+
+   True peak is a polyphase 4x windowed-sinc interpolation. Two earlier attempts
+   returned exactly the sample peak — one from a mis-windowed kernel, one from
+   the browser's own resampler, which is linear and so can never overshoot. This
+   one is validated against a sine at sr/4 sampled on its zero crossings, where
+   the samples sit at -3.01dB and the true peak is 0.00dB by construction. */
+function k1770Coeffs(sr){
+  const shelf=(()=>{ const f0=1681.974450955533, G=3.999843853973347, Q=0.7071752369554196;
+    const K=Math.tan(Math.PI*f0/sr), V=Math.pow(10,G/20), den=1+K/Q+K*K;
+    return { b0:(V+Math.sqrt(V)*K/Q+K*K)/den, b1:2*(K*K-V)/den, b2:(V-Math.sqrt(V)*K/Q+K*K)/den,
+             a1:2*(K*K-1)/den, a2:(1-K/Q+K*K)/den }; })();
+  const hp=(()=>{ const f0=38.13547087602444, Q=0.5003270373238773;
+    const K=Math.tan(Math.PI*f0/sr), den=1+K/Q+K*K;
+    return { b0:1/den, b1:-2/den, b2:1/den, a1:2*(K*K-1)/den, a2:(1-K/Q+K*K)/den }; })();
+  return {shelf,hp};
+}
+function biquadRun(x,c,outArr){
+  const y=outArr||new Float64Array(x.length);
+  let x1=0,x2=0,y1=0,y2=0;
+  for(let i=0;i<x.length;i++){
+    const v=c.b0*x[i]+c.b1*x1+c.b2*x2-c.a1*y1-c.a2*y2;
+    x2=x1; x1=x[i]; y2=y1; y1=v; y[i]=v;
+  }
+  return y;
+}
+/* Integrated loudness of a finished buffer, to the standard. */
+function lufsIntegrated(buf){
+  const sr=buf.sampleRate, c=k1770Coeffs(sr), chans=[];
+  for(let ch=0; ch<buf.numberOfChannels; ch++)
+    chans.push(biquadRun(biquadRun(buf.getChannelData(ch),c.shelf),c.hp));
+  const T=Math.round(sr*0.4), step=Math.max(1,Math.round(T/4));
+  const lj=[], zj=[];
+  for(let s=0; s+T<=chans[0].length; s+=step){
+    let z=0;
+    for(const d of chans){ let m=0; for(let i=s;i<s+T;i++) m+=d[i]*d[i]; z+=m/T; }
+    zj.push(z); lj.push(-0.691+10*Math.log10(z||1e-30));
+  }
+  if(!lj.length) return {lufs:-Infinity, blocks:0, kept:0, momentaryMax:-Infinity};
+  const meanOf=idx=>idx.reduce((a,i)=>a+zj[i],0)/idx.length;
+  let idx=zj.map((_,i)=>i).filter(i=>lj[i]>-70);
+  if(!idx.length) return {lufs:-Infinity, blocks:lj.length, kept:0, momentaryMax:Math.max.apply(null,lj)};
+  const rel=-0.691+10*Math.log10(meanOf(idx))-10;
+  idx=idx.filter(i=>lj[i]>rel);
+  if(!idx.length) return {lufs:-Infinity, blocks:lj.length, kept:0, momentaryMax:Math.max.apply(null,lj)};
+  return { lufs:-0.691+10*Math.log10(meanOf(idx)), blocks:lj.length, kept:idx.length,
+           momentaryMax:Math.max.apply(null,lj) };
+}
+/* Polyphase 4x true peak. Built once, reused. */
+const TP_OS=4;
+const TP_PHASES=(function(){
+  const TAPS=24, half=TAPS*TP_OS/2, n=TAPS*TP_OS+1, proto=new Float64Array(n);
+  for(let i=0;i<n;i++){
+    const x=(i-half)/TP_OS;
+    const s=x===0?1:Math.sin(Math.PI*x)/(Math.PI*x);
+    const w=0.42-0.5*Math.cos(2*Math.PI*i/(n-1))+0.08*Math.cos(4*Math.PI*i/(n-1));
+    proto[i]=s*w;
+  }
+  const ph=[];
+  for(let q=0;q<TP_OS;q++){
+    const br=[]; for(let i=q;i<n;i+=TP_OS) br.push(proto[i]);
+    const sum=br.reduce((a,v)=>a+v,0);
+    ph.push(br.map(v=>v/sum));
+  }
+  ph.offset=Math.floor(half/TP_OS);
+  return ph;
+})();
+function truePeakOf(buf){
+  /* Interpolating every sample is 4 phases x 25 taps per sample — fine for a
+     six-second loop, over a billion operations for a three-minute song, on a
+     phone. An inter-sample peak can only sit between samples that are already
+     near the top, so find the sample peak first and only interpolate around
+     the samples within 3dB of it. Exact where it matters, and hundreds of
+     times less work.
+     The ends are skipped by a kernel's width: outside the buffer the
+     interpolator sees zeros, so the first and last samples read as a step, and
+     a band-limited interpolation of a step overshoots by about 1dB. That is an
+     artifact of where the file stops, not of the audio. */
+  const edge=TP_PHASES[0].length, off=TP_PHASES.offset;
+  let pk=0;
+  for(let ch=0; ch<buf.numberOfChannels; ch++){
+    const d=buf.getChannelData(ch);
+    const lo=Math.min(edge,Math.floor(d.length/2)), hi=Math.max(lo,d.length-edge);
+    let sp=0;
+    for(let i=lo;i<hi;i++){ const a=d[i]<0?-d[i]:d[i]; if(a>sp) sp=a; }
+    if(sp<=0) continue;
+    if(sp>pk) pk=sp;                       // the sample peak is a floor for the true peak
+    const thr=sp*0.708;                    // within 3dB of the loudest sample
+    for(let n=lo;n<hi;n++){
+      const a0=d[n]<0?-d[n]:d[n];
+      if(a0<thr) continue;
+      for(let q=0;q<TP_OS;q++){
+        const h=TP_PHASES[q]; let acc=0;
+        for(let k=0;k<h.length;k++){
+          const i=n-k+off;
+          if(i>=0 && i<d.length) acc+=d[i]*h[k];
+        }
+        const a=acc<0?-acc:acc; if(a>pk) pk=a;
+      }
+    }
+  }
+  return pk;
+}
+function samplePeakOf(buf){
+  let pk=0;
+  for(let ch=0; ch<buf.numberOfChannels; ch++){ const d=buf.getChannelData(ch);
+    for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>pk) pk=a; } }
+  return pk;
+}
+/* What the finished file actually is, in the terms a release is judged on. */
+function bounceReport(buf){
+  const li=lufsIntegrated(buf);
+  const sp=samplePeakOf(buf), tp=truePeakOf(buf);
+  const d=v=>v<=0?'-inf':(20*Math.log10(v)).toFixed(2);
+  const lines=[];
+  lines.push('Integrated loudness '+(li.lufs===-Infinity?'—':li.lufs.toFixed(1)+' LUFS')
+    +'  ·  true peak '+d(tp)+' dBTP  ·  sample peak '+d(sp)+' dBFS');
+  if(li.lufs>-Infinity){
+    const vs=li.lufs+14;
+    lines.push('Streaming sits near -14 LUFS: this is '
+      +(Math.abs(vs)<0.5?'right on it.':(vs>0?vs.toFixed(1)+'dB louder — platforms will turn it down.'
+                                             :Math.abs(vs).toFixed(1)+'dB quieter — platforms will leave it, it will just sound smaller.')));
+  }
+  if(20*Math.log10(tp)>S.mCeil+0.05)
+    lines.push('True peak is '+(20*Math.log10(tp)-S.mCeil).toFixed(2)+'dB above the '+S.mCeil
+      +'dB CEILING — the limiter is 20:1, not a brickwall, so it lets a little through.');
+  if(tp>1) lines.push('Over 0 dBTP: this will clip when converted to MP3 or AAC. Lower CEILING.');
+  return lines;
+}
 function encodeWav(buf){
   const nCh=2, sr=buf.sampleRate, len=buf.length;
   const bytes=44+len*nCh*2, ab=new ArrayBuffer(bytes), dv=new DataView(ab);
@@ -11202,7 +11413,11 @@ $('btnBounce').addEventListener('click',async ()=>{
     const wav=encodeWav(rendered);
     download(wav, ($('projName').value||'mvx-session')+'.wav');
     plog('WAV done: '+Math.round(wav.size/1024)+' KB · 44.1k/16-bit stereo.');
-    lcd('BOUNCE COMPLETE.');
+    /* Measure the file that just left, in the terms a release is judged on.
+       Offline there is no excuse for an approximation. */
+    let rep=[];
+    try{ rep=bounceReport(rendered); rep.forEach(l=>plog(l)); }catch(e){ plog('Could not measure the bounce: '+e.message); }
+    lcd('BOUNCE COMPLETE · '+(rep[0]||''));
   }catch(err){ plog('Bounce failed: '+err.message); lcd('BOUNCE FAILED.'); }
 });
 

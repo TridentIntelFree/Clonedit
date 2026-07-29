@@ -885,11 +885,11 @@
 <div class="view" role="tabpanel" aria-label="Master output" id="v-out">
   <div class="hint"><b>THE FINISHED MIX.</b> Everything here runs on the whole song, and it is built into the
   bounce as well &mdash; what you hear is what the WAV contains. Start with <b>BYPASS</b> to hear the
-  difference, and watch the meters rather than trusting the loudness.</div>
+  difference. LUFS reads momentary (400ms) and short-term (3s) to BS.1770; BOUNCE reports the integrated figure and the true peak of the actual file.</div>
 
   <canvas id="spectrum" role="img" aria-label="Live frequency spectrum of the master output. The meters below carry the same information as numbers." width="900" height="260"></canvas>
   <div id="outMeters">
-    <span class="lbl">PEAK dB</span><span class="lbl">RMS dB</span><span class="lbl">LOUDNESS</span><span class="lbl">MONO-SAFE</span>
+    <span class="lbl">PEAK dBFS</span><span class="lbl">RMS dB</span><span class="lbl">LUFS M / S</span><span class="lbl">MONO-SAFE</span>
     <span class="val" id="mPeakV">&mdash;</span><span class="val" id="mRmsV">&mdash;</span>
     <span class="val" id="mLufsV">&mdash;</span><span class="val" id="mCorrV">&mdash;</span>
   </div>
