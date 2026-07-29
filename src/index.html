@@ -279,26 +279,26 @@
     <button id="btnNorm">NORMALIZE</button>
     <button id="btnTrim">TRIM SILENCE</button>
   </div>
-  <h3>SCULPT <span style="color:var(--txt-dim);letter-spacing:0">— reshape the sound on the waveform itself</span></h3>
-  <div class="row">
+  <h3 class="adv">SCULPT <span style="color:var(--txt-dim);letter-spacing:0">— reshape the sound on the waveform itself</span></h3>
+  <div class="row adv">
     <button id="btnShape">&#9998; DRAW GAIN</button>
     <button id="btnTame">TAME PEAKS</button>
     <button id="btnShapeFlat">RESET CURVE</button>
     <button id="btnShapeApply">APPLY</button>
   </div>
-  <div id="shapeHint" style="font-size:10px;color:var(--txt-dim);margin:2px 0 4px">
+  <div class="adv" id="shapeHint" style="font-size:10px;color:var(--txt-dim);margin:2px 0 4px">
     <b>DRAW GAIN</b>: drag across the wave to draw a volume curve — pull a loud hit down, lift a quiet tail. <b>TAME PEAKS</b> evens out spikes automatically. <b>APPLY</b> bakes it in (undoable).
   </div>
-  <div class="pslider"><span class="lbl">LENGTH</span><input type="range" id="shapeLen" min="0.25" max="4" step="0.01" value="1"><span class="val" id="shapeLenV">1.00&times;</span></div>
-  <div class="row">
+  <div class="pslider adv"><span class="lbl">LENGTH</span><input type="range" id="shapeLen" min="0.25" max="4" step="0.01" value="1"><span class="val" id="shapeLenV">1.00&times;</span></div>
+  <div class="row adv">
     <span id="shapeLenInfo" style="font-size:10px;color:var(--lcd);flex:1">—</span>
     <button aria-label="Halve the sample length" id="btnLenHalf">&#189;</button>
     <button aria-label="Double the sample length" id="btnLenDbl">&times;2</button>
     <button id="btnLenApply">STRETCH / SHRINK</button>
   </div>
 
-  <h3>PRE-VERB <span style="color:var(--txt-dim);letter-spacing:0">&mdash; reverse reverb: a swell that arrives into the hit</span></h3>
-  <div class="row">
+  <h3 class="adv">PRE-VERB <span style="color:var(--txt-dim);letter-spacing:0">&mdash; reverse reverb: a swell that arrives into the hit</span></h3>
+  <div class="row adv">
     <span class="lbl">MODE</span>
     <select aria-label="Pre-verb mode" id="pvMode" class="grow">
       <option value="pre">PRE-VERB &mdash; swell &#8594; dry hit</option>
@@ -306,7 +306,7 @@
       <option value="boom">BOOMERANG &mdash; swell &#8594; hit &#8594; bloom</option>
     </select>
   </div>
-  <div class="row">
+  <div class="row adv">
     <span class="lbl">SPACE</span>
     <select aria-label="Pre-verb space" id="pvType">
       <option value="hall">HALL</option><option value="room">ROOM</option>
@@ -316,13 +316,13 @@
     <span class="lbl">FROM</span>
     <select aria-label="Pre-verb source" id="pvSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select>
   </div>
-  <div class="pslider"><span class="lbl">LENGTH</span><input aria-label="Pre-verb swell length" type="range" id="pvLen" min="0.2" max="4" step="0.05" value="1.5"><span class="val" id="pvLenV">1.50s</span></div>
-  <div class="pslider"><span class="lbl">AMOUNT</span><input aria-label="Pre-verb amount" type="range" id="pvMix" min="0.05" max="1.5" step="0.05" value="0.85"><span class="val" id="pvMixV">85%</span></div>
-  <div class="row">
+  <div class="pslider adv"><span class="lbl">LENGTH</span><input aria-label="Pre-verb swell length" type="range" id="pvLen" min="0.2" max="4" step="0.05" value="1.5"><span class="val" id="pvLenV">1.50s</span></div>
+  <div class="pslider adv"><span class="lbl">AMOUNT</span><input aria-label="Pre-verb amount" type="range" id="pvMix" min="0.05" max="1.5" step="0.05" value="0.85"><span class="val" id="pvMixV">85%</span></div>
+  <div class="row adv">
     <button id="btnPreverb">&#9204; RENDER PRE-VERB</button>
     <span id="pvInfo" style="font-size:10px;color:var(--txt-dim);flex:1">&mdash;</span>
   </div>
-  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">
+  <div class="adv" style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">
     The sound is reversed, sent through the reverb, and reversed back &mdash; so the tail runs <b>backwards into</b>
     the hit instead of away from it. LENGTH is how far ahead the swell starts, so the sample gets longer at the
     front: put it on a pad and the swell leads into the beat. SPRING and GATED give the hardest arrivals.
@@ -349,29 +349,29 @@
     <button id="btnKitBuild" class="grow">&#9881; BUILD KIT &#8594; PADS</button>
   </div>
   <div id="kbInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">Load any sound (import, pack, mic, or a TRAX take), then BUILD. Each piece is derived from your sample — filtered, pitched and enveloped — so the whole kit shares its character. Fills pads from the TARGET onward. Undoable.</div>
-  <h3>CHOP <span style="color:var(--txt-dim);letter-spacing:0">— tap wave to select &amp; audition a slice</span></h3>
-  <div class="row">
+  <h3 class="adv">CHOP <span style="color:var(--txt-dim);letter-spacing:0">— tap wave to select &amp; audition a slice</span></h3>
+  <div class="row adv">
     <span class="lbl">SLICES</span>
     <select id="chopN"><option>4</option><option>8</option><option selected>16</option><option>32</option></select>
     <button id="btnEqual">EQUAL</button>
     <button id="btnTrans">TRANSIENT</button>
   </div>
-  <div class="pslider"><span class="lbl">SENS</span><input type="range" id="chopSens" min="1.2" max="4" step="0.05" value="2"><span class="val" id="chopSensV">2.00</span></div>
-  <div class="row">
+  <div class="pslider adv"><span class="lbl">SENS</span><input type="range" id="chopSens" min="1.2" max="4" step="0.05" value="2"><span class="val" id="chopSensV">2.00</span></div>
+  <div class="row adv">
     <span class="lbl">SLICE</span>
     <span id="selInfo" style="color:var(--lcd);font-size:12px;min-width:70px">—</span>
     <button id="btnSplit">SPLIT @ TAP</button>
     <button id="btnMerge">MERGE &#8594;</button>
     <button id="btnZero" class="on">ZERO SNAP</button>
   </div>
-  <div class="row">
+  <div class="row adv">
     <span class="lbl">START</span>
     <button aria-label="Slice start earlier" id="btnSm">&#8722;</button><button aria-label="Slice start later" id="btnSp">+</button>
     <span class="lbl">END</span>
     <button aria-label="Slice end earlier" id="btnEm">&#8722;</button><button aria-label="Slice end later" id="btnEp">+</button>
     <span style="font-size:10px;color:var(--txt-dim)">10ms steps</span>
   </div>
-  <div class="row">
+  <div class="row adv">
     <span class="lbl">TO PADS</span>
     <select id="assignFrom"></select>
     <button id="btnAssign" class="grow">ASSIGN SLICES &#8594; PADS</button>
@@ -383,14 +383,14 @@
   <div class="hint"><b>PROGRAM</b> — tap steps for the shown TRACK. <b>NOTES</b> opens a scale grid to write melodies on this pad. <b>LIVE REC</b> records pad taps quantized to the grid. <b>LOCK</b> + a step sets pitch / probability / ratchet / nudge. <b>HUMAN</b> adds timing + velocity drift.</div>
   <div class="row" id="patrow"><span class="lbl">PTN</span></div>
   <div id="arrWarn" style="display:none" role="status"><span id="arrWarnText"></span><button id="arrWarnOff">HOLD ONE PATTERN</button></div>
-  <div class="row" id="chainrow">
+  <div class="row adv" id="chainrow">
     <span class="lbl">CHAIN</span>
     <div id="chainview">—</div>
     <button id="btnChainAdd">+PTN</button>
     <button id="btnChainClr" aria-label="Clear the chain">CLR</button>
     <button id="btnChainOn">CHAIN</button>
   </div>
-  <div class="row" id="songrow">
+  <div class="row adv" id="songrow">
     <span class="lbl">SONG</span>
     <button id="btnSongAdd">+SEC</button>
     <button id="btnSongOn">SONG</button>
@@ -398,16 +398,16 @@
     <button id="btnSongClr" aria-label="Clear the song">CLR</button>
     <span id="songInfo" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
   </div>
-  <div id="songlist"></div>
+  <div class="adv" id="songlist"></div>
 
-  <h3>MORPH <span style="color:var(--txt-dim);letter-spacing:0">&mdash; melt one pattern into another</span></h3>
-  <div class="row">
+  <h3 class="adv">MORPH <span style="color:var(--txt-dim);letter-spacing:0">&mdash; melt one pattern into another</span></h3>
+  <div class="row adv">
     <span class="lbl">FROM</span><select aria-label="Morph from pattern" id="mfFrom"></select>
     <span class="lbl">TO</span><select aria-label="Morph to pattern" id="mfTo"></select>
     <span class="lbl">BARS</span>
     <select aria-label="Morph length in bars" id="mfBars"><option>2</option><option>4</option><option selected>8</option><option>16</option><option>32</option><option>64</option></select>
   </div>
-  <div class="row">
+  <div class="row adv">
     <span class="lbl">ORDER</span>
     <select aria-label="Morph order" id="mfCurve" class="grow">
       <option value="weight">METRIC &mdash; offbeats change first</option>
@@ -417,7 +417,7 @@
       <option value="track">TRACK &mdash; one instrument at a time</option>
     </select>
   </div>
-  <div class="row">
+  <div class="row adv">
     <span class="lbl">END</span>
     <select aria-label="What happens when the morph arrives" id="mfMode">
       <option value="once">LAND ON B</option>
@@ -427,23 +427,23 @@
     </select>
     <label style="font-size:10px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="mfVel" checked> blend velocities</label>
   </div>
-  <div class="pslider"><span class="lbl">AMOUNT</span><input aria-label="Morph amount" type="range" id="mfAmt" min="0" max="1" step="0.005" value="0"><span class="val" id="mfAmtV">0%</span></div>
-  <div id="mfPreview" style="font-family:ui-monospace;font-size:15px;color:var(--lcd);letter-spacing:2px;margin:2px 0 4px;overflow-x:auto;white-space:nowrap">&mdash;</div>
-  <div class="row">
+  <div class="pslider adv"><span class="lbl">AMOUNT</span><input aria-label="Morph amount" type="range" id="mfAmt" min="0" max="1" step="0.005" value="0"><span class="val" id="mfAmtV">0%</span></div>
+  <div class="adv" id="mfPreview" style="font-family:ui-monospace;font-size:15px;color:var(--lcd);letter-spacing:2px;margin:2px 0 4px;overflow-x:auto;white-space:nowrap">&mdash;</div>
+  <div class="row adv">
     <button id="btnMorphOn">MORPH</button>
     <button id="btnMorphPrint">PRINT &#8594;</button>
     <select aria-label="Print the blend into this pattern" id="mfPrint"></select>
     <span id="mfInfo" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
   </div>
-  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">
+  <div class="adv" style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">
     MORPH advances one notch per bar and takes over from CHAIN / SONG while it runs. The step grid shows what
     you are hearing, so editing is locked until you stop it &mdash; <b>PRINT</b> freezes the blend you like into a
     pattern slot. AMOUNT scrubs by hand; set END to HOLD to stay put. It bounces and exports too (source: MORPH).
   </div>
 
   <div class="pslider"><span class="lbl">SWING</span><input type="range" id="swing" min="0" max="0.6" step="0.01" value="0"><span class="val" id="swingV">0%</span></div>
-  <div class="pslider"><span class="lbl">HUMAN</span><input type="range" id="human" min="0" max="1" step="0.01" value="0"><span class="val" id="humanV">0%</span></div>
-  <div class="row">
+  <div class="pslider adv"><span class="lbl">HUMAN</span><input type="range" id="human" min="0" max="1" step="0.01" value="0"><span class="val" id="humanV">0%</span></div>
+  <div class="row adv">
     <button id="btnPtnBpm">PTN TEMPO</button>
     <span id="ptnBpmInfo" style="font-size:10px;color:var(--txt-dim)">each pattern keeps its own BPM</span>
   </div>
@@ -458,13 +458,13 @@
     <button id="btnNotes">NOTES</button>
     <span id="lockHint" style="font-size:10px;color:var(--txt-dim)">tap step to toggle</span>
   </div>
-  <div class="row">
+  <div class="row adv">
     <span class="lbl">VIEW</span>
     <button id="btnViewGrid" class="on">GRID</button>
     <button id="btnViewCircle">&#9711; CIRCLE</button>
     <span id="viewHint" style="font-size:10px;color:var(--txt-dim);flex:1">rows of steps</span>
   </div>
-  <div class="row">
+  <div class="row adv">
     <button id="btnScaleLock">&#128274; SCALE</button>
     <select aria-label="Scale root note" id="scaleRoot"></select>
     <select aria-label="Scale type" id="scaleName">
@@ -474,7 +474,7 @@
     </select>
     <button id="btnScaleFix" title="snap pitches already written in this pattern">FIX PTN</button>
   </div>
-  <div id="scaleHint" style="font-size:10px;color:var(--txt-dim);margin:0 0 4px">Off — pitches are chromatic (any semitone).</div>
+  <div class="adv" id="scaleHint" style="font-size:10px;color:var(--txt-dim);margin:0 0 4px">Off — pitches are chromatic (any semitone).</div>
   <div id="seqModeBadge" style="display:none"></div>
   <div id="stepgrid"></div>
   <div id="circlewrap" style="display:none">
@@ -490,8 +490,8 @@
   </div>
   <div style="font-size:10px;color:var(--txt-dim);margin:0 0 4px">VEL sets the loudness of steps you place next (step brightness shows it). To change a placed step: <b style="color:var(--amber)">LOCK</b> &#8594; tap the step &#8594; VEL slider.</div>
 
-  <h3>EUCLID <span style="color:var(--txt-dim);letter-spacing:0">— spread N hits evenly over the track</span></h3>
-  <div class="row">
+  <h3 class="adv">EUCLID <span style="color:var(--txt-dim);letter-spacing:0">— spread N hits evenly over the track</span></h3>
+  <div class="row adv">
     <span class="lbl">PRESET</span>
     <select id="euPreset" class="grow">
       <option value="">— custom —</option>
@@ -509,11 +509,11 @@
       <option value="8,16,0">Straight 8ths</option>
     </select>
   </div>
-  <div class="pslider"><span class="lbl">STEPS</span><input type="range" id="euSteps" min="2" max="16" step="1" value="16"><span class="val" id="euStepsV">16</span></div>
-  <div class="pslider"><span class="lbl">HITS</span><input type="range" id="euHits" min="0" max="16" step="1" value="5"><span class="val" id="euHitsV">5</span></div>
-  <div class="pslider"><span class="lbl">ROTATE</span><input type="range" id="euRot" min="0" max="15" step="1" value="0"><span class="val" id="euRotV">0</span></div>
-  <div id="euPreview" style="font-family:ui-monospace;font-size:15px;color:var(--lcd);letter-spacing:2px;margin:2px 0 4px;overflow-x:auto;white-space:nowrap">—</div>
-  <div class="row">
+  <div class="pslider adv"><span class="lbl">STEPS</span><input type="range" id="euSteps" min="2" max="16" step="1" value="16"><span class="val" id="euStepsV">16</span></div>
+  <div class="pslider adv"><span class="lbl">HITS</span><input type="range" id="euHits" min="0" max="16" step="1" value="5"><span class="val" id="euHitsV">5</span></div>
+  <div class="pslider adv"><span class="lbl">ROTATE</span><input type="range" id="euRot" min="0" max="15" step="1" value="0"><span class="val" id="euRotV">0</span></div>
+  <div class="adv" id="euPreview" style="font-family:ui-monospace;font-size:15px;color:var(--lcd);letter-spacing:2px;margin:2px 0 4px;overflow-x:auto;white-space:nowrap">—</div>
+  <div class="row adv">
     <span class="lbl">MODE</span>
     <select id="euMode">
       <option value="replace">REPLACE row</option>
@@ -522,13 +522,13 @@
     </select>
     <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="euSetLen"> set track LEN (polymeter)</label>
   </div>
-  <div class="row">
+  <div class="row adv">
     <button id="btnEuApply" class="grow">APPLY TO TRACK</button>
     <button id="btnEuAll">ALL LOADED PADS</button>
   </div>
 
-  <h3>GROOVE <span style="color:var(--txt-dim);letter-spacing:0">— feel templates: timing push/pull + accents</span></h3>
-  <div class="row">
+  <h3 class="adv">GROOVE <span style="color:var(--txt-dim);letter-spacing:0">— feel templates: timing push/pull + accents</span></h3>
+  <div class="row adv">
     <span class="lbl">FEEL</span>
     <select aria-label="Groove feel" id="grvSel" class="grow">
       <option value="straight">STRAIGHT (reset)</option>
@@ -544,15 +544,15 @@
       <option value="loose">HUMAN LOOSE · light drift</option>
     </select>
   </div>
-  <div class="pslider"><span class="lbl">AMOUNT</span><input aria-label="Groove amount" type="range" id="grvAmt" min="0" max="1" step="0.05" value="1"><span class="val" id="grvAmtV">100%</span></div>
-  <div class="row">
+  <div class="pslider adv"><span class="lbl">AMOUNT</span><input aria-label="Groove amount" type="range" id="grvAmt" min="0" max="1" step="0.05" value="1"><span class="val" id="grvAmtV">100%</span></div>
+  <div class="row adv">
     <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="grvVel" checked> apply accents (velocity)</label>
     <span class="grow"></span>
     <button id="btnGrvTrack">THIS TRACK</button>
     <button id="btnGrvAll">ALL TRACKS</button>
   </div>
-  <div id="grvInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">Groove writes per-step timing nudges (and accents) into the pattern — it bounces and exports exactly as you hear it. STRAIGHT clears them.</div>
-  <div id="notesPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
+  <div class="adv" id="grvInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">Groove writes per-step timing nudges (and accents) into the pattern — it bounces and exports exactly as you hear it. STRAIGHT clears them.</div>
+  <div class="adv" id="notesPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
     <div class="row" style="margin-bottom:6px">
       <span class="lbl">SCALE</span>
       <select id="noteScale" class="shrink"><option value="major">MAJOR</option><option value="minor">MINOR</option><option value="dorian">DORIAN</option><option value="mixo">MIXOLYD</option><option value="pmaj">PENT MAJ</option><option value="pmin">PENT MIN</option><option value="blues">BLUES</option></select>
@@ -586,14 +586,14 @@
   <div class="row">
     <button id="btnLiveRec" class="rec grow">LIVE REC (quantized pad input)</button>
   </div>
-  <h3>AUTOMATION <span style="color:var(--txt-dim);letter-spacing:0">— macro moves recorded into the pattern, replay every loop</span></h3>
-  <div class="row">
+  <h3 class="adv">AUTOMATION <span style="color:var(--txt-dim);letter-spacing:0">— macro moves recorded into the pattern, replay every loop</span></h3>
+  <div class="row adv">
     <button id="btnAutoRec" class="rec">REC</button>
     <span class="lbl">TARGET</span>
     <select id="autoTarget" class="grow"></select>
     <button id="btnAutoClr">CLR</button>
   </div>
-  <div class="pslider"><span class="lbl">MACRO</span><input type="range" id="autoMacro" min="0" max="1" step="0.001" value="1"><span class="val" id="autoMacroV">—</span></div>
+  <div class="pslider adv"><span class="lbl">MACRO</span><input type="range" id="autoMacro" min="0" max="1" step="0.001" value="1"><span class="val" id="autoMacroV">—</span></div>
 </div>
 
 <!-- TRAX -->

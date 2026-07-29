@@ -189,6 +189,16 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 #tabs button.on{background:var(--chassis);color:var(--amber);font-weight:600;border-bottom-color:var(--amber)}
 .view{display:none;flex:1;overflow-y:auto;padding:var(--sp-3);-webkit-overflow-scrolling:touch}
 .view.on{display:block}
+/* ESSENTIALS / EVERYTHING. Two tabs carry nearly all the settings in the app —
+   SEQ has 112 and SMPL 59, against 1 to 22 everywhere else — and a newcomer
+   meets them one tap after a pad grid with seven controls on it. Folding the
+   generative and arrangement sections away leaves what you need to write a
+   part; the switch says how many are folded, because hiding things without
+   saying so is the failure this whole app keeps making. */
+.view.simple .adv{display:none !important}
+.denbar{display:flex;align-items:center;gap:var(--sp-2);margin:0 0 var(--sp-2)}
+.denbar button{min-height:30px;padding:5px 10px;font-size:11px;flex:none}
+.denbar span{font-size:10px;color:var(--txt-dim);line-height:1.35;min-width:0;flex:1}
 .row{display:flex;gap:var(--sp-2);align-items:center;margin-bottom:var(--sp-3);flex-wrap:wrap}
 .lbl{font-size:var(--fs-xs);color:var(--txt-dim);letter-spacing:.6px;min-width:62px}
 .grow{flex:1}

@@ -1593,8 +1593,35 @@
      the 1.9s clamp — 1.900s is also the ceiling, so a slow tempo and a bad
      division were indistinguishable in a report. And a master line: ceiling,
      trim, live limiter reduction, and every pad above 100%.
+   - R132: ESSENTIALS / EVERYTHING — the second step into the app.
+     Asked: what would smooth this out for someone new. Counted rather than
+     guessed. 556 controls across twelve tabs, but that total is misleading: the
+     step grid, the pad grid and the mixer strips are most of it, and they are
+     the work, not settings about the work. Separating the two puts the whole
+     problem on two tabs — SEQ carries 113 settings and SMPL 60, against 1 to 22
+     on the other ten.
+     So the front door is fine. PADS has seven controls, a song is already
+     loaded, the LCD says press PLAY. The cliff is the SECOND step: one tap from
+     that to a tab with 113 settings and nothing ranking them.
+     A per-tab switch folds the generative and arrangement machinery — CHAIN,
+     SONG, MORPH, EUCLID, GROOVE, AUTOMATION, SCALE, the grid/circle toggle,
+     HUMAN, PTN TEMPO, and in the sampler CHOP, SCULPT and PRE-VERB. SEQ opens
+     at 70 controls instead of 172, SMPL at 33 instead of 60. What stays is
+     everything needed to write a part and hear it: patterns, the track strip,
+     the step grid, velocity, LOCK, NOTES, clear.
+     It says what it is holding. The switch names the folded sections and counts
+     them, because a control you cannot find is worse than one you have not
+     learned yet — and every bug in this run has been the app doing something
+     without saying so. It is remembered per tab. A fresh install opens
+     simplified; anyone who has been here before is not quietly given a smaller
+     app.
+     The catch worth having a test for: four tour and recipe steps point INTO
+     folded sections. A spotlight ringing an invisible control is exactly the
+     slideshow the tour was rebuilt to stop being. A guided step now un-folds
+     the tab it needs and the tour puts it back on close — unless you had opened
+     that tab yourself, in which case your choice stands.
    ================================================================ */
-const BUILD = 'JBH-88 · R131 · 2026-07-28 · a squashed mix says so, wherever you are';
+const BUILD = 'JBH-88 · R132 · 2026-07-29 · ESSENTIALS — the second step is not a cliff';
 document.getElementById('build').textContent = BUILD;
 document.getElementById('build2').textContent = BUILD;
 console.log(BUILD);
@@ -9969,11 +9996,41 @@ function guideWatch(st){
   poll();
 }
 
+/* Four tour and recipe steps point at controls ESSENTIALS folds away — EUCLID,
+   CIRCLE, CHAIN. A spotlight ringing an invisible element is exactly the
+   slideshow this tour was rebuilt to stop being, so a guided step un-folds the
+   tab it needs and puts it back when the tour closes. */
+const densRevealed=new Set();
+function tourReveal(e){
+  if(!e) return;
+  const adv=e.closest('.adv'); if(!adv) return;
+  const v=e.closest('.view'); if(!v||!v.classList.contains('simple')) return;
+  v.classList.remove('simple');
+  densRevealed.add(v.id);
+  const bar=v.querySelector('.denbar button');
+  if(bar){ bar.textContent='EVERYTHING'; bar.classList.add('on'); bar.setAttribute('aria-pressed','true');
+    const n=v.querySelector('.denbar span'); if(n) n.textContent='every control on this tab — shown for this step.'; }
+}
+function densRestore(){
+  densRevealed.forEach(id=>{
+    const v=$(id); if(!v) return;
+    const o=densRead(); const key=id.replace(/^v-/,'');
+    if(o[key]==='full') return;              // they chose EVERYTHING themselves — leave it
+    v.classList.add('simple');
+    const bar=v.querySelector('.denbar button');
+    if(bar){ bar.textContent='ESSENTIALS'; bar.classList.remove('on'); bar.setAttribute('aria-pressed','false'); }
+    const n=v.querySelector('.denbar span');
+    if(n){ const c=[...v.querySelectorAll('.adv')].reduce((s,e)=>s+e.querySelectorAll('button,input,select').length,0);
+      n.textContent=c+' more controls are folded away. Tap to show them.'; }
+  });
+  densRevealed.clear();
+}
 function tourTarget(st){
   if(!st || !st.el) return null;
   const id = (typeof st.el==='function') ? st.el() : st.el;
   const e = $(id);
   if(!e) return null;
+  tourReveal(e);
   const r = e.getBoundingClientRect();
   return (r.width>0 && r.height>0) ? e : null;   // hidden targets fall back to a centred card
 }
@@ -10084,6 +10141,7 @@ function tourClose(finished){
   clearTimeout(guideTimer);
   if(guideTap){ guideTap(); guideTap=null; }
   $('tourDim').classList.remove('off');
+  densRestore();
   const wasRecipe=guideRecipe;
   guideRecipe=null; guideLabel='TOUR';
   if(wasRecipe){
@@ -10284,6 +10342,69 @@ document.querySelectorAll('.hint').forEach(h=>h.addEventListener('click',()=>h.c
    Evaluated on tab switch — a natural pause, and it bounds how often anything
    can appear. Dismissing one silences it for the session; the toggle silences
    the lot for good. */
+/* ---------------- ESSENTIALS / EVERYTHING ----------------
+   Counted, not guessed: SEQ carries 112 settings and SMPL 59, while the other
+   ten tabs carry between 1 and 22. The step grid, the pad grid and the mixer
+   strips are not part of that — they are the work, and folding them would be
+   folding the instrument. What folds is the generative and arrangement
+   machinery: MORPH, EUCLID, GROOVE, AUTOMATION, CHAIN, SONG, SCALE, and in the
+   sampler CHOP, SCULPT and PRE-VERB. Everything you need to write a part and
+   hear it stays.
+   The switch is per tab and it SAYS what it is holding back, by count and by
+   name. A control you cannot find is worse than one you have not learned yet,
+   and this app's whole history of bug reports is things happening silently. */
+const DENS_KEY='jbh_density_v1';
+function densRead(){ try{ return JSON.parse(localStorage.getItem(DENS_KEY)||'{}')||{}; }catch(e){ return {}; } }
+function densWrite(o){ try{ localStorage.setItem(DENS_KEY, JSON.stringify(o)); }catch(e){} }
+function buildDensity(){
+  // a returning user (the tour has been seen) is not shown a simplified app
+  // without asking; a fresh install is
+  const fresh=(()=>{ try{ return !localStorage.getItem('jbh_tour_v1'); }catch(e){ return false; } })();
+  const saved=densRead();
+  document.querySelectorAll('.view').forEach(v=>{
+    const adv=[...v.querySelectorAll('.adv')];
+    if(!adv.length) return;
+    const id=v.id.replace(/^v-/,'');
+    // how much is behind the switch, and what it is called
+    const n=adv.reduce((s,e)=>s+e.querySelectorAll('button,input,select').length
+                              +(/^(BUTTON|INPUT|SELECT)$/.test(e.tagName)?1:0),0);
+    const names=adv.filter(e=>e.tagName==='H3')
+      .map(e=>e.firstChild&&e.firstChild.textContent?e.firstChild.textContent.trim():'')
+      .filter(Boolean);
+    if(v.id==='v-seq') names.unshift('CHAIN','SONG');
+    const bar=document.createElement('div'); bar.className='denbar';
+    const btn=document.createElement('button');
+    const note=document.createElement('span');
+    bar.appendChild(btn); bar.appendChild(note);
+    const paint=()=>{
+      const simple=v.classList.contains('simple');
+      btn.textContent = simple?'ESSENTIALS':'EVERYTHING';
+      btn.classList.toggle('on',!simple);
+      btn.setAttribute('aria-pressed', String(!simple));
+      btn.setAttribute('aria-label', simple
+        ? 'Showing essentials. '+n+' more controls are available — activate for everything.'
+        : 'Showing every control. Activate for essentials only.');
+      note.textContent = simple
+        ? n+' more controls are folded away — '+names.join(', ')+'. Tap to show them.'
+        : 'every control on this tab.';
+    };
+    btn.addEventListener('click',()=>{
+      const simple=!v.classList.contains('simple');
+      v.classList.toggle('simple',simple);
+      const o=densRead(); o[id]=simple?'simple':'full'; densWrite(o);
+      paint();
+      lcd(simple ? id.toUpperCase()+' — ESSENTIALS. '+n+' controls folded away; nothing was changed or lost.'
+                 : id.toUpperCase()+' — EVERYTHING. All '+n+' are back.');
+    });
+    const want = saved[id] ? saved[id]==='simple' : fresh;
+    v.classList.toggle('simple',want);
+    // after the hint, so the tab still opens with its one-line explanation
+    const hint=v.querySelector('.hint');
+    if(hint && hint.nextSibling) v.insertBefore(bar,hint.nextSibling);
+    else v.insertBefore(bar, v.firstChild);
+    paint();
+  });
+}
 const COACH_KEY='jbh_coach_v1';
 const coachEnabled=()=>{ try{ return localStorage.getItem(COACH_KEY)!=='off'; }catch(e){ return true; } };
 const coachSeen={};
@@ -10397,6 +10518,7 @@ if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
 }
 document.body.addEventListener('touchstart',function once(){ ensureAudio(); document.body.removeEventListener('touchstart',once); },{passive:true});
 drawSong(); undoInit(); drawProjects(); drawRewind();
+buildDensity();
 a11yPass(); a11yWatch();
 lcd('READY · load a sample into a pad (SMPL tab).');
 offerRestore().then(tourMaybeAutoStart, tourMaybeAutoStart);
