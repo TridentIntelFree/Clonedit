@@ -1088,6 +1088,12 @@
     <span class="lbl">LOOPS</span>
     <select id="bLoops"><option>1</option><option selected>2</option><option>4</option><option>8</option></select>
   </div>
+  <div class="row">
+    <span class="lbl">TAKE</span>
+    <span id="bTake" style="font-family:var(--f-mono);font-size:12px;color:var(--lcd)">&mdash;</span>
+    <button id="btnNewTake">NEW TAKE</button>
+    <span style="font-size:10px;color:var(--txt-dim);flex:1;min-width:0">HUMANIZE and step PROBABILITY play this same performance every bounce. NEW TAKE rolls a different one.</span>
+  </div>
   <div class="row"><button id="btnBounce" class="grow">BOUNCE &#8594; 44.1k / 16-BIT STEREO WAV (+3s tail)</button></div>
   <div class="row"><button id="btnCompressed" class="grow">EXPORT COMPRESSED (M4A/WEBM &middot; renders in real time)</button></div>
   <div class="row"><button id="btnStems" class="grow">BOUNCE STEMS &#8594; PER-PAD / PER-TRACK WAV</button></div>
@@ -3091,8 +3097,38 @@ Object.assign(globalThis, __JBH_PURE);})();
      rather than as an animation, and nothing delays an action, because a
      groovebox that makes you wait to hear something is broken. All of it is off
      under prefers-reduced-motion.
+   - R135: THE TAKE — a bounce plays the same performance every time.
+     I had said renders differed by about -75dB from "an untraced random
+     element". Both halves of that were wrong, and measuring properly took the
+     answer apart into three pieces.
+     One: the demo project ships with HUMANIZE at 0.3 and thirteen PROBABILITY
+     locks. Those are supposed to vary — but the consequence was that bouncing
+     the same project twice gave two different PERFORMANCES, -11dB RMS apart,
+     with nothing saying so. Export, listen, like it, export again to fix the
+     filename, get a different record. The render now draws from a seeded
+     generator: the seed is part of the project, rides in the autosave, the JSON
+     export and every undo step, and NEW TAKE rolls a fresh one. Same project,
+     same take, today and next year. Measured: seeding buys 23dB of agreement.
+     Two: with humanize and probability off, Math.random is called ZERO times
+     during a render, so the remainder was never random. It starts at about
+     -150dB — one float32 bit — and the delay feedback and master compressor
+     amplify it. Bisecting by voice count found the threshold exactly: one to
+     four sources render bit-identically, six or more never do, whether they
+     overlap or not. That is the browser summing more than a handful of nodes in
+     an order it does not promise to repeat; float addition is not associative.
+     It is not ours and no amount of seeding touches it. Typically -74dB below
+     the mix, worst case around -23dB in the densest passages.
+     Three: the WAV writer's TPDF dither, about -93dB, deliberate and documented.
+     And chasing this turned up something else. Boot said READY · load a sample
+     into a pad BEFORE offerRestore() had decided what to do — and for a new
+     user what it does is spend a couple of seconds building the demo song and
+     then replace every pad and pattern. So the app claimed a state it was not
+     in, invited work, and threw that work away when the song arrived. It says
+     STARTING now, and whichever branch runs writes READY only when it is true.
+     Found because a test that writes steps during that window had its steps
+     silently overwritten — which is exactly what would happen to a person.
    ================================================================ */
-const BUILD = 'JBH-88 · R134 · 2026-07-29 · every pad shows the sound it holds';
+const BUILD = 'JBH-88 · R135 · 2026-07-29 · the same project bounces the same take';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -5742,7 +5778,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
     refreshHaveKeys().then(()=>{ drawPackList(); drawDownloads(); updateStoreMeter(); });   // always reflect current on-device library
   }
   if(b.dataset.v==='mix'){ drawEdit(); drawSidechain(); drawMixer(); }
-  if(b.dataset.v==='proj'){ $('bSrc').value=(S.songOn&&S.song.length)?'song':((S.chainOn&&S.chain.length)?'chain':'pat'); drawProjects(); drawRewind(); }
+  if(b.dataset.v==='proj'){ $('bSrc').value=(S.songOn&&S.song.length)?'song':((S.chainOn&&S.chain.length)?'chain':'pat'); drawProjects(); drawRewind(); drawTake(); }
   if(b.dataset.v==='trax'){ drawTrax(); }
   if(b.dataset.v==='live'){ drawLive(); }
   if(b.dataset.v==='amp'){ ampListDevices(); }
@@ -7234,6 +7270,7 @@ function exportSongDoc(){
   });
   return { fmt:'mvx-songdoc-1', title:$('projName').value, bpm:S.bpm, swing:S.swing, human:S.human, silFade:S.silFade,
     revType:S.revType, revSize:S.revSize, dlyMode:S.dlyMode, delayDiv:S.delayDiv, delayFb:S.delayFb, dlyTone:S.dlyTone,
+    takeSeed:S.takeSeed,   // the performance humanize/probability produce, so a reopened project bounces the same
     sidechain:{on:S.scOn,trig:S.scTrig,depth:S.scDepth,rel:S.scRel},
     loop:S.songLoop, song:S.song.map(x=>[x.pat,x.reps]), pads, patterns };
 }
@@ -10205,6 +10242,7 @@ $('btnSave').addEventListener('click',()=>{
   });
   const doc={ fmt:'mvx880-project', build:BUILD, name:$('projName').value,
     bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
+    takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
@@ -10244,6 +10282,9 @@ function reapplyLivePads(){   // push S.pads channel state onto the live graph (
 }
 function applySessionDoc(doc, bufs){
   S.bpm=doc.bpm; S.swing=doc.swing; S.human=doc.human||0;
+  // an older project has no seed: give it one now and keep it from here on, so
+  // it at least becomes repeatable from this point rather than never
+  S.takeSeed = (doc.takeSeed!=null) ? doc.takeSeed : newTakeSeed();
   // BPM must only drive the sequencer: AUTO-WARP (tempo re-stretches samples)
   // is retired as a default — always load OFF so a project saved under the old
   // default doesn't keep slowing loops/trax-on-pads when the tempo changes.
@@ -10488,6 +10529,7 @@ function snapshotSession(){
   });
   return { fmt:'mvx880-project', t:Date.now(), name:$('projName').value, projId:curProjId,
     bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
+    takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
@@ -10571,6 +10613,7 @@ let undoStack=[], redoStack=[], _committed=null, undoTimer=0;
 function undoSnap(){
   return { name:$('projName').value,
     bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
+    takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
     midiChrom:S.midiChrom, midiRoot:S.midiRoot, notesOut:S.notesOut, clkOut:S.clkOut, midiOutCh:S.midiOutCh,
@@ -10665,6 +10708,8 @@ async function offerRestore(){
   $('restoreAge').textContent=(doc.name?doc.name+' · ':'')+ageText(Date.now()-doc.t);
   bar.style.display='flex';
   pendingRestore=doc;          // guarded until you accept it or wave it away
+  // nothing is loading in this branch — it waits for you, so it really is ready
+  lcd('READY · restore the last session above, or start from here.');
   $('btnRestore').onclick=()=>{
     try{
       pendingRestore=null;
@@ -10985,7 +11030,41 @@ function bounceSeq(src){
    peak, and AUTO would set a trim that the next bounce sails past. One
    deterministic worst case instead: whatever you actually render can only come
    out at or below it, and pressing AUTO twice gives the same answer. */
+/* ---------------- THE TAKE ----------------
+   HUMANIZE and per-step PROBABILITY are supposed to vary — that is the whole
+   point of them. What is NOT reasonable is that bouncing the same project twice
+   gave two different performances with nothing saying so: you export, listen,
+   like it, export again to fix a typo in the filename, and get a different
+   record. Measured on the demo project that difference was -11dB RMS. Not
+   subtle — a different take.
+   So the render draws from a SEEDED generator instead. The seed is part of the
+   project, so the same project bounces to the same performance today and next
+   year, and NEW TAKE rolls a fresh one when a different feel is what you want.
+   Live playback is deliberately left alone: a jam should breathe.
+   (Underneath this there is a residual around -66dB from the browser summing
+   more than about five nodes in an order it does not promise to repeat. Float
+   addition is not associative, so a different order changes the last bit. It
+   is inaudible, it is not ours, and no amount of seeding touches it.) */
+let takeRnd = Math.random;
+function newTakeSeed(){ return (Math.random()*0x7fffffff)|0; }
+function takeSeedStart(){
+  if(S.takeSeed==null) S.takeSeed=newTakeSeed();
+  takeRnd = mulberry32(S.takeSeed);
+}
+function takeSeedEnd(){ takeRnd = Math.random; }
+function drawTake(){
+  const el=$('bTake'); if(!el) return;
+  if(S.takeSeed==null) S.takeSeed=newTakeSeed();
+  el.textContent='TAKE #'+String(S.takeSeed>>>0).toString(36).toUpperCase();
+  el.title='The performance humanize and probability produce. The same seed always '
+    +'bounces the same take; NEW TAKE rolls a different one.';
+}
 async function renderMix(padSet, traxSet, opt){
+  takeSeedStart();
+  try{ return await renderMixInner(padSet, traxSet, opt); }
+  finally{ takeSeedEnd(); }
+}
+async function renderMixInner(padSet, traxSet, opt){
   ensureSpeedCaches();   // bake pitch-locked stretches so the offline render matches what you hear live
   const worst=!!(opt&&opt.worstCase);
   const loops=(opt&&opt.loops)||parseInt($('bLoops').value,10);
@@ -11007,11 +11086,11 @@ async function renderMix(padSet, traxSet, opt){
           const L=trackLen(pat,p), idx=posMod(rev?-(absB+st):(absB+st),L);
           const v=pat.steps[p][idx]; if(!(v>0)) continue;
           const lk=pat.locks&&pat.locks[p+':'+idx];
-          if(!worst && lk && lk.prob!=null && Math.random()>lk.prob) continue;
+          if(!worst && lk && lk.prob!=null && takeRnd()>lk.prob) continue;
           let when=t+st*sd+swing; if(lk&&lk.nudge) when+=lk.nudge*sd;
           let hv=v;
-          if(!worst && S.human>0){ when=Math.max(0.01,when+(Math.random()*2-1)*S.human*0.012);   // same humanize as live playback
-            hv=clamp(v*(1-Math.random()*S.human*0.22),0.05,1); }
+          if(!worst && S.human>0){ when=Math.max(0.01,when+(takeRnd()*2-1)*S.human*0.012);   // same humanize as live playback
+            hv=clamp(v*(1-takeRnd()*S.human*0.22),0.05,1); }
           const chord=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0], rat=(lk&&lk.rat>1)?lk.rat:1;
           const isChord=chord.length>1;                            // NOTES-lane harmony bakes into the bounce too
           chord.forEach(pitch=>{
@@ -12032,10 +12111,21 @@ if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
   navigator.serviceWorker.register('./sw.js').catch(()=>{});   // offline shell — network-first, so updates land when online
 }
 document.body.addEventListener('touchstart',function once(){ ensureAudio(); document.body.removeEventListener('touchstart',once); },{passive:true});
-drawSong(); undoInit(); drawProjects(); drawRewind();
+drawSong(); undoInit(); drawProjects(); drawRewind(); drawTake();
+$('btnNewTake').addEventListener('click',()=>{
+  S.takeSeed=newTakeSeed(); drawTake(); dirty();
+  lcd('NEW TAKE — humanize and probability will play it differently. Bounce again to hear it.');
+});
 buildDensity();
 a11yPass(); a11yWatch();
-lcd('READY · load a sample into a pad (SMPL tab).');
+/* No READY here. offerRestore() decides what happens next — restore a session,
+   or build the demo song — and for a new user that build takes a couple of
+   seconds and then REPLACES every pad and pattern. Saying "READY · load a
+   sample into a pad" before that decision was wrong twice over: it claimed a
+   state the app was not in, and it invited work that the arriving song would
+   silently throw away. Whichever branch runs now writes its own line when it
+   is actually true. */
+lcd('STARTING …');
 offerRestore().then(tourMaybeAutoStart, tourMaybeAutoStart);
 
 </script>
