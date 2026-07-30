@@ -1822,8 +1822,28 @@
      One bug found in my own code by that test: restoring a tooltip with
      `dataset.t0 || el.title` — a control with no tooltip stores '', which is
      falsy, so it restored the offline text it was supposed to remove.
+   - R140: THE OFFLINE BADGE COULD NOT BE READ ON AN UPRIGHT PHONE.
+     Reported the day it shipped. Two causes, and the 8px type was the lesser
+     one. The badge sat beside the logo, and the header's left column is
+     clipped where the transport begins — which is past the logo on a 430px
+     screen, the one width I checked it at, but lands mid-badge at 390px and
+     earlier still at 360px. It rendered as "OF".
+     It lives on the build line now, which has the whole column, at the same
+     10px as that line and at 10:1 contrast instead of 4.1:1. Sharing that line
+     left the build string about 40px on a 390px phone — "R1…" — and the build
+     string is how you check which version you are testing, so offline gives it
+     its own row instead. The header grows by one line, only while offline, and
+     returns to exactly its old height when the connection comes back.
+     No second live region for the badge: the LCD is already role="status"
+     aria-live="polite" and netApply writes both transitions to it, so adding
+     one would only double-announce.
+     The test now measures the badge at 360, 390, 414 and 430 — walking up the
+     ancestors to see whether any of them clips it, rather than trusting the
+     element's own box — and requires that showing it costs the build line
+     nothing at that width. Checking a layout at one width is what let this
+     ship.
    ================================================================ */
-const BUILD = 'JBH-88 · R139 · 2026-07-30 · projects say what wrote them; offline says so';
+const BUILD = 'JBH-88 · R140 · 2026-07-30 · the offline badge can be read';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -11226,6 +11246,9 @@ const NEEDS_NET=['btnPackLoad','btnFreeSounds'];
 function netApply(){
   const off=!navigator.onLine;
   const pip=$('offPip'); if(pip) pip.hidden=!off;
+  /* A class rather than :has(#offPip:not([hidden])) — the state is already
+     known here, and this works on every engine the app runs on. */
+  const idl=$('idline'); if(idl) idl.classList.toggle('off',off);
   NEEDS_NET.forEach(id=>{
     const el=$(id); if(!el) return;
     el.classList.toggle('offline',off);
