@@ -1754,8 +1754,40 @@
      One real discrepancy found: the bounce peaks about 0.1dB ABOVE the stated
      CEILING, because the limiter is 20:1 rather than a brickwall and lets a
      little through. The report says so rather than the number quietly lying.
+   - R138: THE SAMPLE RATE TRAP — the app could silently destroy an import.
+     A DIAG from a real phone at R126 read "ctx:running @16000Hz". R128 noticed
+     it and added a DIAG warning; that was reporting a wound, not closing it.
+     Safari drops the audio session to 16kHz whenever a mic stream is live or a
+     Bluetooth headset negotiates HFP, and a context created in that moment is
+     born at 16kHz for its whole life. The damage is not the thin monitoring —
+     it is that decodeAudioData ALWAYS decodes at the rate of the context you
+     call it on. A 44.1k sample imported during such a session was resampled to
+     16k and two thirds of its bandwidth were gone permanently. renderMix
+     renders at 44100 regardless, so the bounce upsampled the wreckage and
+     produced a file that measured perfectly and sounded like a phone call.
+     Three defences. The context now ASKS for 48k (honoured on Chrome/Firefox,
+     ignored by some Safari builds, so it is first but it is not the fix).
+     decode() now runs on decodeCtx(), which is the live context when that
+     context is healthy — the common path is untouched and needs no extra
+     resample — and a throwaway 48k OfflineAudioContext when it is not. An
+     AudioBuffer carries its own sampleRate and is portable between contexts,
+     so the rescued sample still plays on the 16kHz session for monitoring
+     while the stored data stays full-bandwidth and the bounce renders from the
+     good copy. Third, a banner: live capture through the mic, the BLACK BOX or
+     REC OUT genuinely cannot carry detail the session does not have, so that
+     loss is stated plainly with a RETRY that releases our own mic and reopens
+     the context. Named RETRY, not FIX, because what holds the session down is
+     usually outside the app.
+     Proved on a signal that cannot lie: a 15kHz tone, which a 16kHz buffer
+     cannot represent at all (Nyquist 8kHz). Decoded the old way it came back
+     at rms 0.0007 with zero energy at 15kHz — annihilated. Through decodeCtx
+     it comes back at 48kHz, rms 0.5655 (exactly a full-amplitude sine) with
+     its 15kHz energy intact at 0.800.
+     The R128 DIAG line said "nothing above 8kHz survives". That is no longer
+     true of imports, so it now names live capture specifically. A warning that
+     overstates is on its way to being ignored.
    ================================================================ */
-const BUILD = 'JBH-88 · R137 · 2026-07-29 · the meters measure what they are named';
+const BUILD = 'JBH-88 · R138 · 2026-07-30 · the sample rate trap';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2502,6 +2534,70 @@ function bbKeep(){
   loadIntoTarget(buf,'blackbox');
   lcd('BLACK BOX \u2192 '+padName(S.editPad)+' \u00b7 last '+(n/AC.sampleRate).toFixed(0)+'s saved — trim/chop it in SMPL.');
 }
+/* ---------------- SAMPLE RATE — refusing to record a phone call -------------
+   A DIAG from a real phone came back reading "ctx:running @16000Hz". That is
+   not a glitch, it is Safari doing what it is told: when a microphone stream
+   is live, or a Bluetooth headset has negotiated HFP (the bidirectional
+   hands-free profile, as opposed to A2DP), the whole audio session drops to
+   16kHz and any AudioContext created at that moment is born at 16kHz. A
+   context's rate is fixed for its lifetime, so it stays there.
+
+   That alone would only mean the monitoring sounds thin. The damage is that
+   decodeAudioData ALWAYS decodes at the rate of the context you call it on —
+   so a 44.1kHz sample imported during a 16kHz session is resampled down to
+   16kHz and the top two thirds of its bandwidth are gone for good. The bounce
+   renders at 44100 regardless, so it faithfully upsamples the wreckage back
+   to 44.1k and hands over a file that looks correct in every meter and sounds
+   like a telephone. Nothing in the app said a word about it.
+
+   Three defences, in order of how much they can be trusted:
+
+     1. ASK for 48k when the context is created. Honoured on Chrome and
+        Firefox. Some Safari builds ignore the hint entirely, which is why
+        this is first but is not the fix.
+     2. DECODE somewhere safe. If the live context is degraded, samples are
+        decoded on a throwaway OfflineAudioContext at 48k instead. An
+        AudioBuffer carries its own sampleRate and is portable between
+        contexts, so it plays (resampled, for monitoring only) on the 16kHz
+        context while the stored data stays full-bandwidth — and the 44.1k
+        bounce renders from the good copy. This is the fix.
+     3. SAY SO. A degraded context still ruins anything recorded through the
+        mic, the BLACK BOX or REC OUT, because those genuinely cannot capture
+        detail the session is not carrying. That can only be reported, and
+        offered a way out. */
+const WANT_SR=48000;    // what we ask for
+const SR_MIN=44100;     // at or above this, the live context is fit to decode on
+function mkLiveCtx(Ctor){
+  try{ const c=new Ctor({sampleRate:WANT_SR, latencyHint:'interactive'}); if(c&&c.sampleRate) return c; }
+  catch(e){}                                              // NotSupportedError: rate refused
+  try{ return new Ctor({latencyHint:'interactive'}); }catch(e){}
+  return new Ctor();
+}
+let decCtx=null;
+/* Where decodeAudioData should run. A healthy live context is preferred so the
+   common path is unchanged and playback needs no resample; only a degraded
+   session pays for the detour. */
+function decodeCtx(){
+  const live=(AC&&AC.sampleRate)||0;
+  if(live>=SR_MIN) return AC;
+  if(decCtx) return decCtx;
+  try{ decCtx=new OfflineAudioContext(1,1,WANT_SR); }catch(e){ decCtx=null; }
+  return decCtx||AC;
+}
+function srBad(){ return !!AC && AC.sampleRate<SR_MIN; }
+/* The banner is the only honest way to report this: it is not an error the app
+   can recover from on its own, and the user is the only one who can release
+   whatever owns the audio session. */
+function srWatch(){
+  const bar=$('srBar'); if(!bar) return;
+  if(!srBad()){ bar.style.display='none'; return; }
+  const sr=Math.round(AC.sampleRate);
+  $('srWhat').textContent='Audio session opened at '+sr+' Hz — usually a Bluetooth headset. '+
+    'Imports are safe; live recording (MIC, BLACK BOX, REC OUT) will sound dull.';
+  bar.style.display='flex';
+  plog('Audio session opened at '+sr+' Hz. Usually a Bluetooth headset in hands-free mode, '+
+       'or another app holding the microphone. Imports are decoded at '+WANT_SR+' Hz regardless.');
+}
 function ensureAudio(){
   /* load the capture worklet early so REC OUT / TRAX / BLACK BOX get the
      audio-thread path rather than falling back on first use. The BLACK BOX
@@ -2521,7 +2617,7 @@ function ensureAudio(){
   },0);
   if(AC) { resumeSession(); return; }
   const Ctor = window.AudioContext || window.webkitAudioContext;
-  AC = new Ctor();
+  AC = mkLiveCtx(Ctor);
   LIVE = buildGraph(AC);      // graph fully built before anything reads it (ordering fix)
   scApplyRoutingG(LIVE,AC);   // apply sidechain routing to the fresh graph
   // --- iOS output routing (SAMSARA pattern) ---
@@ -2558,7 +2654,9 @@ function ensureAudio(){
   if(AC.state!=='running') AC.resume();
   startMeter();
   bbStart();
-  lcd('AUDIO ONLINE · '+Math.round(AC.sampleRate)+' Hz · state:'+AC.state);
+  if(srBad()) lcd('AUDIO ONLINE at '+Math.round(AC.sampleRate)+' Hz — see the banner, recording quality is limited.');
+  else lcd('AUDIO ONLINE · '+Math.round(AC.sampleRate)+' Hz · state:'+AC.state);
+  try{ srWatch(); }catch(e){}
 }
 
 /* ---------------- VOICE LIFT — making a voice audible on a phone -------------
@@ -4483,12 +4581,17 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
 let workBuf=null, slices=[];   // slices = [{s,e} normalized]
 
 function decode(ab){
+  /* decodeCtx(), not AC: decodeAudioData resamples to the rate of whatever
+     context you call it on, so decoding a 44.1k file on a 16kHz session throws
+     away two thirds of its bandwidth permanently. On a healthy session this IS
+     AC and nothing changes. */
+  const ctx=decodeCtx();
   return new Promise((res,rej)=>{
     let done=false;
     const ok=b=>{ if(!done){done=true;res(b);} }, bad=e=>{ if(!done){done=true;rej(e||new Error('decode failed'));} };
     try{
-      const p=AC.decodeAudioData(ab,ok,bad);   // callback form works everywhere
-      if(p && p.then) p.then(ok,bad);          // promise form where supported
+      const p=ctx.decodeAudioData(ab,ok,bad);   // callback form works everywhere
+      if(p && p.then) p.then(ok,bad);           // promise form where supported
     }catch(e){ bad(e); }
   });
 }
@@ -10218,6 +10321,25 @@ function rebuildAudio(){ // last resort: wedged context — new context, new gra
   ensureAudio();
   lcd('AUDIO REBUILT · press PLAY');
 }
+/* RETRY on the low-rate banner. A context's rate is fixed for its lifetime, so
+   the only way to a better one is to drop this context and open another —
+   which is worth nothing until whatever pulled the session down to 16kHz has
+   let go, so release our own microphone first and say so if the retry did not
+   take. */
+$('btnSrFix').addEventListener('click',()=>{
+  const was=AC?Math.round(AC.sampleRate):0;
+  try{ if(micOn) micDisable(); }catch(e){}
+  try{ stopMicStream(); }catch(e){}
+  try{ if(playing) stopSeq(); }catch(e){}
+  rebuildAudio();
+  const now=AC?Math.round(AC.sampleRate):0;
+  srWatch();
+  if(now>=SR_MIN) lcd('AUDIO REOPENED at '+now+' Hz — recording is back to full quality.');
+  else lcd('Still '+now+' Hz'+(now===was?'':' (was '+was+')')+
+    ' — something outside JBH-88 owns the audio session. Disconnect a Bluetooth headset '+
+    'or close any app using the mic, then RETRY.');
+});
+$('btnSrX').addEventListener('click',()=>{ $('srBar').style.display='none'; });
 let wakeLock=null;
 async function wakeAcquire(){  // keep the screen on while music plays (iOS 16.4+/Android)
   try{
@@ -10282,8 +10404,13 @@ function diagDump(tag){
       // mic — on a phone it means the audio route switched to a mic-carrying
       // device (an open mic, or a Bluetooth headset in hands-free mode). Worth
       // saying out loud: it is invisible and it dulls the whole instrument.
-      'ctx:'+(AC?AC.state:'none')+' @'+(AC?Math.round(AC.sampleRate):0)+'Hz'
-        +(AC&&AC.sampleRate<32000?' ⚠LOW-RATE ROUTE (nothing above '+Math.round(AC.sampleRate/2000)+'kHz survives)':'')
+      'ctx:'+(AC?AC.state:'none')+' @'+(AC?Math.round(AC.sampleRate):0)+'Hz'+
+        /* R128 flagged this as "nothing above NkHz survives", which was true of
+           the whole instrument then. Since R138 imports are decoded away from a
+           degraded session, so the loss is confined to live capture — state
+           exactly that much and no more. */
+        (srBad()?' ⚠LOW — imports decoded @'+WANT_SR+', but live capture (mic/BB/RECOUT) '+
+          'is limited to '+Math.round(AC.sampleRate/2000)+'kHz':'')
         +' outDead:'+(AC?outIsDead():'-')+' playing:'+playing+' songPos:'+songPos+' ptn:'+(S.pattern+1),
       'mic:'+(micOn?'OPEN':'off')+' monitor:'+(micChain?g(micChain.mon):'-')
         +' · sends — pads with DLY: '+(S.pads.map((pd,i)=>pd.bufId>=0&&pd.dly>0.02?padName(i)+':'+Math.round(pd.dly*100)+'%':null).filter(Boolean).join(' ')||'none'),

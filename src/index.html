@@ -77,6 +77,13 @@
   <button aria-label="Dismiss the restore prompt" id="btnRestoreX">&#215;</button>
 </div>
 
+<div id="srBar" style="display:none;align-items:center;gap:8px;padding:7px 10px;background:var(--panel2);border-bottom:1px solid var(--red);font-size:11px">
+  <span style="color:var(--red);flex:none">&#9888; LOW RATE</span>
+  <span id="srWhat" style="color:var(--txt-dim);flex:1"></span>
+  <button id="btnSrFix" class="on">RETRY</button>
+  <button aria-label="Dismiss the sample rate warning" id="btnSrX">&#215;</button>
+</div>
+
 <div id="tabs" role="tablist" aria-label="Sections">
   <button role="tab" aria-label="Pads" data-v="pads" class="on">PADS</button>
   <button role="tab" aria-label="Sampler" data-v="smpl">SMPL</button>
