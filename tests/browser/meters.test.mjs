@@ -111,6 +111,45 @@ export default async function ({ browser, base }) {
       !isFinite(r.s) || Math.abs(r.m - r.s) < 12,
       isFinite(r.s) ? Math.abs(r.m - r.s).toFixed(1) + ' apart' : 'short-term not yet filled');
 
+    /* The OUT tab is where you watch the mix, and the analyser was the smallest
+       thing on it — 113px under six lines of prose. It carries the readable
+       share of that tab now, and the readouts have to survive their own widest
+       values on the narrowest phone. */
+    t.head('THE OUT TAB GIVES ITS SPACE TO THE ANALYSER');
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.evaluate(() => document.querySelector('#tabs button[data-v="out"]').click());
+    await page.waitForTimeout(300);
+    const layout = await page.evaluate(() => {
+      const spec = document.getElementById('spectrum').getBoundingClientRect();
+      const hint = document.querySelector('#v-out .hint').getBoundingClientRect();
+      // force the widest readings these can ever show
+      document.getElementById('mLufsV').textContent = '-99.9 / -99.9';
+      document.getElementById('mPeakV').textContent = '-99.9';
+      document.getElementById('mRmsV').textContent = '-99.9';
+      const vals = [...document.querySelectorAll('#outMeters .val')]
+        .map(e => ({ t: e.textContent, over: e.scrollWidth > e.clientWidth + 1 }));
+      const cv = document.getElementById('spectrum');
+      return { specH: spec.height, hintH: hint.height, vals,
+        fluid: cv.hasAttribute('data-fluid'),
+        aspectBox: spec.width / spec.height, aspectAttr: cv.width / cv.height };
+    });
+    t.note('    lead ' + layout.hintH.toFixed(0) + 'px · analyser ' + layout.specH.toFixed(0) + 'px');
+    t.ok('the analyser is taller than the text above it',
+      layout.specH > layout.hintH, layout.specH.toFixed(0) + ' vs ' + layout.hintH.toFixed(0));
+    t.ok('and is a usable size on the narrowest phone', layout.specH > 140,
+      layout.specH.toFixed(0) + 'px');
+    /* A fluid canvas keeps its drawing space matched to its box. Without it, a
+       height cap scales x and y differently and the axis labels come out
+       squashed — which is exactly what a max-height would otherwise cause. */
+    t.ok('the canvas coordinate space follows its box', layout.fluid);
+    t.ok('so the drawing is never stretched',
+      Math.abs(layout.aspectBox - layout.aspectAttr) < 0.02,
+      'box ' + layout.aspectBox.toFixed(3) + ' vs drawing ' + layout.aspectAttr.toFixed(3));
+    const over = layout.vals.filter(v => v.over).map(v => v.t);
+    t.ok('no readout overflows its column at its widest', over.length === 0,
+      over.join(' | '));
+    await page.setViewportSize({ width: 430, height: 932 });
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

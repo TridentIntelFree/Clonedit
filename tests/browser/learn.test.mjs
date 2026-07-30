@@ -186,23 +186,36 @@ export default async function ({ browser, base }) {
     /* The clamp used to be on the whole .hint. That container now holds the
        button and the lesson, so clamping it would hide the control that opens
        them — the clamp is on the lead line alone. */
-    await showTab('trax');            // the longest lead in the app
+    await showTab('trax');
     await page.setViewportSize({ width: 844, height: 390 });
     await page.waitForTimeout(250);
+    /* Every shipped lead is one sentence now, so none of them overflow the
+       two-line clamp — which makes "is a lead clipped?" a test of the copy
+       rather than of the rule. Inject a long one instead: the clamp is a safety
+       net for future wording, and what has to hold is that it clips the text
+       WITHOUT ever swallowing the control that opens the lesson. */
     const land = await page.evaluate(() => {
       const hint = document.querySelector('#v-trax .hint');
       const lead = hint.querySelector('.hint-lead');
       const btn = hint.querySelector('.hint-more');
+      const keep = lead.innerHTML;
+      const shipped = { clipped: lead.scrollHeight > lead.clientHeight + 1,
+        max: getComputedStyle(lead).maxHeight };
+      lead.textContent = 'long. '.repeat(120);
+      const lr = lead.getBoundingClientRect();
       const hr = hint.getBoundingClientRect(), br = btn.getBoundingClientRect();
-      return { leadMax: getComputedStyle(lead).maxHeight,
-        leadClipped: lead.scrollHeight > lead.clientHeight + 1,
-        btnVisible: br.height > 0 && br.bottom <= hr.bottom + 1,
-        hintOverflow: getComputedStyle(hint).overflow };
+      const injected = { clipped: lead.scrollHeight > lead.clientHeight + 1,
+        leadH: lr.height,
+        btnVisible: br.height > 0 && br.bottom <= hr.bottom + 1 };
+      lead.innerHTML = keep;
+      return { shipped, injected, hintOverflow: getComputedStyle(hint).overflow,
+        btnVisible: btn.getBoundingClientRect().height > 0 };
     });
-    /* Assert the RULE is in force, not that one particular sentence overflows —
-       a short lead on a wide landscape screen legitimately fits. */
-    t.ok('the clamp is applied to the lead line', land.leadMax !== 'none', land.leadMax);
-    t.ok('and a long lead is actually clipped by it', land.leadClipped);
+    t.ok('the clamp is applied to the lead line', land.shipped.max !== 'none', land.shipped.max);
+    t.ok('the shipped leads are short enough not to need it', !land.shipped.clipped);
+    t.ok('but a long one is clipped to two lines', land.injected.clipped,
+      land.injected.leadH.toFixed(0) + 'px tall');
+    t.ok('and the toggle survives even then', land.injected.btnVisible);
     t.ok('but the toggle is still visible and inside the box', land.btnVisible);
     t.ok('the container is not clipping its own controls', land.hintOverflow === 'visible',
       land.hintOverflow);

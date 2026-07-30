@@ -395,14 +395,28 @@ h3 span{font-weight:400}
 /* aspect-ratio, not height:auto — the height has to come from the CSS width.
    fitCanvas resizes the backing store to the real device pixels, and an auto
    height derived from that backing store would chase its own tail. */
-#spectrum{width:100%;aspect-ratio:900/260;display:block;background:var(--lcd-bg);
+/* The analyser is the one thing on this tab you actually watch, and it was the
+   smallest thing on it — 113px on a 390px phone, under six lines of prose. The
+   lead above it is one line now, and that space comes here: 900/420 gives about
+   180px, which is enough to see a resonance rather than infer one. Capped at
+   38vh so a short or sideways screen does not hand the whole viewport to it. */
+#spectrum{width:100%;aspect-ratio:900/420;max-height:38vh;
+  display:block;background:var(--lcd-bg);
   border:1px solid var(--edge);border-radius:var(--r-md);margin-bottom:var(--sp-2)}
 /* four label/value pairs that stay paired instead of wrapping apart */
-#outMeters{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--sp-1) var(--sp-2);
+/* Not four equal columns: LUFS carries two numbers where the others carry one,
+   so an equal share overflows it on a 360px screen while the other three sit
+   half empty. */
+#outMeters{display:grid;grid-template-columns:1fr 1fr 1.35fr 1fr;gap:var(--sp-1) var(--sp-2);
   margin-bottom:var(--sp-1);align-items:baseline}
 #outMeters .lbl{min-width:0;font-size:10px}
+/* LUFS carries two numbers now (momentary / short-term), and at 13px mono that
+   is wider than a quarter of a 390px screen — it wrapped onto a second line and
+   pushed the row out of alignment with the other three. Kept on one line and
+   sized to fit the widest reading these can produce ("-99.9 / -99.9"). */
 #outMeters .val{font-family:var(--f-mono);min-width:0;text-align:left;
-  color:var(--lcd);font-size:var(--fs-md)}
+  color:var(--lcd);font-size:var(--fs-md);white-space:nowrap}
+#outMeters #mLufsV{font-size:var(--fs-xs);letter-spacing:-.3px}
 
 /* mic */
 #micBar{flex:1;height:10px;background:#000;border-radius:5px;overflow:hidden;position:relative}

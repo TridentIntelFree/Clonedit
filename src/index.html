@@ -114,9 +114,10 @@
 <!-- PADS -->
 <div class="view on" role="tabpanel" aria-label="Pads" id="v-pads">
   <div class="hint">
-  <div class="hint-lead"><b>PADS</b> — tap to play (higher = louder). Tap <b>EDIT</b> then a pad to shape it (gain / pitch / FX). Record pad hits into the grid with the top-right <b>&#9679;</b>, or capture audio to a lane in <b>TRAX</b>.</div>
+  <div class="hint-lead" data-lead-short><b>PADS</b> — tap to play (higher = louder). Tap <b>EDIT</b> then a pad to shape it.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-pads">WHAT A PAD IS, AND HOW TO PLAY IT</button>
   <div class="hint-body" id="learn-pads" hidden>
+<p class="lead-was"><b>PADS</b> — tap to play (higher = louder). Tap <b>EDIT</b> then a pad to shape it (gain / pitch / FX). Record pad hits into the grid with the top-right <b>&#9679;</b>, or capture audio to a lane in <b>TRAX</b>.</p>
 <h4>A pad is a sound plus its settings</h4>
 <p>Each of the 64 pads (16 at a time, in 4 banks) holds one audio recording and
 everything about how that recording is played: level, pitch, pan, filter,
@@ -250,9 +251,10 @@ it, filter it, resample it. Nothing stays attached to the preset it came from.</
 <!-- SAMPLER -->
 <div class="view" role="tabpanel" aria-label="Sampler" id="v-smpl">
   <div class="hint">
-  <div class="hint-lead"><b>GET A SOUND ONTO THE TARGET PAD</b> — IMPORT FILE, REC MIC, pick a PRESET, or GET a PACK sample then tap <b>&#8594; PAD</b>. Then CHOP and <b>ASSIGN SLICES</b> to spread one sample across pads.</div>
+  <div class="hint-lead" data-lead-short><b>GET A SOUND ONTO THE TARGET PAD</b> — IMPORT FILE, REC MIC, a PRESET, or a PACK sample.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-smpl">SAMPLING, CHOPPING AND WARPING</button>
   <div class="hint-body" id="learn-smpl" hidden>
+<p class="lead-was"><b>GET A SOUND ONTO THE TARGET PAD</b> — IMPORT FILE, REC MIC, pick a PRESET, or GET a PACK sample then tap <b>&#8594; PAD</b>. Then CHOP and <b>ASSIGN SLICES</b> to spread one sample across pads.</p>
 <h4>Sampling is using a recording as an instrument</h4>
 <p>Any audio can become a playable sound: a file you import, something you sing
 into the mic, a note from the built-in synth presets, or a few seconds grabbed
@@ -465,9 +467,10 @@ someone else's.</p>
 <!-- SEQ -->
 <div class="view" role="tabpanel" aria-label="Sequencer" id="v-seq">
   <div class="hint">
-  <div class="hint-lead"><b>PROGRAM</b> — tap steps for the shown TRACK. <b>NOTES</b> opens a scale grid to write melodies on this pad. <b>LIVE REC</b> records pad taps quantized to the grid. <b>LOCK</b> + a step sets pitch / probability / ratchet / nudge. <b>HUMAN</b> adds timing + velocity drift.</div>
+  <div class="hint-lead" data-lead-short><b>PROGRAM</b> — tap steps for the shown TRACK. <b>LOCK</b> + a step edits one hit; <b>NOTES</b> writes melodies.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-seq">HOW A STEP SEQUENCER THINKS</button>
   <div class="hint-body" id="learn-seq" hidden>
+<p class="lead-was"><b>PROGRAM</b> — tap steps for the shown TRACK. <b>NOTES</b> opens a scale grid to write melodies on this pad. <b>LIVE REC</b> records pad taps quantized to the grid. <b>LOCK</b> + a step sets pitch / probability / ratchet / nudge. <b>HUMAN</b> adds timing + velocity drift.</p>
 <h4>Steps are slots in time</h4>
 <p>A bar of music is divided into 16 equal slots. Each lit step means "play this
 pad at this moment". Left to right is time; the row you are editing is whichever
@@ -764,9 +767,10 @@ a silence gives the gap away.</p>
 <!-- TRAX -->
 <div class="view" role="tabpanel" aria-label="Tape tracks" id="v-trax">
   <div class="hint">
-  <div class="hint-lead"><b>RECORD AUDIO TO A LANE:</b> 1) pick <b>SOURCE</b> — <b>MASTER BUS</b> = everything you hear &middot; <b>LIVE ONLY</b> = just what YOU play (live instruments, AMP guitar, pads you hit) with the sequencer as silent backing &middot; <b>MIC</b>. 2) tap <b>&#9679;</b> on a lane to arm. 3) press <b>PLAY</b> to record, <b>STOP</b> to commit. <b>PUT A TAKE ON A PAD:</b> tap that lane&rsquo;s <b>FX</b> button &rarr; <b>TO PAD</b>. &#8734; = loop &middot; M / S = mute / solo.</div>
+  <div class="hint-lead" data-lead-short><b>RECORD AUDIO TO A LANE</b> — pick a <b>SOURCE</b>, tap <b>&#9679;</b> on a lane to arm, press <b>PLAY</b>.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-trax">TAPE LANES — RECORDING AUDIO, NOT TRIGGERS</button>
   <div class="hint-body" id="learn-trax" hidden>
+<p class="lead-was"><b>RECORD AUDIO TO A LANE:</b> 1) pick <b>SOURCE</b> — <b>MASTER BUS</b> = everything you hear &middot; <b>LIVE ONLY</b> = just what YOU play (live instruments, AMP guitar, pads you hit) with the sequencer as silent backing &middot; <b>MIC</b>. 2) tap <b>&#9679;</b> on a lane to arm. 3) press <b>PLAY</b> to record, <b>STOP</b> to commit. <b>PUT A TAKE ON A PAD:</b> tap that lane&rsquo;s <b>FX</b> button &rarr; <b>TO PAD</b>. &#8734; = loop &middot; M / S = mute / solo.</p>
 <h4>Two different kinds of track</h4>
 <p>The sequencer stores <em>instructions</em> — "play pad 3 here". A tape lane
 stores <em>audio</em>, exactly as it sounded. That difference decides which one
@@ -836,11 +840,10 @@ independent of the rest, so any one of them can be muted or redone.</p>
 <!-- MIC -->
 <div class="view" role="tabpanel" aria-label="Microphone" id="v-mic">
   <div class="hint">
-  <div class="hint-lead"><b>SING, SPEAK, BEATBOX, RECORD A ROOM.</b> Turn the mic on, shape the voice, then
-  <b>RECORD</b> straight to a tape lane &mdash; no need to arm anything or start the sequencer.
-  <b>Use headphones</b> before turning MONITOR on, or the speakers will howl.</div>
+  <div class="hint-lead" data-lead-short><b>SING, SPEAK, BEATBOX, RECORD A ROOM.</b> <b>Use headphones</b> before turning MONITOR on.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-mic">RECORDING A VOICE ON A PHONE</button>
   <div class="hint-body" id="learn-mic" hidden>
+<p class="lead-was"><b>SING, SPEAK, BEATBOX, RECORD A ROOM.</b> Turn the mic on, shape the voice, then <b>RECORD</b> straight to a tape lane &mdash; no need to arm anything or start the sequencer. <b>Use headphones</b> before turning MONITOR on, or the speakers will howl.</p>
 <h4>Why phone recordings sound thin</h4>
 <p>A phone speaker produces almost nothing below about 500&nbsp;Hz. A man's
 voice has its fundamental around 85&ndash;180&nbsp;Hz and a woman's around
@@ -960,9 +963,10 @@ would take them with it. Export anything you want to keep.</p>
 <!-- LIVE -->
 <div class="view" role="tabpanel" aria-label="Live instruments" id="v-live">
   <div class="hint">
-  <div class="hint-lead"><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records <b>only what you play</b> (not the backing beat) to the next empty tape lane &mdash; open <b>TRAX</b> to hear, loop, FX, or send it to a pad. To capture the whole mix instead, arm a lane in <b>TRAX</b> and set the source to MASTER BUS.</div>
+  <div class="hint-lead" data-lead-short><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records only what you play.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-live">PLAYING IT IN BY HAND</button>
   <div class="hint-body" id="learn-live" hidden>
+<p class="lead-was"><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records <b>only what you play</b> (not the backing beat) to the next empty tape lane &mdash; open <b>TRAX</b> to hear, loop, FX, or send it to a pad. To capture the whole mix instead, arm a lane in <b>TRAX</b> and set the source to MASTER BUS.</p>
 <h4>Scale lock — you cannot play a wrong note</h4>
 <p>Turning on a scale restricts the keyboard to notes that belong together.
 If you do not read music this is the single most useful setting in the app:
@@ -1059,9 +1063,10 @@ a phrase you played by hand becomes material you can build with.</p>
 <!-- AMP -->
 <div class="view" role="tabpanel" aria-label="Amp and guitar input" id="v-amp">
   <div class="hint">
-  <div class="hint-lead"><b>GUITAR / LINE / MIC IN</b> — ENABLE INPUT, then play through the amp. <b>Use headphones</b> (feedback!). Record the processed tone with <b>TRAX</b> (SOURCE: MASTER BUS) or <b>DJ &#9679; REC OUT</b>.</div>
+  <div class="hint-lead" data-lead-short><b>GUITAR / LINE / MIC IN</b> — ENABLE INPUT, then play through the amp. <b>Use headphones</b> (feedback!).</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-amp">GUITAR AND LINE INPUT</button>
   <div class="hint-body" id="learn-amp" hidden>
+<p class="lead-was"><b>GUITAR / LINE / MIC IN</b> — ENABLE INPUT, then play through the amp. <b>Use headphones</b> (feedback!). Record the processed tone with <b>TRAX</b> (SOURCE: MASTER BUS) or <b>DJ &#9679; REC OUT</b>.</p>
 <h4>What an amp simulator is doing</h4>
 <p>An electric guitar plugged straight into a recorder sounds thin and brittle,
 because half of an electric guitar's sound is the amplifier and speaker it is
@@ -1136,9 +1141,10 @@ take the output back down to keep the balance.</p>
 <!-- DJ -->
 <div class="view" role="tabpanel" aria-label="DJ decks" id="v-dj">
   <div class="hint">
-  <div class="hint-lead"><b>&#9679; REC OUT</b> records the master (everything you hear) &mdash; no transport needed. Then <b>SAVE</b> = WAV file, or <b>TO PAD</b> = load the capture onto the target pad. Fader / wheel bend live pitch.</div>
+  <div class="hint-lead" data-lead-short><b>&#9679; REC OUT</b> records the master — everything you hear, no transport needed.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-dj">PERFORMING THE MIX</button>
   <div class="hint-body" id="learn-dj" hidden>
+<p class="lead-was"><b>&#9679; REC OUT</b> records the master (everything you hear) &mdash; no transport needed. Then <b>SAVE</b> = WAV file, or <b>TO PAD</b> = load the capture onto the target pad. Fader / wheel bend live pitch.</p>
 <h4>Capturing a performance, not a pattern</h4>
 <p><b>&#9679; REC OUT</b> records the master output — everything you can hear —
 without needing the transport running or a lane armed. It is for the take where
@@ -1213,9 +1219,10 @@ technology because it still works.</p>
 <!-- MIX -->
 <div class="view" role="tabpanel" aria-label="Mixer" id="v-mix">
   <div class="hint">
-  <div class="hint-lead"><b>MIXER</b> — one strip per in-use pad: live meter, fader, pan, <b>M</b>ute / <b>S</b>olo, and REV/DLY sends. Tap a strip's name to edit that pad. Master + global FX below. Everything bakes into the bounce.</div>
+  <div class="hint-lead" data-lead-short><b>MIXER</b> — one strip per in-use pad. Tap a strip’s name to edit that pad.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-mix">MIXING — BALANCE, SENDS AND HEADROOM</button>
   <div class="hint-body" id="learn-mix" hidden>
+<p class="lead-was"><b>MIXER</b> — one strip per in-use pad: live meter, fader, pan, <b>M</b>ute / <b>S</b>olo, and REV/DLY sends. Tap a strip's name to edit that pad. Master + global FX below. Everything bakes into the bounce.</p>
 <h4>Mixing is mostly just level</h4>
 <p>Before any effect, mixing is deciding how loud each thing is relative to
 everything else. Most amateur mixes have too much of everything at once. The
@@ -1283,11 +1290,10 @@ the repeat is being made at the master, not on the channel.</p>
 <!-- OUT -->
 <div class="view" role="tabpanel" aria-label="Master output" id="v-out">
   <div class="hint">
-  <div class="hint-lead"><b>THE FINISHED MIX.</b> Everything here runs on the whole song, and it is built into the
-  bounce as well &mdash; what you hear is what the WAV contains. Start with <b>BYPASS</b> to hear the
-  difference. LUFS reads momentary (400ms) and short-term (3s) to BS.1770; BOUNCE reports the integrated figure and the true peak of the actual file.</div>
+  <div class="hint-lead" data-lead-short><b>THE FINISHED MIX.</b> Everything here runs on the whole song and bakes into the bounce. Start with <b>BYPASS</b>.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-out">MASTERING, AND WHAT THE METERS MEAN</button>
   <div class="hint-body" id="learn-out" hidden>
+<p class="lead-was"><b>THE FINISHED MIX.</b> Everything here runs on the whole song, and it is built into the bounce as well &mdash; what you hear is what the WAV contains. Start with <b>BYPASS</b> to hear the difference. LUFS reads momentary (400ms) and short-term (3s) to BS.1770; BOUNCE reports the integrated figure and the true peak of the actual file.</p>
 <h4>What this section is for</h4>
 <p>Everything here runs on the finished mix rather than any one sound, and it is
 baked into the bounce — what you hear is what the WAV contains. <b>BYPASS</b>
@@ -1332,7 +1338,7 @@ louder, you are probably losing more than you gain.</p>
   </div>
 </div>
 
-  <canvas id="spectrum" role="img" aria-label="Live frequency spectrum of the master output. The meters below carry the same information as numbers." width="900" height="260"></canvas>
+  <canvas id="spectrum" data-fluid role="img" aria-label="Live frequency spectrum of the master output. The meters below carry the same information as numbers." width="900" height="420"></canvas>
   <div id="outMeters">
     <span class="lbl">PEAK dBFS</span><span class="lbl">RMS dB</span><span class="lbl">LUFS M / S</span><span class="lbl">MONO-SAFE</span>
     <span class="val" id="mPeakV">&mdash;</span><span class="val" id="mRmsV">&mdash;</span>
@@ -1447,9 +1453,10 @@ down everything is a balance problem with a lid on it.</p>
 <!-- MIDI -->
 <div class="view" role="tabpanel" aria-label="MIDI" id="v-midi">
   <div class="hint">
-  <div class="hint-lead"><b>Turn an old phone into a MIDI sound module.</b> Tap <b>ENABLE MIDI</b>, plug a controller in (USB-OTG or Bluetooth), and play. Notes trigger mapped pads; turn on <b>CHROMATIC</b> to play the selected pad melodically across the keyboard with zero setup.</div>
+  <div class="hint-lead" data-lead-short><b>Turn an old phone into a MIDI sound module.</b> Tap <b>ENABLE MIDI</b> and plug a controller in.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-midi">WHAT MIDI ACTUALLY IS</button>
   <div class="hint-body" id="learn-midi" hidden>
+<p class="lead-was"><b>Turn an old phone into a MIDI sound module.</b> Tap <b>ENABLE MIDI</b>, plug a controller in (USB-OTG or Bluetooth), and play. Notes trigger mapped pads; turn on <b>CHROMATIC</b> to play the selected pad melodically across the keyboard with zero setup.</p>
 <h4>MIDI is instructions, not sound</h4>
 <p>A MIDI cable carries no audio whatsoever. It carries messages: "note 60
 started, fairly hard", "note 60 stopped", "knob 74 is now at 90". The sound is
@@ -1552,9 +1559,10 @@ this app the leader; EXT CLOCK makes it a follower. Exactly one leader per setup
 <!-- PROJECT -->
 <div class="view" role="tabpanel" aria-label="Projects and export" id="v-proj">
   <div class="hint">
-  <div class="hint-lead"><b>PROJECT LIBRARY</b> — keep as many beats as you like on the device. <b>SAVE</b> updates the open project (shown below the NAME); <b>rename first</b> and SAVE keeps the original and stores a new one. <b>SAVE AS NEW</b> always makes a copy, <b>NEW</b> starts fresh. Below: bounce to WAV/stems/MIDI, or export the session as a JSON file.</div>
+  <div class="hint-lead" data-lead-short><b>PROJECT LIBRARY</b> — keep as many beats as you like on the device.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-proj">SAVING, BOUNCING AND GETTING WORK OUT</button>
   <div class="hint-body" id="learn-proj" hidden>
+<p class="lead-was"><b>PROJECT LIBRARY</b> — keep as many beats as you like on the device. <b>SAVE</b> updates the open project (shown below the NAME); <b>rename first</b> and SAVE keeps the original and stores a new one. <b>SAVE AS NEW</b> always makes a copy, <b>NEW</b> starts fresh. Below: bounce to WAV/stems/MIDI, or export the session as a JSON file.</p>
 <h4>Three different kinds of safety net</h4>
 <p>The app saves the current session automatically a second or so after any
 edit, so closing the tab does not lose work. Separately, it takes a

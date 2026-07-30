@@ -1909,8 +1909,35 @@
      animate, so getBoundingClientRect on the body returned 323px whether it was
      folded or not; the element's own height, plus checkVisibility(), is what
      actually corresponds to what a reader sees.
+   - R143: THE SPACE GOES TO THE ANALYSER. R142 folded the deep explanation but
+     left the lead line alone, so OUT still opened with six lines of prose above
+     a spectrum squeezed into 113px — the one thing on that tab you actually
+     watch was the smallest thing on it. Reported with a screenshot: "that's a
+     large block of text, can we use the space for the eq instead".
+     Every tab's lead is one sentence now; what each of them used to say becomes
+     the opening paragraph of that tab's lesson, so no wording is lost. On a
+     390px phone the OUT lead went from ~126px to 98px and the analyser from 113
+     to 171 — and the whole TONE EQ now fits on the first screen with IMAGE
+     starting below it.
+     Growing the canvas needed one fix underneath. fitCanvas maps drawing
+     coordinates from the canvas's width/height ATTRIBUTES, so changing only the
+     CSS aspect would have scaled x and y by different amounts and stretched the
+     axis labels. Canvases can now be marked data-fluid: their coordinate space
+     follows the box, which keeps the scale uniform under a max-height cap or a
+     different landscape aspect. The spectrum's backing attribute went to
+     900x420 to match.
+     The bigger analyser exposed a smaller thing beside it: LUFS carries two
+     numbers since R137, and an equal quarter of a 360px row was not enough —
+     it wrapped onto a second line. That column now gets 1.35fr and the reading
+     is sized so its widest possible value, "-99.9 / -99.9", still fits.
+     One test had to be rewritten rather than fixed: it asserted that a long
+     lead is clipped by the landscape two-line clamp, which stopped being true
+     the moment the leads got short. That was testing the copy, not the rule.
+     It injects a long lead now and checks the clamp clips it WITHOUT swallowing
+     the control that opens the lesson, which is the thing that must never
+     regress.
    ================================================================ */
-const BUILD = 'JBH-88 · R142 · 2026-07-30 · the explanations fold, and say more';
+const BUILD = 'JBH-88 · R143 · 2026-07-30 · the space goes to the analyser';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2859,6 +2886,12 @@ function fitCanvas(cv){
   let base=canvasBase.get(cv);
   if(!base){ base={w:cv.width||1, h:cv.height||1}; canvasBase.set(cv,base); }
   const r=cv.getBoundingClientRect();
+  /* A canvas marked data-fluid draws entirely in terms of the W and H it is
+     handed, so its coordinate space can follow the box rather than a fixed
+     aspect. Without this, any CSS that changes the box's shape — a max-height
+     cap on a short screen, a different aspect in landscape — scales x and y by
+     different amounts, and the axis labels come out stretched or squashed. */
+  if(cv.dataset.fluid && r.width>0 && r.height>0) base.w = base.h * (r.width/r.height);
   const dpr=Math.min(2, window.devicePixelRatio||1);
   if(r.width>0 && r.height>0){
     const w=Math.max(1,Math.round(r.width*dpr)), h=Math.max(1,Math.round(r.height*dpr));
