@@ -3284,8 +3284,44 @@ Object.assign(globalThis, __JBH_PURE);})();
      element's own box — and requires that showing it costs the build line
      nothing at that width. Checking a layout at one width is what let this
      ship.
+   - R141: THE CHECKS LIVE IN THE REPO NOW, AND MIDI IS FUNCTION-CHECKED.
+     Everything verifying this app was a script in a temp directory on one
+     machine — 289 of them — which is the same as not having it. `npm test`
+     covered src/pure/: 53 tests over ~330 lines, about 3% of the code.
+     tests/browser/ now holds six suites run by `npm run test:browser`, with a
+     shared harness (one answer to "which Chromium", shared with the build
+     gate so the two can never disagree about what they ran against) and a
+     GitHub Actions workflow that runs unit tests, the build, and the browser
+     suites on every push. CI also fails if index.html has drifted from what
+     src/ builds — the build is byte-reproducible, so that check is exact.
+     MIDI is the reason this happened now: no controller to hand, and a whole
+     section of the app resting on it. A fake MIDIAccess is installed before
+     the app loads, so MIDI ON runs the real midiInit — real enumeration, real
+     select population, real rebindInputs, real bindMidiOutput. Input is
+     delivered through the handler the app itself installed on the fake device
+     rather than by reaching past it into onMidi, so the wiring is under test
+     too; output is captured at the device's send() with the timestamps the app
+     computed. That last part is what makes the clock checkable rather than
+     assumed: 24 PPQN at 120 BPM measured at 20.833ms between ticks, and
+     41.667ms when the tempo is halved. Notes, CCs, CC LEARN, program change,
+     all four velocity curves, channel filtering, chromatic transposition,
+     external clock in (tempo derived from the incoming ticks, 16 steps from 96
+     ticks), BLE running-status parsing, and all-notes-off — 40 checks.
+     What it cannot do is say a particular controller works: nothing here
+     touches USB driver behaviour, real jitter, or what byte a given pad sends.
+     It establishes that if the bytes arrive the app does the right thing, and
+     that what it sends is correct and correctly timed. The rest needs hardware.
+     Writing the suites found no app bugs and four of my own, which is the
+     honest result to record. Three were mine outright — an "unmapped" MIDI note
+     that all 64 pads already own, a tolerance tighter than the test's own
+     rounding. The fourth was a misunderstanding worth keeping: I assumed
+     shortening a pattern HID the steps past the end and restored them on
+     lengthening. It does not. trimTrack removes them and says "N hits past the
+     end were removed, not hidden" — the stricter and better reading, since the
+     alternative is a pattern that resurrects old material later. The suite now
+     guards what the app actually promises, including the announcement.
    ================================================================ */
-const BUILD = 'JBH-88 · R140 · 2026-07-30 · the offline badge can be read';
+const BUILD = 'JBH-88 · R141 · 2026-07-30 · the checks live in the repo now';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is

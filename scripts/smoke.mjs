@@ -28,12 +28,10 @@ if (process.argv.includes('--skip-smoke')) {
   promote(); process.exit(0);
 }
 
-const CANDIDATES = [
-  process.env.CHROME_PATH, resolve(process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers', 'chromium'),
-  '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-].filter(Boolean);
-const exe = CANDIDATES.find(p => { try { return statSync(p).isFile(); } catch { return false; } });
+/* One answer to "which Chromium", shared with the browser tests, so the build
+   gate and the test suite can never disagree about what they ran against. */
+const { findBrowser } = await import('../tests/browser/harness.mjs');
+const exe = await findBrowser();
 
 let chromium;
 try { ({ chromium } = await import('playwright-core')); }

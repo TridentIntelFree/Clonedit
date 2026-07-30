@@ -8,7 +8,9 @@
     "dev": "vite",
     "build": "npm test && vite build && node scripts/emit.mjs && node scripts/smoke.mjs",
     "preview": "vite preview",
-    "test": "node --test 'tests/*.test.mjs'"
+    "test": "node --test 'tests/*.test.mjs'",
+    "test:browser": "node scripts/browser-tests.mjs",
+    "verify": "npm run build && npm run test:browser"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.2.0",

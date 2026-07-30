@@ -1,0 +1,69 @@
+name: CI
+
+# The point of this workflow is that the checks stop being something someone
+# remembers to run. Everything here was previously a script in a temp directory
+# on one machine, which is the same as not having it.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # playwright-core ships no browser of its own. Cached by version so this
+      # is a download once, not once per run.
+      - name: Cache Chromium
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-chromium-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      # playwright-core's own CLI, so the browser always matches the version in
+      # package-lock.json rather than whatever `playwright@latest` resolves to.
+      - name: Install Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: node node_modules/playwright-core/cli.js install --with-deps chromium
+
+      - name: Unit tests
+        run: npm test
+
+      # Builds index.html and holds the build if the staged page will not boot.
+      - name: Build
+        run: npm run build
+
+      # index.html is committed, so a build that changes it without the change
+      # being committed means the published file and the source have drifted.
+      - name: index.html is up to date with src/
+        run: |
+          if ! git diff --quiet -- index.html; then
+            echo "::error::index.html differs from what src/ builds. Run 'npm run build' and commit the result."
+            git diff --stat -- index.html
+            exit 1
+          fi
+
+      - name: Browser tests
+        run: npm run test:browser
+
+      - name: Upload the built page when something fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-page
+          path: |
+            index.html
+            index.next.html
+          if-no-files-found: ignore
+          retention-days: 7
