@@ -473,6 +473,51 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   padding:var(--sp-2) var(--sp-3);background:var(--panel);border:0;border-left:3px solid var(--edge);
   border-radius:var(--r-md)}
 .hint b{color:var(--amber)}
+/* ---- FOLDED EXPLANATIONS -----------------------------------------------
+   The prose in this app is worth keeping — it is most of what makes it
+   learnable — but on a phone it put three paragraphs between two sliders and
+   the report was simply "can't read it". Folding it away costs nothing when
+   closed, and because it costs nothing, it can afford to say much more when
+   open. Native <details>, so it is keyboard-operable and announced properly
+   without a line of script that could fall out of sync with its aria state. */
+.hint-lead{margin:0}
+/* Dim, with only the chevron in amber. Set in amber at heading weight these
+   read as section titles and compete with the real <h3>s — on the OUT tab
+   "CEILING, LIMITING AND TRUE PEAK" looked like a heading rather than
+   something to tap. Structure is amber; an affordance is quiet with a marker. */
+.hint-more, .ex > summary{
+  display:block; width:100%; text-align:left; cursor:pointer;
+  font-size:10px; font-weight:700; letter-spacing:.6px; text-transform:uppercase;
+  color:var(--txt-dim); background:transparent; border:0; padding:5px 0 3px;
+  list-style:none;
+}
+.ex > summary::-webkit-details-marker{display:none}   /* Safari's own triangle */
+.hint-more::after, .ex > summary::after{content:' ⌄'; font-weight:700; color:var(--amber)}
+.hint-more[aria-expanded="true"]::after, .ex[open] > summary::after{content:' ⌃'}
+.hint-more[aria-expanded="true"], .ex[open] > summary{color:var(--txt)}
+/* A generous hit target without a tall row: the label is small, the tappable
+   area is not. 44px is the size a fingertip actually needs. */
+.hint-more, .ex > summary{min-height:26px}
+.hint-body, .ex-body{
+  font-size:var(--fs-sm); color:var(--txt-dim); line-height:1.65;
+  padding:2px 0 4px; border-top:1px solid var(--edge); margin-top:2px;
+}
+.hint-body p, .ex-body p{margin:0 0 .7em}
+.hint-body p:last-child, .ex-body p:last-child{margin-bottom:0}
+.hint-body h4{
+  font-size:10px; letter-spacing:.7px; text-transform:uppercase;
+  color:var(--txt); margin:1em 0 .35em; font-weight:700;
+}
+.hint-body h4:first-child{margin-top:.6em}
+.hint-body ul, .ex-body ul{margin:0 0 .7em; padding-left:1.1em}
+.hint-body li, .ex-body li{margin:0 0 .3em}
+.hint-body b, .ex-body b, .hint-body em, .ex-body em{color:var(--txt)}
+.hint-body .try{
+  border-left:2px solid var(--amber); padding:.4em 0 .4em .7em; margin-top:.9em;
+  color:var(--txt);
+}
+.ex{margin:0 0 var(--sp-2)}
+.ex-body{padding-bottom:6px}
 /* keyboard / switch-control focus. -webkit-tap-highlight-color is off for touch,
    which left no focus indication at all for anyone driving this from a keyboard. */
 :focus-visible{outline:2px solid var(--sel);outline-offset:2px;border-radius:4px}
@@ -558,8 +603,12 @@ input[type=range]::-webkit-slider-thumb{transition:border-color .12s ease,backgr
      so the cap has to carry the padding, AND it has to track the line-height:
      2 x 1.55em = 3.1em. Sizing it by eye is how this ended up cutting through
      the middle of a line twice. */
-  .hint{max-height:calc(3.1em + 10px);overflow:hidden;padding:5px 8px;cursor:pointer}
-  .hint.open{max-height:none}
+  .hint{padding:5px 8px}
+  /* The clamp is on the LEAD line only. It used to be on the whole .hint, which
+     now contains a button and a folded lesson — clamping those would hide the
+     control that opens them. */
+  .hint-lead{max-height:calc(3.1em);overflow:hidden;cursor:pointer}
+  .hint-lead.open{max-height:none}
   /* Not on a sideways phone. The install nudge is worth a strip of a tall
      screen, but here it costs a tenth of the app for something that is a
      portrait-time action anyway — and PROJ still explains how. It comes back

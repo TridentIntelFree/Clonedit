@@ -113,7 +113,41 @@
 
 <!-- PADS -->
 <div class="view on" role="tabpanel" aria-label="Pads" id="v-pads">
-  <div class="hint"><b>PADS</b> — tap to play (higher = louder). Tap <b>EDIT</b> then a pad to shape it (gain / pitch / FX). Record pad hits into the grid with the top-right <b>&#9679;</b>, or capture audio to a lane in <b>TRAX</b>.</div>
+  <div class="hint">
+  <div class="hint-lead"><b>PADS</b> — tap to play (higher = louder). Tap <b>EDIT</b> then a pad to shape it (gain / pitch / FX). Record pad hits into the grid with the top-right <b>&#9679;</b>, or capture audio to a lane in <b>TRAX</b>.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-pads">WHAT A PAD IS, AND HOW TO PLAY IT</button>
+  <div class="hint-body" id="learn-pads" hidden>
+<h4>A pad is a sound plus its settings</h4>
+<p>Each of the 64 pads (16 at a time, in 4 banks) holds one audio recording and
+everything about how that recording is played: level, pitch, pan, filter,
+envelope, and how much reverb and delay it sends. Change a pad's settings and
+you change every hit of it, everywhere in the song, at once.</p>
+
+<h4>Velocity — where you tap matters</h4>
+<p>Tapping higher up a pad plays it louder. That is <b>velocity</b>, and it is
+the single biggest difference between a drum part that sounds programmed and one
+that sounds played. Real drummers do not hit every snare identically. The
+<b>VEL CURVE</b> in MIDI changes how hard you have to tap to get loud —
+<b>SOFT</b> makes quiet taps louder, useful on a small screen.</p>
+
+<h4>Envelope — ATTACK and RELEASE</h4>
+<p><b>ATTACK</b> is how long the sound takes to reach full volume. Zero is
+instant, which is what you want for drums. Winding it up softens the front of
+the sound, turning a kick into a swell. <b>RELEASE</b> is how quickly it fades
+when the note ends — short release makes a tight, clipped sound; long lets it
+ring.</p>
+
+<h4>Choke groups — how real hi-hats work</h4>
+<p>On a real kit, closing the hi-hat cuts off the open one; they cannot both
+ring. A <b>CHOKE</b> group does that here. Put two pads in the same choke group
+and triggering either one silences the other. Classic uses: open and closed
+hats, or a sample and its own reversed version.</p>
+
+<p class="try"><b>Try this:</b> put your open hat and closed hat on the same
+choke group, then program them alternating. The part will suddenly sound like
+one instrument being played rather than two samples overlapping.</p>
+  </div>
+</div>
   <div class="row" id="bankrow">
     <span class="lbl">BANK</span>
     <button aria-label="Bank A" data-b="0" class="on">A</button><button aria-label="Bank B" data-b="1">B</button>
@@ -135,10 +169,16 @@
       <span class="lbl">VOICE</span>
       <select id="epVoice" class="grow" aria-label="Pad voice preset"></select>
     </div>
-    <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
-      A starting point, not a lock &mdash; each one just sets the controls below, and every one of them stays yours to move.
-      Your sample, level, pan and note are left alone.
-    </div>
+    <details class="ex"><summary>About these presets</summary><div class="ex-body">
+    <p>A starting point, not a lock &mdash; each one just sets the controls below, and every one of them stays yours to move.
+      Your sample, level, pan and note are left alone.</p>
+<p>The presets are <em>synthesised</em>, not recordings — the app ships no audio
+at all, which is why the whole thing is one small file and why there are no
+sample licences involved in anything you make with them. Each one is built from
+oscillators and noise when you ask for it.</p>
+<p>Once a preset is on a pad it is just a sound like any other. Chop it, reverse
+it, filter it, resample it. Nothing stays attached to the preset it came from.</p>
+  </div></details>
     <div class="pslider"><span class="lbl">GAIN</span><input type="range" id="epGain" min="0" max="2" step="0.01"><span class="val" id="epGainV"></span></div>
     <div class="pslider"><span class="lbl">PITCH</span><input type="range" id="epPitch" min="-12" max="12" step="1"><span class="val" id="epPitchV"></span></div>
     <div class="pslider"><span class="lbl">FINE</span><input type="range" id="epFine" min="-100" max="100" step="1"><span class="val" id="epFineV"></span></div>
@@ -209,7 +249,41 @@
 
 <!-- SAMPLER -->
 <div class="view" role="tabpanel" aria-label="Sampler" id="v-smpl">
-  <div class="hint"><b>GET A SOUND ONTO THE TARGET PAD</b> — IMPORT FILE, REC MIC, pick a PRESET, or GET a PACK sample then tap <b>&#8594; PAD</b>. Then CHOP and <b>ASSIGN SLICES</b> to spread one sample across pads.</div>
+  <div class="hint">
+  <div class="hint-lead"><b>GET A SOUND ONTO THE TARGET PAD</b> — IMPORT FILE, REC MIC, pick a PRESET, or GET a PACK sample then tap <b>&#8594; PAD</b>. Then CHOP and <b>ASSIGN SLICES</b> to spread one sample across pads.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-smpl">SAMPLING, CHOPPING AND WARPING</button>
+  <div class="hint-body" id="learn-smpl" hidden>
+<h4>Sampling is using a recording as an instrument</h4>
+<p>Any audio can become a playable sound: a file you import, something you sing
+into the mic, a note from the built-in synth presets, or a few seconds grabbed
+from the BLACK BOX (which is always quietly recording the last minute, so you
+can keep something you did not know you wanted).</p>
+
+<h4>Chopping — one recording, many sounds</h4>
+<p>A <b>chop</b> marks a sample up into slices. The classic use is a drum break:
+take four bars of a recorded drummer, put a slice point at each hit, then spread
+those slices across pads with <b>ASSIGN SLICES</b>. Now you can play that
+drummer's kit in any order you like, at any tempo. That single technique built
+most of hip-hop and drum &amp; bass.</p>
+
+<h4>Speed, pitch, and why they are normally the same thing</h4>
+<p>Play a recording faster and it also gets higher, the way a tape sped up does —
+they are the same knob physically. That is often what you want, and
+<b>SPEED</b> gives it to you. When it is not, <b>KEEP PITCH</b> separates them,
+so a loop can be stretched to your tempo without turning into chipmunks. It is
+doing much more work, so extreme settings will sound smeared — that artefact is
+the cost of the trick, not a bug.</p>
+
+<h4>Warping to the tempo</h4>
+<p><b>WARP</b> tells the app what tempo a loop was recorded at. Once it knows,
+the loop can be re-stretched to match your project. Get the source tempo wrong
+and everything drifts, so it is worth being accurate.</p>
+
+<p class="try"><b>Try this:</b> import any drum loop, CHOP it into 8, then
+ASSIGN SLICES. Play the pads out of order. You have just made a new break out of
+someone else's.</p>
+  </div>
+</div>
   <div class="row">
     <span class="lbl">TARGET</span>
     <select id="smPad" class="shrink" aria-label="Which pad the next sound goes to"></select>
@@ -390,7 +464,51 @@
 
 <!-- SEQ -->
 <div class="view" role="tabpanel" aria-label="Sequencer" id="v-seq">
-  <div class="hint"><b>PROGRAM</b> — tap steps for the shown TRACK. <b>NOTES</b> opens a scale grid to write melodies on this pad. <b>LIVE REC</b> records pad taps quantized to the grid. <b>LOCK</b> + a step sets pitch / probability / ratchet / nudge. <b>HUMAN</b> adds timing + velocity drift.</div>
+  <div class="hint">
+  <div class="hint-lead"><b>PROGRAM</b> — tap steps for the shown TRACK. <b>NOTES</b> opens a scale grid to write melodies on this pad. <b>LIVE REC</b> records pad taps quantized to the grid. <b>LOCK</b> + a step sets pitch / probability / ratchet / nudge. <b>HUMAN</b> adds timing + velocity drift.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-seq">HOW A STEP SEQUENCER THINKS</button>
+  <div class="hint-body" id="learn-seq" hidden>
+<h4>Steps are slots in time</h4>
+<p>A bar of music is divided into 16 equal slots. Each lit step means "play this
+pad at this moment". Left to right is time; the row you are editing is whichever
+<b>TRACK</b> is shown. This is the whole idea — everything else is refinement.</p>
+
+<h4>Every track can have its own length</h4>
+<p>Most sequencers give the whole pattern one length. Here each track has its
+own, which is called <b>polymeter</b>. Set the kick to 16 steps and a shaker to
+15 and the shaker slides one step earlier every bar, taking 16 bars to come back
+around. It is an enormous amount of movement for one setting.</p>
+
+<h4>Parameter locks — a different setting on one step</h4>
+<p><b>LOCK</b> plus a step changes that <em>single hit</em> without touching the
+others:</p>
+<ul>
+<li><b>PITCH</b> — one note higher or lower. Turns a single sample into a bassline.</li>
+<li><b>PROBABILITY</b> — the odds that hit happens at all. At 50% it plays
+roughly every other pass, so a loop stops repeating exactly.</li>
+<li><b>RATCHET</b> — retriggers the hit several times inside its own step. This
+is the drum-roll and stutter effect.</li>
+<li><b>NUDGE</b> — moves the hit slightly early or late, off the grid.</li>
+<li><b>VEL</b> — sets that one hit's loudness.</li>
+</ul>
+
+<h4>Swing and humanize are not the same thing</h4>
+<p><b>SWING</b> delays every second step by a fixed amount. It is a deliberate,
+repeating feel — the difference between a straight and a shuffled beat.
+<b>HUMAN</b> adds small random variation in timing and level to every hit
+instead. Swing is a groove; humanize is the absence of a machine.</p>
+
+<h4>Euclidean rhythms</h4>
+<p><b>EUCLID</b> spreads a number of hits as evenly as possible across a number
+of steps. Ask for 5 hits in 16 and you get a pattern found in Cuban, West
+African and Balkan music alike, because "spread these as evenly as you can" is
+what people do everywhere. It is a fast way out of a rut.</p>
+
+<p class="try"><b>Try this:</b> program a plain 4-on-the-floor kick, then put
+one 60% probability lock on the last step. The loop stops sounding looped
+immediately.</p>
+  </div>
+</div>
   <div class="row" id="patrow"><span class="lbl">PTN</span></div>
   <div id="arrWarn" style="display:none" role="status"><span id="arrWarnText"></span><button id="arrWarnOff">HOLD ONE PATTERN</button></div>
   <div class="row adv" id="chainrow">
@@ -489,7 +607,15 @@
   <div id="stepgrid"></div>
   <div id="circlewrap" style="display:none">
     <canvas id="circle" role="img" aria-label="Circular view of the pattern. Switch VIEW to GRID for the same pattern as a list of step buttons." width="760" height="760" style="width:100%;aspect-ratio:1;display:block;background:var(--lcd-bg);border:1px solid var(--line);border-radius:10px;touch-action:none"></canvas>
-    <div style="font-size:10px;color:var(--txt-dim);margin:4px 0 6px">Outer ring = the selected track — tap its segments to place hits. Inner rings are the other tracks; <b>tap one to select it</b>. Each ring turns at its own LEN, so polymeter is something you can watch.</div>
+    <details class="ex"><summary>Reading the circle</summary><div class="ex-body">
+    <p>Outer ring = the selected track — tap its segments to place hits. Inner rings are the other tracks; <b>tap one to select it</b>. Each ring turns at its own LEN, so polymeter is something you can watch.</p>
+<p>A circle suits a loop better than a line does, because a loop has no end. The
+ring turns once per cycle, so the shape you see <em>is</em> the rhythm — evenly
+spaced hits look evenly spaced.</p>
+<p>It earns its place when tracks have different lengths. Two rings turning at
+different rates visibly drift against each other, and you can watch the point
+where they come back into alignment. On a grid that relationship is invisible.</p>
+  </div></details>
   </div>
   <div class="row">
     <span class="lbl">VEL</span>
@@ -498,7 +624,15 @@
     <button id="btnRowClr">CLR ROW</button>
     <button id="btnPatClr">CLR PTN</button>
   </div>
-  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 4px">VEL sets the loudness of steps you place next (step brightness shows it). To change a placed step: <b style="color:var(--amber)">LOCK</b> &#8594; tap the step &#8594; VEL slider.</div>
+  <details class="ex"><summary>Velocity, and why it matters</summary><div class="ex-body">
+    <p>VEL sets the loudness of steps you place next (step brightness shows it). To change a placed step: <b style="color:var(--amber)">LOCK</b> &#8594; tap the step &#8594; VEL slider.</p>
+<p>Velocity is how hard a hit is played. Programming every hit at the same level
+is the single most recognisable sign of a machine — a real player accents some
+notes and ghosts others without thinking about it.</p>
+<p>The usual pattern is simple: emphasise the beats you would count out loud,
+and drop everything between them well down. On hats especially, a loud-quiet
+alternation does more for a groove than any effect.</p>
+  </div></details>
 
   <h3 class="adv">EUCLID <span style="color:var(--txt-dim);letter-spacing:0">— spread N hits evenly over the track</span></h3>
   <div class="row adv">
@@ -579,12 +713,33 @@
     <div id="notecirclewrap" style="display:none">
       <canvas id="notecircle" role="img" aria-label="Circular view of this pad's notes. Rings are scale notes, segments are steps. Switch VIEW to GRID for the same notes as a list of buttons." width="760" height="760" style="width:100%;aspect-ratio:1;display:block;background:var(--lcd-bg);border:1px solid var(--line);border-radius:10px;touch-action:none"></canvas>
     </div>
-    <div style="font-size:10px;color:var(--txt-dim);margin-top:4px">Rows are scale notes for THIS pad (root = the sample's own pitch). Tap to place, tap again to remove. <b>Stack several notes in the same column for a chord</b> — they fire together as harmony. Written as pitch locks, so chords bounce + export to MIDI.</div>
+    <details class="ex"><summary>Notes and chords</summary><div class="ex-body">
+    <p>Rows are scale notes for THIS pad (root = the sample's own pitch). Tap to place, tap again to remove. <b>Stack several notes in the same column for a chord</b> — they fire together as harmony. Written as pitch locks, so chords bounce + export to MIDI.</p>
+<p>A <b>chord</b> is several notes sounding together. The common three-note kind
+takes a starting note, skips one scale step, takes the next, skips again, takes
+the next — the 1st, 3rd and 5th degrees. Because the grid rows are already
+scale notes, stacking every other row gives you a chord that fits the key
+automatically.</p>
+<p>Major and minor differ by one note, the middle one, moved a semitone. That
+single note is most of the difference between music that sounds bright and music
+that sounds sad.</p>
+<p>These are stored as pitch locks on the step, which is why chords survive into
+the bounce and export as real chords in the MIDI file.</p>
+  </div></details>
   </div>
   <h3>SILENCER <span style="color:var(--txt-dim);letter-spacing:0">— place a cut; everything drops out until the next hit</span></h3>
   <div id="silrow"></div>
   <div class="pslider"><span class="lbl">FADE</span><input type="range" id="silFade" min="0.005" max="0.6" step="0.005" value="0.06"><span class="val" id="silFadeV">60ms</span></div>
-  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">Left = abrupt CUT, right = soft fade. Cuts pads + live instruments and chokes the reverb/delay tails; sound returns on the next programmed or played hit. Bakes into the bounce. (TRAX tape lanes keep rolling.)</div>
+  <details class="ex"><summary>What the silencer is for</summary><div class="ex-body">
+    <p>Left = abrupt CUT, right = soft fade. Cuts pads + live instruments and chokes the reverb/delay tails; sound returns on the next programmed or played hit. Bakes into the bounce. (TRAX tape lanes keep rolling.)</p>
+<p>Nearly every dance record is built on taking things away. A breakdown is not
+new material, it is the same loop with most of it removed, and it works because
+the return feels enormous by contrast.</p>
+<p>The hard cut is a rhythmic device — a single silent beat before a drop is one
+of the oldest tricks there is. The soft fade is for transitions between
+sections. Choking the reverb tail matters: letting a big reverb ring on through
+a silence gives the gap away.</p>
+  </div></details>
   <div id="steplock" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
     <div class="row"><span class="lbl">STEP</span><span id="slTitle" style="color:var(--amber);font-size:12px">—</span><span class="grow"></span><button id="slClr">CLEAR LOCKS</button></div>
     <div class="pslider"><span class="lbl">VEL</span><input type="range" id="slVel" min="0.1" max="1" step="0.05" value="0.85"><span class="val" id="slVelV">—</span></div>
@@ -608,7 +763,39 @@
 
 <!-- TRAX -->
 <div class="view" role="tabpanel" aria-label="Tape tracks" id="v-trax">
-  <div class="hint"><b>RECORD AUDIO TO A LANE:</b> 1) pick <b>SOURCE</b> — <b>MASTER BUS</b> = everything you hear &middot; <b>LIVE ONLY</b> = just what YOU play (live instruments, AMP guitar, pads you hit) with the sequencer as silent backing &middot; <b>MIC</b>. 2) tap <b>&#9679;</b> on a lane to arm. 3) press <b>PLAY</b> to record, <b>STOP</b> to commit. <b>PUT A TAKE ON A PAD:</b> tap that lane&rsquo;s <b>FX</b> button &rarr; <b>TO PAD</b>. &#8734; = loop &middot; M / S = mute / solo.</div>
+  <div class="hint">
+  <div class="hint-lead"><b>RECORD AUDIO TO A LANE:</b> 1) pick <b>SOURCE</b> — <b>MASTER BUS</b> = everything you hear &middot; <b>LIVE ONLY</b> = just what YOU play (live instruments, AMP guitar, pads you hit) with the sequencer as silent backing &middot; <b>MIC</b>. 2) tap <b>&#9679;</b> on a lane to arm. 3) press <b>PLAY</b> to record, <b>STOP</b> to commit. <b>PUT A TAKE ON A PAD:</b> tap that lane&rsquo;s <b>FX</b> button &rarr; <b>TO PAD</b>. &#8734; = loop &middot; M / S = mute / solo.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-trax">TAPE LANES — RECORDING AUDIO, NOT TRIGGERS</button>
+  <div class="hint-body" id="learn-trax" hidden>
+<h4>Two different kinds of track</h4>
+<p>The sequencer stores <em>instructions</em> — "play pad 3 here". A tape lane
+stores <em>audio</em>, exactly as it sounded. That difference decides which one
+to use. Instructions stay editable forever: change the sample and every hit
+changes. Audio is fixed once recorded, but it captures things instructions
+cannot — a vocal, a guitar, a live performance with all its imperfection.</p>
+
+<h4>The three sources</h4>
+<ul>
+<li><b>MASTER BUS</b> — everything you can hear, mixed together. Use it to
+bounce a section down, or to capture a live tweak of the filters.</li>
+<li><b>LIVE ONLY</b> — just what <em>you</em> play: pads you hit by hand, the
+on-screen instrument, a guitar through AMP. The sequencer keeps playing so you
+have something to play along to, but it does not end up in the recording. This
+is how you overdub.</li>
+<li><b>MIC</b> — the microphone alone.</li>
+</ul>
+
+<h4>Why overdubbing matters</h4>
+<p>Recording one part at a time while hearing the others is how records have
+been made since the 1950s. LIVE ONLY is that, on a phone. Each pass adds a
+layer, and because the backing is silent in the recording, the layers stay
+independent — you can mute or redo any one of them.</p>
+
+<p class="try"><b>Try this:</b> set a lane to LIVE ONLY, arm it, press PLAY, and
+hum a bassline into the mic over your beat. Then set the lane to loop with the
+&#8734; button.</p>
+  </div>
+</div>
   <div class="row">
     <span class="lbl">SOURCE</span>
     <select id="traxSrc"><option value="bus">MASTER BUS</option><option value="live">LIVE ONLY</option><option value="mic">MIC</option></select>
@@ -633,17 +820,56 @@
     <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="tfxRev" min="0" max="1" step="0.01"><span class="val" id="tfxRevV"></span></div>
     <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="tfxDly" min="0" max="1" step="0.01"><span class="val" id="tfxDlyV"></span></div>
   </div>
-  <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
-    Tape lanes roll from bar 1 with the sequencer, save with the session, and mix into the
-    WAV bounce. BUS records everything you hear except the tracks themselves — overdub freely.
-  </div>
+  <details class="ex"><summary>Lanes versus the grid</summary><div class="ex-body">
+    <p>Tape lanes roll from bar 1 with the sequencer, save with the session, and mix into the
+    WAV bounce. BUS records everything you hear except the tracks themselves — overdub freely.</p>
+<p>The sequencer stores instructions; a lane stores audio. Instructions stay
+editable forever — swap the sample and every hit changes. Audio is fixed once
+recorded, but captures what instructions cannot: a voice, a room, a performance
+with its imperfections intact.</p>
+<p>Recording one part while hearing the others is <b>overdubbing</b>, and it is
+how records have been made since the 1950s. Each pass adds a layer that stays
+independent of the rest, so any one of them can be muted or redone.</p>
+  </div></details>
 </div>
 
 <!-- MIC -->
 <div class="view" role="tabpanel" aria-label="Microphone" id="v-mic">
-  <div class="hint"><b>SING, SPEAK, BEATBOX, RECORD A ROOM.</b> Turn the mic on, shape the voice, then
+  <div class="hint">
+  <div class="hint-lead"><b>SING, SPEAK, BEATBOX, RECORD A ROOM.</b> Turn the mic on, shape the voice, then
   <b>RECORD</b> straight to a tape lane &mdash; no need to arm anything or start the sequencer.
   <b>Use headphones</b> before turning MONITOR on, or the speakers will howl.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-mic">RECORDING A VOICE ON A PHONE</button>
+  <div class="hint-body" id="learn-mic" hidden>
+<h4>Why phone recordings sound thin</h4>
+<p>A phone speaker produces almost nothing below about 500&nbsp;Hz. A man's
+voice has its fundamental around 85&ndash;180&nbsp;Hz and a woman's around
+165&ndash;255&nbsp;Hz, so on a phone you are not hearing the fundamental at all —
+only its harmonics. That is why a take that sounded fine while you recorded it
+turns distant on playback.</p>
+
+<h4>What the two processors do about it</h4>
+<p><b>PRESENCE</b> lifts around 3&nbsp;kHz, where consonants live and where a
+small speaker is actually efficient. It buys more intelligibility per decibel
+than anything else available. <b>LIFT</b> works on the low end instead, so the
+voice keeps its body on speakers that can reproduce it.</p>
+
+<h4>Monitoring and feedback</h4>
+<p>If the mic can hear the speaker, the speaker feeds the mic, which feeds the
+speaker: that is the squeal. <b>Use headphones</b> before turning MONITOR on.
+There is no software fix for a loop that exists in the room.</p>
+
+<h4>Gain before anything else</h4>
+<p>Set the input level so the loudest thing you do reaches most of the meter
+without hitting the top. Too quiet and you amplify hiss later; too loud and the
+recording is clipped, which cannot be undone. This is called <b>gain
+staging</b>, and it matters more than any effect.</p>
+
+<p class="try"><b>Try this:</b> record the same line twice, once with PRESENCE
+flat and once lifted, and listen on the phone speaker. The difference is much
+larger than it looks on the slider.</p>
+  </div>
+</div>
 
   <div class="row">
     <button id="btnMicOn" class="rec grow">&#9673; TURN THE MIC ON</button>
@@ -687,11 +913,18 @@
   <div class="pslider"><span class="lbl">HIGH</span><input type="range" id="micHi" min="-12" max="12" step="0.5" value="0"><span class="val" id="micHiV">0dB</span></div>
   <div class="pslider"><span class="lbl">PRESENCE</span><input type="range" id="micPres" min="0" max="12" step="0.5" value="0"><span class="val" id="micPresV">0dB</span></div>
   <div class="pslider"><span class="lbl">BODY</span><input type="range" id="micBody" min="0" max="1" step="0.01" value="0"><span class="val" id="micBodyV">0%</span></div>
-  <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
-    For playback on a phone. <b>PRESENCE</b> lifts around 3kHz, where consonants live and where a small speaker
+  <details class="ex"><summary>The missing fundamental</summary><div class="ex-body">
+    <p>For playback on a phone. <b>PRESENCE</b> lifts around 3kHz, where consonants live and where a small speaker
     actually works. <b>BODY</b> builds harmonics of the low fundamental a phone speaker cannot reproduce at all,
-    and lets your ear put the missing pitch back &mdash; weight without bass the speaker would swallow.
-  </div>
+    and lets your ear put the missing pitch back &mdash; weight without bass the speaker would swallow.</p>
+<p>BODY works on a genuine quirk of hearing. Given the harmonics of a low note
+but not the note itself, the ear reconstructs the pitch that <em>should</em> be
+underneath them — you hear a bass note that is not physically present. It is why
+a phone speaker with no low-end response can still convey a bassline at all.</p>
+<p>So rather than boosting frequencies a small speaker cannot produce, which
+only wastes headroom, BODY generates the harmonics that let your ear supply the
+missing pitch itself. Weight without bass the speaker would swallow.</p>
+  </div></details>
   <div class="pslider"><span class="lbl">CHARACTER</span><input type="range" id="micDrive" min="0" max="1" step="0.01" value="0"><span class="val" id="micDriveV">0%</span></div>
   <div class="pslider"><span class="lbl">DOUBLE</span><input type="range" id="micDbl" min="0" max="1" step="0.01" value="0"><span class="val" id="micDblV">0%</span></div>
   <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="micRev" min="0" max="1" step="0.01" value="0.1"><span class="val" id="micRevV">10%</span></div>
@@ -714,15 +947,44 @@
       <input type="checkbox" id="micWet" checked> record the shaping too (off = the raw mic)
     </label>
   </div>
-  <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
-    A take lands on a tape lane, where it loops, takes FX, or goes to a pad. The sequencer does not need to
-    be running &mdash; press RECORD, speak, press it again. Everything stays on this device.
-  </div>
+  <details class="ex"><summary>After you press stop</summary><div class="ex-body">
+    <p>A take lands on a tape lane, where it loops, takes FX, or goes to a pad. The sequencer does not need to
+    be running &mdash; press RECORD, speak, press it again. Everything stays on this device.</p>
+<p>Nothing recorded here is uploaded anywhere. The app has no server, no
+account, and works with the network switched off entirely — recordings live in
+this browser's storage on this device, which is also why clearing site data
+would take them with it. Export anything you want to keep.</p>
+  </div></details>
 </div>
 
 <!-- LIVE -->
 <div class="view" role="tabpanel" aria-label="Live instruments" id="v-live">
-  <div class="hint"><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records <b>only what you play</b> (not the backing beat) to the next empty tape lane &mdash; open <b>TRAX</b> to hear, loop, FX, or send it to a pad. To capture the whole mix instead, arm a lane in <b>TRAX</b> and set the source to MASTER BUS.</div>
+  <div class="hint">
+  <div class="hint-lead"><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records <b>only what you play</b> (not the backing beat) to the next empty tape lane &mdash; open <b>TRAX</b> to hear, loop, FX, or send it to a pad. To capture the whole mix instead, arm a lane in <b>TRAX</b> and set the source to MASTER BUS.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-live">PLAYING IT IN BY HAND</button>
+  <div class="hint-body" id="learn-live" hidden>
+<h4>Scale lock — you cannot play a wrong note</h4>
+<p>Turning on a scale restricts the keyboard to notes that belong together.
+If you do not read music this is the single most useful setting in the app:
+pick a root note and a scale, and anything you play will fit. Minor sounds
+serious, major sounds bright, pentatonic is nearly impossible to make sound
+wrong.</p>
+
+<h4>Recording only what you play</h4>
+<p><b>&#9679; REC PERFORMANCE</b> captures your playing to the next empty tape
+lane and leaves the backing beat out of the recording, even though you can hear
+it. So you play along to the beat, and what you get back is just your part —
+free to move, loop, process, or throw away without touching anything else.</p>
+
+<h4>Where it goes afterwards</h4>
+<p>The take lands in <b>TRAX</b>. From there you can loop it, add effects, or
+send it to a pad and trigger it from the sequencer — at which point your
+performance becomes an instrument you can program.</p>
+
+<p class="try"><b>Try this:</b> set the scale to minor pentatonic, record eight
+bars of anything, and send the best two to a pad.</p>
+  </div>
+</div>
   <div class="row">
     <button id="btnPerfRec" class="rec grow">&#9679; REC PERFORMANCE &#8594; TRACK</button>
   </div>
@@ -782,15 +1044,46 @@
   <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="instVol" min="0" max="2" step="0.01"><span class="val" id="instVolV"></span></div>
   <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="instRev" min="0" max="1" step="0.01"><span class="val" id="instRevV"></span></div>
   <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="instDly" min="0" max="1" step="0.01"><span class="val" id="instDlyV"></span></div>
-  <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
-    Everything here plays through the master — jam over the sequencer, record with
-    TRAX (BUS) or REC OUT, then chop the take onto pads.
-  </div>
+  <details class="ex"><summary>Where the sound goes</summary><div class="ex-body">
+    <p>Everything here plays through the master — jam over the sequencer, record with
+    TRAX (BUS) or REC OUT, then chop the take onto pads.</p>
+<p>Everything you play joins the same signal path as the sequencer, so it hits
+the same reverb, delay and master processing. What you hear while playing is
+what a recording of it will contain.</p>
+<p>Turning a performance into a pad is worth doing deliberately: once it is on a
+pad it can be sequenced, chopped, pitched and locked like any other sample, and
+a phrase you played by hand becomes material you can build with.</p>
+  </div></details>
 </div>
 
 <!-- AMP -->
 <div class="view" role="tabpanel" aria-label="Amp and guitar input" id="v-amp">
-  <div class="hint"><b>GUITAR / LINE / MIC IN</b> — ENABLE INPUT, then play through the amp. <b>Use headphones</b> (feedback!). Record the processed tone with <b>TRAX</b> (SOURCE: MASTER BUS) or <b>DJ &#9679; REC OUT</b>.</div>
+  <div class="hint">
+  <div class="hint-lead"><b>GUITAR / LINE / MIC IN</b> — ENABLE INPUT, then play through the amp. <b>Use headphones</b> (feedback!). Record the processed tone with <b>TRAX</b> (SOURCE: MASTER BUS) or <b>DJ &#9679; REC OUT</b>.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-amp">GUITAR AND LINE INPUT</button>
+  <div class="hint-body" id="learn-amp" hidden>
+<h4>What an amp simulator is doing</h4>
+<p>An electric guitar plugged straight into a recorder sounds thin and brittle,
+because half of an electric guitar's sound is the amplifier and speaker it is
+normally played through. The amp section models that: <b>DRIVE</b> is the
+overload that produces distortion, <b>TONE</b> is the amp's own EQ, and the
+cabinet colouring is what a speaker in a wooden box does to the top end.</p>
+
+<h4>Distortion is a gain problem, not an effect</h4>
+<p>Turning DRIVE up makes the signal louder before it is clipped, and the
+clipping is the sound. That means drive and level interact: as you add dirt you
+usually need to pull the output down to keep the mix balanced.</p>
+
+<h4>Headphones, seriously</h4>
+<p>A guitar pickup near a loudspeaker playing that same guitar is a feedback
+loop. It can be a musical technique deliberately; accidentally, it is a shriek
+at full volume.</p>
+
+<p class="try"><b>Try this:</b> record the same riff clean to one tape lane and
+driven to another, then blend them. Layering a clean track under a dirty one is
+how most recorded guitar keeps its definition.</p>
+  </div>
+</div>
   <div class="row">
     <button id="btnAmpOn" class="rec grow">&#9673; ENABLE INPUT (guitar / line / mic)</button>
   </div>
@@ -825,16 +1118,47 @@
     <input type="range" id="ampChDepth" min="0" max="0.01" step="0.0002" value="0.003" class="grow"></div>
   <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="ampDly" min="0" max="1" step="0.01" value="0"><span class="val" id="ampDlyV">0%</span></div>
   <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="ampRev" min="0" max="1" step="0.01" value="0"><span class="val" id="ampRevV">0%</span></div>
-  <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
-    Plug a guitar in via an audio interface / adapter (or use the mic). <b>Use headphones</b> —
+  <details class="ex"><summary>Why a guitar sounds thin direct</summary><div class="ex-body">
+    <p>Plug a guitar in via an audio interface / adapter (or use the mic). <b>Use headphones</b> —
     mic + speaker will feed back. DELAY/REVERB use the MIX engine (6 verbs, 3 delay modes).
-    The processed signal feeds the master, so record it with TRAX (BUS) or DJ REC OUT.
-  </div>
+    The processed signal feeds the master, so record it with TRAX (BUS) or DJ REC OUT.</p>
+<p>Half of an electric guitar's sound is the amplifier and speaker. Recorded
+straight, you get the pickup alone: brittle, thin, and nothing like what a guitar
+sounds like in a room. The amp section supplies the missing half — overload for
+distortion, the amp's tone stack, and the top-end roll-off a speaker in a wooden
+box produces.</p>
+<p>Drive and level interact, because the distortion <em>is</em> the signal being
+driven past what the stage can hold. As you add dirt you will usually need to
+take the output back down to keep the balance.</p>
+  </div></details>
 </div>
 
 <!-- DJ -->
 <div class="view" role="tabpanel" aria-label="DJ decks" id="v-dj">
-  <div class="hint"><b>&#9679; REC OUT</b> records the master (everything you hear) &mdash; no transport needed. Then <b>SAVE</b> = WAV file, or <b>TO PAD</b> = load the capture onto the target pad. Fader / wheel bend live pitch.</div>
+  <div class="hint">
+  <div class="hint-lead"><b>&#9679; REC OUT</b> records the master (everything you hear) &mdash; no transport needed. Then <b>SAVE</b> = WAV file, or <b>TO PAD</b> = load the capture onto the target pad. Fader / wheel bend live pitch.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-dj">PERFORMING THE MIX</button>
+  <div class="hint-body" id="learn-dj" hidden>
+<h4>Capturing a performance, not a pattern</h4>
+<p><b>&#9679; REC OUT</b> records the master output — everything you can hear —
+without needing the transport running or a lane armed. It is for the take where
+you ride the filter, drop the bass out, and bring it back. Those moves are not
+in the pattern, so nothing else in the app would capture them.</p>
+
+<h4>Pitch bend and why DJs use it</h4>
+<p>The fader and wheel bend the playback speed momentarily. On turntables this
+is how two records are pulled into time with each other. Here it is mostly a
+performance effect — a short dip in speed before a drop is a very old trick that
+still works.</p>
+
+<h4>Two ways out</h4>
+<p><b>SAVE</b> writes the capture to a WAV file. <b>TO PAD</b> loads it onto a
+pad instead, so a moment of live performance becomes a sample you can sequence.</p>
+
+<p class="try"><b>Try this:</b> start REC OUT, let a loop run, and slowly close
+a filter over eight bars. Save it TO PAD and trigger it as a one-shot riser.</p>
+  </div>
+</div>
   <div class="row">
     <button id="btnJam" class="rec grow">&#9679; REC OUT</button>
     <button id="btnJamSave" style="display:none">SAVE</button>
@@ -843,7 +1167,15 @@
   <div class="row">
     <button id="btnBlackBox" class="grow">&#9202; KEEP LAST 30s (black box)</button>
   </div>
-  <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">The app is ALWAYS listening to itself. Played something great without recording? Tap to save the last 30 seconds onto the TARGET pad.</div>
+  <details class="ex"><summary>The BLACK BOX</summary><div class="ex-body">
+    <p>The app is ALWAYS listening to itself. Played something great without recording? Tap to save the last 30 seconds onto the TARGET pad.</p>
+<p>The best thing you play is often the thing you played while working out what
+to play, when nothing was armed. A rolling buffer solves that: the last stretch
+of audio always exists, so the decision to keep something can come after the
+fact rather than before it.</p>
+<p>It is a ring buffer, so it is always overwriting itself and costs nothing to
+leave running. Nothing leaves the device.</p>
+  </div></details>
   <div class="row">
     <button id="btnTilt">TILT WAH</button>
     <button id="btnTape" class="grow">TAPE STOP (hold)</button>
@@ -866,15 +1198,63 @@
   </div>
   <h3>TEMPO</h3>
   <div class="pslider"><span class="lbl">BPM</span><input type="range" id="djBpm" min="40" max="240" step="0.5"><span class="val" id="djBpmV"></span></div>
-  <div style="font-size:10px;color:var(--txt-dim);margin-top:6px">
-    Fader bends every sounding voice. VINYL drags tempo with pitch like a platter.
-    Wheel springs back to center. REC OUT captures the master — everything you hear.
-  </div>
+  <details class="ex"><summary>Pitch bend, and VINYL</summary><div class="ex-body">
+    <p>Fader bends every sounding voice. VINYL drags tempo with pitch like a platter.
+    Wheel springs back to center. REC OUT captures the master — everything you hear.</p>
+<p>On a turntable, speed and pitch are the same control — a record spun faster
+plays higher, because it is one physical thing. VINYL reproduces that link, so
+the tempo drags along with the pitch the way a platter does.</p>
+<p>Unlinked bend is the more modern behaviour and useful as an effect; a short
+dip in speed before a drop is a trick that has survived every change in
+technology because it still works.</p>
+  </div></details>
 </div>
 
 <!-- MIX -->
 <div class="view" role="tabpanel" aria-label="Mixer" id="v-mix">
-  <div class="hint"><b>MIXER</b> — one strip per in-use pad: live meter, fader, pan, <b>M</b>ute / <b>S</b>olo, and REV/DLY sends. Tap a strip's name to edit that pad. Master + global FX below. Everything bakes into the bounce.</div>
+  <div class="hint">
+  <div class="hint-lead"><b>MIXER</b> — one strip per in-use pad: live meter, fader, pan, <b>M</b>ute / <b>S</b>olo, and REV/DLY sends. Tap a strip's name to edit that pad. Master + global FX below. Everything bakes into the bounce.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-mix">MIXING — BALANCE, SENDS AND HEADROOM</button>
+  <div class="hint-body" id="learn-mix" hidden>
+<h4>Mixing is mostly just level</h4>
+<p>Before any effect, mixing is deciding how loud each thing is relative to
+everything else. Most amateur mixes have too much of everything at once. The
+fastest route to a mix that sounds finished is pulling things down, not adding.</p>
+
+<h4>Headroom, and why you leave some</h4>
+<p>If everything is at maximum, the total is far past maximum, and the result
+clips. Leaving space — <b>headroom</b> — means the peaks have somewhere to go.
+If the master is working hard, turn the loud channels down rather than turning
+the master down; the balance is what needs fixing.</p>
+
+<h4>Sends versus per-channel effects</h4>
+<p>This is the concept worth learning here. The EQ on a channel affects <em>that
+channel only</em>. <b>REV</b> and <b>DLY</b> are <b>sends</b>: they take a copy
+of the channel and feed it into one shared reverb and one shared delay. Every
+pad sends into the same two effects.</p>
+<p>That is why they behave the way they do. Change the reverb size and every pad
+sending to it changes together, which is exactly what you want — a mix sounds
+like one place when everything shares a room. It is also why a pad can sound
+like it has an echo you cannot find on the pad itself: the repeat is being made
+at the master, not on the channel. A pad that is feeding a send says so on its
+face.</p>
+
+<h4>Mute and solo</h4>
+<p><b>M</b> silences a channel, <b>S</b> silences everything else. Solo is for
+listening, not for mixing — decisions made in solo often fall apart in the mix,
+because instruments mask each other and that masking is real.</p>
+
+<h4>Sidechain — the pumping sound</h4>
+<p>Sidechain ducking turns one sound down whenever another one plays, most
+often pulling the bass down on every kick. It started as a practical fix (kick
+and bass fight for the same low frequencies) and became a deliberate effect.
+Depth sets how far it ducks; release sets how quickly it comes back.</p>
+
+<p class="try"><b>Try this:</b> solo nothing, set every pad to a sensible level
+with sends at zero, and only then add reverb. Building the balance dry first is
+the habit that separates fast mixes from long ones.</p>
+  </div>
+</div>
   <h3>CHANNELS <span id="mixCount" style="color:var(--txt-dim);letter-spacing:0"></span></h3>
   <div id="mixStrips"></div>
   <h3>SIDECHAIN <span style="color:var(--txt-dim);letter-spacing:0">— trigger pad ducks pads &amp; live instruments (the pump)</span></h3>
@@ -888,14 +1268,69 @@
   <h3>SELECTED PAD SENDS <span id="mxPad" style="color:var(--amber)"></span></h3>
   <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="mxPadRev" min="0" max="1" step="0.01"><span class="val" id="mxPadRevV"></span></div>
   <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="mxPadDly" min="0" max="1" step="0.01"><span class="val" id="mxPadDlyV"></span></div>
-  <div style="font-size:10px;color:var(--txt-dim);margin-top:8px">Send levels for every pad live in PADS → EDIT. Everything here bakes into the WAV bounce.</div>
+  <details class="ex"><summary>Sends versus channel effects</summary><div class="ex-body">
+    <p>Send levels for every pad live in PADS → EDIT. Everything here bakes into the WAV bounce.</p>
+<p>This is the distinction worth learning. A channel's EQ affects that channel
+alone. <b>REV</b> and <b>DLY</b> are <b>sends</b>: they take a copy of the
+channel and feed one shared reverb and one shared delay that every pad feeds.</p>
+<p>That is why changing the reverb size changes every pad at once — which is
+what you want, since a mix sounds like one place when everything shares a room.
+It is also why a pad can seem to have an echo you cannot find on the pad itself:
+the repeat is being made at the master, not on the channel.</p>
+  </div></details>
 </div>
 
 <!-- OUT -->
 <div class="view" role="tabpanel" aria-label="Master output" id="v-out">
-  <div class="hint"><b>THE FINISHED MIX.</b> Everything here runs on the whole song, and it is built into the
+  <div class="hint">
+  <div class="hint-lead"><b>THE FINISHED MIX.</b> Everything here runs on the whole song, and it is built into the
   bounce as well &mdash; what you hear is what the WAV contains. Start with <b>BYPASS</b> to hear the
   difference. LUFS reads momentary (400ms) and short-term (3s) to BS.1770; BOUNCE reports the integrated figure and the true peak of the actual file.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-out">MASTERING, AND WHAT THE METERS MEAN</button>
+  <div class="hint-body" id="learn-out" hidden>
+<h4>What this section is for</h4>
+<p>Everything here runs on the finished mix rather than any one sound, and it is
+baked into the bounce — what you hear is what the WAV contains. <b>BYPASS</b>
+switches it all out so you can hear whether you are actually improving anything.
+Use it often; ears adjust to whatever they have been listening to.</p>
+
+<h4>Width and mono compatibility</h4>
+<p><b>WIDTH</b> pushes the stereo image out. It sounds impressive on headphones
+and can betray you: many places music gets played — phone speakers, clubs, some
+Bluetooth speakers — collapse stereo to mono, and heavily widened material can
+partly cancel itself when that happens. <b>MONO</b> lets you check. If the mix
+loses its bass or an instrument disappears, back the width off.</p>
+
+<h4>LUFS is loudness, not peak level</h4>
+<p>Peak meters show the highest single sample. <b>LUFS</b> measures how loud
+something actually <em>sounds</em> over time, weighted for human hearing. The
+two are very different: a heavily compressed track and a dynamic one can share a
+peak level and be worlds apart in loudness.</p>
+<p>This matters because streaming services normalise. They aim for roughly
+<b>&minus;14 LUFS</b> and turn everything else up or down to match. Master
+louder than that and it gets turned <em>down</em> — so crushing your mix to be
+loud buys nothing on Spotify or YouTube and costs you all the dynamics.
+The readout shows <b>M</b> (the last 400&nbsp;ms) and <b>S</b> (the last 3
+seconds); the bounce reports the integrated figure for the whole track.</p>
+
+<h4>True peak, and why the ceiling is not enough</h4>
+<p>Between any two samples the actual waveform can rise higher than either of
+them. When a file is converted to MP3 or AAC that in-between level becomes real
+and can clip, even though every sample looked legal. That is <b>true peak</b>,
+measured in dBTP, and it is why masters are usually kept about a decibel below
+maximum rather than right at it.</p>
+
+<h4>The limiter is not a brick wall</h4>
+<p><b>CEILING</b> is a target, held by a limiter with a 20:1 ratio rather than an
+absolute barrier, so a little gets through — the bounce report says by how much
+instead of quietly rounding it off. If the limiter is doing several decibels of
+work all the time, the fix is in the mix, not here.</p>
+
+<p class="try"><b>Try this:</b> bounce once, read the integrated LUFS in the
+PROJ log, then compare it with a commercial track you like. If yours is far
+louder, you are probably losing more than you gain.</p>
+  </div>
+</div>
 
   <canvas id="spectrum" role="img" aria-label="Live frequency spectrum of the master output. The meters below carry the same information as numbers." width="900" height="260"></canvas>
   <div id="outMeters">
@@ -919,26 +1354,57 @@
   <h3>IMAGE <span style="color:var(--txt-dim);letter-spacing:0">&mdash; how wide it sits</span></h3>
   <div class="pslider"><span class="lbl">WIDTH</span><input type="range" id="mWidth" min="0" max="2" step="0.01" value="1"><span class="val" id="mWidthV">100%</span></div>
   <div class="pslider"><span class="lbl">BASS MONO</span><input type="range" id="mMono" min="0" max="300" step="5" value="0"><span class="val" id="mMonoV">off</span></div>
-  <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
-    100% width is untouched; 0% is mono. <b>BASS MONO</b> centres everything below the chosen frequency &mdash;
-    wide bass smears on a big system and thins out on a phone speaker. 120Hz is a safe habit.
-  </div>
+  <details class="ex"><summary>Width, and why bass is centred</summary><div class="ex-body">
+    <p>100% width is untouched; 0% is mono. <b>BASS MONO</b> centres everything below the chosen frequency &mdash;
+    wide bass smears on a big system and thins out on a phone speaker. 120Hz is a safe habit.</p>
+<p>Widening works by increasing the difference between the two channels. When
+something plays back in mono those channels are added together, and whatever was
+different between them partly cancels — so a heavily widened mix can lose
+material entirely on a phone speaker, a club system or a Bluetooth speaker.
+Check in mono before trusting a wide mix.</p>
+<p>Bass is the worst case, and the reason is physical as well as electrical: on
+vinyl, out-of-phase low frequencies move the cutting stylus vertically and can
+throw the needle out of the groove. Centring the low end has been standard
+practice since long before anything was digital.</p>
+  </div></details>
 
   <h3>OUTPUT <span style="color:var(--txt-dim);letter-spacing:0">&mdash; the last thing before it leaves</span></h3>
   <div class="pslider"><span class="lbl">CEILING</span><input type="range" id="mCeil" min="-12" max="0" step="0.1" value="-1"><span class="val" id="mCeilV">-1.0dB</span></div>
-  <div style="font-size:11px;color:var(--txt-dim);margin:0 0 6px">
-    The limiter grips here, so pushing gain makes the mix louder instead of breaking it, and a soft clipper
+  <details class="ex"><summary>Ceiling, limiting and true peak</summary><div class="ex-body">
+    <p>The limiter grips here, so pushing gain makes the mix louder instead of breaking it, and a soft clipper
     after it means the output can never reach 0dBFS whatever you do. Anything already below this level is
     left alone. &minus;1dB is a good default; &minus;0.3dB is as close to the edge as is sensible for a file
-    that will be converted to MP3 or AAC later.
-  </div>
+    that will be converted to MP3 or AAC later.</p>
+<p>A <b>limiter</b> is a compressor with a very high ratio: below the threshold
+it does nothing, above it the signal is held back hard. It lets you raise the
+whole mix without the peaks breaking through, which is how masters get loud.</p>
+<p>The reason to stop short of 0dBFS is <b>true peak</b>. Between any two samples
+the real waveform can rise higher than either of them, and converting to MP3 or
+AAC turns that in-between level into something real that can clip — even though
+every sample in your file looked legal. A decibel of margin costs nothing
+audible and removes the problem.</p>
+<p>If the limiter is working hard all the time, the fix is in the mix rather
+than here. A limiter catching occasional peaks is mastering; a limiter holding
+down everything is a balance problem with a lid on it.</p>
+  </div></details>
   <div class="pslider"><span class="lbl">TRIM</span><input type="range" id="mTrim" min="-24" max="12" step="0.1" value="0"><span class="val" id="mTrimV">0.0dB</span></div>
   <div class="row">
     <button id="btnMAuto">AUTO</button>
-    <span style="font-size:11px;color:var(--txt-dim);flex:1">AUTO listens to the whole arrangement &mdash; the song if you have one, else the chain,
-      else this pattern &mdash; at its loudest possible pass, and sets TRIM so that peak lands on the ceiling. Nothing clips and the
-      limiter is left with nothing to do.</span>
+    <span style="font-size:11px;color:var(--txt-dim);flex:1">Sets TRIM so the loudest moment lands on the ceiling.</span>
   </div>
+  <details class="ex"><summary>What AUTO measures</summary><div class="ex-body">
+    <p>AUTO listens to the whole arrangement &mdash; the song if you have one, else
+    the chain, else this pattern &mdash; at its loudest possible pass, and sets TRIM
+    so that peak lands on the ceiling. Nothing clips and the limiter is left with
+    nothing to do.</p>
+    <p>It measures the <em>loudest pass</em> deliberately, not an average and not
+    the section you happen to be hearing. A trim set from a quiet intro would
+    clip the moment everything came in, so it finds the worst case first and
+    works back from there.</p>
+    <p>It is setting level, not tone or balance. If it pulls things a long way
+    down, that is the arrangement telling you the loudest passage is much louder
+    than the rest &mdash; worth fixing in MIX rather than accepting here.</p>
+  </div></details>
 <h3>MASTER</h3>
   <div class="pslider"><span class="lbl">VOLUME</span><input type="range" id="mxVol" min="0" max="2" step="0.01"><span class="val" id="mxVolV"></span></div>
   <div class="pslider"><span class="lbl">COMP</span><input type="range" id="mxComp" min="0" max="1" step="0.01"><span class="val" id="mxCompV"></span></div>
@@ -980,7 +1446,46 @@
 
 <!-- MIDI -->
 <div class="view" role="tabpanel" aria-label="MIDI" id="v-midi">
-  <div class="hint"><b>Turn an old phone into a MIDI sound module.</b> Tap <b>ENABLE MIDI</b>, plug a controller in (USB-OTG or Bluetooth), and play. Notes trigger mapped pads; turn on <b>CHROMATIC</b> to play the selected pad melodically across the keyboard with zero setup.</div>
+  <div class="hint">
+  <div class="hint-lead"><b>Turn an old phone into a MIDI sound module.</b> Tap <b>ENABLE MIDI</b>, plug a controller in (USB-OTG or Bluetooth), and play. Notes trigger mapped pads; turn on <b>CHROMATIC</b> to play the selected pad melodically across the keyboard with zero setup.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-midi">WHAT MIDI ACTUALLY IS</button>
+  <div class="hint-body" id="learn-midi" hidden>
+<h4>MIDI is instructions, not sound</h4>
+<p>A MIDI cable carries no audio whatsoever. It carries messages: "note 60
+started, fairly hard", "note 60 stopped", "knob 74 is now at 90". The sound is
+made entirely at the receiving end. That is why the same MIDI part can play a
+piano or a drum kit, and why a MIDI file is a few kilobytes.</p>
+
+<h4>Notes, velocity and channels</h4>
+<p>Every note has a number (60 is middle C) and a <b>velocity</b> from 1 to 127
+saying how hard it was played. Messages also carry a <b>channel</b>, 1 to 16, so
+several instruments can share one cable and each listen only to its own.
+<b>OMNI</b> means listen to all of them — the right setting until something
+clashes.</p>
+
+<h4>Two ways to play the pads</h4>
+<p>Normally each pad answers to one note number, which is how drum kits work.
+Turn on <b>CHROMATIC</b> and the whole keyboard plays the <em>selected</em> pad
+instead, transposed — so a single sample becomes a playable instrument across
+the keys.</p>
+
+<h4>CC — the knobs</h4>
+<p>Continuous controllers are numbered knobs and sliders. <b>LEARN</b> is the
+easy way to use them: arm it, choose what you want controlled, then move a
+physical knob. Whichever CC that knob sends is now bound to it. No manuals, no
+numbers to look up.</p>
+
+<h4>Clock — keeping two machines in time</h4>
+<p>MIDI clock is a steady tick, 24 per quarter note, that lets separate devices
+agree on tempo. One machine leads and the others follow. <b>CLOCK OUT</b> makes
+this app the leader; <b>EXT CLOCK</b> makes it a follower, taking its tempo from
+whatever is sending. Exactly one device in a setup should be the leader — two
+leaders is the most common reason a rig will not lock up.</p>
+
+<p class="try"><b>Try this:</b> with a controller connected, turn on LEARN,
+select master volume, and wiggle any knob. It is bound in one move.</p>
+  </div>
+</div>
   <div class="row" style="align-items:center;gap:8px">
     <span id="midiDot" style="width:12px;height:12px;border-radius:50%;background:#444;flex:none;box-shadow:0 0 0 1px #000 inset"></span>
     <span id="midiStat" style="font-size:11px;color:var(--lcd);flex:1">MIDI OFF — tap ENABLE MIDI</span>
@@ -995,7 +1500,15 @@
     <span class="lbl">CH</span>
     <select aria-label="MIDI output channel" id="midiOutCh"></select>
   </div>
-  <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">NOTES OUT sends every sequencer step and pad hit (pad's NOTE + step pitch). CLOCK OUT sends 24&nbsp;PPQN clock with START/STOP so drum machines &amp; synth arps follow this tempo.</div>
+  <details class="ex"><summary>Driving other gear</summary><div class="ex-body">
+    <p>NOTES OUT sends every sequencer step and pad hit (pad's NOTE + step pitch). CLOCK OUT sends 24&nbsp;PPQN clock with START/STOP so drum machines &amp; synth arps follow this tempo.</p>
+<p>MIDI carries no audio — only instructions, which is why one part can play a
+piano or a drum kit and why a MIDI file is a few kilobytes.</p>
+<p><b>Clock</b> is a steady tick, 24 per quarter note, that lets separate
+machines agree on tempo. One device leads and the rest follow. CLOCK OUT makes
+this app the leader; EXT CLOCK makes it a follower. Exactly one leader per setup
+— two is the usual reason a rig refuses to lock together.</p>
+  </div></details>
   <div class="row">
     <span class="lbl">CHAN</span>
     <select aria-label="MIDI input channel" id="midiCh"><option value="-1">OMNI</option></select>
@@ -1038,7 +1551,47 @@
 
 <!-- PROJECT -->
 <div class="view" role="tabpanel" aria-label="Projects and export" id="v-proj">
-  <div class="hint"><b>PROJECT LIBRARY</b> — keep as many beats as you like on the device. <b>SAVE</b> updates the open project (shown below the NAME); <b>rename first</b> and SAVE keeps the original and stores a new one. <b>SAVE AS NEW</b> always makes a copy, <b>NEW</b> starts fresh. Below: bounce to WAV/stems/MIDI, or export the session as a JSON file.</div>
+  <div class="hint">
+  <div class="hint-lead"><b>PROJECT LIBRARY</b> — keep as many beats as you like on the device. <b>SAVE</b> updates the open project (shown below the NAME); <b>rename first</b> and SAVE keeps the original and stores a new one. <b>SAVE AS NEW</b> always makes a copy, <b>NEW</b> starts fresh. Below: bounce to WAV/stems/MIDI, or export the session as a JSON file.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-proj">SAVING, BOUNCING AND GETTING WORK OUT</button>
+  <div class="hint-body" id="learn-proj" hidden>
+<h4>Three different kinds of safety net</h4>
+<p>The app saves the current session automatically a second or so after any
+edit, so closing the tab does not lose work. Separately, it takes a
+<b>checkpoint</b> every few minutes, which <b>REWIND</b> can return to — and
+rewinding saves the present first, so you can always rewind the rewind. Neither
+of those is the same as a <b>project</b>, which is a named thing you chose to
+keep. Use SAVE AS NEW before big changes; it costs nothing.</p>
+
+<h4>What a bounce is</h4>
+<p>Bouncing renders the sequence to an audio file, faster than real time, the
+same way every time. It is the point at which your arrangement of instructions
+becomes something anyone can play. Whatever the OUT section is doing is
+included, so the file matches what you were hearing.</p>
+
+<h4>Stems, and why anyone wants them</h4>
+<p>A stem export writes each pad to its own file instead of one mixed track.
+That is what you hand to someone who is going to mix or remix your material —
+they get the parts separately and can rebalance anything. It is also a good
+archive: stems still open in twenty years, in any program, whatever happens to
+this app.</p>
+
+<h4>MIDI export</h4>
+<p>Exporting MIDI writes out the <em>notes</em>, not the sound, so your pattern
+can be opened in any other music program and played with completely different
+instruments. Useful when an idea outgrows the tools it was written on.</p>
+
+<h4>The take</h4>
+<p>Humanize and probability are random, which would normally mean a bounce
+sounds slightly different every time. The performance is tied to a stored seed
+instead, so the same project bounces the same take — and <b>NEW TAKE</b>
+deliberately rolls a different one when you want an alternative. The seed is
+saved with the project, so it survives reloading.</p>
+
+<p class="try"><b>Try this:</b> bounce, then hit NEW TAKE and bounce again.
+Same notes, different performance. Keep whichever you prefer.</p>
+  </div>
+</div>
   <div class="row"><span class="lbl">NAME</span><input type="text" id="projName" class="grow" value="untitled"><span id="projCur" style="font-size:9px;color:var(--txt-dim)"></span></div>
   <h3>PROJECT LIBRARY <span id="projLibInfo" style="color:var(--txt-dim);letter-spacing:0"></span></h3>
   <div class="row">
@@ -1068,7 +1621,16 @@
     <button id="btnDiag" title="engine state snapshot">DIAG</button>
   </div>
   <textarea id="docText" spellcheck="false" placeholder='Tap SPEC → copy the whole thing → paste it to any AI and ask for a beat → paste the AI&apos;s reply back here → tap LOAD DOC. (Code fences / extra text are fine.)'></textarea>
-  <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px"><b>SPEC</b> puts a ready-to-paste prompt (with a working example) in the box — hand it to an AI, paste the reply back, LOAD. The loader pulls the JSON out even if the AI wraps it in ```json or adds chatter. EXPORT lets an AI remix what you made. Console: <span style="color:var(--lcd)">window.JBH.load / .export / .play / .spec</span></div>
+  <details class="ex"><summary>How AI JAM works</summary><div class="ex-body">
+    <p><b>SPEC</b> puts a ready-to-paste prompt (with a working example) in the box — hand it to an AI, paste the reply back, LOAD. The loader pulls the JSON out even if the AI wraps it in ```json or adds chatter. EXPORT lets an AI remix what you made. Console: <span style="color:var(--lcd)">window.JBH.load / .export / .play / .spec</span></p>
+<p>There is no AI inside this app and no server behind it. AI JAM is a document
+format: SPEC writes out a prompt describing that format, you hand it to whatever
+assistant you like, and paste the reply back. The app renders every sound from
+the description.</p>
+<p>Which means it keeps working offline for everything except the part where you
+talk to an assistant, it sends nothing anywhere on its own, and it is not tied
+to any particular AI outliving any other.</p>
+  </div></details>
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>

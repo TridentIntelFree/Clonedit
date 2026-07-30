@@ -1878,8 +1878,39 @@
      end were removed, not hidden" — the stricter and better reading, since the
      alternative is a pattern that resurrects old material later. The suite now
      guards what the app actually promises, including the announcement.
+   - R142: THE EXPLANATIONS FOLD, AND SAY MORE.
+     Reported against the OUT tab with a screenshot: three paragraphs of prose
+     between two sliders, and you scroll past a lesson to reach the next
+     control. The prose is not the problem — it is most of what makes this
+     learnable without a manual — the problem is that it is always there.
+     All 30 explanatory blocks now sit behind a one-line summary: the 18
+     per-control paragraphs and a new per-tab lesson on each of the 12 tabs.
+     Folded, they cost nothing, and because they cost nothing they can afford
+     to say considerably more — 5,582 folded words against 547 visible ones.
+     The additions teach the IDEA rather than the button positions, because
+     "tap LOCK then a step" is useless to somebody who does not know what a
+     parameter lock is for: what velocity is and why it separates programmed
+     from played, what a choke group models, what polymeter does, how a chord
+     is built from a scale, why bass is centred (vinyl, and phase), what true
+     peak is and why a master stops short of 0dBFS, the missing-fundamental
+     trick BODY relies on, why MIDI carries no audio, why exactly one device in
+     a rig may be the clock leader.
+     Native <details> for the per-control folds, so keyboard operation and
+     screen-reader announcement come from the platform rather than from script
+     that could fall out of step with its own aria state. What is open is
+     remembered — a learner opens these and wants them to stay open; everyone
+     else closes them once and should not be argued with.
+     The landscape two-line clamp moved from .hint to .hint-lead. Left where it
+     was it would have clipped the very control that opens the lesson.
+     The test cost two of my own mistakes, both worth recording. Measuring
+     anything inside an inactive tab is meaningless — an unselected view is
+     display:none, so it reports zero height and refuses focus. And Chrome keeps
+     a CLOSED <details>' content in the box tree so ::details-content can
+     animate, so getBoundingClientRect on the body returned 323px whether it was
+     folded or not; the element's own height, plus checkVisibility(), is what
+     actually corresponds to what a reader sees.
    ================================================================ */
-const BUILD = 'JBH-88 · R141 · 2026-07-30 · the checks live in the repo now';
+const BUILD = 'JBH-88 · R142 · 2026-07-30 · the explanations fold, and say more';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -11076,8 +11107,60 @@ document.addEventListener('keydown',e=>{
   if(e.key==='ArrowRight'||e.key==='Enter'){ tourShow(tourAt+1); }
   else if(e.key==='ArrowLeft'){ tourShow(tourAt-1); }
 });
-/* short screens clamp the per-tab hint to two lines — tapping one opens it. */
-document.querySelectorAll('.hint').forEach(h=>h.addEventListener('click',()=>h.classList.toggle('open')));
+/* ---------------- FOLDED EXPLANATIONS ---------------------------------------
+   Every explanatory paragraph in the app now sits behind a summary. The prose
+   was worth keeping — it is most of what makes this learnable without a manual
+   — but on a phone it put three paragraphs between two sliders, and the report
+   was "can't read it". Folded, it costs nothing closed, so it can afford to say
+   considerably more when open.
+
+   What is open is remembered. Someone learning the app opens these and wants
+   them to stay open; someone who already knows it closes them once. Either way
+   the app should not argue on the next visit. */
+const LEARN_KEY='jbh_learn_v1';
+function learnOpen(){
+  try{ return new Set(JSON.parse(localStorage.getItem(LEARN_KEY)||'[]')); }
+  catch(e){ return new Set(); }
+}
+function learnSave(set){
+  try{ localStorage.setItem(LEARN_KEY, JSON.stringify([...set])); }catch(e){}
+}
+(function wireLearn(){
+  const open=learnOpen();
+  /* <details> for the per-control explainers: no script needed to work, only to
+     remember. Keyed by position within the tab, which is stable for a given
+     build and harmless if it drifts — the worst case is one section forgetting
+     it was open. */
+  document.querySelectorAll('.ex').forEach((d,i)=>{
+    const key='ex'+i;
+    if(open.has(key)) d.open=true;
+    d.addEventListener('toggle',()=>{
+      const s=learnOpen();
+      if(d.open) s.add(key); else s.delete(key);
+      learnSave(s);
+    });
+  });
+  /* The per-tab lessons are a button plus a panel rather than <details>, because
+     they carry headings and lists and needed styling <summary> makes awkward.
+     aria-expanded and hidden are kept in step by hand here — the one thing
+     <details> would have given for free. */
+  document.querySelectorAll('.hint-more').forEach(b=>{
+    const body=document.getElementById(b.getAttribute('aria-controls'));
+    if(!body) return;
+    const key=body.id;
+    const set=(on)=>{ b.setAttribute('aria-expanded',on?'true':'false'); body.hidden=!on; };
+    if(open.has(key)) set(true);
+    b.addEventListener('click',()=>{
+      const on=b.getAttribute('aria-expanded')!=='true';
+      set(on);
+      const s=learnOpen();
+      if(on) s.add(key); else s.delete(key);
+      learnSave(s);
+    });
+  });
+})();
+/* short screens clamp the hint's LEAD line to two lines — tapping opens it. */
+document.querySelectorAll('.hint-lead').forEach(h=>h.addEventListener('click',()=>h.classList.toggle('open')));
 
 /* ---------------- suggestions -----------------------------------------------
    One line, drawn from what is actually in the project. Rules, not a model:
