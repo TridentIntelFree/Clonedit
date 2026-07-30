@@ -35,7 +35,7 @@
 
 <div id="hdr">
   <div>
-    <div id="logo">JBH-88</div>
+    <div id="logo">JBH-88<span id="offPip" hidden title="No connection. Everything already on the device still works.">OFFLINE</span></div>
     <div id="build" class="expandable" role="button" tabindex="0" title="tap to read the whole line"></div>
   </div>
   <div id="transport">
@@ -215,7 +215,7 @@
   <div id="smTargetInfo"><span id="smTarget"></span></div>
   <div class="row">
     <span class="grow"></span>
-    <button id="btnFreeSounds" title="open free CC0 sound libraries in a new tab">&#127760; FREE SOUNDS</button>
+    <button id="btnFreeSounds" class="needsnet" title="open free CC0 sound libraries in a new tab">&#127760; FREE SOUNDS</button>
     <button id="btnImport">IMPORT FILE</button>
     <button id="btnMic" class="rec">REC MIC</button>
   </div>
@@ -262,7 +262,7 @@
       <option value="samples/manifest.json">JBH Studio (synth)</option>
       <option value="custom">Custom URL…</option>
     </select>
-    <button id="btnPackLoad">LOAD PACK</button>
+    <button id="btnPackLoad" class="needsnet" title="download the chosen sample pack to this device">LOAD PACK</button>
   </div>
   <div class="row" id="packUrlRow" style="display:none">
     <input type="text" id="packUrl" class="grow" value="samples/vsco-real.json" spellcheck="false" autocapitalize="off" placeholder="https://…/manifest.json">

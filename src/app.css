@@ -85,6 +85,16 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
   border-bottom:1px solid var(--edge);background:var(--panel)}
 #hdr > div:first-child{min-width:0;flex:1 1 auto;overflow:hidden}
 #logo{font-weight:700;font-size:17px;letter-spacing:1.5px;color:var(--amber);white-space:nowrap}
+/* Offline is a state, not a fault: the instrument is fully playable without a
+   connection, so this reports rather than alarms. Dim, not red. */
+#offPip{display:inline-block;margin-left:7px;padding:1px 5px;border-radius:3px;
+  border:1px solid var(--txt-dim);color:var(--txt-dim);background:transparent;
+  font-size:8px;font-weight:700;letter-spacing:.8px;vertical-align:2px}
+#offPip[hidden]{display:none}
+/* Controls that cannot work without a connection. Still focusable and still
+   explain themselves — a disabled control that gives no reason is worse than
+   one that fails. */
+.needsnet.offline{opacity:.45}
 #build{font-size:10px;color:var(--txt-dim);line-height:1.3;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 

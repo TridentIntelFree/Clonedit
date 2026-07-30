@@ -1786,8 +1786,44 @@
      The R128 DIAG line said "nothing above 8kHz survives". That is no longer
      true of imports, so it now names live capture specifically. A warning that
      overstates is on its way to being ignored.
+   - R139: A PROJECT NOW SAYS WHAT WROTE IT, AND OFFLINE SAYS SO.
+     Two from a list of suggestions, kept because they were the two the app
+     did not already have.
+     (1) FORMAT VERSIONING. A saved project carried a format NAME
+     ('mvx880-project') and nothing else, and applySessionDoc read its fields
+     without checking anything. Backwards was already safe and stays that way:
+     every field is read as `doc.x != null ? doc.x : default`, which is why a
+     project from twenty builds ago still opens. Forwards was the hole. If a
+     later build ever changes what a field MEANS — ms to seconds, an index to
+     an id, a flag inverted — a project written by that build and opened here
+     reads as a valid number in the wrong unit. It does not fail; it loads
+     wrong, and the user is left wondering why their song changed. Documents
+     now carry `v` (bumped only when a field changes meaning) and `build`, so
+     a future document is REFUSED and the refusal can name the release needed.
+     A migration ladder is in place doing nothing, which is the point: the
+     first real migration now has somewhere to go.
+     The gate sits inside applySessionDoc so all five routes in are covered —
+     boot restore, opening a project, REWIND, file import, undo/redo — and
+     each call site was changed to stop rather than carry on after a refusal.
+     Writing the test found a hole in my own gate: version alone cannot decide,
+     because a pre-R139 document has no version either, so `{hello:'world'}`
+     read as "old project", migrated, and then threw HALFWAY THROUGH
+     applySessionDoc — leaving the session in pieces. Shape is checked before
+     version now. Refused whole or applied whole; never half.
+     (2) OFFLINE. The instrument never needed a connection — it ships no audio,
+     every default sound is synthesised in code — but nothing said so, and the
+     three or four controls that DO need the network just failed. There is now
+     a dim OFFLINE badge by the logo, the network-only controls are marked
+     (marked, not disabled: tapping LOAD PACK offline should be able to say
+     why, and the loader already falls back to the cached manifest), and both
+     transitions are announced. Verified with the network actually cut, not a
+     mocked flag: pads sound, the sequencer runs, and the bounce renders to
+     0.856 peak over 6.36s with no network at all.
+     One bug found in my own code by that test: restoring a tooltip with
+     `dataset.t0 || el.title` — a control with no tooltip stores '', which is
+     falsy, so it restored the offline text it was supposed to remove.
    ================================================================ */
-const BUILD = 'JBH-88 · R138 · 2026-07-30 · the sample rate trap';
+const BUILD = 'JBH-88 · R139 · 2026-07-30 · projects say what wrote them; offline says so';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -9032,7 +9068,7 @@ $('btnSave').addEventListener('click',()=>{
     for(let c=0;c<b.numberOfChannels;c++) chans.push(f32ToB64(b.getChannelData(c)));
     return {sr:b.sampleRate,len:b.length,ch:chans};
   });
-  const doc={ fmt:'mvx880-project', build:BUILD, name:$('projName').value,
+  const doc={ fmt:DOC_FMT, v:DOC_V, build:BUILD, name:$('projName').value,
     bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
@@ -9072,7 +9108,90 @@ function reapplyLivePads(){   // push S.pads channel state onto the live graph (
     applyPadFx(n,p,AC,true); applyPadLfo(n,p,AC); }
   applyMixMutes();
 }
+/* ---------------- PROJECT FORMAT VERSION -------------------------------------
+   A saved project carried a format NAME ('mvx880-project') but no version, and
+   applySessionDoc read its fields without checking anything at all. That is
+   fine in one direction and dangerous in the other.
+
+   Backwards is already safe: every field is read as `doc.x != null ? doc.x :
+   default`, so an old project opened by a new build simply gets defaults for
+   whatever it predates. That is why old sessions keep working and it should
+   stay that way.
+
+   Forwards is the hole. If a later build ever changes what a field MEANS —
+   milliseconds to seconds, an index to an id, a flag inverted — then a project
+   saved by that build and opened here reads as a valid number in the wrong
+   unit. It does not fail; it loads wrong, and the user is left to work out why
+   their song sounds different. Refusing is the only honest answer, and it can
+   only be done if the document says which schema it was written against.
+
+   So: `v` is the schema version and only changes when a field changes meaning
+   (adding an optional field does not need a bump — the default covers it), and
+   `build` records which release wrote it, so a refusal can name the version the
+   user needs. This costs two keys per document and buys the ability to say "not
+   opened, and here is why" instead of silently misreading someone's work.
+
+   The migration ladder below is a no-op today. That is the point of adding it
+   now: the first real migration has somewhere to go. */
+const DOC_FMT='mvx880-project';
+const DOC_V=1;                 // schema version — bump ONLY when a field changes meaning
+function docVersion(doc){ return (doc&&doc.v!=null)?(doc.v|0):0; }   // 0 = written before R139
+function docBuildName(doc){
+  if(!doc||!doc.build) return 'a newer build';
+  return String(doc.build).replace(/^JBH-88\s*·\s*/,'').split(/\s*·\s*/)[0] || 'a newer build';
+}
+function migrateDoc(doc,from){
+  /* Each rung brings a document up one version. They must run in order and
+     each must be safe to apply to a document that has already had the earlier
+     ones. Nothing to do for v0 → v1: v0 documents differ from v1 only by the
+     absence of the version key itself, and the loader already defaults every
+     field a v0 document can be missing. */
+  if(from<1){ /* v0 → v1: no field changed meaning */ }
+  doc.v=DOC_V;
+  return doc;
+}
+/* Gate every route into applySessionDoc. Returns false when the document must
+   not be applied, having already said why. */
+function docAccept(doc,where){
+  if(!doc||typeof doc!=='object'){
+    lcd('LOAD FAILED — that is not a project file.');
+    plog('Refused '+where+': not an object.');
+    return false;
+  }
+  /* Shape, before version. A document written before R139 has no version key,
+     so "no version" cannot mean "not a project" — the two are told apart by
+     structure instead. This matters more than it looks: applySessionDoc reads
+     doc.pads and doc.patterns without checking them, so anything that gets
+     past this point and turns out not to be a project throws HALFWAY THROUGH
+     and leaves the session in pieces. Every route in must be refused whole or
+     applied whole. (undoSnap carries no fmt, which is why fmt is only checked
+     when it is present.) */
+  if(doc.fmt!=null && doc.fmt!==DOC_FMT){
+    lcd('LOAD FAILED — that is not a JBH-88 project.');
+    plog('Refused '+where+': format "'+doc.fmt+'", expected "'+DOC_FMT+'".');
+    return false;
+  }
+  if(!Array.isArray(doc.pads)||!Array.isArray(doc.patterns)){
+    lcd('LOAD FAILED — that file is not a project, or is damaged.');
+    plog('Refused '+where+': no pads[]/patterns[]. Nothing in this session was changed.');
+    return false;
+  }
+  const v=docVersion(doc);
+  if(v>DOC_V){
+    lcd('NOT OPENED — this project was saved by '+docBuildName(doc)+'. Update JBH-88 to open it.');
+    plog('Refused '+where+': project format v'+v+', this build reads v'+DOC_V+
+         ' ('+docBuildName(doc)+'). Opening it would misread fields rather than fail, '+
+         'so the project is left untouched and nothing in this session was changed.');
+    return false;
+  }
+  if(v<DOC_V){
+    migrateDoc(doc,v);
+    plog('Project written before format v'+DOC_V+' — migrated on load ('+where+').');
+  }
+  return true;
+}
 function applySessionDoc(doc, bufs){
+  if(!docAccept(doc,'session load')) return false;
   S.bpm=doc.bpm; S.swing=doc.swing; S.human=doc.human||0;
   // an older project has no seed: give it one now and keep it from here on, so
   // it at least becomes repeatable from this point rather than never
@@ -9228,18 +9347,22 @@ function applySessionDoc(doc, bufs){
   document.querySelectorAll('#bankrow [data-b]').forEach(x=>x.classList.toggle('on',parseInt(x.dataset.b,10)===S.bank));
   ensureSpeedCaches();   // pitch-locked pads need their stretched buffers ready before the first hit/bounce
   drawPads(); drawEdit(); drawSeq(); drawCcMaps(); drawWave(); drawTrax(); drawLive(); drawSidechain(); drawSong(); drawMixer();
+  return true;
 }
 $('jsonIn').addEventListener('change',async e=>{
   const f=e.target.files && e.target.files[0]; if(!f) return;
   try{
     const doc=JSON.parse(await f.text());
-    if(doc.fmt!=='mvx880-project') throw new Error('not an MVX project');
+    if(doc.fmt!==DOC_FMT) throw new Error('not an MVX project');
+    /* Check the version BEFORE decoding the audio: a refusal should not spend
+       seconds unpacking megabytes it is going to throw away. */
+    if(!docAccept(doc,'file import: '+f.name)) return;
     const bufs=doc.buffers.map(b=>{
       const ab=mkAudioBuf(b.len,b.sr,b.ch.length);
       b.ch.forEach((c64,i)=>ab.copyToChannel(b64ToF32(c64),i));
       return ab;
     });
-    applySessionDoc(doc,bufs);
+    if(!applySessionDoc(doc,bufs)) return;
     curProjId=null; drawProjects();   // an imported file isn't a library entry yet — SAVE adds it
     plog('Loaded project: '+f.name);
     lcd('PROJECT LOADED · tap SAVE AS NEW to keep it in the library.');
@@ -9319,7 +9442,7 @@ function snapshotSession(){
     }
     return {sr:b.sampleRate,len:b.length,ch};
   });
-  return { fmt:'mvx880-project', t:Date.now(), name:$('projName').value, projId:curProjId,
+  return { fmt:DOC_FMT, v:DOC_V, build:BUILD, t:Date.now(), name:$('projName').value, projId:curProjId,
     bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
@@ -9403,7 +9526,7 @@ function dirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(autosave,1500); schedu
 /* ---------------- undo / redo (snapshot of the editable state, no buffers) ---------------- */
 let undoStack=[], redoStack=[], _committed=null, undoTimer=0;
 function undoSnap(){
-  return { name:$('projName').value,
+  return { v:DOC_V, name:$('projName').value,
     bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
@@ -9437,7 +9560,7 @@ function commitUndo(){
   updateUndoUI();
 }
 function restoreSnap(entry){
-  applySessionDoc(cloneSnap(entry.doc), entry.bufs.slice());
+  if(!applySessionDoc(cloneSnap(entry.doc), entry.bufs.slice())) return;
   S.autoTarget=entry.doc.autoTarget||'mfilt'; drawAuto();
 }
 function undo(){
@@ -9504,6 +9627,7 @@ async function offerRestore(){
   lcd('READY · restore the last session above, or start from here.');
   $('btnRestore').onclick=()=>{
     try{
+      if(!docAccept(doc,'restore last session')) return;   // bar stays up; nothing touched
       pendingRestore=null;
       applySessionDoc(doc,docToBuffers(doc));
       curProjId=doc.projId||null; drawProjects();
@@ -9564,6 +9688,7 @@ async function projLoad(id){
   let doc=null; try{ doc=await idbGet('proj:'+id); }catch(e){}
   if(!doc||!doc.pads){ lcd('PROJECT NOT FOUND.'); await projIndexRemove(id); await drawProjects(); return; }
   try{
+    if(!docAccept(doc,'open project')) return;
     if(playing) stopSeq();
     applySessionDoc(doc,docToBuffers(doc));
     curProjId=id; $('projName').value=doc.name||'untitled';
@@ -9686,6 +9811,10 @@ async function drawRewind(){
         try{ await idbPut('ckpt:'+Date.now(), snapshotSession()); }catch(e){}
         const doc=await idbGet(k);
         if(!doc){ lcd('CHECKPOINT MISSING.'); drawRewind(); return; }
+        /* Before stopping playback or touching 'last'. A refused rewind must
+           leave the session exactly where it was — the checkpoint of RIGHT NOW
+           taken above is still filed, which costs nothing and loses nothing. */
+        if(!docAccept(doc,'rewind')){ drawRewind(); return; }
         if(playing) stopSeq();
         applySessionDoc(doc,docToBuffers(doc));
         curProjId=doc.projId||null;
@@ -10218,7 +10347,7 @@ $('libIn').addEventListener('change',async e=>{
     if(j.fmt!=='mvx880-library'||!Array.isArray(j.projects)) throw new Error('not an MVX library backup');
     let n=0;
     for(const pr of j.projects){
-      if(!pr||!pr.id||!pr.doc||pr.doc.fmt!=='mvx880-project') continue;
+      if(!pr||!pr.id||!pr.doc||pr.doc.fmt!==DOC_FMT) continue;
       const doc=Object.assign({},pr.doc,{
         buffers:(pr.doc.buffers||[]).map(b=>({sr:b.sr,len:b.len,ch:b.ch.map(s=>b64ToU8(s).buffer)})) });
       await idbPut('proj:'+pr.id,doc);
@@ -11075,6 +11204,46 @@ buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader(); 
 if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
   navigator.serviceWorker.register('./sw.js').catch(()=>{});   // offline shell — network-first, so updates land when online
 }
+
+/* ---------------- OFFLINE STATE ---------------------------------------------
+   This instrument does not need a connection. It ships no audio — every default
+   sound is synthesised in code — so with the shell cached by sw.js, the pads,
+   the sequencer, the sampler, recording, the bounce and the whole project
+   library work exactly the same on a plane as at a desk.
+
+   Which is the reason to say so rather than stay quiet. Three or four controls
+   DO need the network — fetching a sample pack, and the links out to the free
+   sound libraries — and when one of those fails with no explanation, the
+   reasonable conclusion is that the app is broken. Naming the state turns "it
+   stopped working" into "I am offline, and only these two things are waiting on
+   that".
+
+   navigator.onLine is famously weak: true only means an interface is up, not
+   that anything is reachable. That is fine here. It is never wrong about being
+   OFFLINE, which is the direction that matters — a false "online" just means a
+   pack download fails the way it always did, with its own message. */
+const NEEDS_NET=['btnPackLoad','btnFreeSounds'];
+function netApply(){
+  const off=!navigator.onLine;
+  const pip=$('offPip'); if(pip) pip.hidden=!off;
+  NEEDS_NET.forEach(id=>{
+    const el=$(id); if(!el) return;
+    el.classList.toggle('offline',off);
+    /* Left enabled deliberately. Tapping LOAD PACK offline should say what is
+       wrong, and the pack loader already falls back to the cached manifest so
+       downloaded samples stay browsable — a disabled button could do neither.
+       Restore from dataset.t0 unconditionally: `t0 || el.title` looks safer but
+       is the bug — a control with no tooltip stores '', which is falsy, so it
+       would fall back to el.title, which at that moment IS the offline text. */
+    el.title = off ? 'Needs a connection — you are offline. Samples already downloaded still work.'
+                   : (el.dataset.t0!=null ? el.dataset.t0 : '');
+  });
+}
+/* Capture the original tooltips once, before netApply can overwrite any. */
+NEEDS_NET.forEach(id=>{ const el=$(id); if(el && el.dataset.t0==null) el.dataset.t0=el.title||''; });
+addEventListener('online', ()=>{ netApply(); lcd('BACK ONLINE — sample packs and downloads are available again.'); });
+addEventListener('offline',()=>{ netApply(); lcd('OFFLINE — everything on the device still works; only pack downloads need a connection.'); });
+netApply();
 document.body.addEventListener('touchstart',function once(){ ensureAudio(); document.body.removeEventListener('touchstart',once); },{passive:true});
 drawSong(); undoInit(); drawProjects(); drawRewind(); drawTake();
 $('btnNewTake').addEventListener('click',()=>{
