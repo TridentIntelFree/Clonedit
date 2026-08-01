@@ -1936,8 +1936,49 @@
      It injects a long lead now and checks the clamp clips it WITHOUT swallowing
      the control that opens the lesson, which is the thing that must never
      regress.
+   - R144: POLYRHYTHM — the engine. A track can run on its own pulse.
+     The app had POLYMETER (per-track LEN: a 15-step hat against a 16-step kick,
+     same pulse, different cycle lengths) and no way at all to express
+     POLYRHYTHM — a different SUBDIVISION of the same span. Three evenly spaced
+     hits in the time of four cannot be written on a 16-step grid because 16 is
+     not divisible by 3; Euclid 3-in-16 spaces them 5-5-6, which is a groove but
+     is not a triplet.
+     Two modes, because they are two different techniques rather than one with a
+     tolerance. LOCKED pins the cycle to the bar — `len` hits across `bars`
+     bars, re-anchored every cycle, so 3-against-4 is exact forever. FREE gives
+     the track its own BPM and never re-anchors, so it drifts against the bar
+     for good (phasing). Nesting needs no new UI: the ratchet lock that already
+     exists turns a cell of a 3-track into five hits inside one third of a bar.
+     The arithmetic lives in src/pure/poly.js so it is unit tested in
+     milliseconds AND so the live scheduler and the offline bounce share one
+     definition of when a hit lands — those two disagreeing would mean the file
+     is not what you heard. Both paths ask the same function the same question
+     over the same window; measured by spying on triggerPad they agree to
+     0.0000ms on every hit, and the rendered waveform carries one transient per
+     scheduled hit, 16.4ms late for the kick's attack and spaced to 3.2ms.
+     No restructuring of the lookahead loop. Poly hits are computed INSIDE the
+     existing per-step walk, over the window [t, t+sd) — which also means a
+     locked track re-anchors for free, since its cycle start is derived from the
+     current step's own time at the current tempo. Change the BPM mid-song and
+     the tuplet comes with it.
+     One real bug, found by the test and then reproduced deterministically in
+     the pure suite: the scheduler ACCUMULATES its window boundaries while the
+     cycle start is derived by SUBTRACTING from that accumulation. The two reach
+     the same instant and differ in the last bits, so a hit sitting exactly on a
+     window edge — which the first hit of every cycle does, by definition — was
+     dropped by both windows or fired by both, depending on where playback
+     happened to start. It presented as an intermittently missing hit: 17 evenly
+     spaced one run, 15 with an 800ms hole the next. Fixed with a 1ns tolerance
+     on both bounds — five orders of magnitude below a sample, far above float
+     noise.
+     Poly tracks play forwards under REV. A reversed tuplet is not a meaningful
+     thing to want, and faking one would put a difference between live and
+     bounce for no musical gain. Swing is not applied either: delaying every
+     second cell of a triplet is not a shuffle, it is a worse rhythm.
+     Engine only — no UI yet. The panel comes next, on the deliberate grounds
+     that timing this delicate should be proved before it is made reachable.
    ================================================================ */
-const BUILD = 'JBH-88 · R143 · 2026-07-30 · the space goes to the analyser';
+const BUILD = 'JBH-88 · R144 · 2026-07-31 · a track can run on its own pulse';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -6624,12 +6665,84 @@ $('btnDlClear').addEventListener('click',async ()=>{
 let playing=false, curStep=0, nextStepTime=0, lastStepTime=0, seqTimer=0, seqSolo=false;
 function stepDur(){ return 60/bpmAbs()/4; }
 
+/* When the sequence started, in AudioContext seconds. A free-running poly track
+   measures from here and never re-anchors — that is what makes it free. */
+let seqT0=0;
+
+/* One poly cell, fired with everything an ordinary step gets: probability,
+   nudge, humanize, chords, ratchet, and the MIDI mirror. A poly track that
+   quietly ignored half the per-step locks would be a second-class track, and
+   the locks are where the nesting comes from — a cell of a 3-track ratcheted by
+   5 is five hits inside one third of a bar, which is a nested tuplet without
+   needing a nested-tuplet UI.
+
+   `pd` is this track's own step duration, so ratchet and note length subdivide
+   the poly pulse rather than the grid's sixteenth. */
+function polyFire(pat, p, idx, v, when, pd, fired){
+  const lk=pat.locks && pat.locks[p+':'+idx];
+  if(lk && lk.prob!=null && Math.random()>lk.prob) return;
+  if(lk && lk.nudge) when+=lk.nudge*pd;
+  let hv=v;
+  if(S.human>0){
+    when+=(Math.random()*2-1)*S.human*0.012;
+    hv=clamp(v*(1-Math.random()*S.human*0.22),0.05,1);
+    if(when<AC.currentTime) when=AC.currentTime;
+  }
+  const chord=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0];
+  const rat=(lk&&lk.rat>1)?lk.rat:1;
+  const creg=chord.length>1?null:chokeLive;
+  chord.forEach(pitchOff=>{
+    if(rat>1){ const rd=pd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, hv, when+r*rd, creg, pitchOff); }
+    else triggerPad(AC, LIVE, p, hv, when, creg, pitchOff);
+  });
+  if(S.notesOut && midiOutDev){
+    const baseNote=(S.pads[p].note>=0?S.pads[p].note:36+p);
+    chord.forEach(pitchOff=>{ const base=baseNote+pitchOff;
+      if(rat>1){ const rd=pd/rat; for(let r=0;r<rat;r++) moNote(base,hv,when+r*rd,rd*0.8); }
+      else moNote(base,hv,when,pd*0.85); });
+  }
+  fired.push({p,v:hv});
+}
+
+/* Every poly hit of one track landing inside this step's slice of time.
+
+   The window is the step itself, [t, t+sd), which is how the whole thing stays
+   simple: the existing loop already walks steps with exact times, so a poly
+   track can be asked "anything of yours in here?" without restructuring the
+   scheduler. It also means a LOCKED track re-anchors for free — its cycle start
+   is derived from the CURRENT step's time and the CURRENT tempo, so changing
+   the BPM mid-song carries the tuplet with it instead of drifting it off.
+
+   NSTEPS, not the pattern length: "bars" means bars. A 64-step pattern is four
+   of them, and a 3-against-4 track should re-lock every bar rather than once
+   per pattern. */
+function polyHitsForStep(cfg, absStep, t, sd){
+  const barDur=NSTEPS*sd;
+  if(cfg.mode==='free') return polyEvents(cfg, seqT0, t, t+sd, barDur);
+  const cycleSteps=NSTEPS*cfg.bars;
+  const cycleStart=t-posMod(absStep,cycleSteps)*sd;   // exact, from this step's own time
+  return polyEvents(cfg, cycleStart, t, t+sd, barDur);
+}
+
 function schedStep(barStep, absStep, t){
   const sd=stepDur(), pat=curPat(), fired=[];
   const swing = (barStep%2===1) ? S.swing*sd : 0;
   if(pat.sil && pat.sil[posMod(absStep,patLen(pat))]){ silenceAt(LIVE, t+swing, S.silFade); silGateDown=true; }
   for(let p=0;p<NPADS;p++){
     if(seqSolo && p!==S.seqPad) continue;
+    const pc=polyCfg(pat,p);
+    /* A poly track's cells do not line up with the grid, so it is scheduled on
+       its own clock rather than by step index. Swing is deliberately not applied
+       — delaying every second cell of a triplet is not a shuffle, it is a
+       different and worse rhythm — and the explainer says so. */
+    if(pc){
+      for(const ev of polyHitsForStep(pc, absStep, t, sd)){
+        const v=pat.steps[p][ev.idx];
+        if(!(v>0)) continue;
+        polyFire(pat, p, ev.idx, v, ev.when, polyStepDur(pc, NSTEPS*sd), fired);
+      }
+      continue;
+    }
     const L=trackLen(pat,p), idx=posMod(absStep,L);
     const v=pat.steps[p][idx];
     if(!(v>0)) continue;
@@ -6823,6 +6936,8 @@ function startSeq(){
   else selectPattern(S.pattern);   // re-apply this pattern's own tempo before the clock is read
   curStepSched=0; curStep=0; absStepSched=0;
   nextStepTime=AC.currentTime+0.08;   // offsets set BEFORE the loop reads them (ordering fix)
+  seqT0=nextStepTime;                 // free-running poly tracks measure from here
+
   if(S.clkOut && !S.extClk) moSend([0xFA]);   // MIDI START — followers reset to bar 1
   wakeAcquire();                              // screen stays on = iOS audio session stays alive
   startTrax(nextStepTime);            // tape lanes roll (and record) from bar 1
@@ -10253,6 +10368,7 @@ async function renderMixInner(padSet, traxSet, opt){
   const src=(opt&&opt.src)||$('bSrc').value;
   const seq=bounceSeq(src);
   const events=[], tempoSeg=[], autoEvents=[]; let t=0.05, absB=0;
+  const renderT0=t;   // a free poly track measures from the top of the render, as live it measures from PLAY
   for(let l=0;l<loops;l++){
     for(const sq of seq){
       const pat=sq.pat, PLB=patLen(pat);
@@ -10265,6 +10381,34 @@ async function renderMixInner(padSet, traxSet, opt){
         if(pat.sil && pat.sil[posMod(rev?-(absB+st):(absB+st),PLB)]) events.push({when:t+st*sd+swing, sil:true});
         for(let p=0;p<NPADS;p++){
           if(padSet && !padSet.has(p)) continue;
+          const pc=polyCfg(pat,p);
+          /* The same window question the live scheduler asks, against the same
+             pure function, so the file cannot disagree with what was played.
+             Poly tracks run forwards even under REV — a reversed tuplet is not
+             a meaningful thing to want, and pretending otherwise would put a
+             difference between the two paths for no musical gain. */
+          if(pc){
+            const barDur=NSTEPS*sd, stepT=t+st*sd;
+            const t0p = pc.mode==='free' ? renderT0
+              : stepT - posMod(absB+st, NSTEPS*pc.bars)*sd;
+            const pd=polyStepDur(pc,barDur);
+            for(const ev of polyEvents(pc, t0p, stepT, stepT+sd, barDur)){
+              const pv=pat.steps[p][ev.idx]; if(!(pv>0)) continue;
+              const plk=pat.locks&&pat.locks[p+':'+ev.idx];
+              if(!worst && plk && plk.prob!=null && takeRnd()>plk.prob) continue;
+              let pw=ev.when; if(plk&&plk.nudge) pw+=plk.nudge*pd;
+              let phv=pv;
+              if(!worst && S.human>0){ pw=Math.max(0.01,pw+(takeRnd()*2-1)*S.human*0.012);
+                phv=clamp(pv*(1-takeRnd()*S.human*0.22),0.05,1); }
+              const pch=(plk&&plk.pitches&&plk.pitches.length)?plk.pitches:[(plk&&plk.pitch)||0];
+              const prat=(plk&&plk.rat>1)?plk.rat:1, pIsChord=pch.length>1;
+              pch.forEach(pitch=>{
+                if(prat>1){ const rd=pd/prat; for(let r=0;r<prat;r++) events.push({when:pw+r*rd,p,v:phv,pitch,chord:pIsChord}); }
+                else events.push({when:pw,p,v:phv,pitch,chord:pIsChord});
+              });
+            }
+            continue;
+          }
           const L=trackLen(pat,p), idx=posMod(rev?-(absB+st):(absB+st),L);
           const v=pat.steps[p][idx]; if(!(v>0)) continue;
           const lk=pat.locks&&pat.locks[p+':'+idx];

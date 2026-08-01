@@ -12,5 +12,6 @@ export * from './euclid.js';
 export * from './scale.js';
 export * from './groove.js';
 export * from './morph.js';
+export * from './poly.js';
 export * from './ir.js';
 export * from './install.js';
