@@ -267,6 +267,96 @@ export default async function ({ browser, base }) {
     t.ok('undo snapshots carry them too', !!trip.inUndo && trip.inUndo.len === 5,
       JSON.stringify(trip.inUndo));
 
+    // ---- the panel ---------------------------------------------------------
+    t.head('THE PANEL DRIVES THE ENGINE');
+    const ui = await page.evaluate(async () => {
+      const o = {};
+      document.querySelector('#tabs button[data-v="seq"]').click();
+      await new Promise(r => setTimeout(r, 200));
+      const pad = S.pads.findIndex(x => x.bufId >= 0);
+      S.seqPad = pad;
+      const pat = S.patterns[S.pattern];
+      delete pat.poly; pat.steps.forEach(r => r.fill(0));
+      drawSeq(); drawSteps();
+
+      document.getElementById('btnPoly').click();
+      o.opens = document.getElementById('polyPanel').style.display === 'block';
+      o.startsOnGrid = polyCfg(pat, pad) === null;
+      o.gridCellsBefore = document.querySelectorAll('#stepgrid .step').length;
+
+      // three per bar, via a quick button
+      document.querySelector('.polypre[data-len="3"]').click();
+      const cfg = polyCfg(pat, pad);
+      o.mode = cfg && cfg.mode; o.len = cfg && cfg.len; o.bars = cfg && cfg.bars;
+      o.readout = document.getElementById('polyReadout').textContent;
+      o.polyCells = document.querySelectorAll('#polygrid .pcell').length;
+      o.gridCellsAfter = document.querySelectorAll('#stepgrid .step').length;
+      o.gridMarked = document.getElementById('stepgrid').classList.contains('polyrow');
+
+      // a cell written in the panel is the same data the grid edits
+      document.querySelectorAll('#polygrid .pcell')[1].click();
+      o.rowAfterTap = pat.steps[pad].slice(0, 4).map(v => v > 0 ? 1 : 0).join('');
+      o.gridShowsIt = document.querySelectorAll('#stepgrid .step')[1].classList.contains('on');
+
+      // free mode
+      document.getElementById('btnPolyFree').click();
+      const f = polyCfg(pat, pad);
+      o.freeMode = f && f.mode;
+      o.freeRowShown = document.getElementById('polyFreeRow').style.display === 'flex';
+      o.lockRowHidden = document.getElementById('polyLockRow').style.display === 'none';
+      const sl = document.getElementById('polyBpm');
+      sl.value = '137'; sl.dispatchEvent(new Event('input'));
+      o.freeBpm = polyCfg(pat, pad).bpm;
+      o.freeReadout = document.getElementById('polyReadout').textContent;
+
+      // and back off
+      document.getElementById('btnPolyOff').click();
+      o.backToGrid = polyCfg(pat, pad) === null;
+      o.gridCellsBack = document.querySelectorAll('#stepgrid .step').length;
+      return o;
+    });
+    t.ok('the panel opens', ui.opens);
+    t.ok('a pad starts on the ordinary grid', ui.startsOnGrid);
+    t.ok('a quick button sets a locked 3-per-bar', ui.mode === 'lock' && ui.len === 3 && ui.bars === 1,
+      JSON.stringify({ m: ui.mode, len: ui.len, bars: ui.bars }));
+    t.note('    readout: "' + ui.readout + '"');
+    t.ok('the readout states hits, ratio AND the interval',
+      /3 hits per 1 bar/.test(ui.readout) && /3:16/.test(ui.readout) && /one every/.test(ui.readout));
+    t.ok('the panel draws one cell per hit', ui.polyCells === 3, ui.polyCells + ' cells');
+    /* The rule this app is built on. Sixteen boxes for a track that plays three
+       would be the sequencer showing something it will not play. */
+    t.ok('THE STEP GRID SHOWS 3 CELLS, NOT 16', ui.gridCellsAfter === 3,
+      ui.gridCellsBefore + ' before → ' + ui.gridCellsAfter + ' after');
+    t.ok('and is marked as running on a different pulse', ui.gridMarked);
+    t.ok('a cell tapped in the panel is the same hit the grid shows',
+      ui.rowAfterTap === '0100' && ui.gridShowsIt, ui.rowAfterTap);
+    t.ok('FREE swaps the controls over',
+      ui.freeMode === 'free' && ui.freeRowShown && ui.lockRowHidden);
+    t.ok('the BPM slider sets the pad tempo', ui.freeBpm === 137, String(ui.freeBpm));
+    t.note('    free readout: "' + ui.freeReadout + '"');
+    t.ok('and the readout says it drifts', /drift/.test(ui.freeReadout), ui.freeReadout);
+    t.ok('turning it off returns the pad to the grid',
+      ui.backToGrid && ui.gridCellsBack === 16, ui.gridCellsBack + ' cells');
+
+    t.head('SHORTENING A POLY ROW REMOVES WHAT IT HIDES');
+    /* Same contract the pattern length follows: a hit you can no longer see must
+       not still sound, and you are told it went. */
+    const shrink = await page.evaluate(() => {
+      const pad = S.seqPad, pat = S.patterns[S.pattern];
+      pat.poly = { [pad]: { on: true, mode: 'lock', len: 5, bars: 1 } };
+      pat.steps[pad].fill(0);
+      for (let k = 0; k < 5; k++) pat.steps[pad][k] = 0.9;
+      drawPoly();
+      document.getElementById('polyLenDn').click();      // 5 -> 4
+      document.getElementById('polyLenDn').click();      // 4 -> 3
+      return { row: pat.steps[pad].slice(0, 6).map(v => v > 0 ? 1 : 0).join(''),
+        said: document.getElementById('lcdmsg').textContent,
+        len: polyCfg(pat, pad).len };
+    });
+    t.ok('cells past the new end are cleared', shrink.row === '111000', shrink.row);
+    t.ok('and it says so, in grammatical English',
+      /1 hit past the new end was removed, not hidden/.test(shrink.said), '"' + shrink.said + '"');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

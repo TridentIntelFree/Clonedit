@@ -587,6 +587,7 @@ immediately.</p>
     <button aria-label="Shorten this track (polymeter)" id="btnLenDn">&#8722;</button><span id="seqLenV" style="min-width:30px;text-align:center;color:var(--lcd);font-size:12px">16</span><button aria-label="Lengthen this track (polymeter)" id="btnLenUp">+</button>
     <button id="btnStepLock">LOCK</button>
     <button id="btnNotes">NOTES</button>
+    <button id="btnPoly">POLY</button>
     <span id="lockHint" style="font-size:10px;color:var(--txt-dim)">tap step to toggle</span>
   </div>
   <div class="row">
@@ -699,6 +700,89 @@ alternation does more for a groove than any effect.</p>
     <button id="btnGrvAll">ALL TRACKS</button>
   </div>
   <div class="adv" id="grvInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">Groove writes per-step timing nudges (and accents) into the pattern — it bounces and exports exactly as you hear it. STRAIGHT clears them.</div>
+  <div id="polyPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
+    <div class="row" style="margin-bottom:6px">
+      <span class="lbl">PULSE</span>
+      <button id="btnPolyOff" class="on">GRID</button>
+      <button id="btnPolyLock">LOCKED</button>
+      <button id="btnPolyFree">FREE</button>
+    </div>
+    <div id="polyLockRow" style="display:none;margin-bottom:6px">
+      <div class="row" style="margin-bottom:4px">
+        <span class="lbl">HITS</span>
+        <span class="stepper"><button aria-label="Fewer hits per cycle" id="polyLenDn">&#8722;</button><span id="polyLenV">3</span><button aria-label="More hits per cycle" id="polyLenUp">+</button></span>
+        <span style="font-size:11px;color:var(--txt-dim);flex:1">spread evenly across the cycle</span>
+      </div>
+      <div class="row">
+        <span class="lbl">PER</span>
+        <span class="stepper"><button aria-label="Shorter cycle" id="polyBarsDn">&#8722;</button><span id="polyBarsV">1</span><button aria-label="Longer cycle" id="polyBarsUp">+</button></span>
+        <span id="polyBarsLbl" style="font-size:11px;color:var(--txt-dim);flex:1">bar of the main sequence</span>
+      </div>
+    </div>
+    <div id="polyPresetRow" class="row" style="display:none;margin-bottom:6px">
+      <span class="lbl">QUICK</span>
+      <button class="polypre" data-len="3" data-bars="1">3</button>
+      <button class="polypre" data-len="5" data-bars="1">5</button>
+      <button class="polypre" data-len="6" data-bars="1">6</button>
+      <button class="polypre" data-len="7" data-bars="1">7</button>
+      <button class="polypre" data-len="9" data-bars="1">9</button>
+      <button class="polypre" data-len="12" data-bars="1">12</button>
+      <button class="polypre" data-len="7" data-bars="2">7/2</button>
+    </div>
+    <div id="polyFreeRow" class="row" style="display:none;margin-bottom:6px">
+      <span class="lbl">BPM</span>
+      <input type="range" id="polyBpm" min="20" max="300" step="0.5" value="120">
+      <span class="val" id="polyBpmV">120</span>
+    </div>
+    <div id="polyFreeLenRow" class="row" style="display:none;margin-bottom:6px">
+      <span class="lbl">CELLS</span>
+      <span class="stepper"><button aria-label="Fewer cells" id="polyCellDn">&#8722;</button><span id="polyCellV">4</span><button aria-label="More cells" id="polyCellUp">+</button></span>
+      <span id="polyFreeHint" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
+    </div>
+    <div id="polyReadout" style="font-size:11px;color:var(--lcd);margin:0 0 6px;font-family:var(--f-mono)">plays on the ordinary grid</div>
+    <div id="polygrid"></div>
+    <details class="ex"><summary>Polyrhythm — two pulses at once</summary><div class="ex-body">
+      <p>This pad keeps its own row of hits. What changes is <em>when</em> those
+      hits fall, and there are two genuinely different answers.</p>
+
+      <h4>Locked — a tuplet</h4>
+      <p>The cycle is pinned to the bar: <b>HITS</b> spread evenly across
+      <b>PER BAR(S)</b>, re-anchored every time round. Three hits per bar
+      against a four-beat sequence is the classic 3-against-4 — the two agree on
+      the downbeat and nowhere else, forever. This is what a tuplet is: N in the
+      space of M. Change the project tempo and it comes with you.</p>
+      <p>You cannot write this on the step grid. A bar is 16 steps and 16 is not
+      divisible by 3, so the closest a grid can get is 5-5-6 — a groove, but not
+      a triplet.</p>
+
+      <h4>Free — phasing</h4>
+      <p>The pad ticks at its own BPM and never re-anchors. Main at 100, pad at
+      137: they agree on the first beat and then drift apart essentially
+      forever, sliding through every relationship on the way. That is a
+      technique in its own right, not a broken tuplet — Steve Reich built
+      several pieces out of exactly this. Set it to the project tempo and it
+      lands on the grid, which is a good way to see what the mode is doing.</p>
+      <p>Because it never repeats, a free pad is cut wherever the bounce ends
+      rather than finishing a cycle.</p>
+
+      <h4>Nested tuplets</h4>
+      <p>Use the <b>LOCK</b> panel's <b>RATCHET</b> on a cell. A cell of a
+      3-hit track ratcheted by 5 is five hits inside one third of a bar — a
+      quintuplet nested in a triplet. Ratchets subdivide this pad's own pulse,
+      not the grid's, so they nest as deep as you stack them.</p>
+
+      <h4>Two things it deliberately does not do</h4>
+      <p><b>Swing is not applied</b> to a poly pad. Delaying every second cell
+      of a triplet is not a shuffle, it is a worse rhythm. <b>REV plays it
+      forwards</b> — a reversed tuplet is not a meaningful thing to want, and
+      faking one would put a difference between what you hear and what the
+      bounce contains.</p>
+
+      <p class="try"><b>Try this:</b> put a kick on the ordinary grid at 0, 4, 8
+      and 12, then set a shaker to LOCKED, 3 hits per 1 bar, and fill all three
+      cells. Listen for where they collide — it should be the downbeat only.</p>
+    </div></details>
+  </div>
   <div id="notesPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
     <div class="row" style="margin-bottom:6px">
       <span class="lbl">SCALE</span>

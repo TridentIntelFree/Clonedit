@@ -1975,10 +1975,37 @@
      thing to want, and faking one would put a difference between live and
      bounce for no musical gain. Swing is not applied either: delaying every
      second cell of a triplet is not a shuffle, it is a worse rhythm.
-     Engine only — no UI yet. The panel comes next, on the deliberate grounds
-     that timing this delicate should be proved before it is made reachable.
+     (R144 was engine only, on the deliberate grounds that timing this delicate
+     should be proved before it was made reachable.)
+   - R145: POLY — the panel. SEQ ▸ POLY, per pad, modelled on NOTES.
+     PULSE picks GRID / LOCKED / FREE. Locked gets HITS and PER n BAR(S) plus
+     quick buttons for 3, 5, 6, 7, 9, 12 and 7-over-2; free gets a BPM slider
+     and a cell count. The readout states all of it at once — "3 hits per 1 bar
+     · 3:16 against the grid · one every 0.87s (69/min)" — because a ratio is
+     what a musician asks for and an interval is the one number that needs no
+     convention. An earlier version printed the sixteenth-note-equivalent tempo
+     and read "18.8 BPM" for hits four fifths of a second apart: true, and no
+     use to anybody.
+     It is NOT a second lane. The panel edits the same row the step grid edits;
+     all it changes is how fast that row is read. An overlay would have the
+     sequencer showing four hits while playing seven, and "only play what you
+     are showing" is the rule this app is built on. So the STEP GRID itself
+     draws a poly track's real cell count — three boxes, not sixteen — outlined
+     in the send colour, since a row not on the grid's pulse is the same kind of
+     statement as a level that leaves the channel. The playhead follows the
+     track's own clock too; stepping it with the grid would draw a marker
+     nowhere near the hit you can hear. Shrinking a poly row removes the cells
+     past the new end and says so, exactly as shortening a pattern does.
+     Two layout bugs the phone screenshot caught, both mine. .step carries
+     aspect-ratio:1, so three cells spread across 390px became 230px TALL — the
+     panel was three enormous slabs. And an 8-column grid put three cells in the
+     first three columns with five empty; a poly row is flex now. The HITS/PER
+     row also wrapped into "HITS − 3 + PER" / "− 1 + BAR", which reads as two
+     unrelated controls; it is two labelled rows instead.
+     Also fixed a grammar slip that has been in setPatLen since polymeter went
+     in: "1 hit past the end were removed".
    ================================================================ */
-const BUILD = 'JBH-88 · R144 · 2026-07-31 · a track can run on its own pulse';
+const BUILD = 'JBH-88 · R145 · 2026-07-31 · POLY: a pad can run on its own pulse';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -6788,7 +6815,13 @@ function flashFired(fired){ // visual proof a row actually triggered
 }
 function markStep(absStep){
   curAbsStep=absStep;
-  const cur=posMod(absStep, trackLen(curPat(),S.seqPad));
+  /* The selected track's playhead follows ITS clock. A poly track does not
+     advance one cell per step, so stepping the highlight with the grid would
+     draw a playhead that is nowhere near the hit you can hear. */
+  const pcfgM=polyCfg(curPat(),S.seqPad);
+  const cur=pcfgM
+    ? Math.max(0,polyIndexAt(pcfgM, seqT0, AC?AC.currentTime:0, NSTEPS*stepDur()))
+    : posMod(absStep, trackLen(curPat(),S.seqPad));
   curStep=cur; lastStepTime=AC?AC.currentTime:0;
   document.querySelectorAll('#stepgrid .step').forEach((el,i)=>el.classList.toggle('cur',i===cur));
   const cur16=posMod(absStep,curPatLen());
@@ -8073,7 +8106,14 @@ function drawSeq(){
 let seqLockMode=false, seqSelStep=-1;
 function drawSteps(){
   const gr=$('stepgrid'); gr.innerHTML='';
-  const pat=curPat(), row=pat.steps[S.seqPad], L=trackLen(pat,S.seqPad);
+  const pat=curPat(), row=pat.steps[S.seqPad];
+  /* A poly track's row is as long as its cell count, and the grid has to say so.
+     Showing 16 boxes for a track that plays 3 would break the one rule this app
+     is built on: only show what will play. The cells are wider and marked, so it
+     is visible at a glance that this row is not on the grid's pulse. */
+  const pcfg=polyCfg(pat,S.seqPad);
+  const L=pcfg?pcfg.len:trackLen(pat,S.seqPad);
+  gr.classList.toggle('polyrow',!!pcfg);
   $('seqLenV').textContent=L;
   for(let i=0;i<L;i++){
     const el=document.createElement('button'); el.className='step'+(i%4===0?' q2':'');
@@ -8154,7 +8194,7 @@ function setPatLen(n){
   $('euSteps').max=String(n);
   drawSeq(); drawSteps(); drawStepLock(); euRefresh(); dirty();
   lcd('PATTERN '+(S.pattern+1)+' IS NOW '+n+' STEPS ('+(n/NSTEPS)+' bar'+(n>NSTEPS?'s':'')+') — '
-    +(n>old?'the extra steps are empty':(cut?cut+' hit'+(cut>1?'s':'')+' past the end were removed, not hidden':'nothing was past the end')));
+    +(n>old?'the extra steps are empty':(cut?cut+(cut>1?' hits past the end were':' hit past the end was')+' removed, not hidden':'nothing was past the end')));
 }
 $('patLenSel').addEventListener('change',e=>setPatLen(parseInt(e.target.value,10)));
 $('btnLenDn').addEventListener('click',()=>setTrackLen(-1));
@@ -8356,6 +8396,124 @@ $('btnNotes').addEventListener('click',()=>{
 $('noteScale').addEventListener('change',e=>{ S.scaleName=e.target.value; $('scaleName').value=e.target.value; drawScaleLock(); drawNotes(); dirty(); });
 $('noteOctDn').addEventListener('click',()=>{ noteOct=clamp(noteOct-1,-3,3); drawNotes(); });
 $('noteOctUp').addEventListener('click',()=>{ noteOct=clamp(noteOct+1,-3,3); drawNotes(); });
+
+/* ---------------- POLY — this pad's own pulse --------------------------------
+   A panel per pad, like NOTES, editing the SAME row of hits the grid edits. It
+   is deliberately not a second lane: a pad has one row, the panel only changes
+   how fast that row is read. If it were an overlay the sequencer would be
+   showing four hits while playing seven, and "only play what you are showing"
+   is the rule this app is built on. */
+let polyMode=false;
+
+function polyRead(){ const pat=curPat(); return polyCfg(pat,S.seqPad); }
+function polyRaw(){
+  const pat=curPat();
+  if(!pat.poly) pat.poly={};
+  if(!pat.poly[S.seqPad]) pat.poly[S.seqPad]={on:false,mode:'lock',len:3,bars:1,bpm:Math.round(bpmAbs())};
+  return pat.poly[S.seqPad];
+}
+function polySet(fn){
+  if(morphGuard()) return;
+  const c=polyRaw(); fn(c);
+  /* A poly row is as long as its cell count, so hits written past the new end
+     would be invisible and still sound. Same rule the pattern length follows:
+     removed, and said out loud. */
+  const cfg=polyCfg(curPat(),S.seqPad);
+  if(cfg){
+    const row=curPat().steps[S.seqPad]; let cut=0;
+    for(let i=cfg.len;i<MAXSTEPS;i++) if(row[i]>0){ row[i]=0; cut++; }
+    if(cut) lcd(cut+(cut>1?' hits past the new end were':' hit past the new end was')+' removed, not hidden.');
+  }
+  drawPoly(); drawSteps(); drawSeq(); dirty();
+}
+function polyWrite(){
+  const cfg=polyRead(), pat=curPat();
+  const off=$('polyReadout');
+  $('btnPolyOff').classList.toggle('on',!cfg);
+  $('btnPolyLock').classList.toggle('on',!!cfg&&cfg.mode==='lock');
+  $('btnPolyFree').classList.toggle('on',!!cfg&&cfg.mode==='free');
+  $('polyLockRow').style.display=(cfg&&cfg.mode==='lock')?'block':'none';
+  $('polyPresetRow').style.display=(cfg&&cfg.mode==='lock')?'flex':'none';
+  $('polyFreeRow').style.display=(cfg&&cfg.mode==='free')?'flex':'none';
+  $('polyFreeLenRow').style.display=(cfg&&cfg.mode==='free')?'flex':'none';
+  if(!cfg){ off.textContent='plays on the ordinary grid'; return; }
+  const raw=polyRaw();
+  if(cfg.mode==='lock'){
+    $('polyLenV').textContent=cfg.len; $('polyBarsV').textContent=cfg.bars;
+    $('polyBarsLbl').textContent=(cfg.bars>1?'bars':'bar')+' of the main sequence';
+    const r=polyRatio(cfg,NSTEPS);
+    const gap=polyStepDur(cfg, NSTEPS*stepDur());
+    /* Ratio AND interval. The ratio is what a musician asks for; the interval is
+       the one number that needs no convention. An earlier version showed the
+       sixteenth-note-equivalent tempo instead and read "18.8 BPM" for hits four
+       fifths of a second apart — true, and no use to anybody. */
+    off.textContent=cfg.len+' hits per '+cfg.bars+' bar'+(cfg.bars>1?'s':'')
+      +'  ·  '+r.num+':'+r.den+' against the grid  ·  one every '+gap.toFixed(2)+'s'
+      +' ('+Math.round(60/gap)+'/min)';
+    document.querySelectorAll('.polypre').forEach(b2=>b2.classList.toggle('on',
+      +b2.dataset.len===cfg.len && +b2.dataset.bars===cfg.bars));
+  }else{
+    $('polyBpm').value=String(raw.bpm||120); $('polyBpmV').textContent=(raw.bpm||120);
+    $('polyCellV').textContent=cfg.len;
+    const rel=(cfg.bpm/Math.max(1,bpmAbs()));
+    const gapF=polyStepDur(cfg, NSTEPS*stepDur());
+    off.textContent=cfg.len+' cells at '+cfg.bpm+' BPM  ·  one every '+gapF.toFixed(3)+'s'
+      +'  ·  '+rel.toFixed(3)+'x the project tempo'
+      +(Math.abs(rel-1)<0.001?'  ·  on the grid':'  ·  drifts, never re-locks');
+    $('polyFreeHint').textContent=(Math.abs(rel-1)<0.001)?'same as the project — lands on the grid':'';
+  }
+}
+/* The poly row, drawn as its own cells. Same data as the step grid, same edits;
+   only the number of cells differs, which is the whole point. */
+function drawPoly(){
+  polyWrite();
+  const gr=$('polygrid'); if(!gr) return; gr.innerHTML='';
+  const cfg=polyRead(); if(!cfg) return;
+  const pat=curPat(), row=pat.steps[S.seqPad];
+  const cur = playing && AC ? polyIndexAt(cfg, cfg.mode==='free'?seqT0:seqT0, AC.currentTime, NSTEPS*stepDur()) : -1;
+  for(let i=0;i<cfg.len;i++){
+    const el=document.createElement('button');
+    el.className='step pcell'+(i===0?' q2':'');
+    const v=row[i];
+    if(v>0){ el.classList.add('on'); el.style.opacity=String(0.45+v*0.55); }
+    if(i===cur) el.classList.add('cur');
+    el.setAttribute('aria-label','Cell '+(i+1)+' of '+cfg.len+', '+padName(S.seqPad));
+    el.setAttribute('aria-pressed', v>0?'true':'false');
+    if(pat.locks && stepHasLock(pat.locks[S.seqPad+':'+i])) el.classList.add('lockmark');
+    el.addEventListener('click',()=>{
+      if(morphGuard()) return;
+      const wasOn=row[i]>0;
+      row[i]=wasOn?0:parseFloat($('stepVel').value);
+      if(wasOn && playing) stopPadVoices(S.seqPad);
+      drawPoly(); drawSteps(); dirty();
+    });
+    gr.appendChild(el);
+  }
+}
+$('btnPoly').addEventListener('click',()=>{
+  polyMode=!polyMode; $('btnPoly').classList.toggle('on',polyMode);
+  $('polyPanel').style.display=polyMode?'block':'none';
+  if(polyMode) drawPoly();
+  lcd(polyMode?'POLY: '+padName(S.seqPad)+' — give this pad its own pulse':'POLY closed');
+});
+$('btnPolyOff').addEventListener('click',()=>{ polySet(c=>{ c.on=false; });
+  lcd(padName(S.seqPad)+' plays on the ordinary grid again.'); });
+$('btnPolyLock').addEventListener('click',()=>{ polySet(c=>{ c.on=true; c.mode='lock'; });
+  lcd('LOCKED — '+padName(S.seqPad)+' re-anchors to the bar every cycle.'); });
+$('btnPolyFree').addEventListener('click',()=>{ polySet(c=>{ c.on=true; c.mode='free';
+  if(!c.bpm) c.bpm=Math.round(bpmAbs()); });
+  lcd('FREE — '+padName(S.seqPad)+' runs at its own tempo and drifts against the bar.'); });
+$('polyLenDn').addEventListener('click',()=>polySet(c=>{ c.len=clamp((c.len|0)-1,POLY_MIN,POLY_MAX); }));
+$('polyLenUp').addEventListener('click',()=>polySet(c=>{ c.len=clamp((c.len|0)+1,POLY_MIN,POLY_MAX); }));
+$('polyBarsDn').addEventListener('click',()=>polySet(c=>{ c.bars=clamp((c.bars|0)-1,1,POLY_MAX_BARS); }));
+$('polyBarsUp').addEventListener('click',()=>polySet(c=>{ c.bars=clamp((c.bars|0)+1,1,POLY_MAX_BARS); }));
+$('polyCellDn').addEventListener('click',()=>polySet(c=>{ c.len=clamp((c.len|0)-1,POLY_MIN,POLY_MAX); }));
+$('polyCellUp').addEventListener('click',()=>polySet(c=>{ c.len=clamp((c.len|0)+1,POLY_MIN,POLY_MAX); }));
+$('polyBpm').addEventListener('input',e=>{ const c=polyRaw(); c.bpm=parseFloat(e.target.value);
+  $('polyBpmV').textContent=c.bpm; polyWrite(); dirty(); });
+document.querySelectorAll('.polypre').forEach(b=>b.addEventListener('click',()=>{
+  polySet(c=>{ c.on=true; c.mode='lock'; c.len=+b.dataset.len; c.bars=+b.dataset.bars; });
+}));
 function drawSil(){
   const gr=$('silrow'); if(!gr) return; gr.innerHTML='';
   const pat=curPat();

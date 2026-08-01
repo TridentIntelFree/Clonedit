@@ -654,3 +654,26 @@ input[type=range]::-webkit-slider-thumb{transition:border-color .12s ease,backgr
   #tourCard.menu #tourBody .rcp{margin:0}
   #tourCard.menu #tourBody > label{grid-column:1 / -1}
 }
+
+/* ---- POLY — a pad running on its own pulse ------------------------------
+   The row has to look different from a grid row, because it is not on the
+   grid's pulse and a user who cannot see that will read three wide cells as a
+   16-step bar with most of it missing. Teal is already the app's "this leaves
+   the channel and happens elsewhere" colour (sends), and a pulse that is not
+   the grid's is the same kind of statement. */
+/* A poly row has an arbitrary number of cells, so the 8-column grid does not
+   apply: three cells in an eight-column track would sit squashed against the
+   left with five empty columns. Flex instead, sharing the full width.
+
+   And aspect-ratio:1 has to go with it. Three cells spread across 390px are
+   230px wide, and a square 230px cell is 230px TALL — the panel came out as
+   three enormous orange slabs. Fixed height, like the silencer row. */
+#stepgrid.polyrow{display:flex;flex-wrap:wrap}
+#stepgrid.polyrow .step,#polygrid .pcell{
+  flex:1 1 44px;min-width:44px;aspect-ratio:auto;height:46px}
+#stepgrid.polyrow .step{border-color:var(--send)}
+#stepgrid.polyrow .step.on{box-shadow:inset 0 0 0 1px var(--send)}
+#polygrid{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}
+#polygrid .pcell.cur{outline:2px solid var(--sel);outline-offset:1px}
+.polypre{min-height:32px;padding:4px 10px;font-size:12px}
+#polyReadout{letter-spacing:.2px}
