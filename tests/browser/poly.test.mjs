@@ -279,8 +279,23 @@ export default async function ({ browser, base }) {
       delete pat.poly; pat.steps.forEach(r => r.fill(0));
       drawSeq(); drawSteps();
 
+      /* Scroll to the button the way a finger arrives at it, then tap. Where
+         the page happens to be sitting is part of what is being tested. */
+      document.getElementById('btnPoly').scrollIntoView({ block: 'center' });
+      await new Promise(r => setTimeout(r, 250));
       document.getElementById('btnPoly').click();
+      await new Promise(r => setTimeout(r, 1200));      // let the reveal scroll settle
+      const pr = document.getElementById('polyPanel').getBoundingClientRect();
       o.opens = document.getElementById('polyPanel').style.display === 'block';
+      /* display:block is not "it opened". The first version of this test
+         asserted exactly that and passed while the panel was appearing 2,135px
+         below the fold — reported as "I click poly and nothing opens up to
+         use". What has to be true is that it is ON SCREEN. */
+      o.onScreen = pr.top < window.innerHeight && pr.bottom > 0;
+      o.panelTop = Math.round(pr.top);
+      o.viewportH = window.innerHeight;
+      o.distanceFromButton = Math.round(
+        pr.top - document.getElementById('btnPoly').getBoundingClientRect().bottom);
       o.startsOnGrid = polyCfg(pat, pad) === null;
       o.gridCellsBefore = document.querySelectorAll('#stepgrid .step').length;
 
@@ -316,6 +331,12 @@ export default async function ({ browser, base }) {
       return o;
     });
     t.ok('the panel opens', ui.opens);
+    t.note('    panel at y=' + ui.panelTop + ' in a ' + ui.viewportH + 'px viewport, ' +
+      ui.distanceFromButton + 'px below the button');
+    t.ok('AND IS ON SCREEN WHERE THE USER CAN SEE IT', ui.onScreen,
+      'top ' + ui.panelTop + ' vs viewport ' + ui.viewportH);
+    t.ok('close enough to the button to read as a response to the tap',
+      ui.distanceFromButton < 900, ui.distanceFromButton + 'px away');
     t.ok('a pad starts on the ordinary grid', ui.startsOnGrid);
     t.ok('a quick button sets a locked 3-per-bar', ui.mode === 'lock' && ui.len === 3 && ui.bars === 1,
       JSON.stringify({ m: ui.mode, len: ui.len, bars: ui.bars }));

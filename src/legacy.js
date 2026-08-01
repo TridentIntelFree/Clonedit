@@ -2004,8 +2004,26 @@
      unrelated controls; it is two labelled rows instead.
      Also fixed a grammar slip that has been in setPatLen since polymeter went
      in: "1 hit past the end were removed".
+   - R146: POLY OPENED WHERE NOBODY COULD SEE IT. Reported the moment it
+     shipped: "I click poly and nothing opens up to use." It was opening every
+     time. The SEQ tab is about 3,400px long on a phone — the SONG list alone
+     is 612px — and the panel had landed after EUCLID and GROOVE, so tapping
+     POLY at y=1941 set display:block on something at y=2979. Two thousand one
+     hundred and thirty-five pixels below the fold. Nothing appeared to happen
+     because nothing appeared.
+     The panel now sits directly under the step grid it edits, which is where it
+     belonged anyway, and revealPanel() scrolls to it when it is off screen —
+     only when it is off screen, since scrolling a panel already in front of you
+     just moves the page under your thumb. 296px below the button now, on the
+     same screen. NOTES had exactly the same problem and got the same treatment.
+     The test is the real lesson. It asserted `display === 'block'` and passed
+     while the feature was unusable, which is the same mistake as measuring a
+     meter against itself: it checked what the code intended rather than what a
+     person would experience. It now scrolls to the button the way a finger
+     arrives at it, taps, waits for the reveal to settle, and requires the panel
+     to be ON SCREEN and within 900px of the button it responded to.
    ================================================================ */
-const BUILD = 'JBH-88 · R145 · 2026-07-31 · POLY: a pad can run on its own pulse';
+const BUILD = 'JBH-88 · R146 · 2026-08-01 · POLY opens where you can see it';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -8390,7 +8408,7 @@ function toggleNote(i,off){
 $('btnNotes').addEventListener('click',()=>{
   notesMode=!notesMode; $('btnNotes').classList.toggle('on',notesMode);
   $('notesPanel').style.display=notesMode?'block':'none';
-  if(notesMode) drawNotes();
+  if(notesMode){ drawNotes(); revealPanel($('notesPanel')); }
   lcd(notesMode?'NOTES: tap the grid to write a melody on '+padName(S.seqPad):'NOTES closed');
 });
 $('noteScale').addEventListener('change',e=>{ S.scaleName=e.target.value; $('scaleName').value=e.target.value; drawScaleLock(); drawNotes(); dirty(); });
@@ -8490,10 +8508,28 @@ function drawPoly(){
     gr.appendChild(el);
   }
 }
+/* Open a panel where the user can SEE it.
+
+   The SEQ tab is about 3,400px long on a phone. Tapping POLY set
+   display:block on a panel 1,000px further down the page and nothing appeared
+   to happen — reported as "I click poly and nothing opens up to use". The panel
+   now sits directly under the step grid it edits, and this scrolls to it as
+   well, because "further down than you thought" is a bug that comes back the
+   moment anything above it grows.
+
+   Only when it is actually off screen: scrolling a panel that is already in
+   front of you just moves the page under your thumb for no reason. */
+function revealPanel(el){
+  if(!el) return;
+  const r=el.getBoundingClientRect();
+  if(r.top >= 0 && r.bottom <= window.innerHeight) return;
+  try{ el.scrollIntoView({block:'nearest', behavior:'smooth'}); }
+  catch(e){ el.scrollIntoView(); }
+}
 $('btnPoly').addEventListener('click',()=>{
   polyMode=!polyMode; $('btnPoly').classList.toggle('on',polyMode);
   $('polyPanel').style.display=polyMode?'block':'none';
-  if(polyMode) drawPoly();
+  if(polyMode){ drawPoly(); revealPanel($('polyPanel')); }
   lcd(polyMode?'POLY: '+padName(S.seqPad)+' — give this pad its own pulse':'POLY closed');
 });
 $('btnPolyOff').addEventListener('click',()=>{ polySet(c=>{ c.on=false; });

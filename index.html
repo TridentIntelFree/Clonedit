@@ -644,78 +644,6 @@ where they come back into alignment. On a grid that relationship is invisible.</
     <button id="btnRowClr">CLR ROW</button>
     <button id="btnPatClr">CLR PTN</button>
   </div>
-  <details class="ex"><summary>Velocity, and why it matters</summary><div class="ex-body">
-    <p>VEL sets the loudness of steps you place next (step brightness shows it). To change a placed step: <b style="color:var(--amber)">LOCK</b> &#8594; tap the step &#8594; VEL slider.</p>
-<p>Velocity is how hard a hit is played. Programming every hit at the same level
-is the single most recognisable sign of a machine — a real player accents some
-notes and ghosts others without thinking about it.</p>
-<p>The usual pattern is simple: emphasise the beats you would count out loud,
-and drop everything between them well down. On hats especially, a loud-quiet
-alternation does more for a groove than any effect.</p>
-  </div></details>
-
-  <h3 class="adv">EUCLID <span style="color:var(--txt-dim);letter-spacing:0">— spread N hits evenly over the track</span></h3>
-  <div class="row adv">
-    <span class="lbl">PRESET</span>
-    <select id="euPreset" class="grow">
-      <option value="">— custom —</option>
-      <option value="3,8,0">Tresillo · 3 in 8</option>
-      <option value="5,8,0">Cinquillo · 5 in 8</option>
-      <option value="5,16,0">Bossa nova · 5 in 16</option>
-      <option value="7,16,0">Rumba feel · 7 in 16</option>
-      <option value="2,5,0">Bembé · 2 in 5</option>
-      <option value="4,9,0">Agbadza · 4 in 9</option>
-      <option value="3,7,0">Ruchenitza · 3 in 7</option>
-      <option value="7,12,0">West African · 7 in 12</option>
-      <option value="9,16,0">Rolling · 9 in 16</option>
-      <option value="1,4,0">Four on the floor</option>
-      <option value="2,8,4">Backbeat · 2 in 8</option>
-      <option value="8,16,0">Straight 8ths</option>
-    </select>
-  </div>
-  <div class="pslider adv"><span class="lbl">STEPS</span><input type="range" id="euSteps" min="2" max="16" step="1" value="16"><span class="val" id="euStepsV">16</span></div>
-  <div class="pslider adv"><span class="lbl">HITS</span><input type="range" id="euHits" min="0" max="16" step="1" value="5"><span class="val" id="euHitsV">5</span></div>
-  <div class="pslider adv"><span class="lbl">ROTATE</span><input type="range" id="euRot" min="0" max="15" step="1" value="0"><span class="val" id="euRotV">0</span></div>
-  <div class="adv" id="euPreview" style="font-family:ui-monospace;font-size:15px;color:var(--lcd);letter-spacing:2px;margin:2px 0 4px;overflow-x:auto;white-space:nowrap">—</div>
-  <div class="row adv">
-    <span class="lbl">MODE</span>
-    <select id="euMode">
-      <option value="replace">REPLACE row</option>
-      <option value="merge">ADD to row</option>
-      <option value="remove">REMOVE from row</option>
-    </select>
-    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="euSetLen"> set track LEN (polymeter)</label>
-  </div>
-  <div class="row adv">
-    <button id="btnEuApply" class="grow">APPLY TO TRACK</button>
-    <button id="btnEuAll">ALL LOADED PADS</button>
-  </div>
-
-  <h3 class="adv">GROOVE <span style="color:var(--txt-dim);letter-spacing:0">— feel templates: timing push/pull + accents</span></h3>
-  <div class="row adv">
-    <span class="lbl">FEEL</span>
-    <select aria-label="Groove feel" id="grvSel" class="grow">
-      <option value="straight">STRAIGHT (reset)</option>
-      <option value="mpc54">SWING 54% · subtle</option>
-      <option value="mpc58">SWING 58% · classic</option>
-      <option value="mpc62">SWING 62% · heavy</option>
-      <option value="mpc66">SWING 66% · hard</option>
-      <option value="dilla">OFF-GRID · drunk / lopsided</option>
-      <option value="push">LATIN PUSH · ahead of the beat</option>
-      <option value="drag">REGGAE DRAG · behind the beat</option>
-      <option value="shuffle">TRIPLET SHUFFLE</option>
-      <option value="halftime">HALF-TIME LEAN</option>
-      <option value="loose">HUMAN LOOSE · light drift</option>
-    </select>
-  </div>
-  <div class="pslider adv"><span class="lbl">AMOUNT</span><input aria-label="Groove amount" type="range" id="grvAmt" min="0" max="1" step="0.05" value="1"><span class="val" id="grvAmtV">100%</span></div>
-  <div class="row adv">
-    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="grvVel" checked> apply accents (velocity)</label>
-    <span class="grow"></span>
-    <button id="btnGrvTrack">THIS TRACK</button>
-    <button id="btnGrvAll">ALL TRACKS</button>
-  </div>
-  <div class="adv" id="grvInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">Groove writes per-step timing nudges (and accents) into the pattern — it bounces and exports exactly as you hear it. STRAIGHT clears them.</div>
   <div id="polyPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
     <div class="row" style="margin-bottom:6px">
       <span class="lbl">PULSE</span>
@@ -799,6 +727,79 @@ alternation does more for a groove than any effect.</p>
       cells. Listen for where they collide — it should be the downbeat only.</p>
     </div></details>
   </div>
+
+  <details class="ex"><summary>Velocity, and why it matters</summary><div class="ex-body">
+    <p>VEL sets the loudness of steps you place next (step brightness shows it). To change a placed step: <b style="color:var(--amber)">LOCK</b> &#8594; tap the step &#8594; VEL slider.</p>
+<p>Velocity is how hard a hit is played. Programming every hit at the same level
+is the single most recognisable sign of a machine — a real player accents some
+notes and ghosts others without thinking about it.</p>
+<p>The usual pattern is simple: emphasise the beats you would count out loud,
+and drop everything between them well down. On hats especially, a loud-quiet
+alternation does more for a groove than any effect.</p>
+  </div></details>
+
+  <h3 class="adv">EUCLID <span style="color:var(--txt-dim);letter-spacing:0">— spread N hits evenly over the track</span></h3>
+  <div class="row adv">
+    <span class="lbl">PRESET</span>
+    <select id="euPreset" class="grow">
+      <option value="">— custom —</option>
+      <option value="3,8,0">Tresillo · 3 in 8</option>
+      <option value="5,8,0">Cinquillo · 5 in 8</option>
+      <option value="5,16,0">Bossa nova · 5 in 16</option>
+      <option value="7,16,0">Rumba feel · 7 in 16</option>
+      <option value="2,5,0">Bembé · 2 in 5</option>
+      <option value="4,9,0">Agbadza · 4 in 9</option>
+      <option value="3,7,0">Ruchenitza · 3 in 7</option>
+      <option value="7,12,0">West African · 7 in 12</option>
+      <option value="9,16,0">Rolling · 9 in 16</option>
+      <option value="1,4,0">Four on the floor</option>
+      <option value="2,8,4">Backbeat · 2 in 8</option>
+      <option value="8,16,0">Straight 8ths</option>
+    </select>
+  </div>
+  <div class="pslider adv"><span class="lbl">STEPS</span><input type="range" id="euSteps" min="2" max="16" step="1" value="16"><span class="val" id="euStepsV">16</span></div>
+  <div class="pslider adv"><span class="lbl">HITS</span><input type="range" id="euHits" min="0" max="16" step="1" value="5"><span class="val" id="euHitsV">5</span></div>
+  <div class="pslider adv"><span class="lbl">ROTATE</span><input type="range" id="euRot" min="0" max="15" step="1" value="0"><span class="val" id="euRotV">0</span></div>
+  <div class="adv" id="euPreview" style="font-family:ui-monospace;font-size:15px;color:var(--lcd);letter-spacing:2px;margin:2px 0 4px;overflow-x:auto;white-space:nowrap">—</div>
+  <div class="row adv">
+    <span class="lbl">MODE</span>
+    <select id="euMode">
+      <option value="replace">REPLACE row</option>
+      <option value="merge">ADD to row</option>
+      <option value="remove">REMOVE from row</option>
+    </select>
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="euSetLen"> set track LEN (polymeter)</label>
+  </div>
+  <div class="row adv">
+    <button id="btnEuApply" class="grow">APPLY TO TRACK</button>
+    <button id="btnEuAll">ALL LOADED PADS</button>
+  </div>
+
+  <h3 class="adv">GROOVE <span style="color:var(--txt-dim);letter-spacing:0">— feel templates: timing push/pull + accents</span></h3>
+  <div class="row adv">
+    <span class="lbl">FEEL</span>
+    <select aria-label="Groove feel" id="grvSel" class="grow">
+      <option value="straight">STRAIGHT (reset)</option>
+      <option value="mpc54">SWING 54% · subtle</option>
+      <option value="mpc58">SWING 58% · classic</option>
+      <option value="mpc62">SWING 62% · heavy</option>
+      <option value="mpc66">SWING 66% · hard</option>
+      <option value="dilla">OFF-GRID · drunk / lopsided</option>
+      <option value="push">LATIN PUSH · ahead of the beat</option>
+      <option value="drag">REGGAE DRAG · behind the beat</option>
+      <option value="shuffle">TRIPLET SHUFFLE</option>
+      <option value="halftime">HALF-TIME LEAN</option>
+      <option value="loose">HUMAN LOOSE · light drift</option>
+    </select>
+  </div>
+  <div class="pslider adv"><span class="lbl">AMOUNT</span><input aria-label="Groove amount" type="range" id="grvAmt" min="0" max="1" step="0.05" value="1"><span class="val" id="grvAmtV">100%</span></div>
+  <div class="row adv">
+    <label style="font-size:10px;color:var(--txt-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="grvVel" checked> apply accents (velocity)</label>
+    <span class="grow"></span>
+    <button id="btnGrvTrack">THIS TRACK</button>
+    <button id="btnGrvAll">ALL TRACKS</button>
+  </div>
+  <div class="adv" id="grvInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px">Groove writes per-step timing nudges (and accents) into the pattern — it bounces and exports exactly as you hear it. STRAIGHT clears them.</div>
   <div id="notesPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
     <div class="row" style="margin-bottom:6px">
       <span class="lbl">SCALE</span>
@@ -4209,8 +4210,26 @@ Object.assign(globalThis, __JBH_PURE);})();
      unrelated controls; it is two labelled rows instead.
      Also fixed a grammar slip that has been in setPatLen since polymeter went
      in: "1 hit past the end were removed".
+   - R146: POLY OPENED WHERE NOBODY COULD SEE IT. Reported the moment it
+     shipped: "I click poly and nothing opens up to use." It was opening every
+     time. The SEQ tab is about 3,400px long on a phone — the SONG list alone
+     is 612px — and the panel had landed after EUCLID and GROOVE, so tapping
+     POLY at y=1941 set display:block on something at y=2979. Two thousand one
+     hundred and thirty-five pixels below the fold. Nothing appeared to happen
+     because nothing appeared.
+     The panel now sits directly under the step grid it edits, which is where it
+     belonged anyway, and revealPanel() scrolls to it when it is off screen —
+     only when it is off screen, since scrolling a panel already in front of you
+     just moves the page under your thumb. 296px below the button now, on the
+     same screen. NOTES had exactly the same problem and got the same treatment.
+     The test is the real lesson. It asserted `display === 'block'` and passed
+     while the feature was unusable, which is the same mistake as measuring a
+     meter against itself: it checked what the code intended rather than what a
+     person would experience. It now scrolls to the button the way a finger
+     arrives at it, taps, waits for the reveal to settle, and requires the panel
+     to be ON SCREEN and within 900px of the button it responded to.
    ================================================================ */
-const BUILD = 'JBH-88 · R145 · 2026-07-31 · POLY: a pad can run on its own pulse';
+const BUILD = 'JBH-88 · R146 · 2026-08-01 · POLY opens where you can see it';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -10595,7 +10614,7 @@ function toggleNote(i,off){
 $('btnNotes').addEventListener('click',()=>{
   notesMode=!notesMode; $('btnNotes').classList.toggle('on',notesMode);
   $('notesPanel').style.display=notesMode?'block':'none';
-  if(notesMode) drawNotes();
+  if(notesMode){ drawNotes(); revealPanel($('notesPanel')); }
   lcd(notesMode?'NOTES: tap the grid to write a melody on '+padName(S.seqPad):'NOTES closed');
 });
 $('noteScale').addEventListener('change',e=>{ S.scaleName=e.target.value; $('scaleName').value=e.target.value; drawScaleLock(); drawNotes(); dirty(); });
@@ -10695,10 +10714,28 @@ function drawPoly(){
     gr.appendChild(el);
   }
 }
+/* Open a panel where the user can SEE it.
+
+   The SEQ tab is about 3,400px long on a phone. Tapping POLY set
+   display:block on a panel 1,000px further down the page and nothing appeared
+   to happen — reported as "I click poly and nothing opens up to use". The panel
+   now sits directly under the step grid it edits, and this scrolls to it as
+   well, because "further down than you thought" is a bug that comes back the
+   moment anything above it grows.
+
+   Only when it is actually off screen: scrolling a panel that is already in
+   front of you just moves the page under your thumb for no reason. */
+function revealPanel(el){
+  if(!el) return;
+  const r=el.getBoundingClientRect();
+  if(r.top >= 0 && r.bottom <= window.innerHeight) return;
+  try{ el.scrollIntoView({block:'nearest', behavior:'smooth'}); }
+  catch(e){ el.scrollIntoView(); }
+}
 $('btnPoly').addEventListener('click',()=>{
   polyMode=!polyMode; $('btnPoly').classList.toggle('on',polyMode);
   $('polyPanel').style.display=polyMode?'block':'none';
-  if(polyMode) drawPoly();
+  if(polyMode){ drawPoly(); revealPanel($('polyPanel')); }
   lcd(polyMode?'POLY: '+padName(S.seqPad)+' — give this pad its own pulse':'POLY closed');
 });
 $('btnPolyOff').addEventListener('click',()=>{ polySet(c=>{ c.on=false; });
