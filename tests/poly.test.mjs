@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   polyCfg, isPoly, polyStepDur, polyEffectiveBpm, polyHitsPerBar,
-  polyLockedHitsPerBar, polyDoesLock, polyRatio, polyEvents, polyIndexAt,
+  polyLockedHitsPerBar, polyDoesLock, polyCycleBars, polyRatio, polyEvents, polyIndexAt,
   mainBpmOf, POLY_MAX_CELLS, POLY_MIN_CELLS,
 } from '../src/pure/poly.js';
 
@@ -203,4 +203,35 @@ test('nothing is produced for a nonsense window or tempo', () => {
   assert.deepEqual(polyEvents(c, 0, 0, 2, 1, BAR), []);
   assert.deepEqual(polyEvents(c, 0, 0, 0, 10, 0), []);
   assert.deepEqual(polyEvents(null, 0, 0, 0, 10, BAR), []);
+});
+
+test('a rate that spans two bars is anchored to its CYCLE, not the bar', () => {
+  /* 7 hits over 2 bars is 3.5 per bar. It only returns to a downbeat every
+     SECOND bar, so anchoring every bar forces a hit onto every downbeat and
+     corrupts the pattern. Caught by comparing a converted old project against
+     what it used to sound like: a spurious hit appeared at the 2-bar mark. */
+  const c = polyCfg(patWith(0, { on: true, mode: 'lock', len: 7, bars: 2 }), 0);
+  const step = polyStepDur(c, BAR);
+  assert.ok(Math.abs(step - (BAR * 2) / 7) < 1e-12);
+
+  const cycBars = polyCycleBars(c, BAR);
+  assert.equal(cycBars, 2, 'the cycle is two bars, got ' + cycBars);
+
+  // walk it the way the scheduler does, anchoring per cycle
+  const STEPS = 16, sd = BAR / STEPS, fired = [];
+  let t = 0;
+  for (let st = 0; st < STEPS * 4; st++) {
+    const cycSteps = STEPS * cycBars;
+    const cycStart = t - (st % cycSteps) * sd;
+    const idx0 = Math.floor(st / cycSteps) * 7;
+    for (const e of polyEvents(c, cycStart, idx0, t, t + sd, BAR)) fired.push(e.when);
+    t += sd;
+  }
+  assert.equal(fired.length, 14, '4 bars = 2 cycles = 14 hits, got ' + fired.length);
+  fired.sort((a, b) => a - b);
+  fired.forEach((w, i) => assert.ok(Math.abs(w - i * step) < 1e-6,
+    'hit ' + i + ' at ' + w.toFixed(4) + ', expected ' + (i * step).toFixed(4)));
+  // and specifically: nothing lands on the 1-bar mark, which is not on this grid
+  assert.ok(!fired.some(w => Math.abs(w - BAR) < 1e-6),
+    'a hit landed on the 1-bar downbeat, which a 3.5-per-bar rate never touches');
 });

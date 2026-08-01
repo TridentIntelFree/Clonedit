@@ -4301,8 +4301,15 @@ Object.assign(globalThis, __JBH_PURE);})();
      Two bugs the tests caught in my own conversion. The new-format guard
      required both keys, so a damaged {bpm:'x', cells:null} fell through to the
      legacy branch and came back with no bpm at all. And "does it lock" only
-     accepted a whole number of hits per bar, which called 3.5 — twice round
-     every two bars — drifting, when a listener plainly hears it lock.
+     accepted a whole number of hits per bar, which called 3.5 — round every two
+     bars — drifting, when a listener plainly hears it lock.
+     A third, found by playing an old project back rather than by any assertion:
+     the scheduler re-anchored every BAR, but a rate of 3.5 hits per bar only
+     returns to a downbeat every SECOND bar. Anchoring per bar forced a hit onto
+     every downbeat, so a converted 7-over-2 came out as 0 · 0.686 · 1.371 ·
+     2.057 · 2.400 — that 2.400 is the bar line, and it is not on a 3.5-per-bar
+     grid at all. Anchored to the cycle now, which polyCycleBars measures, and
+     the same run reads 0 · 0.686 · 1.371 · 2.057 · 2.743 · 3.429 · 4.114.
    ================================================================ */
 const BUILD = 'JBH-88 · R147 · 2026-08-01 · a pad with its own BPM';
 /* The header line sits directly under a logo that already says JBH-88, and it
@@ -9051,10 +9058,17 @@ function polyHitsForStep(cfg, absStep, t, sd){
      The series index keeps the CELL walking on across bars, so the row length
      is independent of the rate. */
   if(!polyDoesLock(cfg, barDur)) return polyEvents(cfg, seqT0, 0, t, t+sd, barDur);
-  const bar=Math.floor(absStep/NSTEPS);
-  const barStart=t-posMod(absStep,NSTEPS)*sd;
-  const hpb=polyLockedHitsPerBar(cfg, barDur);
-  return polyEvents(cfg, barStart, Math.round(bar*hpb), t, t+sd, barDur);
+  /* Anchor to the CYCLE, not the bar. A rate of 3.5 hits per bar only returns
+     to a downbeat every two bars, so re-anchoring every bar forced a hit onto
+     every downbeat and corrupted the pattern — a converted 7-over-2-bars came
+     out with a spurious hit at 2.4s. polyCycleBars says how long the cycle
+     actually is. */
+  const cycB=polyCycleBars(cfg, barDur) || 1;
+  const cycSteps=NSTEPS*cycB;
+  const cycStart=t-posMod(absStep,cycSteps)*sd;
+  const hitsPerCycle=Math.round(polyLockedHitsPerBar(cfg, barDur)*cycB);
+  const cycIdx=Math.floor(absStep/cycSteps);
+  return polyEvents(cfg, cycStart, cycIdx*hitsPerCycle, t, t+sd, barDur);
 }
 
 function schedStep(barStep, absStep, t){
@@ -12899,8 +12913,11 @@ async function renderMixInner(padSet, traxSet, opt){
                function, so the file cannot disagree with what was played. */
             let t0p, idx0;
             if(!polyDoesLock(pc,barDur)){ t0p=renderT0; idx0=0; }
-            else { t0p = stepT - posMod(absB+st, NSTEPS)*sd;
-                   idx0 = Math.round(Math.floor((absB+st)/NSTEPS)*polyLockedHitsPerBar(pc,barDur)); }
+            else {
+              const cycB=polyCycleBars(pc,barDur)||1, cycSteps=NSTEPS*cycB;
+              t0p = stepT - posMod(absB+st, cycSteps)*sd;
+              idx0 = Math.floor((absB+st)/cycSteps)*Math.round(polyLockedHitsPerBar(pc,barDur)*cycB);
+            }
             for(const ev of polyEvents(pc, t0p, idx0, stepT, stepT+sd, barDur)){
               const pv=pat.steps[p][ev.idx]; if(!(pv>0)) continue;
               const plk=pat.locks&&pat.locks[p+':'+ev.idx];
