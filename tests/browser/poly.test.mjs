@@ -32,7 +32,8 @@ export default async function ({ browser, base }) {
       S.trax.forEach(x => { x.bufId = -1; });
       const [A, B] = pads;
       // A: three against four, locked to the bar
-      pat.poly = { [A]: { on: true, mode: 'lock', len: 3, bars: 1 } };
+      // 75 against a project at 100 = three hits per bar: 3-against-4
+      pat.poly = { [A]: { on: true, bpm: 75, cells: 3, lock: true } };
       for (let k = 0; k < 3; k++) pat.steps[A][k] = 0.9;
       // B: an ordinary four-on-the-floor
       [0, 4, 8, 12].forEach(i => { pat.steps[B][i] = 0.9; });
@@ -196,7 +197,7 @@ export default async function ({ browser, base }) {
     t.head('FREE MODE — its own tempo, never re-anchoring');
     const free = await page.evaluate(async ({ A }) => {
       const pat = S.patterns[S.pattern];
-      pat.poly = { [A]: { on: true, mode: 'free', bpm: 137, len: 4 } };
+      pat.poly = { [A]: { on: true, bpm: 137 * 4, cells: 4, lock: false } };
       pat.steps[A].fill(0);
       for (let k = 0; k < 4; k++) pat.steps[A][k] = 0.9;   // every cell, or a silent one reads as a missed hit
       const hits = [];
@@ -207,7 +208,7 @@ export default async function ({ browser, base }) {
       const buf = await renderMix(new Set([A]), new Set());
       window.triggerPad = real;
       return { hits: hits.map(w => +(w - 0.05).toFixed(6)).sort((a, b) => a - b),
-        expect: 60 / 137 / 4 };
+        expect: 60 / (137 * 4) };
     }, setup);
     t.note('    ' + free.hits.length + ' hits, expected spacing ' + (free.expect * 1000).toFixed(2) + 'ms');
     const fgaps = [];
@@ -248,7 +249,7 @@ export default async function ({ browser, base }) {
        out of four when it was added, and only a round-trip test caught it. */
     const trip = await page.evaluate(async ({ A }) => {
       const pat = S.patterns[S.pattern];
-      pat.poly = { [A]: { on: true, mode: 'lock', len: 5, bars: 2 } };
+      pat.poly = { [A]: { on: true, bpm: 125, cells: 5, lock: true } };
       const doc = JSON.parse(JSON.stringify(snapshotSession()));
       const inDoc = doc.patterns[S.pattern].poly;
       // and back in through the real loader
@@ -260,119 +261,137 @@ export default async function ({ browser, base }) {
       return { inDoc: inDoc && inDoc[A], back, inUndo: uSnap.patterns[S.pattern].poly?.[A] };
     }, setup);
     t.ok('a saved project carries the poly settings',
-      !!trip.inDoc && trip.inDoc.len === 5 && trip.inDoc.bars === 2, JSON.stringify(trip.inDoc));
+      !!trip.inDoc && trip.inDoc.bpm === 125 && trip.inDoc.cells === 5, JSON.stringify(trip.inDoc));
     t.ok('and they come back through the loader',
-      !!trip.back && trip.back.len === 5 && trip.back.bars === 2 && trip.back.mode === 'lock',
-      JSON.stringify(trip.back));
-    t.ok('undo snapshots carry them too', !!trip.inUndo && trip.inUndo.len === 5,
+      !!trip.back && trip.back.cells === 5 && trip.back.lock === true, JSON.stringify(trip.back));
+    t.ok('undo snapshots carry them too', !!trip.inUndo && trip.inUndo.cells === 5,
       JSON.stringify(trip.inUndo));
 
     // ---- the panel ---------------------------------------------------------
-    t.head('THE PANEL DRIVES THE ENGINE');
+    t.head('THE PANEL: ONE NUMBER, ONE SWITCH');
     const ui = await page.evaluate(async () => {
       const o = {};
       document.querySelector('#tabs button[data-v="seq"]').click();
       await new Promise(r => setTimeout(r, 200));
       const pad = S.pads.findIndex(x => x.bufId >= 0);
-      S.seqPad = pad;
+      S.seqPad = pad; setBpm(100);
       const pat = S.patterns[S.pattern];
       delete pat.poly; pat.steps.forEach(r => r.fill(0));
       drawSeq(); drawSteps();
 
-      /* Scroll to the button the way a finger arrives at it, then tap. Where
-         the page happens to be sitting is part of what is being tested. */
       document.getElementById('btnPoly').scrollIntoView({ block: 'center' });
       await new Promise(r => setTimeout(r, 250));
       document.getElementById('btnPoly').click();
-      await new Promise(r => setTimeout(r, 1200));      // let the reveal scroll settle
+      await new Promise(r => setTimeout(r, 1200));
       const pr = document.getElementById('polyPanel').getBoundingClientRect();
-      o.opens = document.getElementById('polyPanel').style.display === 'block';
-      /* display:block is not "it opened". The first version of this test
-         asserted exactly that and passed while the panel was appearing 2,135px
-         below the fold — reported as "I click poly and nothing opens up to
-         use". What has to be true is that it is ON SCREEN. */
       o.onScreen = pr.top < window.innerHeight && pr.bottom > 0;
-      o.panelTop = Math.round(pr.top);
-      o.viewportH = window.innerHeight;
       o.distanceFromButton = Math.round(
         pr.top - document.getElementById('btnPoly').getBoundingClientRect().bottom);
-      o.startsOnGrid = polyCfg(pat, pad) === null;
-      o.gridCellsBefore = document.querySelectorAll('#stepgrid .step').length;
+      o.startsOnMainBeat = polyCfg(pat, pad) === null;
+      o.bodyHidden = document.getElementById('polyBody').style.display === 'none';
 
-      // three per bar, via a quick button
-      document.querySelector('.polypre[data-len="3"]').click();
-      const cfg = polyCfg(pat, pad);
-      o.mode = cfg && cfg.mode; o.len = cfg && cfg.len; o.bars = cfg && cfg.bars;
-      o.readout = document.getElementById('polyReadout').textContent;
+      // switch it on: it should start at the project tempo, one hit per beat
+      document.getElementById('btnPolyOn').click();
+      o.defaultBpm = polyRaw().bpm;
+      o.defaultSays = document.getElementById('polySays').textContent;
+
+      // the 3:4 quick button — the case the grid cannot express
+      document.querySelector('.polypre[data-mul="0.75"]').click();
+      const c = polyCfg(pat, pad);
+      o.threeBpm = polyRaw().bpm;
+      o.threeSays = document.getElementById('polySays').textContent;
+      o.threeShown = document.getElementById('polyBpmV').textContent;
       o.polyCells = document.querySelectorAll('#polygrid .pcell').length;
-      o.gridCellsAfter = document.querySelectorAll('#stepgrid .step').length;
+      o.gridCells = document.querySelectorAll('#stepgrid .step').length;
       o.gridMarked = document.getElementById('stepgrid').classList.contains('polyrow');
 
-      // a cell written in the panel is the same data the grid edits
-      document.querySelectorAll('#polygrid .pcell')[1].click();
-      o.rowAfterTap = pat.steps[pad].slice(0, 4).map(v => v > 0 ? 1 : 0).join('');
-      o.gridShowsIt = document.querySelectorAll('#stepgrid .step')[1].classList.contains('on');
+      // triplets
+      document.querySelector('.polypre[data-mul="3"]').click();
+      o.tripSays = document.getElementById('polySays').textContent;
 
-      // free mode
-      document.getElementById('btnPolyFree').click();
-      const f = polyCfg(pat, pad);
-      o.freeMode = f && f.mode;
-      o.freeRowShown = document.getElementById('polyFreeRow').style.display === 'flex';
-      o.lockRowHidden = document.getElementById('polyLockRow').style.display === 'none';
+      // an awkward tempo, locked: it should say where it landed
       const sl = document.getElementById('polyBpm');
       sl.value = '137'; sl.dispatchEvent(new Event('input'));
-      o.freeBpm = polyCfg(pat, pad).bpm;
-      o.freeReadout = document.getElementById('polyReadout').textContent;
+      o.lockedShown = document.getElementById('polyBpmV').textContent;
+      o.lockedHint = document.getElementById('polyLockHint').textContent;
+      // and unlocked: exactly what was asked for, drifting
+      document.getElementById('btnPolyLock').click();
+      o.freeShown = document.getElementById('polyBpmV').textContent;
+      o.freeSays = document.getElementById('polySays').textContent;
 
-      // and back off
+      // CELLS must not change the rate
+      const cellsBefore = polyCfg(pat, pad).cells;
+      const before = polyStepDur(polyCfg(pat, pad), NSTEPS * stepDur());
+      document.getElementById('polyCellUp').click();
+      document.getElementById('polyCellUp').click();
+      const after = polyStepDur(polyCfg(pat, pad), NSTEPS * stepDur());
+      o.rateUnchangedByCells = Math.abs(before - after) < 1e-12;
+      o.cellsBefore = cellsBefore;
+      o.cellsNow = polyCfg(pat, pad).cells;
+
       document.getElementById('btnPolyOff').click();
-      o.backToGrid = polyCfg(pat, pad) === null;
+      o.backToMain = polyCfg(pat, pad) === null;
       o.gridCellsBack = document.querySelectorAll('#stepgrid .step').length;
       return o;
     });
-    t.ok('the panel opens', ui.opens);
-    t.note('    panel at y=' + ui.panelTop + ' in a ' + ui.viewportH + 'px viewport, ' +
-      ui.distanceFromButton + 'px below the button');
-    t.ok('AND IS ON SCREEN WHERE THE USER CAN SEE IT', ui.onScreen,
-      'top ' + ui.panelTop + ' vs viewport ' + ui.viewportH);
-    t.ok('close enough to the button to read as a response to the tap',
-      ui.distanceFromButton < 900, ui.distanceFromButton + 'px away');
-    t.ok('a pad starts on the ordinary grid', ui.startsOnGrid);
-    t.ok('a quick button sets a locked 3-per-bar', ui.mode === 'lock' && ui.len === 3 && ui.bars === 1,
-      JSON.stringify({ m: ui.mode, len: ui.len, bars: ui.bars }));
-    t.note('    readout: "' + ui.readout + '"');
-    t.ok('the readout states hits, ratio AND the interval',
-      /3 hits per 1 bar/.test(ui.readout) && /3:16/.test(ui.readout) && /one every/.test(ui.readout));
-    t.ok('the panel draws one cell per hit', ui.polyCells === 3, ui.polyCells + ' cells');
-    /* The rule this app is built on. Sixteen boxes for a track that plays three
-       would be the sequencer showing something it will not play. */
-    t.ok('THE STEP GRID SHOWS 3 CELLS, NOT 16', ui.gridCellsAfter === 3,
-      ui.gridCellsBefore + ' before → ' + ui.gridCellsAfter + ' after');
-    t.ok('and is marked as running on a different pulse', ui.gridMarked);
-    t.ok('a cell tapped in the panel is the same hit the grid shows',
-      ui.rowAfterTap === '0100' && ui.gridShowsIt, ui.rowAfterTap);
-    t.ok('FREE swaps the controls over',
-      ui.freeMode === 'free' && ui.freeRowShown && ui.lockRowHidden);
-    t.ok('the BPM slider sets the pad tempo', ui.freeBpm === 137, String(ui.freeBpm));
-    t.note('    free readout: "' + ui.freeReadout + '"');
-    t.ok('and the readout says it drifts', /drift/.test(ui.freeReadout), ui.freeReadout);
-    t.ok('turning it off returns the pad to the grid',
-      ui.backToGrid && ui.gridCellsBack === 16, ui.gridCellsBack + ' cells');
+    t.ok('the panel opens on screen', ui.onScreen, ui.distanceFromButton + 'px below the button');
+    t.ok('a pad starts on the main beat', ui.startsOnMainBeat && ui.bodyHidden);
+    /* The mapping the whole redesign rests on: the same number as the project
+       means the same speed. If this is not true nothing else in the panel is
+       guessable. */
+    t.ok('switching on starts at the project tempo', ui.defaultBpm === 100, String(ui.defaultBpm));
+    t.note('    at 100: "' + ui.defaultSays + '"');
+    t.ok('and says it is one hit per beat', /one hit per beat/.test(ui.defaultSays));
+
+    t.note('    3:4 button → ' + ui.threeBpm + ' BPM: "' + ui.threeSays + '"');
+    t.ok('the 3:4 button gives 75 against 100', ui.threeBpm === 75, String(ui.threeBpm));
+    t.ok('and it is described as 3 hits per bar', /3 hits per bar/.test(ui.threeSays), ui.threeSays);
+    t.ok('and as a 3:4 relationship', /3:4/.test(ui.threeSays));
+    t.ok('and says when it comes back round', /every bar/.test(ui.threeSays));
+    /* A preset gives the whole result: the rate and a bar's worth of cells. */
+    t.ok('and gives the row 3 cells to match', ui.polyCells === 3, ui.polyCells + '');
+    t.ok('THE STEP GRID SHOWS 3, NOT 16', ui.gridCells === 3, ui.gridCells + '');
+    t.ok('marked as a different pulse', ui.gridMarked);
+
+    t.note('    triplet button: "' + ui.tripSays + '"');
+    t.ok('the triplet button says 3 hits per beat', /3 hits per beat/.test(ui.tripSays), ui.tripSays);
+
+    t.head('LOCK EXPLAINS ITSELF');
+    t.note('    137 locked → shows ' + ui.lockedShown + ', hint "' + ui.lockedHint + '"');
+    /* 137 against 100 is 5.48 hits per bar, which cannot fit. Locked it becomes
+       5 hits per bar = 125 BPM, and the panel must show where it LANDED rather
+       than what was typed — otherwise the number and the sound disagree. */
+    t.ok('a locked awkward tempo is nudged to one that fits',
+      parseFloat(ui.lockedShown) === 125, ui.lockedShown);
+    t.ok('and it says it moved it, and to what',
+      /137/.test(ui.lockedHint) && /125/.test(ui.lockedHint), ui.lockedHint);
+    t.ok('unlocking gives back exactly what was asked for',
+      parseFloat(ui.freeShown) === 137, ui.freeShown);
+    t.note('    137 unlocked: "' + ui.freeSays + '"');
+    t.ok('and says it drifts', /drifts/.test(ui.freeSays), ui.freeSays);
+
+    t.head('CELLS AND SPEED ARE SEPARATE');
+    /* One number doing two jobs is most of why the first design was confusing. */
+    t.ok('changing CELLS does not change the rate', ui.rateUnchangedByCells);
+    t.ok('and CELLS actually changed', ui.cellsNow === ui.cellsBefore + 2,
+      ui.cellsBefore + ' → ' + ui.cellsNow);
+    t.ok('turning it off returns the pad to the main beat',
+      ui.backToMain && ui.gridCellsBack === 16, ui.gridCellsBack + '');
 
     t.head('SHORTENING A POLY ROW REMOVES WHAT IT HIDES');
     /* Same contract the pattern length follows: a hit you can no longer see must
        not still sound, and you are told it went. */
     const shrink = await page.evaluate(() => {
       const pad = S.seqPad, pat = S.patterns[S.pattern];
-      pat.poly = { [pad]: { on: true, mode: 'lock', len: 5, bars: 1 } };
+      pat.poly = { [pad]: { on: true, bpm: 125, cells: 5, lock: true } };
       pat.steps[pad].fill(0);
       for (let k = 0; k < 5; k++) pat.steps[pad][k] = 0.9;
       drawPoly();
-      document.getElementById('polyLenDn').click();      // 5 -> 4
-      document.getElementById('polyLenDn').click();      // 4 -> 3
+      document.getElementById('polyCellDn').click();      // 5 -> 4
+      document.getElementById('polyCellDn').click();      // 4 -> 3
       return { row: pat.steps[pad].slice(0, 6).map(v => v > 0 ? 1 : 0).join(''),
         said: document.getElementById('lcdmsg').textContent,
-        len: polyCfg(pat, pad).len };
+        cells: polyCfg(pat, pad).cells };
     });
     t.ok('cells past the new end are cleared', shrink.row === '111000', shrink.row);
     t.ok('and it says so, in grammatical English',

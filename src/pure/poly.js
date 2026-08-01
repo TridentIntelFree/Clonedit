@@ -1,174 +1,220 @@
-/* POLYRHYTHM — a track that runs on its own pulse.
+/* A PAD WITH ITS OWN BPM.
 
-   The app already had POLYMETER: per-track LEN, so a 15-step hat drifts against
-   a 16-step kick. Same pulse, different cycle lengths. What it could not express
-   is POLYRHYTHM — a different subdivision of the same span. Three evenly spaced
-   hits in the time of four cannot be written on a 16-step grid, because 16 is
-   not divisible by 3. Euclid 3-in-16 spaces them 5-5-6, which is a groove but is
-   not a triplet and never will be.
+   The first version of this asked you to choose a mode, then a hit count, then
+   a bar count, and worked the tempo out for you. Reported as confusing, and it
+   was: `len` did two unrelated jobs at once — how FAST the pad ticks and how
+   MANY cells its row has — and you had to commit to a philosophy (locked or
+   free) before you could set anything.
 
-   A poly track keeps its ordinary row of hits. What changes is only WHEN its
-   cells fall, and there are two musically distinct answers:
+   One number instead: the pad's BPM.
 
-   LOCKED — the track's cycle is pinned to the bar. `len` hits spread evenly
-   across `bars` bars, re-anchored every cycle, so 3-against-4 is exact and stays
-   exact forever. This is what a tuplet IS: N in the space of M. Nesting comes
-   from the ratchet lock that already exists — a step of a 3-track ratcheted by 5
-   is five hits inside one third of a bar.
+   The unit is the one that makes the common case obvious. The project's BPM
+   counts quarter notes per minute; a pad's BPM counts ITS OWN HITS per minute.
+   So a pad set to the project tempo hits once per beat — the same number means
+   the same speed, which is the only mapping nobody has to be taught.
 
-   FREE — the track ticks at its own BPM and never re-anchors. Main at 100, pad
-   at 137: they agree on the first beat and then drift apart for good. That is a
-   different technique (phasing), not a broken version of the first one, which is
-   why it is a mode rather than a tolerance.
+   Everything musical falls out of that:
 
-   This module is only the arithmetic, so it can be unit tested without a
-   browser and so the live scheduler and the offline bounce can share one
-   definition of when a hit lands. Those two disagreeing is the worst bug this
-   app can have — it would mean the bounce is not what you heard. */
+     pad 100 against project 100   one hit per beat
+     pad 200                        eighths
+     pad 300                        triplets — three per beat
+     pad  75 against project 100   THREE hits per bar against four beats,
+                                    the classic 3-against-4
 
-export const POLY_MIN = 2;
-export const POLY_MAX = 64;      // cells in a poly row
-export const POLY_MAX_BARS = 8;  // how many bars one locked cycle may span
-export const POLY_MIN_BPM = 10;
-export const POLY_MAX_BPM = 999;
+   LOCK TO BAR is then one switch rather than a mode. On, the tempo is nudged to
+   the nearest rate that divides the bar into a whole number of hits, so the pad
+   re-anchors every bar and the relationship holds forever. Off, the pad runs at
+   exactly the BPM you set and drifts against the bar — phasing, which is a
+   technique rather than a failure.
 
-const clampInt = (v, lo, hi) => {
-  const n = Math.floor(Number(v));
-  return isFinite(n) ? Math.max(lo, Math.min(hi, n)) : lo;
+   CELLS is now genuinely separate: how many cells the row has before it
+   repeats, independent of how fast they go by. Three hits per bar with five
+   cells is polyrhythm and polymeter at once, and neither setting has to know
+   about the other.
+
+   This module is only the arithmetic, so it is unit tested in milliseconds and
+   so the live scheduler and the offline bounce share one definition of when a
+   hit lands. Those two disagreeing would mean the bounce is not what you
+   heard. */
+
+export const POLY_MIN_CELLS = 1;
+export const POLY_MAX_CELLS = 64;
+export const POLY_MIN_BPM = 5;
+export const POLY_MAX_BPM = 1200;   // 1200 hits/min = 20/s, past what a pad can articulate
+
+const clampNum = (v, lo, hi, dflt) => {
+  const n = Number(v);
+  return isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt;
 };
+const clampInt = (v, lo, hi, dflt) => Math.floor(clampNum(v, lo, hi, dflt));
 
-/* Read a track's poly settings, or null when it plays on the ordinary grid.
+/* Read a pad's settings, or null when it plays on the ordinary grid.
 
-   Everything is validated on the way out rather than trusted, because these
-   values ride in saved projects and a damaged or hand-edited one must degrade
-   to something playable instead of producing a division by zero in the
-   scheduler. */
+   Validated on the way out rather than trusted: these ride in saved projects,
+   and a damaged or hand-edited one must degrade to something playable instead
+   of dividing by zero inside the scheduler.
+
+   Old-format settings (mode/len/bars, from the first version) are converted
+   here rather than at load time, so a project saved by R144-R146 still opens
+   and plays the same rhythm it always did. */
 export function polyCfg(pat, p) {
   const all = pat && pat.poly;
   const c = all && all[p];
   if (!c || !c.on) return null;
-  const free = c.mode === 'free';
-  return {
-    mode: free ? 'free' : 'lock',
-    len: clampInt(c.len, POLY_MIN, POLY_MAX),
-    bars: free ? 1 : clampInt(c.bars, 1, POLY_MAX_BARS),
-    bpm: free ? Math.max(POLY_MIN_BPM, Math.min(POLY_MAX_BPM, Number(c.bpm) || 120)) : 0,
-  };
+
+  /* Told apart by what only the OLD format has. Requiring both new keys meant a
+     damaged {bpm:'x', cells:null} fell through to the legacy branch and came
+     back with no bpm at all. */
+  if (c.mode == null && c.len == null && c.bars == null) {
+    return {
+      bpm: clampNum(c.bpm, POLY_MIN_BPM, POLY_MAX_BPM, 120),
+      cells: clampInt(c.cells, POLY_MIN_CELLS, POLY_MAX_CELLS, 4),
+      lock: c.lock !== false,
+    };
+  }
+  /* R144-R146: {mode:'lock'|'free', len, bars}. A locked track was `len` hits
+     across `bars` bars, which is len/bars hits per bar; a free one counted its
+     BPM in sixteenths, so its hit rate was bpm*4. Both convert exactly. */
+  const legacyLen = clampInt(c.len, 1, POLY_MAX_CELLS, 4);
+  if (c.mode === 'free') {
+    return { bpm: clampNum(Number(c.bpm) * 4, POLY_MIN_BPM, POLY_MAX_BPM, 120),
+      cells: legacyLen, lock: false, migrated: true };
+  }
+  const bars = clampInt(c.bars, 1, 8, 1);
+  return { hitsPerBar: legacyLen / bars, cells: legacyLen, lock: true, migrated: true };
 }
 
 export function isPoly(pat, p) { return polyCfg(pat, p) !== null; }
 
-/* Seconds between two hits of this track.
+/* The project's tempo in the same units, derived from the bar. A bar is four
+   beats, so a pad matching this number hits once per beat. */
+export function mainBpmOf(barDur) { return barDur > 0 ? 240 / barDur : 0; }
 
-   LOCKED derives from the main sequence, so a tempo change carries the track
-   with it and the ratio is preserved: one cycle is `bars` bars, cut into `len`.
-   FREE derives from its own BPM alone, in the app's convention that a step is a
-   sixteenth — so a free track at the main tempo lands exactly on the grid, which
-   makes it obvious the mode is doing what it says. */
+/* How many hits this pad places in one bar, before locking. */
+export function polyHitsPerBar(cfg, barDur) {
+  if (!cfg || !(barDur > 0)) return 0;
+  if (cfg.hitsPerBar != null) return cfg.hitsPerBar;     // converted from the old format
+  return cfg.bpm * barDur / 60;
+}
+
+/* What the pad actually runs at once LOCK has had its say.
+
+   Locking rounds to a whole number of hits per bar. That is the entire meaning
+   of the switch: a whole number divides the bar evenly, so the pad returns to
+   the downbeat every time; anything else cannot, and drifts. */
+export function polyLockedHitsPerBar(cfg, barDur) {
+  const raw = polyHitsPerBar(cfg, barDur);
+  if (!cfg || !cfg.lock) return raw;
+  /* A converted setting already states its rate exactly — 7 hits over 2 bars is
+     3.5 per bar, and rounding that to 4 would silently change what an existing
+     project sounds like. Only a BPM somebody typed gets snapped. */
+  if (cfg.hitsPerBar != null) return raw;
+  return Math.max(1, Math.round(raw));
+}
+
+/* The pad's effective BPM — what it plays at, which is what the panel should
+   show once locking has nudged it. */
+export function polyEffectiveBpm(cfg, barDur) {
+  if (!cfg || !(barDur > 0)) return 0;
+  return polyLockedHitsPerBar(cfg, barDur) * 60 / barDur;
+}
+
+/* Seconds between hits. */
 export function polyStepDur(cfg, barDur) {
-  if (!cfg) return 0;
-  if (cfg.mode === 'free') return 60 / cfg.bpm / 4;
-  return (barDur * cfg.bars) / cfg.len;
+  const h = polyLockedHitsPerBar(cfg, barDur);
+  return h > 0 && barDur > 0 ? barDur / h : 0;
 }
 
-/* Seconds for one full cycle. Only locked tracks have one — a free track never
-   returns to the same place relative to the bar, which is the point of it. */
-export function polyCycleDur(cfg, barDur) {
-  if (!cfg) return 0;
-  return cfg.mode === 'free' ? polyStepDur(cfg, barDur) * cfg.len : barDur * cfg.bars;
+/* Whether this pad genuinely returns to the downbeat. True when locked, and
+   also true unlocked if the tempo happens to divide the bar evenly — which is
+   worth saying, because setting an unlocked pad to exactly twice the project
+   tempo should not claim to drift. */
+export function polyDoesLock(cfg, barDur) {
+  if (!cfg) return false;
+  const h = polyLockedHitsPerBar(cfg, barDur);
+  if (!(h > 0)) return false;
+  /* Returning to the downbeat within a few bars still counts. 3.5 hits per bar
+     comes round every two — a listener hears that as locked, and calling it
+     drifting would be the panel telling them something they can hear is false. */
+  for (let bars = 1; bars <= 8; bars++) {
+    const n = h * bars;
+    if (Math.abs(n - Math.round(n)) < 1e-9) return true;
+  }
+  return false;
+}
+/* How many bars until it comes back to the downbeat. 0 when it never does. */
+export function polyCycleBars(cfg, barDur) {
+  const h = polyLockedHitsPerBar(cfg, barDur);
+  if (!(h > 0)) return 0;
+  for (let bars = 1; bars <= 8; bars++) {
+    const n = h * bars;
+    if (Math.abs(n - Math.round(n)) < 1e-9) return bars;
+  }
+  return 0;
 }
 
-/* What a locked track works out to in the units the other mode uses, so the
-   panel can show a ratio and a tempo at once and neither has to be imagined. */
-export function polyBpm(cfg, mainBpm, stepsPerBar) {
-  if (!cfg) return 0;
-  if (cfg.mode === 'free') return cfg.bpm;
-  const bars = cfg.bars || 1;
-  return Math.abs(mainBpm) * cfg.len / (bars * (stepsPerBar || 16));
-}
-
-/* The ratio against the main grid, in lowest terms: len hits per bars*steps
-   grid slots. 3 in one 16-step bar reads 3:16, and 12 reads 3:4 — which is the
-   form a musician recognises as triplet sixteenths. */
-export function polyRatio(cfg, stepsPerBar) {
-  if (!cfg) return null;
-  const a = cfg.len, b = (cfg.bars || 1) * (stepsPerBar || 16);
-  const g = gcd(a, b);
-  return { num: a / g, den: b / g };
+/* How the pad's rate compares with the project's, as a ratio in lowest terms
+   when there is a tidy one. 3:4 is what a musician calls three-against-four. */
+export function polyRatio(cfg, barDur) {
+  if (!cfg || !(barDur > 0)) return null;
+  const beats = polyEffectiveBpm(cfg, barDur) / mainBpmOf(barDur);   // hits per beat
+  for (let den = 1; den <= 16; den++) {
+    const num = beats * den;
+    if (Math.abs(num - Math.round(num)) < 1e-9) {
+      const g = gcd(Math.round(num), den);
+      return { num: Math.round(num) / g, den: den / g };
+    }
+  }
+  return null;                                            // no small ratio: it drifts
 }
 
 function gcd(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) { const t = b; b = a % b; a = t; } return a || 1; }
 
-/* Every hit of one poly track between two absolute times.
-
-   `t0` is when the sequence started; everything is measured from it so the live
-   scheduler and the bounce can ask the same question and get the same answer.
-   Locked tracks re-anchor to their cycle rather than accumulating, so a long
-   session cannot drift the tuplet off the bar.
-
-   Returns [{when, idx}] where idx is the cell in the track's row — the caller
-   still owns velocity, locks, humanize and everything else about the hit.
-
-   Half-open [from, to), so calling this over adjacent windows fires each hit
-   exactly once — but only with EPS, and that is not a rounding nicety.
-
-   The live scheduler builds each window by ACCUMULATING (nextStepTime += sd)
-   while deriving the cycle start by SUBTRACTING from that accumulated value.
-   Both routes reach the same instant mathematically and differ in the last
-   bits, so a hit sitting exactly on a window edge — which the first hit of
-   every cycle does, by definition — lands microscopically either side of the
-   boundary depending on the arithmetic. Without a tolerance it is dropped by
-   both windows or fired by both. In the browser that showed up as an
-   intermittently missing hit: one run 17 evenly spaced, the next 15 with an
-   800ms hole.
-
-   1e-9 s is a nanosecond: five orders of magnitude below one sample at 44.1kHz
-   and far above the ~1e-13 s of float noise at these magnitudes. Applied to
-   BOTH bounds so a hit near a boundary belongs to exactly one window. */
+/* 1ns. The live scheduler builds its window boundaries by ACCUMULATING while
+   the anchor is derived by SUBTRACTING from that accumulation; both reach the
+   same instant and differ in the last bits, so a hit sitting exactly on a
+   window edge — which the first hit of every bar does, by definition — was
+   dropped by both windows or fired by both. It showed up as an intermittently
+   missing hit: 17 evenly spaced one run, 15 with an 800ms hole the next.
+   Five orders of magnitude below one sample at 44.1kHz, far above float noise,
+   and applied to BOTH bounds so a hit near a boundary belongs to exactly one
+   window. */
 const EPS = 1e-9;
 
-export function polyEvents(cfg, t0, from, to, barDur) {
+/* Every hit between two times.
+
+   `anchor` is a known hit time and `anchorIdx` its position in the endless
+   series, so the caller decides what the pad is measured from: a locked pad is
+   anchored to the current bar (which re-anchors it, and carries it through a
+   tempo change), a free one to when the sequence started (which is what makes
+   it free). The cell each hit lands on is its series position modulo CELLS, so
+   the row length is independent of the rate. */
+export function polyEvents(cfg, anchor, anchorIdx, from, to, barDur) {
   const out = [];
   if (!cfg || !(barDur > 0) || !(to > from)) return out;
   const step = polyStepDur(cfg, barDur);
   if (!(step > 0)) return out;
-  const len = cfg.len;
+  const cells = cfg.cells;
 
-  if (cfg.mode === 'free') {
-    /* One unbroken series from the start; the index wraps but the clock does
-       not. No re-anchoring is the whole definition of this mode. */
-    let k = Math.max(0, Math.floor((from - t0) / step) - 1);   // start below and let the bounds filter
-    for (;;) {
-      const when = t0 + k * step;
-      if (when >= to - EPS) break;
-      if (when >= from - EPS) out.push({ when, idx: k % len });
-      k++;
-      if (out.length > 100000) break;                 // a runaway rate cannot hang the audio thread
-    }
-    return out;
-  }
-
-  const cycle = barDur * cfg.bars;
-  let c = Math.max(0, Math.floor((from - t0) / cycle));
+  let k = Math.floor((from - anchor) / step) - 1;
   for (;;) {
-    const cStart = t0 + c * cycle;
-    if (cStart >= to - EPS) break;
-    for (let k = 0; k < len; k++) {
-      const when = cStart + k * (cycle / len);       // re-derived from the cycle, never accumulated
-      if (when >= to - EPS) break;
-      if (when >= from - EPS) out.push({ when, idx: k });
+    const when = anchor + k * step;
+    if (when >= to - EPS) break;
+    if (when >= from - EPS) {
+      const series = anchorIdx + k;
+      out.push({ when, idx: ((series % cells) + cells) % cells });
     }
-    c++;
-    if (out.length > 100000) break;
+    k++;
+    if (out.length > 100000) break;      // a runaway rate cannot hang the audio thread
   }
   return out;
 }
 
-/* Where a poly track's playhead is at a given moment, for drawing. Returns -1
-   before the sequence starts. */
-export function polyIndexAt(cfg, t0, now, barDur) {
-  if (!cfg || now < t0 || !(barDur > 0)) return -1;
+/* Which cell is sounding now, for drawing. -1 before the sequence starts. */
+export function polyIndexAt(cfg, anchor, anchorIdx, now, barDur) {
+  if (!cfg || !(barDur > 0)) return -1;
   const step = polyStepDur(cfg, barDur);
-  if (!(step > 0)) return -1;
-  return Math.floor((now - t0) / step) % cfg.len;
+  if (!(step > 0) || now < anchor - step) return -1;
+  const series = anchorIdx + Math.floor((now - anchor) / step);
+  return ((series % cfg.cells) + cfg.cells) % cfg.cells;
 }

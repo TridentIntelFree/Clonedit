@@ -647,84 +647,91 @@ where they come back into alignment. On a grid that relationship is invisible.</
   <div id="polyPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
     <div class="row" style="margin-bottom:6px">
       <span class="lbl">PULSE</span>
-      <button id="btnPolyOff" class="on">GRID</button>
-      <button id="btnPolyLock">LOCKED</button>
-      <button id="btnPolyFree">FREE</button>
+      <button id="btnPolyOff" class="on">MAIN BEAT</button>
+      <button id="btnPolyOn">OWN BPM</button>
     </div>
-    <div id="polyLockRow" style="display:none;margin-bottom:6px">
-      <div class="row" style="margin-bottom:4px">
-        <span class="lbl">HITS</span>
-        <span class="stepper"><button aria-label="Fewer hits per cycle" id="polyLenDn">&#8722;</button><span id="polyLenV">3</span><button aria-label="More hits per cycle" id="polyLenUp">+</button></span>
-        <span style="font-size:11px;color:var(--txt-dim);flex:1">spread evenly across the cycle</span>
+    <div id="polyBody" style="display:none">
+      <div class="pslider" style="margin-bottom:2px">
+        <span class="lbl">BPM</span>
+        <input type="range" id="polyBpm" min="20" max="600" step="1" value="100">
+        <span class="val" id="polyBpmV">100</span>
       </div>
-      <div class="row">
-        <span class="lbl">PER</span>
-        <span class="stepper"><button aria-label="Shorter cycle" id="polyBarsDn">&#8722;</button><span id="polyBarsV">1</span><button aria-label="Longer cycle" id="polyBarsUp">+</button></span>
-        <span id="polyBarsLbl" style="font-size:11px;color:var(--txt-dim);flex:1">bar of the main sequence</span>
+      <div id="polySays" style="font-size:12px;color:var(--lcd);margin:0 0 8px;line-height:1.5"></div>
+      <div class="row" style="margin-bottom:6px">
+        <span class="lbl">QUICK</span>
+        <button class="polypre" data-mul="0.5">half</button>
+        <button class="polypre" data-mul="0.75">3:4</button>
+        <button class="polypre" data-mul="1">beat</button>
+        <button class="polypre" data-mul="1.5">1&frac12;</button>
+        <button class="polypre" data-mul="2">2&times;</button>
+        <button class="polypre" data-mul="3">triplet</button>
+        <button class="polypre" data-mul="4">4&times;</button>
       </div>
+      <div class="row" style="margin-bottom:6px">
+        <button id="btnPolyLock" class="on">&#128274; LOCK TO BAR</button>
+        <span id="polyLockHint" style="font-size:11px;color:var(--txt-dim);flex:1"></span>
+      </div>
+      <div class="row" style="margin-bottom:6px">
+        <span class="lbl">CELLS</span>
+        <span class="stepper"><button aria-label="Fewer cells" id="polyCellDn">&#8722;</button><span id="polyCellV">4</span><button aria-label="More cells" id="polyCellUp">+</button></span>
+        <span id="polyCellHint" style="font-size:11px;color:var(--txt-dim);flex:1">how many before the row repeats</span>
+      </div>
+      <div id="polygrid"></div>
     </div>
-    <div id="polyPresetRow" class="row" style="display:none;margin-bottom:6px">
-      <span class="lbl">QUICK</span>
-      <button class="polypre" data-len="3" data-bars="1">3</button>
-      <button class="polypre" data-len="5" data-bars="1">5</button>
-      <button class="polypre" data-len="6" data-bars="1">6</button>
-      <button class="polypre" data-len="7" data-bars="1">7</button>
-      <button class="polypre" data-len="9" data-bars="1">9</button>
-      <button class="polypre" data-len="12" data-bars="1">12</button>
-      <button class="polypre" data-len="7" data-bars="2">7/2</button>
-    </div>
-    <div id="polyFreeRow" class="row" style="display:none;margin-bottom:6px">
-      <span class="lbl">BPM</span>
-      <input type="range" id="polyBpm" min="20" max="300" step="0.5" value="120">
-      <span class="val" id="polyBpmV">120</span>
-    </div>
-    <div id="polyFreeLenRow" class="row" style="display:none;margin-bottom:6px">
-      <span class="lbl">CELLS</span>
-      <span class="stepper"><button aria-label="Fewer cells" id="polyCellDn">&#8722;</button><span id="polyCellV">4</span><button aria-label="More cells" id="polyCellUp">+</button></span>
-      <span id="polyFreeHint" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
-    </div>
-    <div id="polyReadout" style="font-size:11px;color:var(--lcd);margin:0 0 6px;font-family:var(--f-mono)">plays on the ordinary grid</div>
-    <div id="polygrid"></div>
-    <details class="ex"><summary>Polyrhythm — two pulses at once</summary><div class="ex-body">
-      <p>This pad keeps its own row of hits. What changes is <em>when</em> those
-      hits fall, and there are two genuinely different answers.</p>
+    <details class="ex"><summary>Giving a pad its own BPM</summary><div class="ex-body">
+      <p>Every pad normally plays on the project's beat. Switch one to
+      <b>OWN BPM</b> and it runs at whatever tempo you give it, while everything
+      else carries on as before. Two pulses at once — a polyrhythm.</p>
 
-      <h4>Locked — a tuplet</h4>
-      <p>The cycle is pinned to the bar: <b>HITS</b> spread evenly across
-      <b>PER BAR(S)</b>, re-anchored every time round. Three hits per bar
-      against a four-beat sequence is the classic 3-against-4 — the two agree on
-      the downbeat and nowhere else, forever. This is what a tuplet is: N in the
-      space of M. Change the project tempo and it comes with you.</p>
-      <p>You cannot write this on the step grid. A bar is 16 steps and 16 is not
-      divisible by 3, so the closest a grid can get is 5-5-6 — a groove, but not
-      a triplet.</p>
+      <h4>The number means what you think it means</h4>
+      <p>The project's BPM counts beats per minute. A pad's BPM counts
+      <em>its own hits</em> per minute. So a pad set to the same number as the
+      project hits once per beat, and everything else follows from there:</p>
+      <ul>
+        <li><b>Same as the project</b> — one hit per beat.</li>
+        <li><b>Double</b> — eighths. <b>Four times</b> — sixteenths.</li>
+        <li><b>Three times</b> — triplets, three per beat.</li>
+        <li><b>Three quarters</b> — three hits per bar against four beats. This
+        is the classic <b>3-against-4</b>, and it is the one you cannot write on
+        the step grid at all: a bar is 16 steps and 16 does not divide by 3.</li>
+      </ul>
+      <p>The QUICK buttons are those relationships, so you can hear them before
+      you work out the arithmetic.</p>
 
-      <h4>Free — phasing</h4>
-      <p>The pad ticks at its own BPM and never re-anchors. Main at 100, pad at
-      137: they agree on the first beat and then drift apart essentially
-      forever, sliding through every relationship on the way. That is a
-      technique in its own right, not a broken tuplet — Steve Reich built
-      several pieces out of exactly this. Set it to the project tempo and it
-      lands on the grid, which is a good way to see what the mode is doing.</p>
-      <p>Because it never repeats, a free pad is cut wherever the bounce ends
-      rather than finishing a cycle.</p>
+      <h4>LOCK TO BAR</h4>
+      <p>On, the pad's tempo is nudged to the nearest rate that fits a whole
+      number of hits into a bar, so it returns to the downbeat every time and
+      stays that way forever. This is what you want for a tuplet. The panel
+      shows the tempo it actually settled on.</p>
+      <p>Off, the pad runs at exactly the BPM you set. Unless that happens to
+      divide the bar evenly it will never come back into line — it drifts
+      through every relationship with the beat and keeps going. That is called
+      <b>phasing</b>, it is a technique rather than a fault, and Steve Reich
+      built whole pieces out of it. Because it never repeats, a drifting pad is
+      cut wherever the bounce ends rather than finishing a cycle.</p>
+
+      <h4>CELLS</h4>
+      <p>How many cells the row has before it starts again — separate from how
+      fast they go by. Three hits per bar with a five-cell row gives you a
+      rhythm that takes five hits to come round and a bar to line up, which is
+      polyrhythm and polymeter at the same time.</p>
 
       <h4>Nested tuplets</h4>
-      <p>Use the <b>LOCK</b> panel's <b>RATCHET</b> on a cell. A cell of a
-      3-hit track ratcheted by 5 is five hits inside one third of a bar — a
+      <p>Use <b>LOCK</b> ▸ <b>RATCHET</b> on one cell. A cell of a three-per-bar
+      pad ratcheted by five is five hits inside one third of a bar — a
       quintuplet nested in a triplet. Ratchets subdivide this pad's own pulse,
-      not the grid's, so they nest as deep as you stack them.</p>
+      so they nest as deep as you stack them.</p>
 
       <h4>Two things it deliberately does not do</h4>
-      <p><b>Swing is not applied</b> to a poly pad. Delaying every second cell
-      of a triplet is not a shuffle, it is a worse rhythm. <b>REV plays it
-      forwards</b> — a reversed tuplet is not a meaningful thing to want, and
-      faking one would put a difference between what you hear and what the
-      bounce contains.</p>
+      <p><b>Swing is not applied</b> to a pad on its own BPM: delaying every
+      second hit of a triplet is not a shuffle, it is a worse rhythm.
+      <b>REV plays it forwards</b> — a reversed tuplet is not a meaningful thing
+      to want, and faking one would put a difference between what you hear and
+      what the bounce contains.</p>
 
       <p class="try"><b>Try this:</b> put a kick on the ordinary grid at 0, 4, 8
-      and 12, then set a shaker to LOCKED, 3 hits per 1 bar, and fill all three
-      cells. Listen for where they collide — it should be the downbeat only.</p>
+      and 12. Then pick a shaker, switch it to OWN BPM, and tap <b>3:4</b>.
+      They should collide on the downbeat and nowhere else.</p>
     </div></details>
   </div>
 
@@ -1809,11 +1816,10 @@ var __JBH_PURE = (() => {
     NPAT: () => NPAT,
     NSTEPS: () => NSTEPS,
     PATLENS: () => PATLENS,
-    POLY_MAX: () => POLY_MAX,
-    POLY_MAX_BARS: () => POLY_MAX_BARS,
     POLY_MAX_BPM: () => POLY_MAX_BPM,
-    POLY_MIN: () => POLY_MIN,
+    POLY_MAX_CELLS: () => POLY_MAX_CELLS,
     POLY_MIN_BPM: () => POLY_MIN_BPM,
+    POLY_MIN_CELLS: () => POLY_MIN_CELLS,
     SCALES: () => SCALES,
     clamp: () => clamp,
     clampBpm: () => clampBpm,
@@ -1823,16 +1829,20 @@ var __JBH_PURE = (() => {
     irDur: () => irDur,
     isInstalled: () => isInstalled,
     isPoly: () => isPoly,
+    mainBpmOf: () => mainBpmOf,
     morphPattern: () => morphPattern,
     morphRanker: () => morphRanker,
     mulberry32: () => mulberry32,
     newPattern: () => newPattern,
     patLen: () => patLen,
-    polyBpm: () => polyBpm,
     polyCfg: () => polyCfg,
-    polyCycleDur: () => polyCycleDur,
+    polyCycleBars: () => polyCycleBars,
+    polyDoesLock: () => polyDoesLock,
+    polyEffectiveBpm: () => polyEffectiveBpm,
     polyEvents: () => polyEvents,
+    polyHitsPerBar: () => polyHitsPerBar,
     polyIndexAt: () => polyIndexAt,
+    polyLockedHitsPerBar: () => polyLockedHitsPerBar,
     polyRatio: () => polyRatio,
     polyStepDur: () => polyStepDur,
     posMod: () => posMod,
@@ -2048,50 +2058,93 @@ var __JBH_PURE = (() => {
   }
 
   // src/pure/poly.js
-  var POLY_MIN = 2;
-  var POLY_MAX = 64;
-  var POLY_MAX_BARS = 8;
-  var POLY_MIN_BPM = 10;
-  var POLY_MAX_BPM = 999;
-  var clampInt = (v, lo, hi) => {
-    const n = Math.floor(Number(v));
-    return isFinite(n) ? Math.max(lo, Math.min(hi, n)) : lo;
+  var POLY_MIN_CELLS = 1;
+  var POLY_MAX_CELLS = 64;
+  var POLY_MIN_BPM = 5;
+  var POLY_MAX_BPM = 1200;
+  var clampNum = (v, lo, hi, dflt) => {
+    const n = Number(v);
+    return isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt;
   };
+  var clampInt = (v, lo, hi, dflt) => Math.floor(clampNum(v, lo, hi, dflt));
   function polyCfg(pat, p) {
     const all = pat && pat.poly;
     const c = all && all[p];
     if (!c || !c.on) return null;
-    const free = c.mode === "free";
-    return {
-      mode: free ? "free" : "lock",
-      len: clampInt(c.len, POLY_MIN, POLY_MAX),
-      bars: free ? 1 : clampInt(c.bars, 1, POLY_MAX_BARS),
-      bpm: free ? Math.max(POLY_MIN_BPM, Math.min(POLY_MAX_BPM, Number(c.bpm) || 120)) : 0
-    };
+    if (c.mode == null && c.len == null && c.bars == null) {
+      return {
+        bpm: clampNum(c.bpm, POLY_MIN_BPM, POLY_MAX_BPM, 120),
+        cells: clampInt(c.cells, POLY_MIN_CELLS, POLY_MAX_CELLS, 4),
+        lock: c.lock !== false
+      };
+    }
+    const legacyLen = clampInt(c.len, 1, POLY_MAX_CELLS, 4);
+    if (c.mode === "free") {
+      return {
+        bpm: clampNum(Number(c.bpm) * 4, POLY_MIN_BPM, POLY_MAX_BPM, 120),
+        cells: legacyLen,
+        lock: false,
+        migrated: true
+      };
+    }
+    const bars = clampInt(c.bars, 1, 8, 1);
+    return { hitsPerBar: legacyLen / bars, cells: legacyLen, lock: true, migrated: true };
   }
   function isPoly(pat, p) {
     return polyCfg(pat, p) !== null;
   }
+  function mainBpmOf(barDur) {
+    return barDur > 0 ? 240 / barDur : 0;
+  }
+  function polyHitsPerBar(cfg, barDur) {
+    if (!cfg || !(barDur > 0)) return 0;
+    if (cfg.hitsPerBar != null) return cfg.hitsPerBar;
+    return cfg.bpm * barDur / 60;
+  }
+  function polyLockedHitsPerBar(cfg, barDur) {
+    const raw = polyHitsPerBar(cfg, barDur);
+    if (!cfg || !cfg.lock) return raw;
+    if (cfg.hitsPerBar != null) return raw;
+    return Math.max(1, Math.round(raw));
+  }
+  function polyEffectiveBpm(cfg, barDur) {
+    if (!cfg || !(barDur > 0)) return 0;
+    return polyLockedHitsPerBar(cfg, barDur) * 60 / barDur;
+  }
   function polyStepDur(cfg, barDur) {
-    if (!cfg) return 0;
-    if (cfg.mode === "free") return 60 / cfg.bpm / 4;
-    return barDur * cfg.bars / cfg.len;
+    const h = polyLockedHitsPerBar(cfg, barDur);
+    return h > 0 && barDur > 0 ? barDur / h : 0;
   }
-  function polyCycleDur(cfg, barDur) {
-    if (!cfg) return 0;
-    return cfg.mode === "free" ? polyStepDur(cfg, barDur) * cfg.len : barDur * cfg.bars;
+  function polyDoesLock(cfg, barDur) {
+    if (!cfg) return false;
+    const h = polyLockedHitsPerBar(cfg, barDur);
+    if (!(h > 0)) return false;
+    for (let bars = 1; bars <= 8; bars++) {
+      const n = h * bars;
+      if (Math.abs(n - Math.round(n)) < 1e-9) return true;
+    }
+    return false;
   }
-  function polyBpm(cfg, mainBpm, stepsPerBar) {
-    if (!cfg) return 0;
-    if (cfg.mode === "free") return cfg.bpm;
-    const bars = cfg.bars || 1;
-    return Math.abs(mainBpm) * cfg.len / (bars * (stepsPerBar || 16));
+  function polyCycleBars(cfg, barDur) {
+    const h = polyLockedHitsPerBar(cfg, barDur);
+    if (!(h > 0)) return 0;
+    for (let bars = 1; bars <= 8; bars++) {
+      const n = h * bars;
+      if (Math.abs(n - Math.round(n)) < 1e-9) return bars;
+    }
+    return 0;
   }
-  function polyRatio(cfg, stepsPerBar) {
-    if (!cfg) return null;
-    const a = cfg.len, b = (cfg.bars || 1) * (stepsPerBar || 16);
-    const g = gcd(a, b);
-    return { num: a / g, den: b / g };
+  function polyRatio(cfg, barDur) {
+    if (!cfg || !(barDur > 0)) return null;
+    const beats = polyEffectiveBpm(cfg, barDur) / mainBpmOf(barDur);
+    for (let den = 1; den <= 16; den++) {
+      const num = beats * den;
+      if (Math.abs(num - Math.round(num)) < 1e-9) {
+        const g = gcd(Math.round(num), den);
+        return { num: Math.round(num) / g, den: den / g };
+      }
+    }
+    return null;
   }
   function gcd(a, b) {
     a = Math.abs(a);
@@ -2104,43 +2157,31 @@ var __JBH_PURE = (() => {
     return a || 1;
   }
   var EPS = 1e-9;
-  function polyEvents(cfg, t0, from, to, barDur) {
+  function polyEvents(cfg, anchor, anchorIdx, from, to, barDur) {
     const out = [];
     if (!cfg || !(barDur > 0) || !(to > from)) return out;
     const step = polyStepDur(cfg, barDur);
     if (!(step > 0)) return out;
-    const len = cfg.len;
-    if (cfg.mode === "free") {
-      let k = Math.max(0, Math.floor((from - t0) / step) - 1);
-      for (; ; ) {
-        const when = t0 + k * step;
-        if (when >= to - EPS) break;
-        if (when >= from - EPS) out.push({ when, idx: k % len });
-        k++;
-        if (out.length > 1e5) break;
-      }
-      return out;
-    }
-    const cycle = barDur * cfg.bars;
-    let c = Math.max(0, Math.floor((from - t0) / cycle));
+    const cells = cfg.cells;
+    let k = Math.floor((from - anchor) / step) - 1;
     for (; ; ) {
-      const cStart = t0 + c * cycle;
-      if (cStart >= to - EPS) break;
-      for (let k = 0; k < len; k++) {
-        const when = cStart + k * (cycle / len);
-        if (when >= to - EPS) break;
-        if (when >= from - EPS) out.push({ when, idx: k });
+      const when = anchor + k * step;
+      if (when >= to - EPS) break;
+      if (when >= from - EPS) {
+        const series = anchorIdx + k;
+        out.push({ when, idx: (series % cells + cells) % cells });
       }
-      c++;
+      k++;
       if (out.length > 1e5) break;
     }
     return out;
   }
-  function polyIndexAt(cfg, t0, now, barDur) {
-    if (!cfg || now < t0 || !(barDur > 0)) return -1;
+  function polyIndexAt(cfg, anchor, anchorIdx, now, barDur) {
+    if (!cfg || !(barDur > 0)) return -1;
     const step = polyStepDur(cfg, barDur);
-    if (!(step > 0)) return -1;
-    return Math.floor((now - t0) / step) % cfg.len;
+    if (!(step > 0) || now < anchor - step) return -1;
+    const series = anchorIdx + Math.floor((now - anchor) / step);
+    return (series % cfg.cells + cfg.cells) % cfg.cells;
   }
 
   // src/pure/ir.js
@@ -4228,8 +4269,42 @@ Object.assign(globalThis, __JBH_PURE);})();
      person would experience. It now scrolls to the button the way a finger
      arrives at it, taps, waits for the reveal to settle, and requires the panel
      to be ON SCREEN and within 900px of the button it responded to.
+   - R147: ONE NUMBER — A PAD WITH ITS OWN BPM. "Can we have an easier to
+     understand interface... I'd like to be able to set a specific bpm for each
+     pad." Which had been said once already, and the first design ignored it: it
+     asked for a mode, then a hit count, then a bar count, and computed the
+     tempo. Two things were wrong underneath the panel, not just on it.
+     `len` did two unrelated jobs — how FAST the pad ticks and how MANY cells
+     its row has — so neither could be changed without disturbing the other.
+     They are separate settings now: BPM and CELLS.
+     And "locked vs free" made you commit to a philosophy before you could set
+     anything. It is one switch beside the tempo now, LOCK TO BAR.
+     The unit is chosen so the common case needs no explanation: the project's
+     BPM counts beats per minute, a pad's BPM counts ITS OWN HITS per minute, so
+     a pad set to the same number hits once per beat. Double is eighths, triple
+     is triplets, and three quarters is three hits per bar against four beats —
+     the 3-against-4 that cannot be written on a 16-step grid at all. QUICK
+     buttons are those relationships (half, 3:4, beat, 1½, 2×, triplet, 4×), and
+     a preset sets the rate AND a bar's worth of cells, because a button labelled
+     3:4 that left the row at four cells would be promising one thing and giving
+     two.
+     The panel says what the setting MEANS rather than restating it: "3 hits per
+     bar, against 4 beats · 3:4 against the beat · back on the downbeat every
+     bar". When LOCK moves the tempo it shows where it LANDED and says it moved
+     it — 137 locked reads 125 with "nudged 137 → 125 so it fits the bar" —
+     because a readout that disagreed with the sound would be the exact class of
+     bug this app keeps finding in itself.
+     Old settings convert on read, so a project saved by R144-R146 opens and
+     plays the same rhythm. A converted rate is never re-rounded: 7 hits over 2
+     bars is 3.5 per bar, exact, and snapping that to 4 would quietly change
+     what an existing project sounds like. Tested.
+     Two bugs the tests caught in my own conversion. The new-format guard
+     required both keys, so a damaged {bpm:'x', cells:null} fell through to the
+     legacy branch and came back with no bpm at all. And "does it lock" only
+     accepted a whole number of hits per bar, which called 3.5 — twice round
+     every two bars — drifting, when a listener plainly hears it lock.
    ================================================================ */
-const BUILD = 'JBH-88 · R146 · 2026-08-01 · POLY opens where you can see it';
+const BUILD = 'JBH-88 · R147 · 2026-08-01 · a pad with its own BPM';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -8969,10 +9044,17 @@ function polyFire(pat, p, idx, v, when, pd, fired){
    per pattern. */
 function polyHitsForStep(cfg, absStep, t, sd){
   const barDur=NSTEPS*sd;
-  if(cfg.mode==='free') return polyEvents(cfg, seqT0, t, t+sd, barDur);
-  const cycleSteps=NSTEPS*cfg.bars;
-  const cycleStart=t-posMod(absStep,cycleSteps)*sd;   // exact, from this step's own time
-  return polyEvents(cfg, cycleStart, t, t+sd, barDur);
+  /* A LOCKED pad is anchored to the bar it is in, derived from this step's own
+     time at the current tempo — which re-anchors it every bar and carries it
+     through a tempo change. A FREE one is anchored to when the sequence
+     started and never re-anchors, which is what makes it free.
+     The series index keeps the CELL walking on across bars, so the row length
+     is independent of the rate. */
+  if(!polyDoesLock(cfg, barDur)) return polyEvents(cfg, seqT0, 0, t, t+sd, barDur);
+  const bar=Math.floor(absStep/NSTEPS);
+  const barStart=t-posMod(absStep,NSTEPS)*sd;
+  const hpb=polyLockedHitsPerBar(cfg, barDur);
+  return polyEvents(cfg, barStart, Math.round(bar*hpb), t, t+sd, barDur);
 }
 
 function schedStep(barStep, absStep, t){
@@ -9044,7 +9126,7 @@ function markStep(absStep){
      draw a playhead that is nowhere near the hit you can hear. */
   const pcfgM=polyCfg(curPat(),S.seqPad);
   const cur=pcfgM
-    ? Math.max(0,polyIndexAt(pcfgM, seqT0, AC?AC.currentTime:0, NSTEPS*stepDur()))
+    ? Math.max(0,polyIndexAt(pcfgM, seqT0, 0, AC?AC.currentTime:0, NSTEPS*stepDur()))
     : posMod(absStep, trackLen(curPat(),S.seqPad));
   curStep=cur; lastStepTime=AC?AC.currentTime:0;
   document.querySelectorAll('#stepgrid .step').forEach((el,i)=>el.classList.toggle('cur',i===cur));
@@ -10336,7 +10418,7 @@ function drawSteps(){
      is built on: only show what will play. The cells are wider and marked, so it
      is visible at a glance that this row is not on the grid's pulse. */
   const pcfg=polyCfg(pat,S.seqPad);
-  const L=pcfg?pcfg.len:trackLen(pat,S.seqPad);
+  const L=pcfg?pcfg.cells:trackLen(pat,S.seqPad);
   gr.classList.toggle('polyrow',!!pcfg);
   $('seqLenV').textContent=L;
   for(let i=0;i<L;i++){
@@ -10629,79 +10711,112 @@ $('noteOctUp').addEventListener('click',()=>{ noteOct=clamp(noteOct+1,-3,3); dra
    is the rule this app is built on. */
 let polyMode=false;
 
-function polyRead(){ const pat=curPat(); return polyCfg(pat,S.seqPad); }
+/* Open a panel where the user can SEE it. The SEQ tab is about 3,400px long on
+   a phone, and a panel that appears a screen and a half below the button you
+   tapped reads as nothing happening — which is exactly how this was reported.
+   Only scrolls when it is actually off screen: moving the page under a panel
+   already in front of you is just noise. */
+function revealPanel(el){
+  if(!el) return;
+  const r=el.getBoundingClientRect();
+  if(r.top >= 0 && r.bottom <= window.innerHeight) return;
+  try{ el.scrollIntoView({block:'nearest', behavior:'smooth'}); }
+  catch(e){ el.scrollIntoView(); }
+}
+function polyRead(){ return polyCfg(curPat(),S.seqPad); }
+function polyBar(){ return NSTEPS*stepDur(); }
 function polyRaw(){
   const pat=curPat();
   if(!pat.poly) pat.poly={};
-  if(!pat.poly[S.seqPad]) pat.poly[S.seqPad]={on:false,mode:'lock',len:3,bars:1,bpm:Math.round(bpmAbs())};
+  const c=pat.poly[S.seqPad];
+  /* A pad that has never been touched starts at the project tempo — one hit per
+     beat, which sounds like the ordinary grid and is the least surprising place
+     to begin experimenting from. */
+  if(!c) pat.poly[S.seqPad]={on:false, bpm:Math.round(bpmAbs()), cells:4, lock:true};
+  else if(c.mode!=null || c.len!=null){
+    /* An old-format setting is converted the moment it is edited, so the panel
+       never has to show two shapes of the same thing. */
+    const conv=polyCfg(pat,S.seqPad) || {};
+    pat.poly[S.seqPad]={ on:!!c.on,
+      bpm:Math.round(polyEffectiveBpm(conv, polyBar())||bpmAbs()),
+      cells:conv.cells||4, lock:conv.lock!==false };
+  }
   return pat.poly[S.seqPad];
 }
 function polySet(fn){
   if(morphGuard()) return;
   const c=polyRaw(); fn(c);
-  /* A poly row is as long as its cell count, so hits written past the new end
+  const cfg=polyCfg(curPat(),S.seqPad);
+  /* The row is as long as its cell count, so hits written past the new end
      would be invisible and still sound. Same rule the pattern length follows:
      removed, and said out loud. */
-  const cfg=polyCfg(curPat(),S.seqPad);
   if(cfg){
     const row=curPat().steps[S.seqPad]; let cut=0;
-    for(let i=cfg.len;i<MAXSTEPS;i++) if(row[i]>0){ row[i]=0; cut++; }
+    for(let i=cfg.cells;i<MAXSTEPS;i++) if(row[i]>0){ row[i]=0; cut++; }
     if(cut) lcd(cut+(cut>1?' hits past the new end were':' hit past the new end was')+' removed, not hidden.');
   }
   drawPoly(); drawSteps(); drawSeq(); dirty();
 }
-function polyWrite(){
-  const cfg=polyRead(), pat=curPat();
-  const off=$('polyReadout');
-  $('btnPolyOff').classList.toggle('on',!cfg);
-  $('btnPolyLock').classList.toggle('on',!!cfg&&cfg.mode==='lock');
-  $('btnPolyFree').classList.toggle('on',!!cfg&&cfg.mode==='free');
-  $('polyLockRow').style.display=(cfg&&cfg.mode==='lock')?'block':'none';
-  $('polyPresetRow').style.display=(cfg&&cfg.mode==='lock')?'flex':'none';
-  $('polyFreeRow').style.display=(cfg&&cfg.mode==='free')?'flex':'none';
-  $('polyFreeLenRow').style.display=(cfg&&cfg.mode==='free')?'flex':'none';
-  if(!cfg){ off.textContent='plays on the ordinary grid'; return; }
-  const raw=polyRaw();
-  if(cfg.mode==='lock'){
-    $('polyLenV').textContent=cfg.len; $('polyBarsV').textContent=cfg.bars;
-    $('polyBarsLbl').textContent=(cfg.bars>1?'bars':'bar')+' of the main sequence';
-    const r=polyRatio(cfg,NSTEPS);
-    const gap=polyStepDur(cfg, NSTEPS*stepDur());
-    /* Ratio AND interval. The ratio is what a musician asks for; the interval is
-       the one number that needs no convention. An earlier version showed the
-       sixteenth-note-equivalent tempo instead and read "18.8 BPM" for hits four
-       fifths of a second apart — true, and no use to anybody. */
-    off.textContent=cfg.len+' hits per '+cfg.bars+' bar'+(cfg.bars>1?'s':'')
-      +'  ·  '+r.num+':'+r.den+' against the grid  ·  one every '+gap.toFixed(2)+'s'
-      +' ('+Math.round(60/gap)+'/min)';
-    document.querySelectorAll('.polypre').forEach(b2=>b2.classList.toggle('on',
-      +b2.dataset.len===cfg.len && +b2.dataset.bars===cfg.bars));
-  }else{
-    $('polyBpm').value=String(raw.bpm||120); $('polyBpmV').textContent=(raw.bpm||120);
-    $('polyCellV').textContent=cfg.len;
-    const rel=(cfg.bpm/Math.max(1,bpmAbs()));
-    const gapF=polyStepDur(cfg, NSTEPS*stepDur());
-    off.textContent=cfg.len+' cells at '+cfg.bpm+' BPM  ·  one every '+gapF.toFixed(3)+'s'
-      +'  ·  '+rel.toFixed(3)+'x the project tempo'
-      +(Math.abs(rel-1)<0.001?'  ·  on the grid':'  ·  drifts, never re-locks');
-    $('polyFreeHint').textContent=(Math.abs(rel-1)<0.001)?'same as the project — lands on the grid':'';
-  }
+/* Say what the setting MEANS, in the terms the person set it in. The first
+   version reported a ratio and a cycle count and left the reader to work out
+   what they would hear; this leads with the relationship to the beat, which is
+   the thing they can check by listening. */
+function polySentence(cfg){
+  const bar=polyBar(), main=mainBpmOf(bar);
+  const eff=polyEffectiveBpm(cfg,bar), hpb=polyLockedHitsPerBar(cfg,bar);
+  const r=polyRatio(cfg,bar);
+  const per=eff/main;                                  // hits per beat
+  let lead;
+  if(r && r.den===1 && r.num===1) lead='one hit per beat — same as the main beat';
+  else if(r && r.den===1) lead=r.num+' hits per beat';
+  else if(Math.abs(hpb-Math.round(hpb))<1e-9) lead=Math.round(hpb)+' hits per bar, against 4 beats';
+  else lead=hpb.toFixed(2)+' hits per bar';
+  const parts=[lead];
+  if(r) parts.push(r.num+':'+r.den+' against the beat');
+  const cyc=polyCycleBars(cfg,bar);
+  parts.push(cyc? ('back on the downbeat every '+(cyc===1?'bar':cyc+' bars'))
+                : 'never returns to the downbeat — it drifts');
+  return { text:parts.join('  ·  '), eff, main };
 }
-/* The poly row, drawn as its own cells. Same data as the step grid, same edits;
-   only the number of cells differs, which is the whole point. */
+function polyWrite(){
+  const cfg=polyRead(), raw=polyRaw(), bar=polyBar();
+  $('btnPolyOff').classList.toggle('on',!cfg);
+  $('btnPolyOn').classList.toggle('on',!!cfg);
+  $('polyBody').style.display=cfg?'block':'none';
+  if(!cfg) return;
+  $('polyBpm').value=String(raw.bpm);
+  $('polyCellV').textContent=cfg.cells;
+  $('btnPolyLock').classList.toggle('on',cfg.lock);
+  const s=polySentence(cfg);
+  /* When LOCK has moved the tempo, show where it landed rather than what was
+     asked for — otherwise the readout and the sound disagree. */
+  const snapped=Math.abs(s.eff-raw.bpm)>0.05;
+  $('polyBpmV').textContent = snapped ? (Math.round(s.eff*10)/10)+'' : raw.bpm+'';
+  $('polySays').textContent=s.text;
+  $('polyLockHint').textContent = cfg.lock
+    ? (snapped? 'nudged '+raw.bpm+' → '+(Math.round(s.eff*10)/10)+' so it fits the bar' : 'fits the bar exactly')
+    : 'exactly '+raw.bpm+' BPM, wherever that falls';
+  $('polyCellHint').textContent='row repeats every '+cfg.cells+' hit'+(cfg.cells>1?'s':'');
+  document.querySelectorAll('.polypre').forEach(b=>{
+    const want=mainBpmOf(bar)*parseFloat(b.dataset.mul);
+    b.classList.toggle('on', Math.abs(want-raw.bpm)<0.6);
+  });
+}
+/* The row, drawn as its own cells. Same data as the step grid, same edits; only
+   the number of cells differs, which is the whole point. */
 function drawPoly(){
   polyWrite();
   const gr=$('polygrid'); if(!gr) return; gr.innerHTML='';
   const cfg=polyRead(); if(!cfg) return;
   const pat=curPat(), row=pat.steps[S.seqPad];
-  const cur = playing && AC ? polyIndexAt(cfg, cfg.mode==='free'?seqT0:seqT0, AC.currentTime, NSTEPS*stepDur()) : -1;
-  for(let i=0;i<cfg.len;i++){
+  const cur = (playing&&AC) ? polyIndexAt(cfg, seqT0, 0, AC.currentTime, polyBar()) : -1;
+  for(let i=0;i<cfg.cells;i++){
     const el=document.createElement('button');
     el.className='step pcell'+(i===0?' q2':'');
     const v=row[i];
     if(v>0){ el.classList.add('on'); el.style.opacity=String(0.45+v*0.55); }
     if(i===cur) el.classList.add('cur');
-    el.setAttribute('aria-label','Cell '+(i+1)+' of '+cfg.len+', '+padName(S.seqPad));
+    el.setAttribute('aria-label','Cell '+(i+1)+' of '+cfg.cells+', '+padName(S.seqPad));
     el.setAttribute('aria-pressed', v>0?'true':'false');
     if(pat.locks && stepHasLock(pat.locks[S.seqPad+':'+i])) el.classList.add('lockmark');
     el.addEventListener('click',()=>{
@@ -10714,47 +10829,37 @@ function drawPoly(){
     gr.appendChild(el);
   }
 }
-/* Open a panel where the user can SEE it.
-
-   The SEQ tab is about 3,400px long on a phone. Tapping POLY set
-   display:block on a panel 1,000px further down the page and nothing appeared
-   to happen — reported as "I click poly and nothing opens up to use". The panel
-   now sits directly under the step grid it edits, and this scrolls to it as
-   well, because "further down than you thought" is a bug that comes back the
-   moment anything above it grows.
-
-   Only when it is actually off screen: scrolling a panel that is already in
-   front of you just moves the page under your thumb for no reason. */
-function revealPanel(el){
-  if(!el) return;
-  const r=el.getBoundingClientRect();
-  if(r.top >= 0 && r.bottom <= window.innerHeight) return;
-  try{ el.scrollIntoView({block:'nearest', behavior:'smooth'}); }
-  catch(e){ el.scrollIntoView(); }
-}
 $('btnPoly').addEventListener('click',()=>{
   polyMode=!polyMode; $('btnPoly').classList.toggle('on',polyMode);
   $('polyPanel').style.display=polyMode?'block':'none';
   if(polyMode){ drawPoly(); revealPanel($('polyPanel')); }
-  lcd(polyMode?'POLY: '+padName(S.seqPad)+' — give this pad its own pulse':'POLY closed');
+  lcd(polyMode?'POLY: '+padName(S.seqPad)+' — give this pad its own BPM':'POLY closed');
 });
 $('btnPolyOff').addEventListener('click',()=>{ polySet(c=>{ c.on=false; });
-  lcd(padName(S.seqPad)+' plays on the ordinary grid again.'); });
-$('btnPolyLock').addEventListener('click',()=>{ polySet(c=>{ c.on=true; c.mode='lock'; });
-  lcd('LOCKED — '+padName(S.seqPad)+' re-anchors to the bar every cycle.'); });
-$('btnPolyFree').addEventListener('click',()=>{ polySet(c=>{ c.on=true; c.mode='free';
-  if(!c.bpm) c.bpm=Math.round(bpmAbs()); });
-  lcd('FREE — '+padName(S.seqPad)+' runs at its own tempo and drifts against the bar.'); });
-$('polyLenDn').addEventListener('click',()=>polySet(c=>{ c.len=clamp((c.len|0)-1,POLY_MIN,POLY_MAX); }));
-$('polyLenUp').addEventListener('click',()=>polySet(c=>{ c.len=clamp((c.len|0)+1,POLY_MIN,POLY_MAX); }));
-$('polyBarsDn').addEventListener('click',()=>polySet(c=>{ c.bars=clamp((c.bars|0)-1,1,POLY_MAX_BARS); }));
-$('polyBarsUp').addEventListener('click',()=>polySet(c=>{ c.bars=clamp((c.bars|0)+1,1,POLY_MAX_BARS); }));
-$('polyCellDn').addEventListener('click',()=>polySet(c=>{ c.len=clamp((c.len|0)-1,POLY_MIN,POLY_MAX); }));
-$('polyCellUp').addEventListener('click',()=>polySet(c=>{ c.len=clamp((c.len|0)+1,POLY_MIN,POLY_MAX); }));
+  lcd(padName(S.seqPad)+' plays on the main beat again.'); });
+$('btnPolyOn').addEventListener('click',()=>{ polySet(c=>{ c.on=true; if(!c.bpm) c.bpm=Math.round(bpmAbs()); });
+  lcd(padName(S.seqPad)+' has its own BPM — set it below.'); });
+$('btnPolyLock').addEventListener('click',()=>{ polySet(c=>{ c.lock=!c.lock; });
+  const cfg=polyRead();
+  lcd(cfg&&cfg.lock?'LOCKED to the bar — the tempo is fitted to a whole number of hits.'
+                   :'UNLOCKED — exactly the BPM you set, drifting against the bar.'); });
 $('polyBpm').addEventListener('input',e=>{ const c=polyRaw(); c.bpm=parseFloat(e.target.value);
-  $('polyBpmV').textContent=c.bpm; polyWrite(); dirty(); });
+  polyWrite(); dirty(); });
+$('polyCellDn').addEventListener('click',()=>polySet(c=>{ c.cells=clamp((c.cells|0)-1,POLY_MIN_CELLS,POLY_MAX_CELLS); }));
+$('polyCellUp').addEventListener('click',()=>polySet(c=>{ c.cells=clamp((c.cells|0)+1,POLY_MIN_CELLS,POLY_MAX_CELLS); }));
 document.querySelectorAll('.polypre').forEach(b=>b.addEventListener('click',()=>{
-  polySet(c=>{ c.on=true; c.mode='lock'; c.len=+b.dataset.len; c.bars=+b.dataset.bars; });
+  polySet(c=>{
+    c.on=true;
+    c.bpm=Math.round(mainBpmOf(polyBar())*parseFloat(b.dataset.mul)*10)/10;
+    /* A preset gives the whole obvious result, not half of it. Tapping 3:4 and
+       getting three hits per bar into a four-cell row would be polyrhythm AND
+       polymeter at once — interesting, but not what a button labelled 3:4
+       promises. One bar's worth of cells; CELLS is still there to layer
+       polymeter on deliberately. */
+    const hpb=parseFloat(b.dataset.mul)*4;
+    if(Math.abs(hpb-Math.round(hpb))<1e-9)
+      c.cells=clamp(Math.round(hpb),POLY_MIN_CELLS,POLY_MAX_CELLS);
+  });
 }));
 function drawSil(){
   const gr=$('silrow'); if(!gr) return; gr.innerHTML='';
@@ -12789,10 +12894,14 @@ async function renderMixInner(padSet, traxSet, opt){
              difference between the two paths for no musical gain. */
           if(pc){
             const barDur=NSTEPS*sd, stepT=t+st*sd;
-            const t0p = pc.mode==='free' ? renderT0
-              : stepT - posMod(absB+st, NSTEPS*pc.bars)*sd;
             const pd=polyStepDur(pc,barDur);
-            for(const ev of polyEvents(pc, t0p, stepT, stepT+sd, barDur)){
+            /* The same anchoring the live scheduler uses, against the same pure
+               function, so the file cannot disagree with what was played. */
+            let t0p, idx0;
+            if(!polyDoesLock(pc,barDur)){ t0p=renderT0; idx0=0; }
+            else { t0p = stepT - posMod(absB+st, NSTEPS)*sd;
+                   idx0 = Math.round(Math.floor((absB+st)/NSTEPS)*polyLockedHitsPerBar(pc,barDur)); }
+            for(const ev of polyEvents(pc, t0p, idx0, stepT, stepT+sd, barDur)){
               const pv=pat.steps[p][ev.idx]; if(!(pv>0)) continue;
               const plk=pat.locks&&pat.locks[p+':'+ev.idx];
               if(!worst && plk && plk.prob!=null && takeRnd()>plk.prob) continue;
