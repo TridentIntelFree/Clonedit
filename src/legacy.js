@@ -2177,8 +2177,32 @@
      off, and it belongs to this pattern only. That last line answers the other
      half of the report — "couldn't tell if that was happening" — on screen
      instead of in a reply.
+   - R151: THE TAP THAT UNDOES A TAP NOW LANDS ON THE SAME PATTERN. "I click and
+     add one then I click it again to remove it but the sound still plays."
+     Not a removal bug, and no amount of reading the step code would have found
+     it. The demo project ships with a SONG running 1-2-3-4-5-6-3-4-5-6-7-8 and
+     the grid follows it:
+         tap step 7        "ADDED to PTN 1"
+         song moves on     the grid now shows PTN 2, where step 7 is empty
+         tap it to undo    "ADDED to PTN 2"  <- the opposite of what was meant
+     The hit is then in two patterns and goes on playing. Both taps were obeyed
+     exactly; the target moved between them. The warning bar already said the
+     grid would move, and that was not enough — nobody reads a paragraph with
+     their finger on a step.
+     The first edit made while an arrangement is driving now stops it, holds the
+     pattern being edited, and says which and how to resume. Once per session:
+     somebody who turns SONG back on has said what they want and is not argued
+     with twice. Editing is a statement that you are working on THIS pattern.
+     Found separately on the way, and mine from R149: polyRowOf REPLACED
+     pat.steps[p] with the split array. drawSteps reads that row once and every
+     step button closes over the reference, and polyAlso() — which runs at the
+     END of drawSteps — could trigger the split and detach the array underneath
+     all of them. The handlers then wrote into an orphan, so tapping a lit step
+     cleared nothing and the hit went on playing. It is copied back in place
+     now. The rule is that a pattern's step array is mutated, never replaced:
+     the notes lane, the circle view and the morph snapshots all hold on to it.
    ================================================================ */
-const BUILD = 'JBH-88 · R150 · 2026-08-02 · removing it removes it';
+const BUILD = 'JBH-88 · R151 · 2026-08-02 · edits hold the pattern';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -3857,7 +3881,7 @@ $('epClear').addEventListener('click',()=>{ const i=S.editPad; stopPadVoices(i);
   // remove the pad from the sequencer entirely — clearing a sound must leave no ghost steps/locks that keep triggering
   S.patterns.forEach(pt=>{ if(pt.steps[i]) pt.steps[i].fill(0);
     if(pt.locks) for(let s=0;s<MAXSTEPS;s++){ delete pt.locks[i+':'+s]; delete pt.locks['P'+i+':'+s]; }
-    if(pt.poly && pt.poly[i]) pt.poly[i].row=polyEmptyRow(); });   // the poly lane is part of the pad too
+    if(pt.poly && pt.poly[i]){ const lr=polyRowOf(pt,i); if(lr) lr.fill(0); } });   // the poly lane is part of the pad too
   drawPads(); drawEdit(); drawMixer(); drawSeq(); drawSteps(); dirty(); lcd('PAD '+padName(i)+' CLEARED · removed from all patterns'); });
 
 /* ---------------- per-pad channel MIXER ---------------- */
@@ -6925,7 +6949,23 @@ function polyRowOf(pat,p){
   const c=pat.poly && pat.poly[p];
   if(!c) return null;
   if(polyNeedsSplit(c)){
-    if(c.on){ const sp=polySplit(pat.steps[p], c.cells); c.row=sp.row; pat.steps[p]=sp.steps; }
+    if(c.on){
+      const sp=polySplit(pat.steps[p], c.cells);
+      c.row=sp.row;
+      /* Copied back INTO the existing array rather than swapping the new one in.
+         Replacing it was a real bug and a nasty one: drawSteps reads
+         pat.steps[pad] once and every step button closes over that reference,
+         and polyAlso() — which runs at the END of drawSteps — could trigger this
+         split and detach the array underneath all of them. The handlers then
+         wrote into an orphan, so tapping a lit step cleared nothing and the hit
+         went on playing. "When I remove the hit from the sequence it still plays
+         like it's there", exactly.
+         Identity matters far beyond that one closure — the notes lane, the
+         circle view and the morph snapshots all hold on to these rows — so the
+         rule is that a pattern's step array is mutated, never replaced. */
+      const dst=pat.steps[p];
+      if(dst) for(let i=0;i<dst.length;i++) dst[i]=sp.steps[i]||0;
+    }
     else c.row=polyEmptyRow();          // nothing was ever a poly cell — do not claim any
   }
   return c.row;
@@ -8306,13 +8346,48 @@ function selectPattern(i){
    Nothing here changes what the arrangement does. It just stops it happening
    behind your back, and puts the way out within reach. */
 function arrDriving(){ return (S.chainOn && S.chain.length>1) || (S.songOn && S.song.length>1); }
+
+/* EDITING HOLDS THE PATTERN.
+
+   Reported as "I click and add one then I click it again to remove it but the
+   sound still plays". It was not a removal bug at all, and no amount of looking
+   at the step code would have found it. The demo project ships with a SONG
+   running 1→2→3→4→5→6→3→4→5→6→7→8, and the grid follows it:
+
+     tap step 7          "ADDED to PTN 1"
+     song moves on       the grid now shows PTN 2, where step 7 is empty
+     tap it to undo      "ADDED to PTN 2"   <- the opposite of what was meant
+
+   The hit is now in two patterns and goes on playing. Both taps were obeyed
+   exactly; the target moved between them. The warning bar said the grid would
+   move, and that was not enough, because nobody reads a paragraph while their
+   finger is on a step.
+
+   So the first edit made while an arrangement is driving the grid stops the
+   arrangement, holds the pattern you are actually editing, and says so. It is
+   one tap to resume, and it only happens once per session — someone who turns
+   SONG back on has said what they want and is not argued with again. Editing is
+   a statement that you are working on THIS pattern; the transport can wait. */
+let arrHeldOnce=false;
+function holdForEdit(){
+  if(!arrDriving() || arrHeldOnce) return;
+  arrHeldOnce=true;
+  const which=S.chainOn?'CHAIN':'SONG';
+  const at=S.pattern+1;
+  S.chainOn=false; S.songOn=false;
+  drawSong(); drawSeq(); dirty();
+  lcd(which+' PAUSED so your edits stay on PTN '+at+' — it was about to move on, and your '
+    +'next tap would have landed on a different pattern. Press '+which+' to let it run again.');
+}
 function drawArrWarn(){
   const el=$('arrWarn'); if(!el) return;
   if(!arrDriving()){ el.style.display='none'; return; }
   const which=S.chainOn?'CHAIN':'SONG';
   const list=S.chainOn ? S.chain.map(x=>x+1).join(' → ') : S.song.map(x=>x.pat+1).join(' → ');
   $('arrWarnText').innerHTML = which+' is running ('+list+') — the grid follows it, so it is showing <b>PTN '
-    +(S.pattern+1)+'</b> and will move on. Edits land on whatever is showing at the time.';
+    +(S.pattern+1)+'</b> and will move on'+(arrHeldOnce
+      ? '. Edits land on whatever is showing at the time, so a hit added now and removed a moment later can end up in two different patterns.'
+      : '. The first step you edit will pause it, so your edits stay on one pattern.');
   el.style.display='flex';
 }
 $('arrWarnOff').addEventListener('click',()=>{
@@ -8381,6 +8456,7 @@ function drawSteps(){
       if(morphGuard()) return;
       if(seqLockMode){ seqSelStep=i; seqSelPoly=false; drawSteps(); drawPoly(); drawStepLock(); }
       else {
+        holdForEdit();                                 // stop the grid moving between taps
         const wasOn=row[i]>0;
         const editedPat=S.pattern;                     // capture BEFORE the arrangement can move on
         row[i]=wasOn?0:parseFloat($('stepVel').value);
@@ -8794,6 +8870,7 @@ function drawPoly(){
     el.addEventListener('click',()=>{
       if(morphGuard()) return;
       if(seqLockMode){ seqSelStep=i; seqSelPoly=true; drawSteps(); drawPoly(); drawStepLock(); return; }
+      holdForEdit();
       const wasOn=row[i]>0;
       row[i]=wasOn?0:parseFloat($('stepVel').value);
       if(wasOn && playing) stopPadVoices(S.seqPad);
@@ -8916,7 +8993,7 @@ $('btnRowClr').addEventListener('click',()=>{
   const hadGrid=pat.steps[p].some(v=>v>0), hadPoly=padPolyHits(pat,p);
   pat.steps[p].fill(0);
   for(let i=0;i<MAXSTEPS;i++){ delete pat.locks[p+':'+i]; delete pat.locks['P'+p+':'+i]; }
-  if(pat.poly && pat.poly[p]) pat.poly[p].row=polyEmptyRow();
+  if(pat.poly && pat.poly[p]){ const lr=polyRowOf(pat,p); if(lr) lr.fill(0); }
   seqSelStep=-1; seqSelPoly=false;
   drawSeq(); drawStepLock(); drawPads(); dirty();
   lcd(hadPoly

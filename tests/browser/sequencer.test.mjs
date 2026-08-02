@@ -127,6 +127,50 @@ export default async function ({ browser, base }) {
     t.ok('nothing past the shown end is saved', !saved.step20);
     t.ok('and everything shown is saved', saved.step0);
 
+    t.head('A TAP AND THE TAP THAT UNDOES IT LAND ON THE SAME PATTERN');
+    /* Reported as "I click and add one then I click it again to remove it but
+       the sound still plays", and it was not a removal bug. The demo project
+       ships with a SONG running, the grid follows it, and the pattern changed
+       between the two taps — so the second tap ADDED the hit to a different
+       pattern instead of removing it from the first. Both taps were obeyed
+       exactly; the target moved.
+
+       Reproduced here at 200 BPM so the arrangement moves quickly, then the
+       fix is checked: the first edit pauses the arrangement and holds the
+       pattern. */
+    const trap = await page.evaluate(async () => {
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      document.querySelector('#tabs button[data-v="seq"]').click();
+      S.songOn = true; S.chainOn = false; S.bpm = 200;
+      if (S.song.length < 2) S.song = [{ pat: 0, reps: 1 }, { pat: 1, reps: 1 }];
+      arrHeldOnce = false;                       // a fresh session, before any edit
+      const pad = S.seqPad;
+      S.patterns.forEach(pt => pt.steps[pad].fill(0));
+      drawSeq();
+      const out = { driving: arrDriving(), warn: document.getElementById('arrWarn').style.display };
+      startSeq();
+      await wait(300);
+      out.patAtAdd = S.pattern + 1;
+      document.querySelectorAll('#stepgrid .step')[6].click();          // ADD
+      out.said = document.getElementById('lcdmsg').textContent;
+      out.pausedSong = !S.songOn && !S.chainOn;
+      // give the arrangement every chance to move the grid out from under us
+      await wait(2500);
+      out.patAtRemove = S.pattern + 1;
+      document.querySelectorAll('#stepgrid .step')[6].click();          // REMOVE
+      out.setIn = S.patterns.map((pt, i) => pt.steps[pad][6] > 0 ? i + 1 : null).filter(Boolean);
+      stopSeq();
+      return out;
+    });
+    t.ok('the demo really is driven by an arrangement', trap.driving && trap.warn === 'flex');
+    t.note('    "' + trap.said + '"');
+    t.ok('the first step edit pauses it', trap.pausedSong);
+    t.ok('and says so, naming the way back', /PAUSED/.test(trap.said) && /Press SONG/.test(trap.said));
+    t.ok('so the grid is on the same pattern for both taps',
+      trap.patAtAdd === trap.patAtRemove, trap.patAtAdd + ' → ' + trap.patAtRemove);
+    t.ok('and the hit that was added is really gone, from every pattern',
+      trap.setIn.length === 0, 'still set in PTN ' + trap.setIn.join(','));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
