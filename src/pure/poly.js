@@ -70,21 +70,69 @@ export function polyCfg(pat, p) {
       bpm: clampNum(c.bpm, POLY_MIN_BPM, POLY_MAX_BPM, 120),
       cells: clampInt(c.cells, POLY_MIN_CELLS, POLY_MAX_CELLS, 4),
       lock: c.lock !== false,
+      /* null means "never split out of the grid row" — the caller does that,
+         because it is a mutation and this module does not own the pattern. */
+      row: Array.isArray(c.row) ? c.row : null,
     };
   }
   /* R144-R146: {mode:'lock'|'free', len, bars}. A locked track was `len` hits
      across `bars` bars, which is len/bars hits per bar; a free one counted its
      BPM in sixteenths, so its hit rate was bpm*4. Both convert exactly. */
   const legacyLen = clampInt(c.len, 1, POLY_MAX_CELLS, 4);
+  const row = Array.isArray(c.row) ? c.row : null;
   if (c.mode === 'free') {
     return { bpm: clampNum(Number(c.bpm) * 4, POLY_MIN_BPM, POLY_MAX_BPM, 120),
-      cells: legacyLen, lock: false, migrated: true };
+      cells: legacyLen, lock: false, row, migrated: true };
   }
   const bars = clampInt(c.bars, 1, 8, 1);
-  return { hitsPerBar: legacyLen / bars, cells: legacyLen, lock: true, migrated: true };
+  return { hitsPerBar: legacyLen / bars, cells: legacyLen, lock: true, row, migrated: true };
 }
 
 export function isPoly(pat, p) { return polyCfg(pat, p) !== null; }
+
+/* THE POLY LANE IS NOT THE GRID ROW.
+
+   R144-R148 kept a poly pad's cells in the pattern's own step row, so the step
+   grid and the poly panel were two views of one array. Reported as "both
+   screens do the same thing", which they did, exactly: turning POLY on
+   re-labelled the main grid as three cells instead of sixteen and the pad lost
+   its ordinary part.
+
+   They are two lanes now. The grid keeps the pad's normal pattern at the
+   project's tempo; the poly lane holds its own-tempo hits; the pad plays both,
+   and neither has to agree with the other. That is what makes "put a triple
+   hit on one pad" possible without giving up the part already written there.
+
+   Splitting an old project MOVES the cells across rather than copying them.
+   They were authored as poly cells, and leaving a copy in the grid would add
+   hits to the ordinary pattern that nobody wrote — the app's one rule is that
+   the grid shows exactly what it plays, and a silent duplicate breaks it in
+   both directions at once. */
+export function polyEmptyRow() { return new Array(POLY_MAX_CELLS).fill(0); }
+
+export function polyNeedsSplit(c) { return !!(c && !Array.isArray(c.row)); }
+
+export function polySplit(stepRow, cells) {
+  const n = clampInt(cells, POLY_MIN_CELLS, POLY_MAX_CELLS, 4);
+  const row = polyEmptyRow();
+  if (!Array.isArray(stepRow)) return { row, steps: [] };   // nothing to move
+  const steps = stepRow.slice();
+  for (let i = 0; i < n; i++) {
+    row[i] = steps[i] > 0 ? steps[i] : 0;
+    steps[i] = 0;
+  }
+  return { row, steps };
+}
+
+/* Cells past the end are removed rather than hidden, the same rule the pattern
+   length follows. Returns how many went, so the app can say so out loud. */
+export function polyTrimRow(row, cells) {
+  if (!Array.isArray(row)) return 0;
+  const n = clampInt(cells, POLY_MIN_CELLS, POLY_MAX_CELLS, 4);
+  let cut = 0;
+  for (let i = n; i < row.length; i++) if (row[i] > 0) { row[i] = 0; cut++; }
+  return cut;
+}
 
 /* The project's tempo in the same units, derived from the bar. A bar is four
    beats, so a pad matching this number hits once per beat. */

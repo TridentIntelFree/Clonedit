@@ -2110,8 +2110,51 @@
      recipes push SCREEN SIZE off the bottom of the help card, on the short
      screen the setting is for. Opening the menu from the suggestion scrolls to
      it now.
+   - R149: TWO LANES, NOT ONE ARRAY BEHIND TWO VIEWS. "Our sequencer doesn't
+     move after selecting poly and both screens do the same thing... The top
+     screen should show the standard however many bar pattern... I want the
+     bottom screen sequencer to not have to agree with the top, so that if I
+     want to put a triple hit on one pad I can do so in poly."
+     Both halves of that were true and both had the same cause: the poly cells
+     WERE the pad's grid row. Turning POLY on re-pointed the step grid at those
+     cells — 3 boxes instead of 16, marked teal — so the two grids could not
+     disagree by construction, and the part already written on that pad was
+     taken away. Reasonable when the lane was conceived as replacing the grid;
+     wrong, and not what was asked for.
+     They are two lanes now. The pad plays its ordinary row at the project's
+     tempo AND its own-tempo lane, and neither has to agree with the other. A
+     kick on the grid and a triplet in the lane is one pad doing two things,
+     which is the whole request. Proved by counting what the pad fires in a
+     bar: at 100 BPM against a 3:4 lane, 0 · 0.8 · 1.2 · 1.6 — the grid's two
+     and the lane's three, meeting on the downbeat.
+     Locks are namespaced with a leading P for the same reason. Sharing the key
+     meant a ratchet put on grid step 2 also landed on poly cell 2, invisible
+     from either panel. Nested tuplets still work; they belong to the cell you
+     set them on, and the lock editor's title now says which lane it is
+     editing.
+     A project from before the split has its cells MOVED across, not copied.
+     They were authored as poly cells, and leaving a copy in the grid would add
+     hits to the ordinary pattern that nobody wrote. Turning POLY on for the
+     first time does NOT move anything: a new lane is created with a row of its
+     own, so switching it on cannot quietly take four hits off your part.
+     "Doesn't move" was literal. drawPoly worked out which cell was sounding,
+     but nothing redrew during playback, so the head sat on cell 0 from the
+     moment the panel opened. The step grid's head is stepped by markStep once
+     per sixteenth, which is the grid's clock and not this lane's — a pad at
+     300 BPM moves between those and one at 30 sits still through several — so
+     the lane rides the frame loop and writes to the DOM only when the cell
+     changes.
+     The bounce had to be told twice. Removing the scheduler's `continue` made
+     live playback play both lanes; the offline render had its own `continue`
+     and went on playing only the poly lane, so the exported file would not
+     have been what you heard. Caught by counting hits in a render rather than
+     by reading the code.
+     And because the grid above no longer shows everything a poly pad plays, a
+     teal line under it says the lane is there and how much of it is lit. This
+     sequencer's one rule is that it plays exactly what it shows; two lanes are
+     allowed, a hidden one is not.
    ================================================================ */
-const BUILD = 'JBH-88 · R148 · 2026-08-02 · a size for a small screen';
+const BUILD = 'JBH-88 · R149 · 2026-08-02 · two lanes on one pad';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -3123,6 +3166,7 @@ function meterLoop(){
   if(pk>0.02) lastLoudT=now;
   if(pk>=0.895) mClipHold=now;
   $('mClip').classList.toggle('on', now-mClipHold<800);
+  markPolyHead();          // the poly lane runs on its own clock, not the grid's
   limiterWatch(now);
   // per-channel mixer meters — only when the MIX tab is visible
   if(mixMeters.length && $('v-mix') && $('v-mix').classList.contains('on')){
@@ -3759,7 +3803,9 @@ $('mxPadDly').addEventListener('input',e=>{ const p=S.pads[S.editPad]; p.dly=par
   if(LIVE) LIVE.pads[S.editPad].dly.gain.setTargetAtTime(p.dly,AC.currentTime,0.01); });
 $('epClear').addEventListener('click',()=>{ const i=S.editPad; stopPadVoices(i); S.pads[i]=newPad(i); delete warpOrig[i];
   // remove the pad from the sequencer entirely — clearing a sound must leave no ghost steps/locks that keep triggering
-  S.patterns.forEach(pt=>{ if(pt.steps[i]) pt.steps[i].fill(0); if(pt.locks) for(let s=0;s<MAXSTEPS;s++) delete pt.locks[i+':'+s]; });
+  S.patterns.forEach(pt=>{ if(pt.steps[i]) pt.steps[i].fill(0);
+    if(pt.locks) for(let s=0;s<MAXSTEPS;s++){ delete pt.locks[i+':'+s]; delete pt.locks['P'+i+':'+s]; }
+    if(pt.poly && pt.poly[i]) pt.poly[i].row=polyEmptyRow(); });   // the poly lane is part of the pad too
   drawPads(); drawEdit(); drawMixer(); drawSeq(); drawSteps(); dirty(); lcd('PAD '+padName(i)+' CLEARED · removed from all patterns'); });
 
 /* ---------------- per-pad channel MIXER ---------------- */
@@ -6802,6 +6848,37 @@ function stepDur(){ return 60/bpmAbs()/4; }
    measures from here and never re-anchors — that is what makes it free. */
 let seqT0=0;
 
+/* THE TWO LANES.
+
+   A poly pad has an ordinary row on the grid AND a lane of its own at its own
+   tempo, and it plays both. Until R149 they were one array: turning POLY on
+   re-pointed the step grid at the poly cells, so the grid and the panel could
+   not disagree and the pad lost the part already written on it. Reported as
+   "both screens do the same thing" and "I want the bottom sequencer not to
+   have to agree with the top", which is exactly right.
+
+   Locks are namespaced with a leading P for the same reason. Sharing the key
+   meant a ratchet put on grid step 2 also landed on poly cell 2 — invisible
+   from either panel, and the sort of quiet coupling this app keeps finding in
+   itself. The poly lane keeps its own, so the nested tuplets that ratcheting a
+   cell gives you still work and belong to the cell you set them on. */
+const LK=(p,i,poly)=>(poly?'P':'')+p+':'+i;
+
+/* A poly pad's cells, split out of the grid row they used to share the moment
+   anything reads them. Every reader comes through here — the scheduler, the
+   bounce and both grids — so a project written before R149 is converted once,
+   by whichever touches it first, and all three then agree. Idempotent, and
+   after the first call it is one Array.isArray away from free. */
+function polyRowOf(pat,p){
+  const c=pat.poly && pat.poly[p];
+  if(!c) return null;
+  if(polyNeedsSplit(c)){
+    if(c.on){ const sp=polySplit(pat.steps[p], c.cells); c.row=sp.row; pat.steps[p]=sp.steps; }
+    else c.row=polyEmptyRow();          // nothing was ever a poly cell — do not claim any
+  }
+  return c.row;
+}
+
 /* One poly cell, fired with everything an ordinary step gets: probability,
    nudge, humanize, chords, ratchet, and the MIDI mirror. A poly track that
    quietly ignored half the per-step locks would be a second-class track, and
@@ -6812,7 +6889,7 @@ let seqT0=0;
    `pd` is this track's own step duration, so ratchet and note length subdivide
    the poly pulse rather than the grid's sixteenth. */
 function polyFire(pat, p, idx, v, when, pd, fired){
-  const lk=pat.locks && pat.locks[p+':'+idx];
+  const lk=pat.locks && pat.locks[LK(p,idx,true)];
   if(lk && lk.prob!=null && Math.random()>lk.prob) return;
   if(lk && lk.nudge) when+=lk.nudge*pd;
   let hv=v;
@@ -6878,17 +6955,21 @@ function schedStep(barStep, absStep, t){
   for(let p=0;p<NPADS;p++){
     if(seqSolo && p!==S.seqPad) continue;
     const pc=polyCfg(pat,p);
-    /* A poly track's cells do not line up with the grid, so it is scheduled on
-       its own clock rather than by step index. Swing is deliberately not applied
-       — delaying every second cell of a triplet is not a shuffle, it is a
-       different and worse rhythm — and the explainer says so. */
+    /* A poly track's cells do not line up with the grid, so its lane is
+       scheduled on its own clock rather than by step index. Swing is
+       deliberately not applied — delaying every second cell of a triplet is not
+       a shuffle, it is a different and worse rhythm — and the explainer says so.
+
+       No `continue` after this: the pad ALSO plays its ordinary grid row. Two
+       independent lanes is the whole point, and it is what lets a triplet go on
+       a pad without taking away the part already written there. */
     if(pc){
+      const prow=polyRowOf(pat,p);
       for(const ev of polyHitsForStep(pc, absStep, t, sd)){
-        const v=pat.steps[p][ev.idx];
+        const v=prow[ev.idx];
         if(!(v>0)) continue;
         polyFire(pat, p, ev.idx, v, ev.when, polyStepDur(pc, NSTEPS*sd), fired);
       }
-      continue;
     }
     const L=trackLen(pat,p), idx=posMod(absStep,L);
     const v=pat.steps[p][idx];
@@ -6935,13 +7016,10 @@ function flashFired(fired){ // visual proof a row actually triggered
 }
 function markStep(absStep){
   curAbsStep=absStep;
-  /* The selected track's playhead follows ITS clock. A poly track does not
-     advance one cell per step, so stepping the highlight with the grid would
-     draw a playhead that is nowhere near the hit you can hear. */
-  const pcfgM=polyCfg(curPat(),S.seqPad);
-  const cur=pcfgM
-    ? Math.max(0,polyIndexAt(pcfgM, seqT0, 0, AC?AC.currentTime:0, NSTEPS*stepDur()))
-    : posMod(absStep, trackLen(curPat(),S.seqPad));
+  /* The step grid is the grid, always. Its playhead walks the grid's own clock
+     even when the selected pad also has a poly lane — that lane has its own
+     row, below, with its own head running at its own rate. */
+  const cur=posMod(absStep, trackLen(curPat(),S.seqPad));
   curStep=cur; lastStepTime=AC?AC.currentTime:0;
   document.querySelectorAll('#stepgrid .step').forEach((el,i)=>el.classList.toggle('cur',i===cur));
   const cur16=posMod(absStep,curPatLen());
@@ -8211,7 +8289,8 @@ function drawSeq(){
     const b=document.createElement('button'); b.textContent=padName(idx).slice(1);
     b.setAttribute('aria-label','Edit track '+padName(idx)+(S.pads[idx].name?', '+S.pads[idx].name:''));
     if(idx===S.seqPad) b.classList.add('on');
-    b.addEventListener('click',()=>{ S.seqPad=idx; S.editPad=idx; manualPad=true; seqSelStep=-1; drawSeq(); drawStepLock(); drawPads(); });
+    b.addEventListener('click',()=>{ S.seqPad=idx; S.editPad=idx; manualPad=true;
+      seqSelStep=-1; seqSelPoly=false; drawSeq(); drawStepLock(); drawPads(); });
     st.appendChild(b);
   }
   $('seqPadName').textContent=padName(S.seqPad)+(S.pads[S.seqPad].name?' · '+S.pads[S.seqPad].name:'');
@@ -8221,19 +8300,22 @@ function drawSeq(){
       b.style.display=on?'':'none';
       if(on) b.textContent='MORPH RUNNING · PTN '+(S.morph.from+1)+' → PTN '+(S.morph.to+1)
         +' · '+Math.round(S.morph.amt*100)+'% — showing the blend, editing is off'; } }
-  drawSteps(); drawAuto(); drawSong();
+  /* The poly lane belongs to the selected pad, so it has to follow the
+     selection like the step grid does. It did not, which left the panel showing
+     the previous pad's cells — harmless while the two grids were one array, and
+     wrong the moment they stopped being. */
+  drawSteps(); drawPoly(); drawAuto(); drawSong();
 }
-let seqLockMode=false, seqSelStep=-1;
+let seqLockMode=false, seqSelStep=-1, seqSelPoly=false;
 function drawSteps(){
   const gr=$('stepgrid'); gr.innerHTML='';
   const pat=curPat(), row=pat.steps[S.seqPad];
-  /* A poly track's row is as long as its cell count, and the grid has to say so.
-     Showing 16 boxes for a track that plays 3 would break the one rule this app
-     is built on: only show what will play. The cells are wider and marked, so it
-     is visible at a glance that this row is not on the grid's pulse. */
-  const pcfg=polyCfg(pat,S.seqPad);
-  const L=pcfg?pcfg.cells:trackLen(pat,S.seqPad);
-  gr.classList.toggle('polyrow',!!pcfg);
+  /* The pattern, at the project's tempo — nothing else. A pad with a poly lane
+     used to REPLACE this with its cells, which took away the part already
+     written on that pad and made the two grids identical. The lane is drawn
+     below, in the POLY panel, and #polyAlso says it is there so the app is not
+     playing something that nothing on screen shows. */
+  const L=trackLen(pat,S.seqPad);
   $('seqLenV').textContent=L;
   for(let i=0;i<L;i++){
     const el=document.createElement('button'); el.className='step'+(i%4===0?' q2':'');
@@ -8241,11 +8323,11 @@ function drawSteps(){
     if(v>0){ el.classList.add('on'); el.style.opacity=String(0.45+v*0.55); }
     el.setAttribute('aria-label','Step '+(i+1)+' of '+L+', '+padName(S.seqPad));
     el.setAttribute('aria-pressed', v>0?'true':'false');
-    if(pat.locks && stepHasLock(pat.locks[S.seqPad+':'+i])) el.classList.add('lockmark');
-    if(seqLockMode && i===seqSelStep) el.classList.add('selstep');
+    if(pat.locks && stepHasLock(pat.locks[LK(S.seqPad,i,false)])) el.classList.add('lockmark');
+    if(seqLockMode && !seqSelPoly && i===seqSelStep) el.classList.add('selstep');
     el.addEventListener('click',()=>{
       if(morphGuard()) return;
-      if(seqLockMode){ seqSelStep=i; drawSteps(); drawStepLock(); }
+      if(seqLockMode){ seqSelStep=i; seqSelPoly=false; drawSteps(); drawPoly(); drawStepLock(); }
       else {
         const wasOn=row[i]>0;
         const editedPat=S.pattern;                     // capture BEFORE the arrangement can move on
@@ -8260,6 +8342,7 @@ function drawSteps(){
     });
     gr.appendChild(el);
   }
+  polyAlso();    // and say so when this pad has a second lane running below
   drawNotes();   // keep the melodic lane in step with the velocity grid
   drawPads();    // pad LEDs mirror the current pattern's usage
   drawSil();     // silencer row belongs to the pattern too
@@ -8321,7 +8404,7 @@ $('btnLenDn').addEventListener('click',()=>setTrackLen(-1));
 $('btnLenUp').addEventListener('click',()=>setTrackLen(1));
 $('btnStepLock').addEventListener('click',()=>{
   seqLockMode=!seqLockMode; $('btnStepLock').classList.toggle('on',seqLockMode);
-  if(!seqLockMode) seqSelStep=-1;
+  if(!seqLockMode){ seqSelStep=-1; seqSelPoly=false; }
   $('lockHint').textContent=seqLockMode?'tap a step to edit its locks':'tap step to toggle';
   drawSteps(); drawStepLock();
 });
@@ -8329,9 +8412,15 @@ function drawStepLock(){
   const panel=$('steplock');
   if(!seqLockMode || seqSelStep<0){ panel.style.display='none'; return; }
   panel.style.display='block';
-  const lk=S.patterns[S.pattern].locks[S.seqPad+':'+seqSelStep]||{};
-  $('slTitle').textContent=padName(S.seqPad)+' · step '+(seqSelStep+1);
-  const sv=S.patterns[S.pattern].steps[S.seqPad][seqSelStep];
+  /* Two lanes, one editor. Which one is being edited comes from where you
+     tapped, and the title says so — "cell 2" and "step 2" are different hits at
+     different times on the same pad, and an editor that could not tell them
+     apart would write one onto the other. */
+  const pat=S.patterns[S.pattern];
+  const lk=pat.locks[LK(S.seqPad,seqSelStep,seqSelPoly)]||{};
+  $('slTitle').textContent=padName(S.seqPad)+(seqSelPoly?' · POLY cell ':' · step ')+(seqSelStep+1);
+  const srow=seqSelPoly?polyRowOf(pat,S.seqPad):pat.steps[S.seqPad];
+  const sv=srow?srow[seqSelStep]:0;
   $('slVel').value=sv>0?sv:parseFloat($('stepVel').value);
   $('slVelV').textContent=sv>0?Math.round(sv*100)+'%':'(step off)';
   $('slPitch').value=lk.pitch||0; $('slPitchV').textContent=lk.pitch?((lk.pitch>0?'+':'')+lk.pitch+' st'):'off';
@@ -8342,24 +8431,28 @@ function drawStepLock(){
 function setLock(field,val,def){
   if(seqSelStep<0) return;
   if(morphGuard()) return;
-  const pat=S.patterns[S.pattern], k=S.seqPad+':'+seqSelStep, lk=pat.locks[k]||{};
+  const pat=S.patterns[S.pattern], k=LK(S.seqPad,seqSelStep,seqSelPoly), lk=pat.locks[k]||{};
   if(field==='pitch'){ delete lk.pitches;   // the step-lock pitch control edits a single note — collapse any chord here
     val=snapToScale(val); }                  // SCALE LOCK: land in key
   if(val===def) delete lk[field]; else lk[field]=val;
   if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
-  drawSteps(); drawStepLock(); dirty();
+  drawSteps(); drawPoly(); drawStepLock(); dirty();
 }
 $('slVel').addEventListener('input',e=>{
   if(seqSelStep<0) return;
   if(morphGuard()) return;
-  S.patterns[S.pattern].steps[S.seqPad][seqSelStep]=parseFloat(e.target.value);
-  drawSteps(); drawStepLock(); dirty();
+  const pat=S.patterns[S.pattern];
+  const row=seqSelPoly?polyRowOf(pat,S.seqPad):pat.steps[S.seqPad];
+  if(row) row[seqSelStep]=parseFloat(e.target.value);
+  drawSteps(); drawPoly(); drawStepLock(); dirty();
 });
 $('slPitch').addEventListener('input',e=>setLock('pitch',parseInt(e.target.value,10),0));
 $('slProb').addEventListener('input',e=>setLock('prob',parseFloat(e.target.value),1));
 $('slRat').addEventListener('input',e=>setLock('rat',parseInt(e.target.value,10),1));
 $('slNudge').addEventListener('input',e=>setLock('nudge',parseFloat(e.target.value),0));
-$('slClr').addEventListener('click',()=>{ if(morphGuard()) return; delete S.patterns[S.pattern].locks[S.seqPad+':'+seqSelStep]; drawSteps(); drawStepLock(); dirty(); });
+$('slClr').addEventListener('click',()=>{ if(morphGuard()) return;
+  delete S.patterns[S.pattern].locks[LK(S.seqPad,seqSelStep,seqSelPoly)];
+  drawSteps(); drawPoly(); drawStepLock(); dirty(); });
 
 /* ---- melodic NOTES lane: a scale grid that writes per-step pitch locks.
    Rows are scale notes relative to the pad's own root (a sample plays at
@@ -8546,7 +8639,12 @@ function polyRaw(){
   /* A pad that has never been touched starts at the project tempo — one hit per
      beat, which sounds like the ordinary grid and is the least surprising place
      to begin experimenting from. */
-  if(!c) pat.poly[S.seqPad]={on:false, bpm:Math.round(bpmAbs()), cells:4, lock:true};
+  /* A row from the start. Without it the lane looks exactly like a pre-R149
+     setting to polyRowOf, which would then MOVE the pad's first four grid hits
+     into it — so switching POLY on would quietly take four hits out of the part
+     you already wrote. The move is only ever right for a project saved before
+     the two lanes existed. */
+  if(!c) pat.poly[S.seqPad]={on:false, bpm:Math.round(bpmAbs()), cells:4, lock:true, row:polyEmptyRow()};
   else if(c.mode!=null || c.len!=null){
     /* An old-format setting is converted the moment it is edited, so the panel
        never has to show two shapes of the same thing. */
@@ -8561,15 +8659,20 @@ function polySet(fn){
   if(morphGuard()) return;
   const c=polyRaw(); fn(c);
   const cfg=polyCfg(curPat(),S.seqPad);
-  /* The row is as long as its cell count, so hits written past the new end
+  /* The lane is as long as its cell count, so hits written past the new end
      would be invisible and still sound. Same rule the pattern length follows:
-     removed, and said out loud. */
+     removed, and said out loud. It trims the POLY lane — the pad's grid row is
+     a different lane and shortening the cells has nothing to do with it. */
   if(cfg){
-    const row=curPat().steps[S.seqPad]; let cut=0;
-    for(let i=cfg.cells;i<MAXSTEPS;i++) if(row[i]>0){ row[i]=0; cut++; }
-    if(cut) lcd(cut+(cut>1?' hits past the new end were':' hit past the new end was')+' removed, not hidden.');
+    const cut=polyTrimRow(polyRowOf(curPat(),S.seqPad), cfg.cells);
+    if(cut){
+      for(let i=cfg.cells;i<POLY_MAX_CELLS;i++) delete curPat().locks[LK(S.seqPad,i,true)];
+      lcd(cut+(cut>1?' poly cells past the new end were':' poly cell past the new end was')+' removed, not hidden.');
+    }
   }
-  drawPoly(); drawSteps(); drawSeq(); dirty();
+  if(seqSelPoly && cfg && seqSelStep>=cfg.cells) seqSelStep=-1;
+  drawSeq();          // redraws both lanes
+  drawStepLock(); dirty();
 }
 /* Say what the setting MEANS, in the terms the person set it in. The first
    version reported a ratio and a cycle count and left the reader to work out
@@ -8610,19 +8713,21 @@ function polyWrite(){
   $('polyLockHint').textContent = cfg.lock
     ? (snapped? 'nudged '+raw.bpm+' → '+(Math.round(s.eff*10)/10)+' so it fits the bar' : 'fits the bar exactly')
     : 'exactly '+raw.bpm+' BPM, wherever that falls';
-  $('polyCellHint').textContent='row repeats every '+cfg.cells+' hit'+(cfg.cells>1?'s':'');
+  $('polyCellHint').textContent='lane repeats every '+cfg.cells+' hit'+(cfg.cells>1?'s':'');
   document.querySelectorAll('.polypre').forEach(b=>{
     const want=mainBpmOf(bar)*parseFloat(b.dataset.mul);
     b.classList.toggle('on', Math.abs(want-raw.bpm)<0.6);
   });
 }
-/* The row, drawn as its own cells. Same data as the step grid, same edits; only
-   the number of cells differs, which is the whole point. */
+/* The pad's OWN lane, drawn as its own cells with its own data. Not the step
+   grid at a different length — a second sequencer for the same pad, running at
+   the pad's tempo while the grid above runs at the project's. */
 function drawPoly(){
   polyWrite();
   const gr=$('polygrid'); if(!gr) return; gr.innerHTML='';
+  polyHeadAt=-2;                                   // the cells are new objects
   const cfg=polyRead(); if(!cfg) return;
-  const pat=curPat(), row=pat.steps[S.seqPad];
+  const pat=curPat(), row=polyRowOf(pat,S.seqPad);
   const cur = (playing&&AC) ? polyIndexAt(cfg, seqT0, 0, AC.currentTime, polyBar()) : -1;
   for(let i=0;i<cfg.cells;i++){
     const el=document.createElement('button');
@@ -8630,11 +8735,13 @@ function drawPoly(){
     const v=row[i];
     if(v>0){ el.classList.add('on'); el.style.opacity=String(0.45+v*0.55); }
     if(i===cur) el.classList.add('cur');
-    el.setAttribute('aria-label','Cell '+(i+1)+' of '+cfg.cells+', '+padName(S.seqPad));
+    el.setAttribute('aria-label','Poly cell '+(i+1)+' of '+cfg.cells+', '+padName(S.seqPad));
     el.setAttribute('aria-pressed', v>0?'true':'false');
-    if(pat.locks && stepHasLock(pat.locks[S.seqPad+':'+i])) el.classList.add('lockmark');
+    if(pat.locks && stepHasLock(pat.locks[LK(S.seqPad,i,true)])) el.classList.add('lockmark');
+    if(seqLockMode && seqSelPoly && i===seqSelStep) el.classList.add('selstep');
     el.addEventListener('click',()=>{
       if(morphGuard()) return;
+      if(seqLockMode){ seqSelStep=i; seqSelPoly=true; drawSteps(); drawPoly(); drawStepLock(); return; }
       const wasOn=row[i]>0;
       row[i]=wasOn?0:parseFloat($('stepVel').value);
       if(wasOn && playing) stopPadVoices(S.seqPad);
@@ -8642,6 +8749,44 @@ function drawPoly(){
     });
     gr.appendChild(el);
   }
+}
+
+/* THE LANE'S OWN PLAYHEAD.
+
+   Reported as "our sequencer doesn't move after selecting poly", and it did
+   not: drawPoly worked out which cell was sounding, but nothing redrew while
+   the sequence ran, so the head sat on cell 0 from the moment the panel opened.
+   The step grid's head is stepped by markStep once per sixteenth, which is the
+   grid's clock and not this lane's — a pad at 300 BPM moves between those, and
+   one at 30 sits still through several. So it rides the frame loop instead, and
+   only writes to the DOM when the cell actually changes. */
+let polyHeadAt=-2;
+function markPolyHead(){
+  const gr=$('polygrid');
+  if(!polyMode || !gr || !gr.children.length){ polyHeadAt=-2; return; }
+  const cfg=polyRead();
+  const cur=(cfg && playing && AC) ? polyIndexAt(cfg, seqT0, 0, AC.currentTime, polyBar()) : -1;
+  if(cur===polyHeadAt) return;
+  polyHeadAt=cur;
+  const cells=gr.children;
+  for(let i=0;i<cells.length;i++) cells[i].classList.toggle('cur', i===cur);
+}
+
+/* The grid above no longer shows everything this pad plays, so something has to
+   say the other lane is there. Without it the app would be sounding hits that
+   nothing on screen accounts for, which is the one thing this sequencer is not
+   allowed to do. */
+function polyAlso(){
+  const el=$('polyAlso'); if(!el) return;
+  const cfg=polyRead();
+  if(!cfg){ el.style.display='none'; return; }
+  const bar=polyBar(), eff=polyEffectiveBpm(cfg,bar);
+  const row=polyRowOf(curPat(),S.seqPad);
+  let n=0; for(let i=0;i<cfg.cells;i++) if(row[i]>0) n++;
+  el.style.display='block';
+  el.innerHTML='<b>+ POLY LANE</b> — this pad also plays '+n+' of '+cfg.cells+
+    ' cell'+(cfg.cells>1?'s':'')+' at '+(Math.round(eff*10)/10)+' BPM, below. '+
+    'The grid above is its part on the main beat; the two are separate.';
 }
 $('btnPoly').addEventListener('click',()=>{
   polyMode=!polyMode; $('btnPoly').classList.toggle('on',polyMode);
@@ -9816,6 +9961,11 @@ function applySessionDoc(doc, bufs){
       // projects written before the trim carry hits past the end of a row:
       // silent, saved, and waiting to reappear the moment the length grows
       trimTrack(pt,p,pt.len[p]);
+      /* Pre-R149 a poly pad kept its cells in the grid row above. Split them
+         out here rather than leaving it to whoever reads first, so a project
+         that is loaded and immediately bounced converts on the same path a
+         played one does. */
+      if(pt.poly && pt.poly[p]) polyRowOf(pt,p);
     }
     for(let i=pt.plen;i<pt.sil.length;i++) pt.sil[i]=0;
   });
@@ -10718,9 +10868,10 @@ async function renderMixInner(padSet, traxSet, opt){
               t0p = stepT - posMod(absB+st, cycSteps)*sd;
               idx0 = Math.floor((absB+st)/cycSteps)*Math.round(polyLockedHitsPerBar(pc,barDur)*cycB);
             }
+            const prow=polyRowOf(pat,p);
             for(const ev of polyEvents(pc, t0p, idx0, stepT, stepT+sd, barDur)){
-              const pv=pat.steps[p][ev.idx]; if(!(pv>0)) continue;
-              const plk=pat.locks&&pat.locks[p+':'+ev.idx];
+              const pv=prow[ev.idx]; if(!(pv>0)) continue;
+              const plk=pat.locks&&pat.locks[LK(p,ev.idx,true)];
               if(!worst && plk && plk.prob!=null && takeRnd()>plk.prob) continue;
               let pw=ev.when; if(plk&&plk.nudge) pw+=plk.nudge*pd;
               let phv=pv;
@@ -10733,7 +10884,9 @@ async function renderMixInner(padSet, traxSet, opt){
                 else events.push({when:pw,p,v:phv,pitch,chord:pIsChord});
               });
             }
-            continue;
+            /* No `continue`: the pad plays its ordinary grid row as well, the
+               same as it does live. The two paths must agree about that or the
+               file is not what you heard. */
           }
           const L=trackLen(pat,p), idx=posMod(rev?-(absB+st):(absB+st),L);
           const v=pat.steps[p][idx]; if(!(v>0)) continue;
@@ -11217,7 +11370,7 @@ const TOUR=[
     body:'<b>CIRCLE</b> draws each part as a turning ring. Rings of different lengths drift against each other, which makes polymeter obvious instead of invisible.<br><br><b>&#128274; SCALE</b> pins every pitch you write to a key, so nothing you play lands wrong.' },
 
   { tab:'seq', el:'btnPoly', title:'ONE PAD, ITS OWN TEMPO',
-    body:'<b>POLY</b> gives the selected pad a BPM of its own, running against the project tempo. The same number as the project means one hit per beat; <b>3:4</b> puts three hits in the time of four.<br><br>That is a <b>polyrhythm</b> — two speeds at once, which a grid of sixteen steps cannot write, because sixteen does not divide by three.' },
+    body:'<b>POLY</b> gives the selected pad a <i>second</i> lane at a BPM of its own, running against the project tempo — the pad plays both. The same number as the project is one hit per beat; <b>3:4</b> puts three hits in the time of four.<br><br>That is a <b>polyrhythm</b> — two speeds at once, which a grid of sixteen steps cannot write, because sixteen does not divide by three.' },
 
   { tab:'trax', el:'traxlist', title:'TRAX — RECORD YOUR TAKE',
     body:'These are your tape lanes. Arm one with <b>&#9679;</b>, press PLAY and it records a pass — the whole mix, just what you play in <b>LIVE</b>, or the mic.<br><br>Stack lanes into an arrangement, and reopen any take in the sample editor to chop it like any other sound.' },
@@ -11516,7 +11669,7 @@ const recipeBook=[
     waitFor:'press POLY.', didIt:'Open.',
     tap:'btnPoly' },
   { tab:'seq', el:'btnPolyOn', title:'GIVE IT ITS OWN BPM',
-    body:'<b>MAIN BEAT</b> is the ordinary grid. Press <b>OWN BPM</b> and this pad stops using the grid entirely — it gets a tempo instead, and a row of cells at that tempo.',
+    body:'<b>MAIN BEAT</b> is the ordinary grid. Press <b>OWN BPM</b> and this pad gets a <i>second</i> lane below, with its own tempo and its own cells.<br><br>The step grid above keeps the part already written on this pad and keeps playing it. The pad plays both.',
     waitFor:'press OWN BPM.', didIt:'It has its own pulse now.',
     tap:'btnPolyOn', done:()=>!!polyCfg(curPat(),S.seqPad) },
   { tab:'seq', el:'polyPre34', title:'THREE AGAINST FOUR',
@@ -11525,11 +11678,11 @@ const recipeBook=[
     base:()=>{ const c=polyCfg(curPat(),S.seqPad); return c?c.bpm:0; },
     done:b=>{ const c=polyCfg(curPat(),S.seqPad); return !!c && c.bpm!==b; } },
   { el:'btnPlay', title:'HEAR IT',
-    body:'Two pulses, one bar. They start together, pull apart, and meet again on the downbeat — that is the whole effect.<br><br>Tap the cells to choose which of the pad’s own hits actually sound.',
+    body:'Two pulses, one bar. They start together, pull apart, and meet again on the downbeat — that is the whole effect.<br><br>Tap the cells to write the lane. Nothing you do down here touches the grid above, and nothing up there touches the lane.',
     waitFor:'press PLAY.', didIt:'It is playing.',
     base:()=>playing, done:b=>playing&&!b },
   { tab:'seq', el:'btnPolyLock', title:'LOCKED, OR DRIFTING',
-    body:'<b>LOCK TO BAR</b> nudges the tempo to one that fits the bar exactly, so it comes back to the downbeat forever. Turn it off and the pad runs at precisely the number you set and never lines up again — that is <b>phasing</b>, and it is a technique, not a fault.<br><br><b>CELLS</b> is separate: how long the row is, not how fast it goes.' }]},
+    body:'<b>LOCK TO BAR</b> nudges the tempo to one that fits the bar exactly, so it comes back to the downbeat forever. Turn it off and the lane runs at precisely the number you set and never lines up again — that is <b>phasing</b>, and it is a technique, not a fault.<br><br><b>CELLS</b> is separate: how long the lane is, not how fast it goes. And <b>LOCK</b> + a cell gives that cell its own ratchet — five hits inside one third of a bar is a nested tuplet.' }]},
 
 { id:'arrange', name:'From a loop to an arrangement',
   blurb:'Use more than one pattern and chain them, so the track goes somewhere instead of repeating.',

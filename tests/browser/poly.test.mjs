@@ -303,7 +303,10 @@ export default async function ({ browser, base }) {
       o.threeShown = document.getElementById('polyBpmV').textContent;
       o.polyCells = document.querySelectorAll('#polygrid .pcell').length;
       o.gridCells = document.querySelectorAll('#stepgrid .step').length;
-      o.gridMarked = document.getElementById('stepgrid').classList.contains('polyrow');
+      o.laneMarked = getComputedStyle(document.querySelector('#polygrid .pcell'))
+        .borderTopColor;
+      o.alsoShown = document.getElementById('polyAlso').style.display !== 'none';
+      o.alsoText = document.getElementById('polyAlso').textContent;
 
       // triplets
       document.querySelector('.polypre[data-mul="3"]').click();
@@ -349,9 +352,16 @@ export default async function ({ browser, base }) {
     t.ok('and as a 3:4 relationship', /3:4/.test(ui.threeSays));
     t.ok('and says when it comes back round', /every bar/.test(ui.threeSays));
     /* A preset gives the whole result: the rate and a bar's worth of cells. */
-    t.ok('and gives the row 3 cells to match', ui.polyCells === 3, ui.polyCells + '');
-    t.ok('THE STEP GRID SHOWS 3, NOT 16', ui.gridCells === 3, ui.gridCells + '');
-    t.ok('marked as a different pulse', ui.gridMarked);
+    t.ok('and gives the lane 3 cells to match', ui.polyCells === 3, ui.polyCells + '');
+    /* THE TWO LANES ARE SEPARATE. Until R149 turning POLY on re-pointed the
+       STEP grid at the poly cells, so both grids showed the same three boxes
+       and the pad lost the part already written on it: "both screens do the
+       same thing". The step grid is the step grid; the lane is below it. */
+    t.ok('THE STEP GRID STILL SHOWS 16', ui.gridCells === 16, ui.gridCells + '');
+    t.ok('and the lane is drawn in its own colour', ui.laneMarked !== 'rgb(43, 48, 56)',
+      ui.laneMarked);
+    t.ok('and the grid says a second lane is running below', ui.alsoShown &&
+      /POLY LANE/.test(ui.alsoText), ui.alsoText.slice(0, 70));
 
     t.note('    triplet button: "' + ui.tripSays + '"');
     t.ok('the triplet button says 3 hits per beat', /3 hits per beat/.test(ui.tripSays), ui.tripSays);
@@ -383,19 +393,181 @@ export default async function ({ browser, base }) {
        not still sound, and you are told it went. */
     const shrink = await page.evaluate(() => {
       const pad = S.seqPad, pat = S.patterns[S.pattern];
-      pat.poly = { [pad]: { on: true, bpm: 125, cells: 5, lock: true } };
+      pat.poly = { [pad]: { on: true, bpm: 125, cells: 5, lock: true, row: polyEmptyRow() } };
+      for (let k = 0; k < 5; k++) pat.poly[pad].row[k] = 0.9;
       pat.steps[pad].fill(0);
-      for (let k = 0; k < 5; k++) pat.steps[pad][k] = 0.9;
+      pat.steps[pad][3] = 0.7;                            // and a hit on the GRID lane
       drawPoly();
       document.getElementById('polyCellDn').click();      // 5 -> 4
       document.getElementById('polyCellDn').click();      // 4 -> 3
-      return { row: pat.steps[pad].slice(0, 6).map(v => v > 0 ? 1 : 0).join(''),
+      return { row: polyRowOf(pat, pad).slice(0, 6).map(v => v > 0 ? 1 : 0).join(''),
+        grid: pat.steps[pad].slice(0, 6).map(v => v > 0 ? 1 : 0).join(''),
         said: document.getElementById('lcdmsg').textContent,
         cells: polyCfg(pat, pad).cells };
     });
     t.ok('cells past the new end are cleared', shrink.row === '111000', shrink.row);
     t.ok('and it says so, in grammatical English',
-      /1 hit past the new end was removed, not hidden/.test(shrink.said), '"' + shrink.said + '"');
+      /1 poly cell past the new end was removed, not hidden/.test(shrink.said),
+      '"' + shrink.said + '"');
+    t.ok("and the pad's grid row is not touched by it", shrink.grid === '000100', shrink.grid);
+
+    t.head('TWO LANES ON ONE PAD, AND BOTH OF THEM PLAY');
+    /* The report: "our sequencer doesn't move after selecting poly and both
+       screens do the same thing... I want the bottom sequencer not to have to
+       agree with the top, so that if I want to put a triple hit on one pad I
+       can do so in poly."
+
+       Until R149 the poly cells WERE the pad's grid row — one array behind two
+       views — so turning POLY on silently replaced the part already written on
+       that pad and the two grids could not disagree by construction. This is
+       the test that they now can, and that the pad is heard playing both. */
+    const lanes = await page.evaluate(async () => {
+      const pad = S.seqPad, pat = S.patterns[S.pattern];
+      pat.locks = {};
+      pat.steps[pad].fill(0);
+      pat.steps[pad][0] = 0.9; pat.steps[pad][8] = 0.9;      // GRID: two hits, on the beat
+      pat.poly = { [pad]: { on: true, bpm: 75, cells: 3, lock: true, row: polyEmptyRow() } };
+      pat.poly[pad].row[0] = 0.9; pat.poly[pad].row[1] = 0.9; pat.poly[pad].row[2] = 0.9;
+      S.bpm = 100; pat.plen = 16; pat.len = new Array(NPADS).fill(16);
+      drawSeq(); drawPoly();
+
+      const out = {
+        gridBoxes: document.querySelectorAll('#stepgrid .step').length,
+        laneCells: document.querySelectorAll('#polygrid .pcell').length,
+        gridRow: pat.steps[pad].slice(0, 16).map(v => v > 0 ? 1 : 0).join(''),
+        laneRow: polyRowOf(pat, pad).slice(0, 3).map(v => v > 0 ? 1 : 0).join(''),
+      };
+      /* Editing one lane must not touch the other. Tap grid step 4 and lane
+         cell 1 and read both back. */
+      document.querySelectorAll('#stepgrid .step')[4].click();
+      document.querySelectorAll('#polygrid .pcell')[1].click();
+      out.gridAfter = pat.steps[pad].slice(0, 16).map(v => v > 0 ? 1 : 0).join('');
+      out.laneAfter = polyRowOf(pat, pad).slice(0, 3).map(v => v > 0 ? 1 : 0).join('');
+
+      // put it back, then count what the pad actually fires in one bar
+      document.querySelectorAll('#polygrid .pcell')[1].click();
+      pat.steps[pad][4] = 0;
+      const keepR = S.pads[pad].rev, keepD = S.pads[pad].dly;
+      S.pads[pad].rev = 0; S.pads[pad].dly = 0;
+      const when = [];
+      const real = window.triggerPad;
+      window.triggerPad = (c, g, p, v, w, reg, pitch) => {
+        if (p === pad) when.push(+(w - 0.05).toFixed(6));
+        return real(c, g, p, v, w, reg, pitch);
+      };
+      await renderMix(new Set([pad]), new Set());
+      window.triggerPad = real;
+      S.pads[pad].rev = keepR; S.pads[pad].dly = keepD;
+      out.fired = [...new Set(when)].sort((a, b) => a - b);
+      out.barDur = 16 * (60 / 100 / 4);
+      return out;
+    });
+    t.note('    grid ' + lanes.gridBoxes + ' steps · lane ' + lanes.laneCells + ' cells');
+    t.ok('the grid keeps its own length', lanes.gridBoxes === 16, lanes.gridBoxes + '');
+    t.ok('and the lane keeps its own', lanes.laneCells === 3, lanes.laneCells + '');
+    t.ok('they hold different patterns', lanes.gridRow === '1000000010000000' &&
+      lanes.laneRow === '111', lanes.gridRow + ' / ' + lanes.laneRow);
+    t.ok('editing the grid does not touch the lane',
+      lanes.gridAfter === '1000100010000000' && lanes.laneAfter === '101',
+      lanes.gridAfter + ' / ' + lanes.laneAfter);
+
+    /* One bar at 100 BPM is 2.4s. The grid lane fires at 0 and 1.2; the poly
+       lane fires three times a bar, at 0, 0.8 and 1.6. They coincide at 0, so
+       the pad should fire at 0, 0.8, 1.2 and 1.6 — four distinct times, two of
+       which belong to a rhythm the 16-step grid cannot write. */
+    const bar = lanes.barDur;
+    const want = [0, bar / 3, bar / 2, 2 * bar / 3];
+    const inBar = lanes.fired.filter(w => w < bar - 1e-6);
+    t.note('    first bar fires at ' + inBar.map(w => w.toFixed(3)).join(' · ') +
+      '   (bar = ' + bar.toFixed(3) + 's)');
+    t.ok('the pad is heard playing BOTH lanes', inBar.length === 4, inBar.length + ' hits');
+    const off = want.map((w, i) => Math.abs((inBar[i] ?? NaN) - w));
+    t.ok('at the grid times AND the triplet times',
+      off.every(d => d < 1e-4), 'worst ' + (Math.max(...off) * 1000).toFixed(2) + 'ms');
+
+    t.head("THE LANE'S PLAYHEAD MOVES");
+    /* "Our sequencer doesn't move after selecting poly." It did not: drawPoly
+       worked out which cell was sounding but nothing redrew during playback, so
+       the head sat on cell 0 forever. It rides the frame loop now. */
+    const head = await page.evaluate(async () => {
+      if (!document.getElementById('polyPanel').style.display ||
+          document.getElementById('polyPanel').style.display === 'none') {
+        document.getElementById('btnPoly').click();
+      }
+      S.chainOn = false; S.songOn = false;
+      startSeq();
+      const seen = [];
+      await new Promise(r => {
+        const t = setInterval(() => {
+          seen.push([...document.querySelectorAll('#polygrid .pcell')]
+            .findIndex(e => e.classList.contains('cur')));
+          if (seen.length >= 40) { clearInterval(t); r(); }
+        }, 60);
+      });
+      stopSeq();
+      return { seen, distinct: new Set(seen).size };
+    });
+    t.note('    cells lit over 2.4s: ' + head.seen.join(','));
+    t.ok('the lane lights every one of its cells while playing',
+      head.distinct >= 3, head.distinct + ' distinct');
+    t.ok('and it is not stuck on one', head.seen.some((v, i) => i && v !== head.seen[i - 1]));
+
+    t.head('A PROJECT FROM BEFORE THE SPLIT MOVES ITS CELLS ACROSS');
+    /* R144-R148 stored the cells in the grid row. Those hits have to end up in
+       the lane — and be REMOVED from the grid, because a copy would add hits to
+       the ordinary pattern that nobody wrote. */
+    const old = await page.evaluate(() => {
+      const pad = S.seqPad, pat = S.patterns[S.pattern];
+      pat.locks = {};
+      pat.steps[pad].fill(0);
+      pat.steps[pad][0] = 0.9; pat.steps[pad][2] = 0.7;   // were poly cells 0 and 2
+      pat.steps[pad][11] = 0.8;                            // past the cells: a real grid hit
+      pat.poly = { [pad]: { on: true, bpm: 75, cells: 3, lock: true } };   // no row: pre-R149
+      const needed = polyNeedsSplit(pat.poly[pad]);
+      const row = polyRowOf(pat, pad);
+      return { needed,
+        lane: row.slice(0, 4).map(v => v > 0 ? 1 : 0).join(''),
+        grid: pat.steps[pad].slice(0, 12).map(v => v > 0 ? 1 : 0).join(''),
+        again: polyNeedsSplit(pat.poly[pad]) };
+    });
+    t.ok('an old setting is recognised as needing the split', old.needed);
+    t.ok('its cells arrive in the lane', old.lane === '1010', old.lane);
+    t.ok('and are gone from the grid row, not duplicated into it',
+      old.grid === '000000000001', old.grid);
+    t.ok('and it is a one-time conversion', !old.again);
+
+    t.head('LOCKS BELONG TO THE LANE THEY WERE SET ON');
+    /* Sharing the key meant a ratchet put on grid step 2 also landed on poly
+       cell 2 — invisible from either panel. */
+    const locks = await page.evaluate(() => {
+      const pad = S.seqPad, pat = S.patterns[S.pattern];
+      pat.locks = {};
+      pat.poly = { [pad]: { on: true, bpm: 75, cells: 3, lock: true, row: polyEmptyRow() } };
+      pat.poly[pad].row[2] = 0.9;
+      pat.steps[pad].fill(0); pat.steps[pad][2] = 0.9;
+      seqLockMode = true; drawSeq(); drawPoly();
+      document.querySelectorAll('#polygrid .pcell')[2].click();      // select the LANE cell
+      const laneTitle = document.getElementById('slTitle').textContent;
+      const rat = document.getElementById('slRat');
+      rat.value = '5'; rat.dispatchEvent(new Event('input'));        // ratchet the lane cell
+      document.querySelectorAll('#stepgrid .step')[2].click();       // now the GRID step
+      const gridTitle = document.getElementById('slTitle').textContent;
+      const out = { laneTitle, gridTitle,
+        laneLock: JSON.stringify(pat.locks['P' + pad + ':2'] || null),
+        gridLock: JSON.stringify(pat.locks[pad + ':2'] || null),
+        gridRatShown: document.getElementById('slRat').value };
+      seqLockMode = false; document.getElementById('btnStepLock').classList.remove('on');
+      return out;
+    });
+    t.note('    lane: "' + locks.laneTitle + '"  ·  grid: "' + locks.gridTitle + '"');
+    t.ok('the editor says which lane it is on',
+      /POLY cell 3/.test(locks.laneTitle) && /step 3/.test(locks.gridTitle) &&
+      !/POLY/.test(locks.gridTitle));
+    t.ok('a lock set on a lane cell is stored under the lane', locks.laneLock !== 'null' &&
+      /"rat":5/.test(locks.laneLock), locks.laneLock);
+    t.ok('and the grid step at the same index did not get it',
+      locks.gridLock === 'null' && locks.gridRatShown === '1',
+      locks.gridLock + ' / rat ' + locks.gridRatShown);
 
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));

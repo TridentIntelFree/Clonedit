@@ -491,8 +491,9 @@ same speed, sliding. <b>Polyrhythm</b> keeps one span and divides it different
 <p>A step grid can do the first and genuinely cannot do the second, because a
 bar here is 16 steps and 16 does not divide by 3. Ask EUCLID for 3 hits in 16
 and it gives you 5-5-6 — the closest it can get, and audibly not a triplet.
-<b>POLY</b> is the answer to that: it takes one pad off the grid and gives it a
-BPM of its own. Its own panel explains the rest.</p>
+<b>POLY</b> is the answer to that: it gives one pad a second lane with a BPM of
+its own, running alongside the part it already plays on the grid. Its own panel
+explains the rest.</p>
 
 <h4>Parameter locks — a different setting on one step</h4>
 <p><b>LOCK</b> plus a step changes that <em>single hit</em> without touching the
@@ -621,6 +622,10 @@ immediately.</p>
   <div class="adv" id="scaleHint" style="font-size:10px;color:var(--txt-dim);margin:0 0 4px">Off — pitches are chromatic (any semitone).</div>
   <div id="seqModeBadge" style="display:none"></div>
   <div id="stepgrid"></div>
+  <!-- The pad plays two lanes now, and the grid above only shows one of them.
+       Saying so is not decoration: this sequencer's one rule is that it plays
+       exactly what it shows. -->
+  <div id="polyAlso" style="display:none"></div>
   <div id="circlewrap" style="display:none">
     <canvas id="circle" role="img" aria-label="Circular view of the pattern. Switch VIEW to GRID for the same pattern as a list of step buttons." width="760" height="760" style="width:100%;aspect-ratio:1;display:block;background:var(--lcd-bg);border:1px solid var(--line);border-radius:10px;touch-action:none"></canvas>
     <details class="ex"><summary>Reading the circle</summary><div class="ex-body">
@@ -670,14 +675,24 @@ where they come back into alignment. On a grid that relationship is invisible.</
       <div class="row" style="margin-bottom:6px">
         <span class="lbl">CELLS</span>
         <span class="stepper"><button aria-label="Fewer cells" id="polyCellDn">&#8722;</button><span id="polyCellV">4</span><button aria-label="More cells" id="polyCellUp">+</button></span>
-        <span id="polyCellHint" style="font-size:11px;color:var(--txt-dim);flex:1">how many before the row repeats</span>
+        <span id="polyCellHint" style="font-size:11px;color:var(--txt-dim);flex:1">how many before the lane repeats</span>
       </div>
       <div id="polygrid"></div>
     </div>
     <details class="ex"><summary>Giving a pad its own BPM</summary><div class="ex-body">
       <p>Every pad normally plays on the project's beat. Switch one to
-      <b>OWN BPM</b> and it runs at whatever tempo you give it, while everything
-      else carries on as before. Two pulses at once — a polyrhythm.</p>
+      <b>OWN BPM</b> and it gets a <em>second</em> lane, running at whatever
+      tempo you give it. Two pulses at once — a polyrhythm.</p>
+
+      <h4>This is a second lane, not a replacement</h4>
+      <p>The step grid above still belongs to this pad and still plays: its
+      ordinary part, on the main beat, at whatever length you set. The cells
+      down here are a separate row at the pad's own tempo, and the pad plays
+      <em>both</em>. Neither has to agree with the other — that is the point.
+      Put a straight kick on the grid and a triplet in the lane and you have one
+      pad doing two things.</p>
+      <p>Because the grid above no longer shows everything this pad plays, a
+      teal line under it says the lane is there and how many cells are lit.</p>
 
       <h4>The number means what you think it means</h4>
       <p>The project's BPM counts beats per minute. A pad's BPM counts

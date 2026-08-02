@@ -4,6 +4,7 @@ import {
   polyCfg, isPoly, polyStepDur, polyEffectiveBpm, polyHitsPerBar,
   polyLockedHitsPerBar, polyDoesLock, polyCycleBars, polyRatio, polyEvents, polyIndexAt,
   mainBpmOf, POLY_MAX_CELLS, POLY_MIN_CELLS,
+  polyEmptyRow, polyNeedsSplit, polySplit, polyTrimRow,
 } from '../src/pure/poly.js';
 
 const patWith = (p, c) => ({ poly: { [p]: c } });
@@ -234,4 +235,60 @@ test('a rate that spans two bars is anchored to its CYCLE, not the bar', () => {
   // and specifically: nothing lands on the 1-bar mark, which is not on this grid
   assert.ok(!fired.some(w => Math.abs(w - BAR) < 1e-6),
     'a hit landed on the 1-bar downbeat, which a 3.5-per-bar rate never touches');
+});
+
+
+/* ---- THE POLY LANE IS ITS OWN LANE -------------------------------------- */
+
+test('an untouched pad needs splitting, and a split one does not', () => {
+  assert.equal(polyNeedsSplit({ on: true, bpm: 75, cells: 3 }), true);
+  assert.equal(polyNeedsSplit({ on: true, bpm: 75, cells: 3, row: polyEmptyRow() }), false);
+  assert.equal(polyNeedsSplit(null), false);
+  // an empty row is still a row: [] is falsy-looking and is not
+  assert.equal(polyNeedsSplit({ on: true, row: [] }), false);
+});
+
+test('splitting MOVES the cells out of the grid row, it does not copy them', () => {
+  // a 3-cell poly pad that also has a hit at step 9 of the ordinary pattern
+  const steps = new Array(64).fill(0);
+  steps[0] = 1; steps[1] = 0; steps[2] = 0.5; steps[9] = 0.8;
+  const { row, steps: after } = polySplit(steps, 3);
+
+  assert.deepEqual(row.slice(0, 4), [1, 0, 0.5, 0], 'the three cells came across');
+  assert.deepEqual(after.slice(0, 4), [0, 0, 0, 0], 'and were REMOVED from the grid row');
+  assert.equal(after[9], 0.8, 'a hit past the cells is left where it was');
+  // the input is untouched: the caller decides whether to adopt the result
+  assert.equal(steps[0], 1, 'polySplit must not mutate what it is given');
+  assert.equal(row.length, POLY_MAX_CELLS);
+});
+
+test('a poly pad and its grid row can now hold different things', () => {
+  /* The bug this whole change exists for: turning POLY on used to re-point the
+     step grid at the poly cells, so the two could never disagree. */
+  const cell = { on: true, bpm: 75, cells: 3, row: polyEmptyRow() };
+  cell.row[0] = 1; cell.row[1] = 1; cell.row[2] = 1;      // a triplet
+  const steps = new Array(64).fill(0);
+  steps[0] = 1; steps[4] = 1; steps[8] = 1; steps[12] = 1; // four on the floor
+
+  const cfg = polyCfg({ poly: { 0: cell } }, 0);
+  assert.equal(cfg.cells, 3);
+  assert.deepEqual(cfg.row.slice(0, 3), [1, 1, 1]);
+  assert.deepEqual(steps.slice(0, 13).filter(v => v > 0).length, 4,
+    'the grid row still has its own four hits');
+});
+
+test('shrinking the row removes what falls off, and says how much', () => {
+  const row = polyEmptyRow();
+  row[0] = 1; row[3] = 1; row[5] = 0.6;
+  assert.equal(polyTrimRow(row, 3), 2, 'two cells were past the new end');
+  assert.equal(row[0], 1);
+  assert.deepEqual(row.slice(3, 6), [0, 0, 0], 'and they are gone, not hidden');
+  assert.equal(polyTrimRow(row, 3), 0, 'trimming again finds nothing');
+});
+
+test('a row that is not there degrades to an empty one rather than throwing', () => {
+  assert.equal(polyTrimRow(null, 4), 0);
+  assert.equal(polySplit(null, 3).row.length, POLY_MAX_CELLS);
+  assert.deepEqual(polySplit(undefined, 3).steps, []);
+  assert.equal(polyEmptyRow().every(v => v === 0), true);
 });
