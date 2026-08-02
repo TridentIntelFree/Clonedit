@@ -532,6 +532,98 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 }
 .ex{margin:0 0 var(--sp-2)}
 .ex-body{padding-bottom:6px}
+
+/* ---- SCREEN SIZE --------------------------------------------------------
+   Reported from an Android phone: "scaling and size issues, and the text at
+   the top obscured things". Measured at 360x640, which is an ordinary Android
+   and 90px shorter and 70px narrower than the 430x932 iPhone every size in
+   this file was chosen on:
+
+     header 56 · LCD 57 · meter 20 · tabs 43 · tab hint 79   = 255px
+     the pad grid then starts at y=406 and is 336 tall, so its bottom
+     two rows sit BELOW the fold before you have touched anything.
+
+   That is the complaint exactly: the furniture is not obscuring the app by
+   overlapping it, it is obscuring it by pushing it off the bottom.
+
+   Four named steps rather than a slider. A slider invites fiddling and can be
+   left somewhere unreadable; four sizes are a choice you make once. The middle
+   one is byte-for-byte what the app did before, so nobody's layout moves under
+   them without being asked.
+
+   ONLY THE FURNITURE SCALES. Pads, steps, faders, the note grid and the meters
+   keep their sizes at every setting — shrinking the things you aim at is how a
+   size control turns into an accessibility problem. Nothing interactive here
+   goes below 30px on a side even at TINY, which is above the 24px WCAG 2.2
+   floor; what actually shrinks is padding, type in the chrome, and the
+   paragraph at the top of each tab.
+
+   BIG goes the other way, because "shrink or expand" was the request: it
+   raises the READING text — the tab leads, the folded explanations, the recipe
+   cards — rather than the chrome, since that is the text people enlarge. */
+.szrow{display:flex;gap:5px;margin:4px 0 2px}
+.szrow button{flex:1;min-height:32px;padding:5px 2px;font-size:11px;letter-spacing:.4px}
+.gsec{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--txt-dim);margin:14px 0 2px;padding-top:9px;border-top:1px solid var(--edge)}
+.gnote{font-size:10px;color:var(--txt-dim);line-height:1.45;margin:3px 0 0}
+
+/* The logo is deliberately NOT enlarged. At 20px it stopped fitting the
+   header's left column on a 360px screen and rendered as "JBH-8" — and BIG is
+   about the text you read, not the badge you already know. */
+body.sz-big #lcdstrip{font-size:var(--fs-md);min-height:42px}
+body.sz-big #tabs button{padding:15px 20px;font-size:var(--fs-md)}
+body.sz-big .hint{font-size:var(--fs-lg)}
+body.sz-big .hint-body, body.sz-big .ex-body{font-size:14px;line-height:1.7}
+body.sz-big .hint-more, body.sz-big .ex > summary{font-size:12px}
+body.sz-big .hint-body h4{font-size:12px}
+body.sz-big .denbar span, body.sz-big #coachBar{font-size:var(--fs-sm)}
+body.sz-big .rcp b{font-size:14px}
+body.sz-big .rcp span{font-size:13px}
+body.sz-big #tourBody{font-size:14px}
+
+body.sz-sm #hdr{padding:5px var(--sp-2)}
+body.sz-sm #logo{font-size:14px;letter-spacing:1px}
+body.sz-sm #transport button{width:36px;height:34px;font-size:15px}
+body.sz-sm #btnTour,body.sz-sm #btnUndo,body.sz-sm #btnRedo{width:29px;font-size:13px}
+body.sz-sm #lcdstrip{padding:4px var(--sp-2);min-height:30px;font-size:var(--fs-xs)}
+body.sz-sm #lcdstrip input[type=number]{min-height:30px;padding:3px 4px;font-size:13px}
+body.sz-sm #bpmbox button{width:28px;height:28px;font-size:var(--fs-xs)}
+body.sz-sm #masterMeter{padding:2px var(--sp-2) 3px}
+body.sz-sm #tabs button{padding:9px 13px;font-size:var(--fs-xs)}
+body.sz-sm .view{padding:9px}
+body.sz-sm .hint{font-size:var(--fs-xs);padding:6px 9px;margin-bottom:var(--sp-2)}
+body.sz-sm .denbar button{min-height:28px;font-size:10px}
+body.sz-sm #coachBar{padding:5px 8px;font-size:var(--fs-xs)}
+
+/* The header keeps the logo — it is how you know which app you are in when
+   several tabs are open — but drops the build string, which is a thing you go
+   looking for rather than something to spend a line on. OFFLINE stays: it is
+   the one badge up there that changes what the app can do. */
+body.sz-xs #hdr{padding:2px 6px;gap:6px}
+body.sz-xs #logo{font-size:11px;letter-spacing:.5px}
+body.sz-xs #build{display:none}
+body.sz-xs #transport{gap:3px}
+body.sz-xs #transport button{width:32px;height:30px;font-size:14px;border-radius:6px}
+body.sz-xs #btnTour,body.sz-xs #btnUndo,body.sz-xs #btnRedo{width:26px;font-size:12px}
+body.sz-xs #lcdstrip{padding:2px 6px;min-height:24px;font-size:10px;gap:5px}
+body.sz-xs #lcdstrip input[type=number]{min-height:26px;padding:2px;font-size:12px;width:46px}
+body.sz-xs #bpmbox{gap:2px}
+body.sz-xs #bpmbox button{width:24px;height:24px;font-size:10px;border-radius:5px}
+body.sz-xs #masterMeter{padding:1px 6px 2px;gap:5px}
+body.sz-xs #masterMeter .mbar{height:3px}
+body.sz-xs #tabs button{padding:7px 10px;font-size:10px;letter-spacing:.3px}
+body.sz-xs .view{padding:7px}
+/* The lead paragraph goes; the button that opens the full explanation stays,
+   so the learning material is one tap away rather than gone. */
+body.sz-xs .hint{background:transparent;border-left:0;padding:0;margin-bottom:6px}
+body.sz-xs .hint-lead{display:none}
+body.sz-xs .denbar{margin-bottom:6px}
+body.sz-xs .denbar button{min-height:26px;font-size:10px;padding:3px 8px}
+body.sz-xs .denbar span{display:none}
+body.sz-xs .row{margin-bottom:var(--sp-2)}
+body.sz-xs h3{margin-top:8px}
+body.sz-xs #coachBar{padding:4px 7px;font-size:10px;line-height:1.35}
+body.sz-xs #coachBar button{min-height:24px;font-size:9px;padding:3px 7px}
 /* keyboard / switch-control focus. -webkit-tap-highlight-color is off for touch,
    which left no focus indication at all for anyone driving this from a keyboard. */
 :focus-visible{outline:2px solid var(--sel);outline-offset:2px;border-radius:4px}

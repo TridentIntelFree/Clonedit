@@ -467,10 +467,10 @@ someone else's.</p>
 <!-- SEQ -->
 <div class="view" role="tabpanel" aria-label="Sequencer" id="v-seq">
   <div class="hint">
-  <div class="hint-lead" data-lead-short><b>PROGRAM</b> — tap steps for the shown TRACK. <b>LOCK</b> + a step edits one hit; <b>NOTES</b> writes melodies.</div>
+  <div class="hint-lead" data-lead-short><b>PROGRAM</b> — tap steps for the shown TRACK. <b>LOCK</b> + a step edits one hit; <b>NOTES</b> writes melodies; <b>POLY</b> gives this pad its own BPM.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-seq">HOW A STEP SEQUENCER THINKS</button>
   <div class="hint-body" id="learn-seq" hidden>
-<p class="lead-was"><b>PROGRAM</b> — tap steps for the shown TRACK. <b>NOTES</b> opens a scale grid to write melodies on this pad. <b>LIVE REC</b> records pad taps quantized to the grid. <b>LOCK</b> + a step sets pitch / probability / ratchet / nudge. <b>HUMAN</b> adds timing + velocity drift.</p>
+<p class="lead-was"><b>PROGRAM</b> — tap steps for the shown TRACK. <b>NOTES</b> opens a scale grid to write melodies on this pad. <b>POLY</b> takes this pad off the grid and gives it a BPM of its own. <b>LIVE REC</b> records pad taps quantized to the grid. <b>LOCK</b> + a step sets pitch / probability / ratchet / nudge. <b>HUMAN</b> adds timing + velocity drift.</p>
 <h4>Steps are slots in time</h4>
 <p>A bar of music is divided into 16 equal slots. Each lit step means "play this
 pad at this moment". Left to right is time; the row you are editing is whichever
@@ -481,6 +481,18 @@ pad at this moment". Left to right is time; the row you are editing is whichever
 own, which is called <b>polymeter</b>. Set the kick to 16 steps and a shaker to
 15 and the shaker slides one step earlier every bar, taking 16 bars to come back
 around. It is an enormous amount of movement for one setting.</p>
+
+<h4>Polymeter is not polyrhythm</h4>
+<p>Those two get used interchangeably and they are different things, which is
+why the app has a separate control for each. <b>Polymeter</b> — the LEN above —
+keeps one pulse and gives the tracks different <em>lengths</em>: 16 against 15,
+same speed, sliding. <b>Polyrhythm</b> keeps one span and divides it different
+<em>ways</em>: three hits in the time of four, two speeds at once.</p>
+<p>A step grid can do the first and genuinely cannot do the second, because a
+bar here is 16 steps and 16 does not divide by 3. Ask EUCLID for 3 hits in 16
+and it gives you 5-5-6 — the closest it can get, and audibly not a triplet.
+<b>POLY</b> is the answer to that: it takes one pad off the grid and gives it a
+BPM of its own. Its own panel explains the rest.</p>
 
 <h4>Parameter locks — a different setting on one step</h4>
 <p><b>LOCK</b> plus a step changes that <em>single hit</em> without touching the
@@ -644,7 +656,7 @@ where they come back into alignment. On a grid that relationship is invisible.</
       <div class="row" style="margin-bottom:6px">
         <span class="lbl">QUICK</span>
         <button class="polypre" data-mul="0.5">half</button>
-        <button class="polypre" data-mul="0.75">3:4</button>
+        <button class="polypre" id="polyPre34" data-mul="0.75">3:4</button>
         <button class="polypre" data-mul="1">beat</button>
         <button class="polypre" data-mul="1.5">1&frac12;</button>
         <button class="polypre" data-mul="2">2&times;</button>

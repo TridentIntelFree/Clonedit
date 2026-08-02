@@ -2063,8 +2063,55 @@
      2.057 · 2.400 — that 2.400 is the bar line, and it is not on a 3.5-per-bar
      grid at all. Anchored to the cycle now, which polyCycleBars measures, and
      the same run reads 0 · 0.686 · 1.371 · 2.057 · 2.743 · 3.429 · 4.114.
+   - R148: A SIZE FOR A SMALL SCREEN, AND GUIDES THAT POINT AT THINGS THAT
+     EXIST. Two reports off an Android phone — "scaling and size issues", and
+     "the text at the top obscured things" — which turned out to share a cause
+     with the guide bugs found the same afternoon: things written on one phone
+     and never re-checked on another.
+     Measured at 360x640, an ordinary Android and 90px shorter than the 430x932
+     iPhone every size in this file was chosen on: header 56, LCD 57, meter 20,
+     tabs 43, the tab's opening paragraph 79 — 255px before a pad is drawn. The
+     pad grid then started at y=406, stood 336 tall, and ran 100px past the
+     bottom of the screen. Nothing was overlapping anything. The furniture was
+     pushing the instrument off the display, which is what "obscured" meant.
+     Four named sizes behind the ? button, stored on the device. NORMAL is
+     byte-for-byte the old layout, so nobody's app moves under them unasked. At
+     TINY the furniture goes 237 → 110px and all sixteen pads fit on a 360x640
+     screen for the first time. BIG raises the READING text — tab leads, folded
+     explanations, recipe cards — rather than the chrome, because that is the
+     text people enlarge; the logo is deliberately left alone, since at 20px it
+     stopped fitting the header column and rendered as "JBH-8".
+     Only the furniture scales. Pads stay 81px, the transport 30px, the tab row
+     27px. A size control that shrinks what you aim at has traded one problem
+     for a worse one, and the test measures those three.
+     The setting is offered rather than waiting to be found: a screen 700px or
+     shorter gets a suggestion, which stops matching the moment a smaller size
+     is chosen.
+     GUIDES. Nothing checked that the ids the tour, the recipes and the
+     suggestion bar spotlight still exist — a renamed button leaves a step that
+     highlights nothing. All 30 resolve. Two were wrong in content instead:
+     the tour's second step opened on SAMPLE PACKS and called them "built-in"
+     and "bundled", and said any sound could go "straight to the selected pad".
+     A pack is a manifest fetched over the network with a per-sound download
+     behind it. On an app whose first line is "runs with no connection", the
+     second thing the tour showed a new user was the one part that cannot. It
+     points at PRESETS now. The suggestion given to somebody with an empty kit
+     — that is, somebody who has just opened the app, possibly offline — gave
+     the same advice, and got the same fix.
+     POLY had no coverage at all. Added a tour step, a sixth recipe that walks
+     to three-against-four and watches for you to arrive, and the paragraph
+     saying why polymeter and polyrhythm are different things and why a 16-step
+     grid can do the first and genuinely cannot do the second.
+     The new suite walks that recipe FOR REAL — pressing its buttons in order
+     and checking the next step's target is on screen when that step opens —
+     because half of it points inside a panel that only exists once POLY has
+     been pressed, and checking those ids against a cold page proves nothing
+     while passing. That is R146's bug exactly. It then caught it again: six
+     recipes push SCREEN SIZE off the bottom of the help card, on the short
+     screen the setting is for. Opening the menu from the suggestion scrolls to
+     it now.
    ================================================================ */
-const BUILD = 'JBH-88 · R147 · 2026-08-01 · a pad with its own BPM';
+const BUILD = 'JBH-88 · R148 · 2026-08-02 · a size for a small screen';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -11146,8 +11193,15 @@ const TOUR=[
   { tab:'pads', el:'padgrid', title:'THE PADS',
     body:'Tap a pad to play its sound. Tap the small label to <b>select</b> it — a blue ring marks the selected pad, and that is where new samples get sent.<br><br>Four banks of 16 give you 64 pads per project.' },
 
-  { tab:'smpl', el:'packPick', title:'GET SOME SOUNDS',
-    body:'Pick a <b>built-in pack</b> and send any sound straight to the selected pad. Everything bundled here is CC0 — free to use in anything you make.<br><br><b>IMPORT</b> loads your own files, and <b>MIC</b> records straight into the app.' },
+  /* Points at PRESETS rather than at SAMPLE PACKS, which is what it used to do.
+     The old step called the packs "built-in" and said you could send any sound
+     "straight to the selected pad" — neither is true. A pack is a manifest
+     fetched over the network, and every sound in it has to be downloaded with
+     GET before → PAD will work. On an app whose first line is "runs with no
+     connection", the second thing the tour showed you was the one part that
+     cannot. PRESETS is synthesised in the page and always works. */
+  { tab:'smpl', el:'btnPresetLoad', title:'GET SOME SOUNDS',
+    body:'<b>PRESETS</b> builds a sound out of nothing — choose one and press <b>RENDER &rarr; PAD</b>. It is synthesised right here, so it needs no files and no connection.<br><br><b>IMPORT FILE</b> loads your own and <b>REC MIC</b> records one. <b>SAMPLE PACKS</b>, further down, downloads real recordings — that needs a connection once, then keeps them on the device.' },
 
   { tab:'smpl', el:'btnKitBuild', title:'BUILD A KIT FROM ONE SOUND',
     body:'Point this at a single sample and it carves out a whole kit — kick, snare, hats, toms and percussion — by filtering, pitching and shaping that one sound.<br><br>Fastest way to fill an empty bank.' },
@@ -11162,11 +11216,14 @@ const TOUR=[
   { tab:'seq', el:'btnViewCircle', title:'CIRCLE VIEW + SCALE LOCK',
     body:'<b>CIRCLE</b> draws each part as a turning ring. Rings of different lengths drift against each other, which makes polymeter obvious instead of invisible.<br><br><b>&#128274; SCALE</b> pins every pitch you write to a key, so nothing you play lands wrong.' },
 
+  { tab:'seq', el:'btnPoly', title:'ONE PAD, ITS OWN TEMPO',
+    body:'<b>POLY</b> gives the selected pad a BPM of its own, running against the project tempo. The same number as the project means one hit per beat; <b>3:4</b> puts three hits in the time of four.<br><br>That is a <b>polyrhythm</b> — two speeds at once, which a grid of sixteen steps cannot write, because sixteen does not divide by three.' },
+
   { tab:'trax', el:'traxlist', title:'TRAX — RECORD YOUR TAKE',
     body:'These are your tape lanes. Arm one with <b>&#9679;</b>, press PLAY and it records a pass — the whole mix, just what you play in <b>LIVE</b>, or the mic.<br><br>Stack lanes into an arrangement, and reopen any take in the sample editor to chop it like any other sound.' },
 
   { tab:'pads', el:'btnPlay', title:'THAT IS THE TOUR',
-    body:'Press <b>&#9654;</b> to start playing. Your work saves itself as you go, and the <b>PROJ</b> tab keeps named projects, undo history and the bounce/export tools.<br><br>Have fun. Replay this any time with <b>?</b>.' }
+    body:'Press <b>&#9654;</b> to start playing. Your work saves itself as you go, and the <b>PROJ</b> tab keeps named projects, undo history and the bounce/export tools.<br><br>The <b>?</b> button replays this, holds six step-by-step recipes, and has <b>SCREEN SIZE</b> — worth a look on a smaller phone, where it hands the top bars’ space back to the instrument.' }
 ];
 let tourAt=-1;
 /* ---------------- guides: the tour, and the recipe book ----------------------
@@ -11174,8 +11231,10 @@ let tourAt=-1;
    it watches for you to actually do each step and moves on by itself when you
    have. NEXT still works, because a guide that traps you is worse than one you
    ignore.
-   RECIPES live in `recipeBook`. Deliberately five: this is a way in, not a
-   manual, and the moment it becomes a manual nobody reads it. */
+   RECIPES live in `recipeBook`. Six, and that is close to the ceiling: this is
+   a way in, not a manual, and the moment it becomes a manual nobody reads it.
+   Each one has to end in something that exists — a loop playing, a take on a
+   pad, a file on the phone — or it does not earn its place in the list. */
 let guideRecipe=null, guideLabel='TOUR', guideTimer=0, guideTap=null;
 function guideSteps(){ return guideRecipe ? guideRecipe.steps : TOUR; }
 
@@ -11387,7 +11446,7 @@ function tourClose(finished){
 function tourSeen(){ try{ return !!localStorage.getItem(TOUR_KEY); }catch(e){ return true; } }
 
 /* ---------------- the recipe book -------------------------------------------
-   Five workflows, each ending in something that exists: a loop playing, a take
+   Six workflows, each ending in something that exists: a loop playing, a take
    on a pad, a file on your phone. Every step names a real control and, where
    the result is checkable, watches for it.
    Predicates are cheap reads of live state, called four times a second while a
@@ -11445,6 +11504,32 @@ const recipeBook=[
     base:()=>S.pads[S.editPad].bufId, done:b=>S.pads[S.editPad].bufId!==b },
   { tab:'pads', el:'padgrid', title:'PLAY IT',
     body:'Tap the pad. That is your sound, playable like anything else — and everything in the pad editor works on it: pitch, reverse, filter, the lot.<br><br>To put it in the beat, go to <b>SEQ</b> and write its row.' }]},
+
+{ id:'poly', name:'Two tempos at once',
+  blurb:'Give one pad a BPM of its own so it plays three against the beat’s four. A minute.',
+  steps:[
+  { title:'TWO TEMPOS AT ONCE', body:'A step grid can only write what fits its steps, and a bar of sixteen does not divide by three. <b>POLY</b> takes one pad off the grid and gives it a tempo of its own, so it can play three hits in the time the rest of the kit plays four.<br><br>Works best with a beat already running under it.' },
+  { tab:'seq', el:'seqpadstrip', title:'CHOOSE THE PAD',
+    body:'Tap the pad you want to put on its own pulse — a hat or a percussion sound shows this off best, because you can hear it against the kick.<br><br>Everything below now belongs to that one pad. The rest of the kit is untouched.' },
+  { tab:'seq', el:'btnPoly', title:'OPEN POLY',
+    body:'<b>POLY</b> opens this pad’s own-tempo panel, just under the step grid.',
+    waitFor:'press POLY.', didIt:'Open.',
+    tap:'btnPoly' },
+  { tab:'seq', el:'btnPolyOn', title:'GIVE IT ITS OWN BPM',
+    body:'<b>MAIN BEAT</b> is the ordinary grid. Press <b>OWN BPM</b> and this pad stops using the grid entirely — it gets a tempo instead, and a row of cells at that tempo.',
+    waitFor:'press OWN BPM.', didIt:'It has its own pulse now.',
+    tap:'btnPolyOn', done:()=>!!polyCfg(curPat(),S.seqPad) },
+  { tab:'seq', el:'polyPre34', title:'THREE AGAINST FOUR',
+    body:'The pad’s BPM counts <i>its own hits</i> per minute, so the same number as the project is one hit per beat. Press <b>3:4</b> and it drops to three quarters of that — three hits per bar against the beat’s four.<br><br>Read the amber line above: it tells you what you just made.',
+    waitFor:'press 3:4 (or move the BPM slider).', didIt:'Three against four.',
+    base:()=>{ const c=polyCfg(curPat(),S.seqPad); return c?c.bpm:0; },
+    done:b=>{ const c=polyCfg(curPat(),S.seqPad); return !!c && c.bpm!==b; } },
+  { el:'btnPlay', title:'HEAR IT',
+    body:'Two pulses, one bar. They start together, pull apart, and meet again on the downbeat — that is the whole effect.<br><br>Tap the cells to choose which of the pad’s own hits actually sound.',
+    waitFor:'press PLAY.', didIt:'It is playing.',
+    base:()=>playing, done:b=>playing&&!b },
+  { tab:'seq', el:'btnPolyLock', title:'LOCKED, OR DRIFTING',
+    body:'<b>LOCK TO BAR</b> nudges the tempo to one that fits the bar exactly, so it comes back to the downbeat forever. Turn it off and the pad runs at precisely the number you set and never lines up again — that is <b>phasing</b>, and it is a technique, not a fault.<br><br><b>CELLS</b> is separate: how long the row is, not how fast it goes.' }]},
 
 { id:'arrange', name:'From a loop to an arrangement',
   blurb:'Use more than one pattern and chain them, so the track goes somewhere instead of repeating.',
@@ -11512,7 +11597,12 @@ function recipeStart(id){
 /* The ? button is the one door to all of this — the tour, the recipes, and the
    switch that turns the suggestions off. Rendered into the guide card rather
    than given markup of its own. */
-function guideMenu(){
+/* `focus` names a section to scroll to. The suggestion bar opens this menu
+   specifically to show SCREEN SIZE, which sits below six recipes and is
+   therefore off the bottom of the card on exactly the short screen the
+   suggestion is about — a control that opens where nobody can see it is the
+   same bug the POLY panel shipped with. */
+function guideMenu(focus){
   guideRecipe=null; guideLabel='HELP';
   $('tour').classList.add('on');
   $('tour').setAttribute('aria-hidden','false');
@@ -11525,7 +11615,12 @@ function guideMenu(){
   $('tourBody').innerHTML =
     '<button class="rcp" data-go="tour"><b>Take the tour</b><span>Every tab, one minute. What things are, rather than how to use them.</span></button>'
     + recipeBook.map(r=>'<button class="rcp" data-go="'+r.id+'"><b>'+r.name+'</b><span>'+r.blurb+'</span></button>').join('')
-    + '<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:11px;color:var(--txt-dim)">'
+    + '<div class="gsec">Screen size</div>'
+    + '<div class="szrow" role="group" aria-label="Screen size">'
+    + SIZES.map(s=>'<button data-sz="'+s.id+'" aria-pressed="false">'+s.name+'</button>').join('')
+    + '</div><div class="gnote" id="szNote"></div>'
+    + '<div class="gsec">Suggestions</div>'
+    + '<label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--txt-dim)">'
     + '<input type="checkbox" id="coachOn"'+(coachEnabled()?' checked':'')+'>'
     + 'Suggest things as I work &mdash; one line under the tabs, based on what is actually in the project.</label>';
   $('tourBack').style.visibility='hidden';
@@ -11545,16 +11640,26 @@ function guideMenu(){
     if(go==='tour'){ guideRecipe=null; guideLabel='TOUR'; tourShow(0); }
     else recipeStart(go);
   }));
+  /* Reflects the stored choice into the freshly built buttons and fills the
+     note under them. The menu is rebuilt every time ? is pressed, so this is
+     where the row learns which one is on. */
+  sizeApply(sizeRead(), false);
+  $('tourBody').querySelectorAll('.szrow button').forEach(b=>
+    b.addEventListener('click',()=>sizeApply(b.dataset.sz,true)));
   $('coachOn').addEventListener('change',e=>{
     try{ localStorage.setItem(COACH_KEY, e.target.checked?'on':'off'); }catch(err){}
     coachRefresh();
     lcd(e.target.checked?'SUGGESTIONS ON.':'SUGGESTIONS OFF — the ? button turns them back on.');
   });
+  if(focus==='size'){
+    const row=$('tourBody').querySelector('.szrow');
+    if(row) try{ row.scrollIntoView({block:'center'}); }catch(e){ row.scrollIntoView(); }
+  }
 }
 $('tourNext').addEventListener('click',()=>tourShow(tourAt+1));
 $('tourBack').addEventListener('click',()=>tourShow(tourAt-1));
 $('tourSkip').addEventListener('click',()=>tourClose(false));
-$('btnTour').addEventListener('click',guideMenu);
+$('btnTour').addEventListener('click',()=>guideMenu());
 window.addEventListener('resize',()=>{ if(tourAt>=0) tourPlace(); });
 document.addEventListener('keydown',e=>{
   if(!$('tour').classList.contains('on')) return;
@@ -11688,15 +11793,91 @@ function buildDensity(){
     paint();
   });
 }
+/* ---------------- screen size ------------------------------------------------
+   Reported from an Android phone: scaling problems, and the text at the top of
+   the screen getting in the way. Measured at 360x640 — an ordinary Android, and
+   90px shorter than the iPhone this app's sizes were all chosen on — the header,
+   LCD, meter, tabs and the tab's opening paragraph came to 255px, and the pad
+   grid then ran 100px past the bottom of the screen. Nothing was overlapping
+   anything; the furniture was pushing the instrument off the display.
+
+   Four sizes, stored on the device, applied before first paint. The middle one
+   is exactly what the app did before, so an existing user sees no change until
+   they ask for one. See app.css for what each size actually touches — briefly:
+   the chrome and the tab leads shrink, and nothing you aim at does. */
+const SIZE_KEY='jbh_size_v1';
+const SIZES=[
+  { id:'big',  cls:'sz-big', name:'BIG',
+    say:'bigger reading text — the tab leads, the explanations and the recipes.' },
+  { id:'norm', cls:'',       name:'NORMAL', say:'the standard layout.' },
+  { id:'sm',   cls:'sz-sm',  name:'COMPACT',
+    say:'tighter bars and smaller chrome. Pads, steps and faders are untouched.' },
+  { id:'xs',   cls:'sz-xs',  name:'TINY',
+    say:'the smallest the furniture goes: no build line, and each tab opens with just its LEARN button instead of a paragraph.' },
+];
+function sizeRead(){
+  let id; try{ id=localStorage.getItem(SIZE_KEY); }catch(e){}
+  return SIZES.some(s=>s.id===id) ? id : 'norm';
+}
+/* How much vertical room the fixed furniture is taking right now. Measured
+   rather than assumed, because that is the number the setting is FOR and it is
+   the only honest way to tell somebody what a size change bought them. */
+function chromeTop(){
+  const v=document.querySelector('.view.on');
+  return v ? Math.round(v.getBoundingClientRect().top) : 0;
+}
+function sizeApply(id, announce){
+  const s=SIZES.find(x=>x.id===id) || SIZES[1];
+  const before=announce ? chromeTop() : 0;
+  SIZES.forEach(x=>{ if(x.cls) document.body.classList.remove(x.cls); });
+  if(s.cls) document.body.classList.add(s.cls);
+  try{ localStorage.setItem(SIZE_KEY, s.id); }catch(e){}
+  document.querySelectorAll('#tourBody .szrow button').forEach(b=>{
+    const on=b.dataset.sz===s.id;
+    b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on));
+  });
+  const note=$('szNote'); if(note) note.textContent=s.name+' — '+s.say;
+  if(announce){
+    /* the class lands synchronously but the reflow it causes does not, so read
+       the new height on the next frame or it reports the old one */
+    requestAnimationFrame(()=>{
+      const d=before-chromeTop();
+      lcd('SCREEN: '+s.name+' — '+s.say+(d>0 ? ' '+d+'px given back to the app.'
+        : d<0 ? ' '+(-d)+'px more for the bars at the top.' : ''));
+      /* every canvas and every clipped line re-measures on resize already;
+         a size change is the same event by another name */
+      try{ window.dispatchEvent(new Event('resize')); }catch(e){}
+      /* the suggestion that offered this setting is no longer true, and it is
+         61px tall on the screen it was offering to make room on */
+      try{ coachRefresh(); }catch(e){}
+    });
+  }
+}
+sizeApply(sizeRead(), false);
+
 const COACH_KEY='jbh_coach_v1';
 const coachEnabled=()=>{ try{ return localStorage.getItem(COACH_KEY)!=='off'; }catch(e){ return true; } };
 const coachSeen={};
 let coachCur=null;
 const COACH_TIPS=[
+  /* First, because a screen the app does not fit on makes every other
+     suggestion harder to act on. Self-limiting: choosing a smaller size stops
+     it matching, and 700px is chosen so an ordinary Android (640-720 tall)
+     sees it and a large phone does not. */
+  { id:'screensize',
+    when:()=>window.innerHeight<=700 && sizeRead()==='norm',
+    say:'This screen is short — <b>SCREEN SIZE</b> shrinks the bars at the top so more of the instrument fits.',
+    go:{menu:'size'} },
+  /* Pointed at PRESETS, not at the sample packs. The packs are downloaded over
+     the network and each sound has to be fetched before it can be used, so
+     telling somebody with an empty kit — which is exactly somebody who has just
+     opened the app, possibly with no connection — to "pick a pack and tap a
+     sound" is advice that cannot be followed. RENDER → PAD synthesises a sound
+     on the spot and always works. */
   { id:'empty', tab:'smpl',
     when:()=>padsLoaded()===0,
-    say:'Every pad is empty. Pick a <b>pack</b> below and tap a sound to put it on the selected pad.',
-    go:{tab:'smpl',el:'packPick'} },
+    say:'Every pad is empty. <b>RENDER &rarr; PAD</b> under PRESETS makes a sound out of nothing — no files, no connection.',
+    go:{tab:'smpl',el:'btnPresetLoad'} },
   { id:'onesound', tab:'smpl',
     when:()=>padsLoaded()>0 && padsLoaded()<4,
     say:'<b>BUILD KIT</b> turns one sound into a whole kit — kick, snare, hats, toms.',
@@ -11761,6 +11942,7 @@ $('coachGo').addEventListener('click',()=>{
   coachSeen[t.id]=1;
   $('coachBar').style.display='none';
   guideRecipe=null; guideLabel='SUGGESTION';
+  if(t.go.menu){ guideMenu(t.go.menu); return; }   // the setting lives behind ?, not on a tab
   const b=document.querySelector('#tabs button[data-v="'+t.go.tab+'"]');
   if(b && !b.classList.contains('on')) b.click();
   const el=$(t.go.el);
