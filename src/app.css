@@ -289,6 +289,10 @@ h3 span{font-weight:400}
   background:#191d24;border:1px solid #000;box-shadow:inset 0 1px 2px #000}
 .pad.loaded .led{background:var(--green);border-color:#2a5c2e;box-shadow:0 0 4px rgba(99,199,106,.7)}
 .pad.inseq .led{background:var(--amber);border-color:#7a4a16;box-shadow:0 0 6px rgba(255,140,46,.9)}
+/* Teal when the ONLY reason this pad plays is its poly lane. The LED used to
+   read the grid row alone, so a pad running from its lane went dark while you
+   could hear it — and the colour is what tells you where to go and turn it off. */
+.pad.polyonly .led{background:var(--send);border-color:#3c6f65;box-shadow:0 0 6px rgba(127,212,194,.9)}
 .pad.hit{background:var(--amber-soft);border-color:var(--amber)}
 .pad.hit .pn,.pad.hit .pname{color:#120d04}
 /* SELECTED pad — blue, distinct from the green/amber status LEDs, so it reads

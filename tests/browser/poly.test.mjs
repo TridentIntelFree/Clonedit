@@ -569,6 +569,95 @@ export default async function ({ browser, base }) {
       locks.gridLock === 'null' && locks.gridRatShown === '1',
       locks.gridLock + ' / rat ' + locks.gridRatShown);
 
+    t.head('REMOVING IT REALLY REMOVES IT');
+    /* Reported: "I try a pattern, remove it from a sequence and it still plays
+       as if I left it in." CLR ROW emptied the grid row and left the poly lane
+       running — and the pad's LED went dark, so nothing on screen accounted for
+       what you could still hear. Both halves are checked here, because the
+       silent one is what made the first half impossible to diagnose. */
+    const removal = await page.evaluate(async () => {
+      const pad = S.seqPad, pat = S.patterns[S.pattern];
+      pat.locks = {};
+      pat.steps[pad].fill(0); pat.steps[pad][0] = 0.9; pat.steps[pad][8] = 0.9;
+      pat.poly = { [pad]: { on: true, bpm: 75, cells: 3, lock: true, row: polyEmptyRow() } };
+      for (let k = 0; k < 3; k++) pat.poly[pad].row[k] = 0.9;
+      pat.locks['P' + pad + ':1'] = { rat: 3 };
+      S.bpm = 100; drawSeq(); drawPads();
+
+      const fires = async () => {
+        const keepR = S.pads[pad].rev, keepD = S.pads[pad].dly;
+        S.pads[pad].rev = 0; S.pads[pad].dly = 0;
+        const w = []; const real = window.triggerPad;
+        window.triggerPad = (c, g, p, v, when, reg, pi) => {
+          if (p === pad) w.push(+(when - 0.05).toFixed(3));
+          return real(c, g, p, v, when, reg, pi);
+        };
+        await renderMix(new Set([pad]), new Set());
+        window.triggerPad = real;
+        S.pads[pad].rev = keepR; S.pads[pad].dly = keepD;
+        return [...new Set(w)].filter(x => x > -0.01 && x < 2.4).length;
+      };
+      const led = () => {
+        const el = document.querySelectorAll('#padgrid .pad')[pad % 16];
+        return { on: el.classList.contains('inseq'), poly: el.classList.contains('polyonly') };
+      };
+      const out = { before: await fires(), ledBefore: led() };
+
+      // a pad playing ONLY from its lane must still read as playing
+      pat.steps[pad].fill(0); drawSeq(); drawPads();
+      out.laneOnly = await fires();
+      out.ledLaneOnly = led();
+
+      // and CLR ROW must empty the whole track
+      pat.steps[pad][0] = 0.9; drawSeq();
+      document.getElementById('btnRowClr').click();
+      out.after = await fires();
+      out.said = document.getElementById('lcdmsg').textContent;
+      out.grid = pat.steps[pad].some(v => v > 0);
+      out.lane = padPolyHits(pat, pad);
+      out.laneLock = pat.locks['P' + pad + ':1'] || null;
+      out.ledAfter = led();
+      out.cfgKept = !!polyCfg(pat, pad);
+      return out;
+    });
+    t.note('    grid+lane ' + removal.before + ' hits · lane alone ' + removal.laneOnly +
+      ' · after CLR ROW ' + removal.after);
+    t.ok('a pad with only a poly lane still lights its LED',
+      removal.ledLaneOnly.on, JSON.stringify(removal.ledLaneOnly));
+    t.ok('and the LED says the lane is why', removal.ledLaneOnly.poly);
+    t.ok('while a grid hit alone lights it amber, not teal',
+      removal.ledBefore.on && !removal.ledBefore.poly, JSON.stringify(removal.ledBefore));
+    t.ok('CLR ROW silences the pad completely', removal.after === 0,
+      removal.after + ' hits still fire');
+    t.ok('the grid row is empty', !removal.grid);
+    t.ok('and so is the lane', removal.lane === 0, removal.lane + ' cells');
+    t.ok("and the lane's locks went with it", removal.laneLock === null,
+      JSON.stringify(removal.laneLock));
+    t.ok('the LED goes dark only once it really is silent', !removal.ledAfter.on);
+    t.note('    "' + removal.said + '"');
+    t.ok('and it says it cleared the lane too, not just the row',
+      /poly cell/.test(removal.said), removal.said);
+    /* Clearing the hits is not the same as giving the pad back to the main
+       beat, and the message has to be honest about which one just happened. */
+    t.ok('the pad keeps its own BPM until MAIN BEAT is pressed', removal.cfgKept);
+
+    t.head('AND THE GRID SAYS WHY THE PAD IS STILL SOUNDING');
+    const notice = await page.evaluate(() => {
+      const pad = S.seqPad, pat = S.patterns[S.pattern];
+      pat.poly[pad].row[0] = 0.9;
+      pat.steps[pad].fill(0);
+      drawSeq();
+      return { text: document.getElementById('polyAlso').textContent,
+        shown: document.getElementById('polyAlso').style.display !== 'none' };
+    });
+    t.ok('the notice is up when the lane has hits and the grid does not', notice.shown);
+    t.ok('and it says clearing the steps will not stop it',
+      /will not stop it/.test(notice.text), notice.text.slice(0, 120));
+    t.ok('and names the two ways to stop it',
+      /CLR ROW/.test(notice.text) && /MAIN BEAT/.test(notice.text));
+    t.ok('and says the lane belongs to this pattern',
+      /This pattern only/.test(notice.text));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

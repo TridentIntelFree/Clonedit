@@ -2153,8 +2153,32 @@
      teal line under it says the lane is there and how much of it is lit. This
      sequencer's one rule is that it plays exactly what it shows; two lanes are
      allowed, a hidden one is not.
+   - R150: REMOVING IT NOW REMOVES IT. "I try a pattern, remove it from a
+     sequence and it still plays as if I left it in." Reproduced in one call:
+     CLR ROW emptied the pad's grid row and left the poly lane running, so the
+     pad went on firing at 0 · 0.8 · 1.6 with an empty grid above it.
+     The button clears the TRACK, and since R149 a track is two lanes. It takes
+     both now, along with the lane's locks, and says which — "the grid row and
+     all 3 poly cells" — because a button that empties half of what you can hear
+     and says nothing is worse than no button. It deliberately does NOT switch
+     the lane off: clearing the hits and giving the pad back to the main beat are
+     different intentions, and the message names MAIN BEAT for the second.
+     The half that made this hard to diagnose was quieter. Every "does this pad
+     play?" question in the app asked the grid row alone — true until a pad could
+     have two lanes. So the pad's LED went DARK while the pad was audibly
+     playing, and a pad running only from its lane had never lit at all. Both
+     lanes count now, and the LED is teal when the lane is the only reason it is
+     lit, so it says why as well as that. patHits() counts both too, or the
+     suggestion bar tells somebody with a finished poly pattern that they have no
+     pattern.
+     And the notice under the grid now says what the lane DOES rather than only
+     that it exists: it runs on its own for as long as the sequence plays, it is
+     not triggered by the steps above, CLR ROW empties both, MAIN BEAT turns it
+     off, and it belongs to this pattern only. That last line answers the other
+     half of the report — "couldn't tell if that was happening" — on screen
+     instead of in a reply.
    ================================================================ */
-const BUILD = 'JBH-88 · R149 · 2026-08-02 · two lanes on one pad';
+const BUILD = 'JBH-88 · R150 · 2026-08-02 · removing it removes it';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -3409,12 +3433,40 @@ function padPress(slot,vel){
   if(S.pads[idx].mode==='grain' && S.pads[idx].bufId>=0){ grainStart(idx,vel); drawEditTitleOnly(); if(seqChanged) drawSeq(); return; }
   hitLive(idx,vel); drawEditTitleOnly(); if(seqChanged) drawSeq();
 }
+/* A pad's hits in the current pattern, across BOTH lanes.
+
+   Reported as "I remove it from a sequence and it still plays as if I left it
+   in": clearing the grid row left the poly lane running, and the pad's LED went
+   dark while the pad was still sounding. Every "does this pad play?" question in
+   the app was asking the grid row alone, which stopped being the whole answer
+   the moment a pad could have two lanes. */
+function padHitsIn(pat,p){
+  let n=0;
+  const row=pat.steps[p];
+  if(row) for(let i=0;i<row.length;i++) if(row[i]>0) n++;
+  const cfg=polyCfg(pat,p);
+  if(cfg){ const lane=polyRowOf(pat,p);
+    for(let i=0;i<cfg.cells;i++) if(lane[i]>0) n++; }
+  return n;
+}
+function padPolyHits(pat,p){
+  const cfg=polyCfg(pat,p); if(!cfg) return 0;
+  const lane=polyRowOf(pat,p); let n=0;
+  for(let i=0;i<cfg.cells;i++) if(lane[i]>0) n++;
+  return n;
+}
 function drawPads(){
   const pat=curPat();
   for(let s=0;s<16;s++){
     const idx=padIndex(s), p=S.pads[idx], el=padEls[s];
     el.classList.toggle('loaded',p.bufId>=0);
-    el.classList.toggle('inseq',p.bufId>=0 && pat.steps[idx].some(v=>v>0));   // amber LED: this pad plays in the current pattern
+    /* amber LED: this pad plays in the current pattern — from either lane. It
+       used to read the grid row only, so a pad playing from its poly lane went
+       dark while you could hear it. Teal when the lane is the ONLY reason it is
+       lit, so the LED says WHY as well as THAT. */
+    const gridOn=pat.steps[idx].some(v=>v>0), polyOn=padPolyHits(pat,idx)>0;
+    el.classList.toggle('inseq',p.bufId>=0 && (gridOn||polyOn));
+    el.classList.toggle('polyonly',p.bufId>=0 && polyOn && !gridOn);
     el.classList.toggle('sel',idx===S.editPad);   // the TARGET pad is always visible, even when empty
     el.classList.toggle('fx',hasFx(p));
     // a send is the one thing a pad does that its own controls cannot explain
@@ -8781,12 +8833,22 @@ function polyAlso(){
   const cfg=polyRead();
   if(!cfg){ el.style.display='none'; return; }
   const bar=polyBar(), eff=polyEffectiveBpm(cfg,bar);
-  const row=polyRowOf(curPat(),S.seqPad);
-  let n=0; for(let i=0;i<cfg.cells;i++) if(row[i]>0) n++;
+  const n=padPolyHits(curPat(),S.seqPad);
   el.style.display='block';
-  el.innerHTML='<b>+ POLY LANE</b> — this pad also plays '+n+' of '+cfg.cells+
-    ' cell'+(cfg.cells>1?'s':'')+' at '+(Math.round(eff*10)/10)+' BPM, below. '+
-    'The grid above is its part on the main beat; the two are separate.';
+  /* Says what it DOES, not just that it exists. The lane runs on its own clock
+     for as long as the sequence plays — it is not triggered by the steps above,
+     so emptying the grid does not silence the pad. That was reported as "I
+     remove it from a sequence and it still plays as if I left it in", and the
+     answer belongs on screen rather than in a reply to a message. */
+  el.innerHTML = n
+    ? '<b>+ POLY LANE</b> — this pad also plays <b>'+n+'</b> of '+cfg.cells+
+      ' cell'+(cfg.cells>1?'s':'')+' at '+(Math.round(eff*10)/10)+' BPM, below. '+
+      'The lane runs on its own for as long as the sequence plays — clearing the '+
+      'steps above will not stop it. <b>CLR ROW</b> empties both; <b>MAIN BEAT</b> '+
+      'turns the lane off. This pattern only.'
+    : '<b>+ POLY LANE</b> — this pad has a lane at '+(Math.round(eff*10)/10)+
+      ' BPM below, with no cells lit, so it adds nothing yet. Tap its cells to '+
+      'write it. This pattern only.';
 }
 $('btnPoly').addEventListener('click',()=>{
   polyMode=!polyMode; $('btnPoly').classList.toggle('on',polyMode);
@@ -8843,7 +8905,25 @@ $('btnSolo').addEventListener('click',()=>{
   seqSolo=!seqSolo; $('btnSolo').classList.toggle('on',seqSolo);
   lcd(seqSolo?'SOLO: only '+padName(S.seqPad)+' plays — tap SOLO again to unmute all':'SOLO OFF — all tracks play');
 });
-$('btnRowClr').addEventListener('click',()=>{ if(morphGuard()) return; const pat=S.patterns[S.pattern]; stopPadVoices(S.seqPad); pat.steps[S.seqPad].fill(0); for(let i=0;i<MAXSTEPS;i++) delete pat.locks[S.seqPad+':'+i]; drawSteps(); drawStepLock(); dirty(); });
+/* CLR ROW clears the TRACK, which since R149 is two lanes. Clearing only the
+   grid row left the poly lane playing with the pad's LED dark — "I remove it
+   from a sequence and it still plays as if I left it in". A button that empties
+   half of what you can hear and says nothing is worse than no button. */
+$('btnRowClr').addEventListener('click',()=>{
+  if(morphGuard()) return;
+  const pat=S.patterns[S.pattern], p=S.seqPad;
+  stopPadVoices(p);
+  const hadGrid=pat.steps[p].some(v=>v>0), hadPoly=padPolyHits(pat,p);
+  pat.steps[p].fill(0);
+  for(let i=0;i<MAXSTEPS;i++){ delete pat.locks[p+':'+i]; delete pat.locks['P'+p+':'+i]; }
+  if(pat.poly && pat.poly[p]) pat.poly[p].row=polyEmptyRow();
+  seqSelStep=-1; seqSelPoly=false;
+  drawSeq(); drawStepLock(); drawPads(); dirty();
+  lcd(hadPoly
+    ? padName(p)+' CLEARED — the grid row and all '+hadPoly+' poly cell'+(hadPoly>1?'s':'')
+      +'. The pad still has its own BPM set; MAIN BEAT turns the lane off entirely.'
+    : padName(p)+(hadGrid?' CLEARED':' was already empty'));
+});
 $('btnPtnBpm').addEventListener('click',()=>{
   S.ptnBpm=!S.ptnBpm; dirty();
   $('btnPtnBpm').classList.toggle('on',S.ptnBpm);
@@ -11606,7 +11686,7 @@ function tourSeen(){ try{ return !!localStorage.getItem(TOUR_KEY); }catch(e){ re
    step is open, so they must not allocate or render. */
 const padsLoaded=()=>S.pads.filter(p=>p.bufId>=0).length;
 const patHits=()=>{ const pt=curPat(); let n=0;
-  for(let p=0;p<NPADS;p++) for(let s=0;s<pt.plen;s++) if(pt.steps[p][s]>0) n++;
+  for(let p=0;p<NPADS;p++) n+=padHitsIn(pt,p);   // both lanes: a poly-only pattern is still a pattern
   return n; };
 const recipeBook=[
 { id:'beat', name:'A beat from one sound',
