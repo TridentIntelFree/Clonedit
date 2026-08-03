@@ -167,6 +167,86 @@ export default async function ({ browser, base }) {
     t.ok('after which it records again', bb.recaptured.peak > 0.05 && bb.recaptured.secs > 1,
       bb.recaptured.secs.toFixed(2) + 's, peak ' + bb.recaptured.peak.toFixed(3));
 
+    t.head('STOP STOPS THE ECHO, NOT JUST THE SOURCES');
+    /* "Something happened and it just kept playing an echo. It happened while I
+       was messing with delay, it played a sample over and over, couldn't stop
+       it." The diagnostic they sent explained it exactly: 1.8s of delay at 0.85
+       feedback, from a project sitting at 12.5 BPM. Each repeat is 85% of the
+       one before, so it takes about forty to fall 60dB — over a minute — and
+       STOP did nothing, because panicVoices only killed SOURCES. Nothing was
+       playing the echo; the delay line was regenerating it from its own output.
+       Reproduced at those exact settings. */
+    const echo = await page.evaluate(async () => {
+      /* An earlier section ends with stopSeq(), and stopSeq now ducks the delay
+         send for 2.1s while the line drains. Starting the echo inside that
+         window measures the fix rather than the bug. */
+      await new Promise(r => setTimeout(r, 2300));
+      setBpm(12.5); S.delayDiv = 0.375; S.delayFb = 0.85;
+      LIVE.dlyFb.gain.value = 0.85;
+      if (LIVE.dlyFb2) LIVE.dlyFb2.gain.value = 0.85;
+      liveDelaySync();
+      const pad = S.pads.findIndex(p => p.bufId >= 0);
+      S.pads[pad].dly = 1; S.pads[pad].gain = 1;
+      const n = LIVE.pads[pad];
+      n.dly.gain.value = 1; n.ch.gain.value = 1;
+      S.mTrim = 0; LIVE.mTrim.gain.value = 1;
+      const an = AC.createAnalyser(); an.fftSize = 2048;
+      LIVE.softclip.connect(an);
+      const b = new Float32Array(an.fftSize);
+      const level = () => { an.getFloatTimeDomainData(b); let p = 0;
+        for (let i = 0; i < b.length; i++) { const a = Math.abs(b[i]); if (a > p) p = a; } return p; };
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      triggerPad(AC, LIVE, pad, 1, AC.currentTime + 0.02, chokeLive);
+      await wait(500);
+      const dry = level();
+      await wait(1800); const echo1 = level();      // one delay time later
+      await wait(1800); const echo2 = level();      // and again, barely decayed
+      stopSeq();
+      await wait(400);  const afterStop = level();
+      await wait(1600); const later = level();
+      await wait(1600);                              // past the 2.1s restore
+      return { delaySecs: delayTime(), dry, echo1, echo2, afterStop, later,
+        restored: { fb: +LIVE.dlyFb.gain.value.toFixed(2),
+          dlyIn: +LIVE.dlyIn.gain.value.toFixed(2),
+          revRet: +LIVE.revRet.gain.value.toFixed(2) } };
+    });
+    t.note('    delay ' + echo.delaySecs.toFixed(2) + 's · dry ' + echo.dry.toFixed(4) +
+      ' → +1.8s ' + echo.echo1.toFixed(4) + ' → +3.6s ' + echo.echo2.toFixed(4));
+    t.note('    after STOP ' + echo.afterStop.toFixed(5) + ' → +1.6s ' + echo.later.toFixed(5));
+    t.ok('the reported settings really do build a 1.8s line',
+      Math.abs(echo.delaySecs - 1.8) < 0.01, echo.delaySecs.toFixed(3) + 's');
+    /* The runaway itself: one hit is still most of its original level several
+       seconds later, with nothing playing it. */
+    t.ok('one hit is still ringing 3.6s later', echo.echo2 > echo.dry * 0.4,
+      (echo.echo2 / echo.dry * 100).toFixed(0) + '% of the original');
+    t.ok('STOP silences it', echo.afterStop < echo.echo2 * 0.05,
+      echo.afterStop.toFixed(5) + ' vs ' + echo.echo2.toFixed(4));
+    t.ok('and it stays silent rather than creeping back', echo.later < echo.echo2 * 0.05,
+      echo.later.toFixed(5));
+    /* And the settings come back, or STOP would quietly cost you your effects. */
+    t.ok('the feedback, send and reverb return are restored afterwards',
+      echo.restored.fb === 0.85 && echo.restored.dlyIn === 1 && echo.restored.revRet > 0,
+      JSON.stringify(echo.restored));
+
+    t.head('AND THE PANEL SAYS HOW LONG IT WILL RING BEFORE YOU BUILD ONE');
+    const ring = await page.evaluate(() => {
+      document.querySelector('#tabs button[data-v="mix"]').click();
+      const read = (bpm, div, fb) => { setBpm(bpm); S.delayDiv = div; S.delayFb = fb;
+        drawDlyRing(); return document.getElementById('dlyRing').textContent; };
+      return { mild: read(120, 0.375, 0.35), heavy: read(120, 0.375, 0.85),
+        reported: read(12.5, 0.375, 0.85), off: read(120, 0.375, 0) };
+    });
+    t.note('    ' + ring.mild);
+    t.note('    ' + ring.reported);
+    t.ok('an ordinary setting reads as a short tail', /about <?b?[^>]*>?1s|about 1s/.test(ring.mild),
+      ring.mild);
+    t.ok('the reported session reads as over a minute', /77s|7\ds/.test(ring.reported), ring.reported);
+    t.ok('and names the tempo as the reason it is that long',
+      /12\.5 BPM/.test(ring.reported), ring.reported);
+    t.ok('a long tail also says STOP will silence it', /STOP silences it/.test(ring.reported));
+    t.ok('and a short one does not nag about it', !/STOP silences it/.test(ring.mild));
+    t.ok('zero feedback reads as no ring at all', /nothing/.test(ring.off), ring.off);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

@@ -2261,8 +2261,34 @@
      a panel that opens red on a healthy phone is worse than no panel.
      BLACK BOX can also be switched off now. It was the only thing running
      whether or not you were recording.
+   - R154: STOP NOW STOPS THE ECHO. "Something happened and it just kept playing
+     an echo... it played a sample over and over, couldn't stop it." The DIAG
+     that came with it said everything: delay 1.800s, feedback 0.85, from a
+     project sitting at 12.5 BPM. Each repeat is 85% of the one before, so about
+     forty of them are needed to fall 60dB — seventy-seven seconds of one hit
+     playing back at you.
+     And STOP genuinely could not stop it, because panicVoices only ever killed
+     SOURCES. Nothing was playing the echo. The delay line was regenerating it
+     from its own output, so silencing every voice in the app left it completely
+     untouched. Measured: one hit is still 94% of its original level 3.6 seconds
+     later with nothing playing it.
+     flushTails() cuts the feedback so nothing new is made and ducks the sends so
+     what is already in the line does not come out, then restores both after
+     2.1s — past delayTime()'s own 1.9s ceiling, so it covers the longest line
+     the app can build at any tempo. The reverb goes with it: STOP already meant
+     "silence" for one-shots, and a tail that outlives the transport is the same
+     surprise in a quieter coat. Verified to fall to 1% and stay there, and the
+     feedback, send and reverb return all come back.
+     The trap that built it gets a readout. Feedback is a percentage, which says
+     nothing about time — 85% at 1.8s is not "a lot of echo", it is over a
+     minute, and the panel let you make that without a word. MIX now says
+     "Repeats every 1.80s (the tempo is 12.5 BPM — that is what makes it this
+     long), and rings for about 77s after the last hit. STOP silences it."
+     Also from the same DIAG: "loudness tap: MISSING" read as a fault when it
+     only meant the OUT tab had not been opened yet, which is when that tap is
+     built. It distinguishes not-built-yet, stale and failed now.
    ================================================================ */
-const BUILD = 'JBH-88 · R153 · 2026-08-03 · no allocation on the audio thread';
+const BUILD = 'JBH-88 · R154 · 2026-08-03 · STOP stops the echo';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2417,7 +2443,8 @@ function buildDelayNet(ctx,g){ // delay network per S.dlyMode — dlyIn stays as
   }
   g.dlyFilt.connect(g.master);
 }
-function liveDelaySync(){ if(!LIVE) return; (LIVE.dlyNodes||[]).forEach(d=>d.delayTime.setTargetAtTime(delayTime(),AC.currentTime,0.05)); }
+function liveDelaySync(){ if(!LIVE) return; (LIVE.dlyNodes||[]).forEach(d=>d.delayTime.setTargetAtTime(delayTime(),AC.currentTime,0.05));
+  try{ drawDlyRing(); }catch(e){} }
 function compThresh(){ return -6 - S.compAmt*26; }
 
 function makeDriveCurve(amt){
@@ -4037,10 +4064,39 @@ bindMix('mxVol',()=>S.masterVol,v=>{ S.masterVol=v; if(LIVE) LIVE.master.gain.se
 bindMix('mxComp',()=>S.compAmt,v=>{ S.compAmt=v; if(LIVE) LIVE.comp.threshold.setTargetAtTime(compThresh(),AC.currentTime,0.05); },pct);
 bindMix('mxRevLvl',()=>S.revLvl,v=>{ S.revLvl=v; if(LIVE) LIVE.revRet.gain.setTargetAtTime(v,AC.currentTime,0.02); },pct);
 bindMix('mxRevSize',()=>S.revSize,v=>{ S.revSize=v; if(LIVE) LIVE.conv.buffer=makeIR(AC,S.revSize,S.revType); },v=>v.toFixed(1)+'s');
-bindMix('mxDlyFb',()=>S.delayFb,v=>{ S.delayFb=v; if(LIVE){ LIVE.dlyFb.gain.setTargetAtTime(v,AC.currentTime,0.02); if(LIVE.dlyFb2) LIVE.dlyFb2.gain.setTargetAtTime(v,AC.currentTime,0.02); } },pct);
+bindMix('mxDlyFb',()=>S.delayFb,v=>{ S.delayFb=v; if(LIVE){ LIVE.dlyFb.gain.setTargetAtTime(v,AC.currentTime,0.02); if(LIVE.dlyFb2) LIVE.dlyFb2.gain.setTargetAtTime(v,AC.currentTime,0.02); } drawDlyRing(); },pct);
+
+/* HOW LONG IT RINGS.
+
+   A delay is the only effect that outlives its input, and feedback is a
+   percentage, which says nothing about time. 85% at 1.8s is not "a lot of
+   echo" — it is seventy-six seconds of one sample playing back at you, and the
+   panel used to let you build that without a word. Reported as "it just kept
+   playing an echo... couldn't stop it", from a session sitting at exactly that.
+   Each repeat is fb of the one before, so the number of repeats to fall 60dB is
+   60 / (-20·log10(fb)), and the tail is that times the delay time. */
+function dlyRingSecs(){
+  const fb=clamp(S.delayFb,0,0.999);
+  if(fb<=0.001) return 0;
+  const perRepeat=-20*Math.log10(fb);
+  return delayTime()*(60/perRepeat);
+}
+function drawDlyRing(){
+  const el=$('dlyRing'); if(!el) return;
+  const t=delayTime(), ring=dlyRingSecs();
+  const long=ring>12;
+  el.innerHTML='Repeats every <b style="color:var(--lcd)">'+t.toFixed(2)+'s</b>'
+    + (S.bpm && Math.abs(S.bpm)<40 ? ' <b style="color:var(--amber)">(the tempo is '
+        +Math.abs(S.bpm)+' BPM — that is what makes it this long)</b>' : '')
+    + ', and rings for about <b style="color:'+(long?'var(--amber)':'var(--lcd)')+'">'
+    + (ring<1 ? 'nothing' : ring<90 ? Math.round(ring)+'s' : Math.round(ring/60)+' min')
+    + '</b> after the last hit.'
+    + (long ? ' STOP silences it.' : '');
+}
 bindMix('mxDlyTone',()=>S.dlyTone,v=>{ S.dlyTone=v; if(LIVE) LIVE.dlyFilt.frequency.setTargetAtTime(v,AC.currentTime,0.03); },v=>Math.round(v/100)/10+'k');
 $('mxDlyDiv').value=String(S.delayDiv);
-$('mxDlyDiv').addEventListener('change',e=>{ S.delayDiv=parseFloat(e.target.value); dirty(); liveDelaySync(); });
+$('mxDlyDiv').addEventListener('change',e=>{ S.delayDiv=parseFloat(e.target.value); dirty(); liveDelaySync(); drawDlyRing(); });
+try{ drawDlyRing(); }catch(e){}
 $('mxRevType').value=S.revType;
 $('mxRevType').addEventListener('change',e=>{ S.revType=e.target.value;
   if(LIVE) LIVE.conv.buffer=makeIR(AC,S.revSize,S.revType);
@@ -4079,6 +4135,7 @@ function applyMixMutes(){
 function mixEditPad(i){ S.editPad=i; S.seqPad=i; if(!S.edit){ S.edit=true; $('btnEdit').classList.add('on'); $('editpanel').style.display='block'; }
   document.querySelector('#tabs button[data-v="pads"]').click(); drawPads(); drawEdit(); }
 function drawMixer(){
+  try{ drawDlyRing(); }catch(e){}     // the tail length belongs beside the delay controls
   const wrap=$('mixStrips'); if(!wrap) return;
   const chans=mixChannels();
   $('mixCount').textContent=chans.length?('· '+chans.length+' in use'):'';
@@ -7490,6 +7547,48 @@ function silenceAt(g, t, fade){
 function silRestore(g, t){
   try{ const gn=g.perfGain.gain; gn.cancelScheduledValues(t); gn.setValueAtTime(0.0001,t); gn.linearRampToValueAtTime(1,t+0.008); }catch(e){}
 }
+/* A DELAY LINE FEEDS ITSELF, SO SILENCING THE SOURCES DOES NOT SILENCE IT.
+
+   Reported as "something happened and it just kept playing an echo... it played
+   a sample over and over, couldn't stop it", with a diagnostic that explains it
+   exactly: 1.8s of delay at 0.85 feedback. Each repeat is 85% of the one before,
+   so it takes about forty of them to fall 60dB — over a minute of a sample
+   playing back at you, and STOP did nothing about it, because panicVoices only
+   ever killed the SOURCES. The echo was not being played by anything; the delay
+   line was regenerating it from its own output.
+
+   Draining it takes two things at once: cut the feedback so nothing new is
+   made, and duck the returns so what is already in the line does not come out.
+   Both are restored once the longest possible line (1.9s) has run dry, so the
+   next thing you play has its effects exactly as you set them.
+
+   The reverb goes with it. STOP already meant "silence" for one-shots — the app
+   says so where it kills them — and a tail that outlives the transport is the
+   same surprise in a quieter coat. */
+let tailRestoreT=0;
+function flushTails(){
+  if(!AC||!LIVE) return;
+  const t=AC.currentTime;
+  const set=(p,v,tc)=>{ try{ p.cancelScheduledValues(t); p.setTargetAtTime(v,t,tc); }catch(e){} };
+  if(LIVE.dlyFb)  set(LIVE.dlyFb.gain,0,0.004);
+  if(LIVE.dlyFb2) set(LIVE.dlyFb2.gain,0,0.004);
+  if(LIVE.dlyIn)  set(LIVE.dlyIn.gain,0,0.004);
+  if(LIVE.revIn)  set(LIVE.revIn.gain,0,0.004);
+  if(LIVE.revRet) set(LIVE.revRet.gain,0,0.02);
+  clearTimeout(tailRestoreT);
+  /* 1.9s is delayTime()'s own ceiling, so this covers the longest line the app
+     can build whatever the tempo is. */
+  tailRestoreT=setTimeout(()=>{
+    if(!AC||!LIVE) return;
+    const t2=AC.currentTime;
+    const back=(p,v)=>{ try{ p.cancelScheduledValues(t2); p.setTargetAtTime(v,t2,0.01); }catch(e){} };
+    if(LIVE.dlyFb)  back(LIVE.dlyFb.gain,S.delayFb);
+    if(LIVE.dlyFb2) back(LIVE.dlyFb2.gain,S.delayFb);
+    if(LIVE.dlyIn)  back(LIVE.dlyIn.gain,1);
+    if(LIVE.revIn)  back(LIVE.revIn.gain,1);
+    if(LIVE.revRet) back(LIVE.revRet.gain,S.revLvl!=null?S.revLvl:0.9);
+  }, 2100);
+}
 function panicVoices(){ // silence every sounding pad voice immediately (short click-free fade)
   try{ repStopAll(); }catch(e){}
   try{ grainStopAll(); for(const k in grainVoices) grainCut(+k); }catch(e){}
@@ -7499,6 +7598,7 @@ function panicVoices(){ // silence every sounding pad voice immediately (short c
     if(act){ act.forEach(v=>{ try{ v.env.gain.cancelScheduledValues(t); v.env.gain.setTargetAtTime(0,t,0.012); v.src.stop(t+0.06); }catch(e){} }); act.length=0; } }
   Object.keys(activeEnv).forEach(k=>delete activeEnv[k]);
   Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
+  flushTails();                  // the echo is not a voice; it feeds itself
 }
 function stopSeq(){
   playing=false; clearInterval(seqTimer);
@@ -11750,8 +11850,11 @@ function diagDump(tag){
           +' = '+S.bpm+'bpm × div '+S.delayDiv+' · fb '+S.delayFb+' '+S.dlyMode; })(),
       // How hard the master is being driven. The output CANNOT clip, so a mix
       // pushed way too hard shows up as limiter reduction and nothing else.
-      'loudness tap: '+(kAn?'built':'MISSING')+(kErr?' err='+kErr:'')
-        +' · bound to current graph: '+(kGraph===LIVE)
+      /* Built the first time OUT is opened, because that is the only place the
+         reading is shown. "MISSING" on its own read as a fault in a report from
+         somebody who simply had not opened that tab. */
+      'loudness tap: '+(kAn ? (kGraph===LIVE?'built + bound':'STALE — bound to an old graph')
+                            : (kErr?'FAILED err='+kErr:'not built yet (opens with the OUT tab)'))
         +' · tone LOW '+S.mEqLo+'dB MID '+S.mEqMid+'dB HIGH '+S.mEqHi+'dB'
         +' · width '+S.mWidth+' · mono '+S.mMono+'Hz',
       (function(){ let red='-'; try{ red=LIVE?LIVE.limiter.reduction.toFixed(1)+'dB':'-'; }catch(e){}

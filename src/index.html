@@ -1659,6 +1659,10 @@ down everything is a balance problem with a lid on it.</p>
   </div>
   <div class="pslider"><span class="lbl">FEEDBK</span><input type="range" id="mxDlyFb" min="0" max="0.85" step="0.01"><span class="val" id="mxDlyFbV"></span></div>
   <div class="pslider"><span class="lbl">TONE</span><input aria-label="Delay tone" type="range" id="mxDlyTone" min="500" max="12000" step="100"><span class="val" id="mxDlyToneV"></span></div>
+  <!-- How long it rings after the last thing you play. A delay is the one
+       effect that outlives its input, and at high feedback it outlives it by a
+       very long way — which is not obvious from a percentage. -->
+  <div id="dlyRing" style="font-size:11px;line-height:1.45;margin:-2px 0 6px;color:var(--txt-dim)"></div>
   </div>
 
 <!-- MIDI -->
