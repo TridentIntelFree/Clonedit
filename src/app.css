@@ -782,5 +782,12 @@ input[type=range]::-webkit-slider-thumb{transition:border-color .12s ease,backgr
 /* The panel says what the lane IS before it offers to configure one. */
 .polylead{font-size:11px;line-height:1.5;color:var(--txt-dim);margin:0 0 8px}
 .polylead b{color:var(--send)}
+/* Engine health. Green is a statement, not decoration: it is the difference
+   between "your mix is distorting" and "the processor missed a deadline", and
+   those two have completely different fixes. */
+#engHealth{font-size:12px;font-weight:700;letter-spacing:.4px}
+#engHealth.engok{color:var(--green)}
+#engHealth.engwarn{color:var(--lcd)}
+#engHealth.engbad{color:var(--red)}
 .polypre{min-height:32px;padding:4px 10px;font-size:12px}
 #polyReadout{letter-spacing:.2px}

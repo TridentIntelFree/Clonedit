@@ -2227,8 +2227,42 @@
      beats. A figure has to last a whole number of BEATS, and the smallest count
      that does is what the button promises — triplet is three cells in one beat,
      3:4 is three across the bar.
+   - R153: THE CRACKLE WAS OURS, AND IT WAS ON THE AUDIO THREAD. Reported as "a
+     strange popping buzzing distortion that's not in relation to typical
+     settings... kind of happens spontaneously", with a request for a filter in
+     OUT that finds and removes it.
+     Measuring first said there was nothing to filter. A 61-second render of the
+     demo song: peak 0.933, no sample at full scale, DC 0.00007, and every
+     sample-to-sample jump above 0.3 sitting exactly on a drum attack — which is
+     what a drum attack IS at 44.1kHz. The offline path is clean, so whatever is
+     being heard exists only live, and the one thing true live and not offline is
+     a deadline.
+     The cause was in the capture worklet. It called .slice() twice per batch, ON
+     THE AUDIO THREAD, twenty-three times a second, for as long as the app was
+     open — because the BLACK BOX starts with the audio and never stops.
+     Allocating on a realtime thread invites the collector to run there, and a
+     collection inside a 2.6ms deadline is a block that never gets computed. Out
+     of the speaker that is a click, at moments with no relationship to what you
+     played. Which is the report, exactly.
+     Buffers are recycled now: the worklet posts one, the main thread copies out
+     and posts the storage back, and steady state allocates nothing on either
+     side. The copy has to happen on the main thread because callers are
+     documented to own what they are handed and TRAX keeps its chunks until the
+     take commits — hand it a buffer that is about to be transferred and the take
+     silently records garbage.
+     The worklet also counts blocks it missed, and OUT reports them. That is the
+     honest version of what was asked for: a dropout is not distortion and no
+     filter can remove it, because the audio was never computed — anything that
+     hid the click would do it by smearing the music either side. So the panel
+     counts instead of pretending, says a pop heard while it is green is coming
+     from the mix rather than the engine, and says the bounce is never affected.
+     Nothing counts for the first 1.5s after audio starts and PLAY resets it:
+     graph build, worklet load and context resume always cost a block or two, and
+     a panel that opens red on a healthy phone is worse than no panel.
+     BLACK BOX can also be switched off now. It was the only thing running
+     whether or not you were recording.
    ================================================================ */
-const BUILD = 'JBH-88 · R152 · 2026-08-03 · the steps fire the figure';
+const BUILD = 'JBH-88 · R153 · 2026-08-03 · no allocation on the audio thread';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2869,6 +2903,62 @@ function stopPadVoices(idx){ // cut every sounding voice on a pad NOW (clear / r
   if(activeEnv[idx]) delete activeEnv[idx];
 }
 
+/* ---------------- DROPOUTS -------------------------------------------------
+   The number behind "a strange popping buzzing distortion that happens
+   spontaneously". A dropout is not distortion and no filter can remove it: it is
+   a block of audio the thread never got to compute, so what reaches the speaker
+   is a discontinuity. Filtering that would only blur the music around it.
+   The capture worklet is already on the audio thread counting its own blocks,
+   so it can say exactly how many frames went missing. That turns an
+   intermittent, unreproducible complaint into a reading. */
+let glitchFrames=0, glitchEvents=0, glitchLastT=0, engDrawT=0, glitchArmT=0;
+/* Building the graph, loading the worklet and resuming the context all take
+   time the audio thread does not have, so the first blocks after audio comes up
+   ALWAYS show a gap — measured here at two dropouts and 67ms on a machine with
+   nothing wrong with it. Counting those would mean the panel opens red on a
+   healthy device, which is worse than not having the panel: the number has to
+   mean something the moment it is not zero. Nothing counts until the engine has
+   been running for a second and a half, and PLAY resets it, so the reading is
+   always "dropouts while you were listening". */
+function glitchArm(){ glitchArmT=performance.now()+1500; }
+function glitchAdd(frames){
+  if(performance.now()<glitchArmT) return;
+  glitchFrames+=frames; glitchEvents++;
+  glitchLastT=performance.now();
+}
+function glitchReset(){ glitchFrames=0; glitchEvents=0; glitchLastT=0; drawEngine(); }
+function glitchMs(){ return AC ? glitchFrames/AC.sampleRate*1000 : 0; }
+
+/* The reading, in the OUT tab. Deliberately says what it MEANS — "your mix is
+   distorting" and "the processor missed a deadline" have nothing to do with each
+   other and completely different fixes, and telling them apart is the entire
+   value of this number. */
+function drawEngine(){
+  const el=$('engHealth'), what=$('engWhat'); if(!el||!what) return;
+  const bb=$('btnBBOn');
+  if(bb){ bb.textContent=bbTap?'ON':'OFF'; bb.classList.toggle('on',!!bbTap); }
+  if(!AC){ el.className=''; el.textContent='— not started'; what.textContent=
+    'Press PLAY and this reports whether the audio thread is keeping up.'; return; }
+  const ms=glitchMs();
+  if(!glitchEvents){
+    el.className='engok'; el.textContent='✓ no dropouts';
+    what.textContent='Every block of audio was computed in time. A pop or buzz you hear '
+      +'while this stays green is coming from the mix — a level, a drive setting, a '
+      +'sample — not from the engine.';
+    return;
+  }
+  const bad = ms>40 || glitchEvents>8;
+  el.className = bad?'engbad':'engwarn';
+  el.textContent = (bad?'✕ ':'! ')+glitchEvents+' dropout'+(glitchEvents>1?'s':'')
+    +' · '+(ms<1?'<1':Math.round(ms))+'ms lost';
+  what.innerHTML='The audio thread missed '+glitchEvents+' deadline'+(glitchEvents>1?'s':'')
+    +'. Each one is a gap in the output, and a gap is heard as a click or a buzz — '
+    +'<b>no filter can remove it</b>, because the audio was never computed. '
+    +'The bounce is unaffected: it renders offline with no deadline to miss. '
+    +'Fewer overlapping voices, a smaller reverb, or turning the BLACK BOX off below '
+    +'is what actually helps.';
+}
+
 /* ---------------- CAPTURE TAPS (AudioWorklet, with a safe fallback) ----------
    Every recorder in the app — REC OUT, TRAX lanes, the BLACK BOX — needs the
    same thing: read the audio flowing through a node into JS. That used to be a
@@ -2876,24 +2966,60 @@ function stopPadVoices(idx){ // cut every sounding voice on a pad NOW (clear / r
    busy UI could glitch a take. These now run in an AudioWorklet (audio thread)
    and batch samples before posting, so capture survives heavy drawing.
    The module is built from a Blob so the app stays a single offline file.
-   Older engines without AudioWorklet transparently keep the old path. */
+   Older engines without AudioWorklet transparently keep the old path.
+
+   NOTHING IN process() ALLOCATES. That is not a style preference: the audio
+   thread has about 2.6ms to fill each 128-frame block at 48kHz, and a garbage
+   collection triggered inside it is a block that misses its deadline, which
+   comes out of the speaker as a click. This tap used to call .slice() twice per
+   batch — 8KB each, twenty-three times a second, for as long as the app was
+   open, because the BLACK BOX starts with the audio and never stops. Reported
+   as "a strange popping buzzing distortion that's not in relation to typical
+   settings... kind of happens spontaneously", which is exactly how an allocation
+   pause sounds: unrelated to anything you played, and timed by the collector
+   rather than by the music.
+   Buffers are recycled instead. The worklet posts one, the main thread copies
+   out of it and posts the empty back, and the worklet returns it to a free list.
+   Steady state is zero allocation on both sides.
+
+   It also counts DROPOUTS. process() is called once per 128-frame block, so a
+   jump in currentFrame larger than that is time the audio thread did not get —
+   the only direct measurement of the thing people describe as crackle, and OUT
+   reports it. */
 const CAPTURE_WORKLET_SRC = `
 class JBHCapture extends AudioWorkletProcessor {
   constructor(opt){
     super();
     const o=(opt&&opt.processorOptions)||{};
     this.size=o.size||2048;
-    this.l=new Float32Array(this.size); this.r=new Float32Array(this.size); this.n=0; this.on=true;
-    this.port.onmessage=e=>{ if(e.data&&e.data.cmd==='stop'){ this.flush(); this.on=false; } };
+    this.pool=[];
+    for(let i=0;i<8;i++) this.pool.push(new Float32Array(this.size));
+    this.l=this.take(); this.r=this.take(); this.n=0; this.on=true;
+    this.lastFrame=-1; this.gap=0;          // frames the audio thread never got
+    this.port.onmessage=e=>{
+      const d=e.data; if(!d) return;
+      if(d.cmd==='stop'){ this.flush(); this.on=false; return; }
+      // buffers coming home from the main thread, ready to be filled again
+      if(d.back){ for(let i=0;i<d.back.length;i++) this.pool.push(new Float32Array(d.back[i])); }
+    };
   }
+  take(){ return this.pool.length ? this.pool.pop() : new Float32Array(this.size); }
   flush(){
     if(!this.n) return;
-    const l=this.l.slice(0,this.n), r=this.r.slice(0,this.n);
-    this.port.postMessage({l:l,r:r,t:currentTime,n:this.n},[l.buffer,r.buffer]);
-    this.n=0;
+    const l=this.l, r=this.r, n=this.n, gap=this.gap;
+    this.l=this.take(); this.r=this.take(); this.n=0; this.gap=0;
+    this.port.postMessage({l:l.buffer, r:r.buffer, t:currentTime, n:n, gap:gap},
+      [l.buffer, r.buffer]);
   }
   process(inputs){
     if(!this.on) return true;
+    /* One call per 128-frame block. A larger jump is a block the audio thread
+       missed, and that silence-or-repeat is what a listener calls a click. */
+    if(this.lastFrame>=0){
+      const step=currentFrame-this.lastFrame;
+      if(step>128) this.gap+=step-128;
+    }
+    this.lastFrame=currentFrame;
     const inp=inputs[0];
     if(inp && inp.length && inp[0] && inp[0].length){
       const L=inp[0], R=inp.length>1&&inp[1]?inp[1]:inp[0];
@@ -2928,7 +3054,18 @@ function makeCaptureTap(ctx,onChunk,size){
     const node=new AudioWorkletNode(ctx,'jbh-capture',{numberOfInputs:1,numberOfOutputs:1,
       outputChannelCount:[2],channelCount:2,channelCountMode:'explicit',
       processorOptions:{size:size||2048}});
-    node.port.onmessage=e=>{ const d=e.data; if(d&&d.l) onChunk(d.l,d.r,d.n,d.t); };
+    node.port.onmessage=e=>{
+      const d=e.data; if(!d||!d.l) return;
+      if(d.gap>0) glitchAdd(d.gap);
+      /* Copied HERE, on the main thread, because callers are documented to own
+         what they are handed — TRAX keeps its chunks until the take is
+         committed — and the storage is about to be transferred back. Allocating
+         on this side is free; allocating on the audio thread is a click. */
+      const l=new Float32Array(d.l).slice(0,d.n);
+      const r=new Float32Array(d.r).slice(0,d.n);
+      onChunk(l,r,d.n,d.t);
+      try{ node.port.postMessage({back:[d.l,d.r]},[d.l,d.r]); }catch(e){}
+    };
     node.connect(sink); sink.connect(ctx.destination);
     return { node, worklet:true,
       stop(){ try{ node.port.postMessage({cmd:'stop'}); }catch(e){}
@@ -2963,6 +3100,15 @@ function bbStart(){
     LIVE.softclip.connect(bbTap);
     LIVE.bbTap=bbTap; LIVE.bbSink=cap;
   }catch(e){ bbTap=null; }
+}
+/* Stopping it frees the tap, the worklet and 11MB of ring buffer. It is the one
+   thing in the app that runs whether or not you are recording, so it is the
+   first thing to try when the engine is dropping blocks. */
+function bbStop(){
+  if(bbCap){ try{ bbCap.stop(); }catch(e){} }
+  if(bbTap && LIVE && LIVE.softclip){ try{ LIVE.softclip.disconnect(bbTap); }catch(e){} }
+  bbTap=null; bbCap=null; bbL=null; bbR=null; bbPos=0; bbFilled=0;
+  if(LIVE){ LIVE.bbTap=null; LIVE.bbSink=null; }
 }
 function bbKeep(){
   ensureAudio();
@@ -3094,6 +3240,7 @@ function ensureAudio(){
   }catch(e){}
   if(AC.state!=='running') AC.resume();
   startMeter();
+  glitchArm();
   bbStart();
   if(srBad()) lcd('AUDIO ONLINE at '+Math.round(AC.sampleRate)+' Hz — see the banner, recording quality is limited.');
   else lcd('AUDIO ONLINE · '+Math.round(AC.sampleRate)+' Hz · state:'+AC.state);
@@ -3241,6 +3388,11 @@ function meterLoop(){
   if(pk>=0.895) mClipHold=now;
   $('mClip').classList.toggle('on', now-mClipHold<800);
   markPolyHead();          // the poly lane runs on its own clock, not the grid's
+  // once a second, and only while OUT is open: a health readout must not itself
+  // be a cost on the machine it is reporting about
+  if(now-engDrawT>1000 && $('v-out') && $('v-out').classList.contains('on')){
+    engDrawT=now; drawEngine();
+  }
   limiterWatch(now);
   // per-channel mixer meters — only when the MIX tab is visible
   if(mixMeters.length && $('v-mix') && $('v-mix').classList.contains('on')){
@@ -4858,6 +5010,15 @@ $('btnMByp').addEventListener('click',()=>{
   S.mByp=!S.mByp; $('btnMByp').classList.toggle('on',S.mByp);
   applyMaster(); dirty();
   lcd(S.mByp?'MASTER CHAIN BYPASSED — hearing it raw.':'MASTER CHAIN ON.');
+});
+$('btnEngReset').addEventListener('click',()=>{ glitchReset();
+  lcd('ENGINE COUNTER RESET — play for a while and see whether it stays green.'); });
+$('btnBBOn').addEventListener('click',()=>{
+  ensureAudio();
+  if(bbTap){ bbStop(); lcd('BLACK BOX OFF — the last-30-seconds capture is no longer running. '
+    +'That is one constant load removed; KEEP will have nothing to give you until you turn it back on.'); }
+  else { bbStart(); lcd('BLACK BOX ON — the last 30 seconds are kept again, so nothing you play is lost.'); }
+  drawEngine();
 });
 $('btnMFlat').addEventListener('click',()=>{
   S.mEqLo=S.mEqMid=S.mEqHi=0; S.mWidth=1; S.mMono=0; S.mCeil=-1; S.mByp=false; S.mTrim=0;
@@ -7297,6 +7458,7 @@ function startSeq(){
   ensureAudio();
   if(playing) return;
   playing=true;
+  glitchReset();          // the reading is always "dropouts while you were listening"
   if(morphActive()){ S.morph.pos=Math.round(clamp(S.morph.amt,0,1)*S.morph.bars); selectPattern(S.morph.from); morphBuild(); drawSeq(); }
   else if(S.chainOn && S.chain.length){ S.chainPos=0; selectPattern(S.chain[0]); drawSeq(); }
   else if(S.songOn && S.song.length){ songPos=0; songRep=0; selectPattern(S.song[0].pat); drawSeq(); drawSong(); }

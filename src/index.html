@@ -1503,6 +1503,60 @@ louder, you are probably losing more than you gain.</p>
   </div>
   <div id="outAdvice" style="font-size:11px;color:var(--txt-dim);margin:0 0 8px">Press PLAY to read the output.</div>
 
+  <h3>ENGINE <span style="color:var(--txt-dim);letter-spacing:0">&mdash; is the audio thread keeping up?</span></h3>
+  <div class="row">
+    <span id="engHealth" class="engok">&#10003; no dropouts</span>
+    <span class="grow"></span>
+    <button id="btnEngReset">RESET</button>
+  </div>
+  <div id="engWhat" style="font-size:11px;color:var(--txt-dim);margin:0 0 6px;line-height:1.5"></div>
+  <div class="row">
+    <span class="lbl">BLACK BOX</span>
+    <button id="btnBBOn" class="on">ON</button>
+    <span style="font-size:10px;color:var(--txt-dim);flex:1">always keeps the last 30 seconds so nothing is lost &mdash; the one thing running whether or not you are recording</span>
+  </div>
+  <details class="ex"><summary>Crackle, and why no filter removes it</summary><div class="ex-body">
+    <p>An occasional pop or buzz that has nothing to do with your settings is
+    almost never distortion. Distortion is a shape the audio was given &mdash;
+    something too loud, something driven, something clipped &mdash; and it
+    happens in the same place every time you play the part. This is not that.</p>
+
+    <h4>What a dropout is</h4>
+    <p>The audio thread has about <b>2.6 milliseconds</b> to compute each block
+    of sound at 48kHz. Miss that deadline and there is nothing to send to the
+    speaker, so the output jumps from wherever it was to wherever the next block
+    starts. A step discontinuity like that contains every frequency at once,
+    which is why it is heard as a click, a pop, or &mdash; when it happens
+    repeatedly &mdash; a buzz.</p>
+    <p>It arrives at unpredictable moments because it is timed by whatever
+    stole the deadline (a garbage collection, another app, the screen waking),
+    not by the music. That is exactly the &ldquo;spontaneous&rdquo; quality
+    people describe.</p>
+
+    <h4>Why there is no filter for it</h4>
+    <p>A filter can only reshape audio that exists. A dropout is audio that was
+    never computed &mdash; the information is not there to clean up. Anything
+    that hid the click would do it by smearing the music on either side of it,
+    which costs you the thing you were trying to protect. So this panel
+    <em>counts</em> dropouts instead of pretending to remove them, and the fix
+    is to stop causing them.</p>
+    <p>The bounce is a different matter and is never affected: it renders
+    offline, faster than realtime, with no deadline to miss. If a part sounds
+    clean in the exported WAV and crackly live, that is a dropout and nothing is
+    wrong with your mix.</p>
+
+    <h4>What actually helps</h4>
+    <ul>
+    <li><b>Fewer voices at once.</b> Long samples on dense steps stack up; a
+    shorter RELEASE or a CHOKE group costs nothing musically and a lot of CPU.</li>
+    <li><b>Turn the BLACK BOX off</b> above if you are not going to use it. It
+    is the only thing in the app that runs constantly.</li>
+    <li><b>A smaller reverb.</b> SIZE in the mixer is a convolution; halving it
+    halves the work.</li>
+    <li><b>Close other tabs and apps.</b> They share the same processor.</li>
+    </ul>
+  </div></details>
+
   <div class="row">
     <button id="btnMByp">BYPASS</button>
     <button id="btnMFlat">RESET</button>
