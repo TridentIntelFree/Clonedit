@@ -228,6 +228,53 @@ export default async function ({ browser, base }) {
       echo.restored.fb === 0.85 && echo.restored.dlyIn === 1 && echo.restored.revRet > 0,
       JSON.stringify(echo.restored));
 
+    t.head('AND THE DRAIN NEVER EATS THE NEXT THING YOU PLAY');
+    /* R154 hung the drain off panicVoices, which CLR PTN and loading a project
+       also call — so clearing a pattern mid-song ducked the sends for two
+       seconds and let them swell back in underneath the music, and pressing PLAY
+       within 2.1s of STOP started the song with no effects at all. Reported as
+       "my playback is messed up, it has a distortion that's not from effects".
+       The drain belongs to STOP; PLAY cancels it outright. */
+    const drain = await page.evaluate(async () => {
+      const g = () => ({ fb: +LIVE.dlyFb.gain.value.toFixed(3),
+        dlyIn: +LIVE.dlyIn.gain.value.toFixed(3),
+        revIn: +LIVE.revIn.gain.value.toFixed(3),
+        revRet: +LIVE.revRet.gain.value.toFixed(3) });
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      S.delayFb = 0.5; LIVE.dlyFb.gain.value = 0.5;
+      startSeq(); await wait(300);
+      const playing1 = g();
+      stopSeq(); await wait(120);
+      const drained = g();
+      startSeq(); await wait(120);            // PLAY well inside the 2.1s window
+      const replay = g();
+      await wait(2300);                       // the old timer would have fired by now
+      const stillGood = g();
+      stopSeq(); await wait(2400);
+      // CLR PTN must not drain anything — it is not a transport action
+      startSeq(); await wait(200);
+      document.getElementById('btnPatClr').click();
+      await wait(150);
+      const afterClr = g();
+      stopSeq();
+      return { playing1, drained, replay, stillGood, afterClr };
+    });
+    t.note('    playing ' + JSON.stringify(drain.playing1));
+    t.note('    drained ' + JSON.stringify(drain.drained));
+    t.note('    replay  ' + JSON.stringify(drain.replay));
+    t.ok('STOP does duck the sends', drain.drained.dlyIn < 0.2 && drain.drained.fb < 0.2,
+      JSON.stringify(drain.drained));
+    t.ok('PLAY restores them at once, not two seconds later',
+      drain.replay.dlyIn > 0.9 && drain.replay.revIn > 0.9 &&
+      Math.abs(drain.replay.fb - 0.5) < 0.01, JSON.stringify(drain.replay));
+    t.ok('and the cancelled timer cannot fire underneath the music',
+      drain.stillGood.dlyIn > 0.9 && Math.abs(drain.stillGood.fb - 0.5) < 0.01,
+      JSON.stringify(drain.stillGood));
+    /* Clearing a pattern kills voices, which is right, but it is not STOP. */
+    t.ok('CLR PTN mid-song leaves the effects alone',
+      drain.afterClr.dlyIn > 0.9 && drain.afterClr.revIn > 0.9 &&
+      Math.abs(drain.afterClr.fb - 0.5) < 0.01, JSON.stringify(drain.afterClr));
+
     t.head('AND THE PANEL SAYS HOW LONG IT WILL RING BEFORE YOU BUILD ONE');
     const ring = await page.evaluate(() => {
       document.querySelector('#tabs button[data-v="mix"]').click();

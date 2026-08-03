@@ -4718,8 +4718,27 @@ Object.assign(globalThis, __JBH_PURE);})();
      Also from the same DIAG: "loudness tap: MISSING" read as a fault when it
      only meant the OUT tab had not been opened yet, which is when that tap is
      built. It distinguishes not-built-yet, stale and failed now.
+   - R155: THE DRAIN WAS ON THE WRONG HOOK. "My playback is messed up now, it has
+     a distortion that's not from effects, didn't appear before." Mine, from
+     R154, and the word "now" was the whole clue.
+     flushTails was hung off panicVoices — but panicVoices is not STOP. CLR PTN
+     calls it, and so does loading a project, so clearing a pattern mid-song
+     ducked the reverb and delay sends to zero and let them swell back in
+     underneath the music two seconds later. And pressing PLAY inside that window
+     started the song with no effects at all, arriving late. Both are the same
+     mistake the tail itself was: something audible happening on its own
+     schedule rather than on yours.
+     The drain belongs to stopSeq, which is what "STOP means silence" always
+     meant, and startSeq now cancels a drain outright rather than waiting for its
+     timer. Verified: STOP ducks, PLAY restores in the same frame, the cancelled
+     timer cannot fire under the music, and CLR PTN mid-song leaves the effects
+     exactly where they were.
+     Checked the rest of R153-R154 the same way rather than assuming: the demo
+     song rendered on R152 and on this build matches to 8e-6 peak and 1e-6 RMS,
+     which is the browser's own float-summing noise. Nothing in those two builds
+     changed the sound; only the live transport behaviour was wrong.
    ================================================================ */
-const BUILD = 'JBH-88 · R154 · 2026-08-03 · STOP stops the echo';
+const BUILD = 'JBH-88 · R155 · 2026-08-03 · the drain belongs to STOP';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -9947,6 +9966,7 @@ function startSeq(){
   if(playing) return;
   playing=true;
   glitchReset();          // the reading is always "dropouts while you were listening"
+  restoreTails();         // a drain from the last STOP must not eat the first bars
   if(morphActive()){ S.morph.pos=Math.round(clamp(S.morph.amt,0,1)*S.morph.bars); selectPattern(S.morph.from); morphBuild(); drawSeq(); }
   else if(S.chainOn && S.chain.length){ S.chainPos=0; selectPattern(S.chain[0]); drawSeq(); }
   else if(S.songOn && S.song.length){ songPos=0; songRep=0; selectPattern(S.song[0].pat); drawSeq(); drawSong(); }
@@ -9997,6 +10017,21 @@ function silRestore(g, t){
    says so where it kills them — and a tail that outlives the transport is the
    same surprise in a quieter coat. */
 let tailRestoreT=0;
+/* PLAY cancels a drain in progress and restores immediately. Without this,
+   pressing play within 2.1s of stop started the song with its sends at zero and
+   faded them up underneath it — the effects arriving late, which is exactly as
+   wrong as the tail arriving late was. */
+function restoreTails(){
+  clearTimeout(tailRestoreT); tailRestoreT=0;
+  if(!AC||!LIVE) return;
+  const t=AC.currentTime;
+  const back=(p,v)=>{ try{ p.cancelScheduledValues(t); p.setValueAtTime(v,t); }catch(e){} };
+  if(LIVE.dlyFb)  back(LIVE.dlyFb.gain,S.delayFb);
+  if(LIVE.dlyFb2) back(LIVE.dlyFb2.gain,S.delayFb);
+  if(LIVE.dlyIn)  back(LIVE.dlyIn.gain,1);
+  if(LIVE.revIn)  back(LIVE.revIn.gain,1);
+  if(LIVE.revRet) back(LIVE.revRet.gain,S.revLvl!=null?S.revLvl:0.9);
+}
 function flushTails(){
   if(!AC||!LIVE) return;
   const t=AC.currentTime;
@@ -10029,7 +10064,6 @@ function panicVoices(){ // silence every sounding pad voice immediately (short c
     if(act){ act.forEach(v=>{ try{ v.env.gain.cancelScheduledValues(t); v.env.gain.setTargetAtTime(0,t,0.012); v.src.stop(t+0.06); }catch(e){} }); act.length=0; } }
   Object.keys(activeEnv).forEach(k=>delete activeEnv[k]);
   Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
-  flushTails();                  // the echo is not a voice; it feeds itself
 }
 function stopSeq(){
   playing=false; clearInterval(seqTimer);
@@ -10039,6 +10073,13 @@ function stopSeq(){
   stopTraxVoices();
   try{ grainStopAll(); }catch(e){}
   panicVoices();                 // STOP silences sounding samples (long one-shots don't ring on)
+  /* Only STOP drains the tails. It was hung off panicVoices in R154, which is
+     also called by CLR PTN and by loading a project — so clearing a pattern
+     mid-song ducked the reverb and delay sends for two seconds and let them
+     swell back in. Reported as "my playback is messed up, it has a distortion
+     that's not from effects". Wrong hook; the intent was always "STOP means
+     silence", not "any panic means silence". */
+  flushTails();                  // the echo is not a voice; it feeds itself
   if(silGateDown && LIVE){ silRestore(LIVE, AC.currentTime); silGateDown=false; }
   $('btnPlay').classList.remove('on');
   document.querySelectorAll('#stepgrid .step').forEach(el=>el.classList.remove('cur'));
