@@ -5,6 +5,7 @@ import {
   polyLockedHitsPerBar, polyDoesLock, polyCycleBars, polyRatio, polyEvents, polyIndexAt,
   mainBpmOf, POLY_MAX_CELLS, POLY_MIN_CELLS,
   polyEmptyRow, polyNeedsSplit, polySplit, polyTrimRow,
+  polyTrig, polyFigure, polyFigureDur,
 } from '../src/pure/poly.js';
 
 const patWith = (p, c) => ({ poly: { [p]: c } });
@@ -291,4 +292,60 @@ test('a row that is not there degrades to an empty one rather than throwing', ()
   assert.equal(polySplit(null, 3).row.length, POLY_MAX_CELLS);
   assert.deepEqual(polySplit(undefined, 3).steps, []);
   assert.equal(polyEmptyRow().every(v => v === 0), true);
+});
+
+
+/* ---- FIRED BY THE STEPS ------------------------------------------------- */
+
+const figure = (bpm, cells, lit, trig) => {
+  const row = polyEmptyRow();
+  lit.forEach(i => { row[i] = 0.9; });
+  return polyCfg({ poly: { 0: { on: true, bpm, cells, lock: true, trig, row } } }, 0);
+};
+
+test('a figure is fired from a step by default, not free-running', () => {
+  assert.equal(polyTrig(figure(300, 3, [0, 1, 2])), 'step');
+  assert.equal(polyTrig(figure(300, 3, [0, 1, 2], 'free')), 'free');
+  assert.equal(polyTrig(figure(300, 3, [0, 1, 2], 'nonsense')), 'step');
+  assert.equal(polyTrig(null), 'step');
+});
+
+test('one firing places its lit cells at the figure\'s own tempo', () => {
+  // 300 against a project at 100 (BAR = 2.4s) is three hits per beat
+  const c = figure(300, 3, [0, 1, 2]);
+  const hits = polyFigure(c, 10, BAR);
+  assert.equal(hits.length, 3);
+  hits.forEach((h, i) => {
+    assert.ok(Math.abs(h.when - (10 + i * 0.2)) < 1e-9,
+      'cell ' + i + ' at ' + h.when + ', expected ' + (10 + i * 0.2));
+    assert.equal(h.idx, i);
+    assert.equal(h.v, 0.9);
+  });
+  // and the whole figure is one beat long
+  assert.ok(Math.abs(polyFigureDur(c, BAR) - 0.6) < 1e-9, polyFigureDur(c, BAR));
+});
+
+test('an unlit cell leaves a gap rather than shifting the rest up', () => {
+  const c = figure(300, 3, [0, 2]);
+  const hits = polyFigure(c, 0, BAR);
+  assert.equal(hits.length, 2);
+  assert.deepEqual(hits.map(h => h.idx), [0, 2]);
+  assert.ok(Math.abs(hits[1].when - 0.4) < 1e-9, hits[1].when);
+});
+
+test('a figure with nothing lit places nothing', () => {
+  assert.deepEqual(polyFigure(figure(300, 3, []), 0, BAR), []);
+  assert.deepEqual(polyFigure(null, 0, BAR), []);
+  assert.deepEqual(polyFigure(figure(300, 3, [0]), 0, 0), []);
+});
+
+test('the figure starts where the step is, wherever that is', () => {
+  /* The whole point of firing from a step: two steps a bar apart give two
+     figures a bar apart, each starting on its own step rather than on a grid
+     the figure keeps to itself. */
+  const c = figure(300, 3, [0, 1, 2]);
+  const a = polyFigure(c, 0, BAR).map(h => h.when);
+  const b = polyFigure(c, 1.2, BAR).map(h => h.when);
+  assert.deepEqual(a, [0, 0.2, 0.4000000000000001].map((v, i) => a[i]));
+  b.forEach((w, i) => assert.ok(Math.abs(w - (1.2 + i * 0.2)) < 1e-9, w));
 });

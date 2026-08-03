@@ -49,4 +49,7 @@ export function newPattern(len) {
 }
 
 export function stepLock(pat, p, st) { return pat.locks && pat.locks[p + ':' + st]; }
-export function stepHasLock(lk) { return !!(lk && (lk.pitch || (lk.prob != null) || lk.rat > 1 || lk.nudge)); }
+/* `plain` is in here because it changes what the step PLAYS — it opts the step
+   out of the pad's poly figure — and a step whose sound differs from its
+   neighbours has to be marked or the grid is lying about itself. */
+export function stepHasLock(lk) { return !!(lk && (lk.pitch || (lk.prob != null) || lk.rat > 1 || lk.nudge || lk.plain)); }

@@ -33,7 +33,10 @@ export default async function ({ browser, base }) {
       const [A, B] = pads;
       // A: three against four, locked to the bar
       // 75 against a project at 100 = three hits per bar: 3-against-4
-      pat.poly = { [A]: { on: true, bpm: 75, cells: 3, lock: true } };
+      /* trig:'free' throughout this first half — these sections are about the
+         lane that runs on its own clock, which is now the OPTION rather than the
+         default. The step-fired default gets its own section further down. */
+      pat.poly = { [A]: { on: true, bpm: 75, cells: 3, lock: true, trig: 'free' } };
       for (let k = 0; k < 3; k++) pat.steps[A][k] = 0.9;
       // B: an ordinary four-on-the-floor
       [0, 4, 8, 12].forEach(i => { pat.steps[B][i] = 0.9; });
@@ -197,7 +200,7 @@ export default async function ({ browser, base }) {
     t.head('FREE MODE — its own tempo, never re-anchoring');
     const free = await page.evaluate(async ({ A }) => {
       const pat = S.patterns[S.pattern];
-      pat.poly = { [A]: { on: true, bpm: 137 * 4, cells: 4, lock: false } };
+      pat.poly = { [A]: { on: true, bpm: 137 * 4, cells: 4, lock: false, trig: 'free' } };
       pat.steps[A].fill(0);
       for (let k = 0; k < 4; k++) pat.steps[A][k] = 0.9;   // every cell, or a silent one reads as a missed hit
       const hits = [];
@@ -307,6 +310,8 @@ export default async function ({ browser, base }) {
         .borderTopColor;
       o.alsoShown = document.getElementById('polyAlso').style.display !== 'none';
       o.alsoText = document.getElementById('polyAlso').textContent;
+      o.defaultTrig = polyTrig(polyCfg(pat, pad));
+      o.trigRowShown = document.getElementById('polyTrigRow').style.display !== 'none';
 
       // triplets
       document.querySelector('.polypre[data-mul="3"]').click();
@@ -360,8 +365,11 @@ export default async function ({ browser, base }) {
     t.ok('THE STEP GRID STILL SHOWS 16', ui.gridCells === 16, ui.gridCells + '');
     t.ok('and the lane is drawn in its own colour', ui.laneMarked !== 'rgb(43, 48, 56)',
       ui.laneMarked);
-    t.ok('and the grid says a second lane is running below', ui.alsoShown &&
-      /POLY LANE/.test(ui.alsoText), ui.alsoText.slice(0, 70));
+    t.ok('and the grid says the pad has a figure', ui.alsoShown &&
+      /POLY FIGURE/.test(ui.alsoText), ui.alsoText.slice(0, 70));
+    t.ok('a new figure is fired FROM THE STEPS by default', ui.defaultTrig === 'step',
+      ui.defaultTrig);
+    t.ok('and the choice is on screen, not buried', ui.trigRowShown);
 
     t.note('    triplet button: "' + ui.tripSays + '"');
     t.ok('the triplet button says 3 hits per beat', /3 hits per beat/.test(ui.tripSays), ui.tripSays);
@@ -426,7 +434,8 @@ export default async function ({ browser, base }) {
       pat.locks = {};
       pat.steps[pad].fill(0);
       pat.steps[pad][0] = 0.9; pat.steps[pad][8] = 0.9;      // GRID: two hits, on the beat
-      pat.poly = { [pad]: { on: true, bpm: 75, cells: 3, lock: true, row: polyEmptyRow() } };
+      pat.poly = { [pad]: { on: true, bpm: 75, cells: 3, lock: true, trig: 'free',
+        row: polyEmptyRow() } };
       pat.poly[pad].row[0] = 0.9; pat.poly[pad].row[1] = 0.9; pat.poly[pad].row[2] = 0.9;
       S.bpm = 100; pat.plen = 16; pat.len = new Array(NPADS).fill(16);
       drawSeq(); drawPoly();
@@ -542,7 +551,8 @@ export default async function ({ browser, base }) {
     const locks = await page.evaluate(() => {
       const pad = S.seqPad, pat = S.patterns[S.pattern];
       pat.locks = {};
-      pat.poly = { [pad]: { on: true, bpm: 75, cells: 3, lock: true, row: polyEmptyRow() } };
+      pat.poly = { [pad]: { on: true, bpm: 75, cells: 3, lock: true, trig: 'free',
+        row: polyEmptyRow() } };
       pat.poly[pad].row[2] = 0.9;
       pat.steps[pad].fill(0); pat.steps[pad][2] = 0.9;
       seqLockMode = true; drawSeq(); drawPoly();
@@ -579,7 +589,8 @@ export default async function ({ browser, base }) {
       const pad = S.seqPad, pat = S.patterns[S.pattern];
       pat.locks = {};
       pat.steps[pad].fill(0); pat.steps[pad][0] = 0.9; pat.steps[pad][8] = 0.9;
-      pat.poly = { [pad]: { on: true, bpm: 75, cells: 3, lock: true, row: polyEmptyRow() } };
+      pat.poly = { [pad]: { on: true, bpm: 75, cells: 3, lock: true, trig: 'free',
+        row: polyEmptyRow() } };
       for (let k = 0; k < 3; k++) pat.poly[pad].row[k] = 0.9;
       pat.locks['P' + pad + ':1'] = { rat: 3 };
       S.bpm = 100; drawSeq(); drawPads();
@@ -644,6 +655,7 @@ export default async function ({ browser, base }) {
     t.head('AND THE GRID SAYS WHY THE PAD IS STILL SOUNDING');
     const notice = await page.evaluate(() => {
       const pad = S.seqPad, pat = S.patterns[S.pattern];
+      pat.poly[pad].trig = 'free';
       pat.poly[pad].row[0] = 0.9;
       pat.steps[pad].fill(0);
       drawSeq();
@@ -657,6 +669,129 @@ export default async function ({ browser, base }) {
       /CLR ROW/.test(notice.text) && /MAIN BEAT/.test(notice.text));
     t.ok('and says the lane belongs to this pattern',
       /This pattern only/.test(notice.text));
+
+    t.head('THE FIGURE IS FIRED BY THE STEPS, AND ONLY BY THE STEPS');
+    /* "The poly lane shouldn't play if nothing is selected on the main sequencer
+       to trigger the poly lane to play." That is the default now: the pad's
+       figure replaces the single hit at every lit step, and an empty row is
+       silence. Measured in a render, because the whole complaint was about what
+       could be heard when nothing on the grid accounted for it. */
+    const fired = await page.evaluate(async () => {
+      const pad = S.seqPad, pat = S.patterns[S.pattern];
+      S.bpm = 100; S.human = 0; S.swing = 0; S.chainOn = false; S.songOn = false;
+      arrHeldOnce = true;
+      pat.locks = {}; pat.steps[pad].fill(0);
+      pat.plen = 16; pat.len = new Array(NPADS).fill(16);
+      // 300 BPM = three hits per beat: a triplet, 0.2s apart at a 0.6s beat
+      pat.poly = { [pad]: { on: true, bpm: 300, cells: 3, lock: true, row: polyEmptyRow() } };
+      for (let k = 0; k < 3; k++) pat.poly[pad].row[k] = 0.9;
+      document.getElementById('bLoops').value = '1';
+      drawSeq();
+      const at = async () => {
+        const kR = S.pads[pad].rev, kD = S.pads[pad].dly;
+        S.pads[pad].rev = 0; S.pads[pad].dly = 0;
+        const w = []; const real = window.triggerPad;
+        window.triggerPad = (c, g, p, v, when, reg, pi) => {
+          if (p === pad) w.push(+(when - 0.05).toFixed(3));
+          return real(c, g, p, v, when, reg, pi);
+        };
+        const buf = await renderMix(new Set([pad]), new Set());
+        window.triggerPad = real;
+        S.pads[pad].rev = kR; S.pads[pad].dly = kD;
+        return { t: [...new Set(w)].filter(x => x > -0.01 && x < 2.39).sort((a, b) => a - b),
+          silent: !buf };
+      };
+      const out = { empty: await at() };
+      pat.steps[pad][0] = 0.9; drawSeq(); out.one = await at();
+      pat.steps[pad][8] = 0.9; drawSeq(); out.two = await at();
+      pat.locks[pad + ':8'] = { plain: 1 }; drawSeq(); out.plain = await at();
+      out.marked = document.querySelectorAll('#stepgrid .step')[8].classList.contains('lockmark');
+      return out;
+    });
+    t.note('    empty grid      → ' + (fired.empty.t.join(' ') || '(silence)'));
+    t.note('    step 0 lit      → ' + fired.one.t.join('  '));
+    t.note('    steps 0 and 8   → ' + fired.two.t.join('  '));
+    t.note('    step 8 = PLAIN  → ' + fired.plain.t.join('  '));
+    t.ok('AN EMPTY GRID ROW IS SILENCE', fired.empty.t.length === 0,
+      fired.empty.t.length + ' hits fired with nothing lit');
+    t.ok('one lit step fires the whole figure', fired.one.t.length === 3,
+      fired.one.t.length + ' hits');
+    /* 300 BPM against a project at 100 is three hits per beat, so the figure
+       occupies one beat: 0, 0.2, 0.4. */
+    t.ok('at the figure\'s own tempo, not the grid\'s',
+      fired.one.t.every((w, i) => Math.abs(w - i * 0.2) < 0.01),
+      fired.one.t.join(' '));
+    t.ok('a second lit step fires it again, from there',
+      fired.two.t.length === 6 && Math.abs(fired.two.t[3] - 1.2) < 0.01,
+      fired.two.t.join(' '));
+    /* The figure REPLACES the step's single hit rather than decorating it —
+       three cells on a step is three hits, not four. */
+    t.ok('and replaces the plain hit rather than adding to it',
+      fired.two.t.length === 6, fired.two.t.length + ' hits from 2 steps × 3 cells');
+    t.ok('PLAIN HIT takes one step back out of the figure',
+      fired.plain.t.length === 4 && Math.abs(fired.plain.t[3] - 1.2) < 0.01,
+      fired.plain.t.join(' '));
+    t.ok('and that step is marked on the grid, not changed in secret', fired.marked);
+
+    t.head('A QUICK PRESET GIVES A FIGURE YOU CAN PLACE ON A STEP');
+    /* The presets used to set a BAR's worth of cells, which was right when the
+       row was a continuous lane and wrong the moment a step fires it: `triplet`
+       came out twelve cells long, so one step swallowed the next four beats.
+       A figure has to last a whole number of BEATS, and the smallest count that
+       does is what a button labelled `triplet` promises — three. */
+    const presets = await page.evaluate(() => {
+      setBpm(100); arrHeldOnce = true;
+      const pad = S.seqPad, pat = S.patterns[S.pattern];
+      delete pat.poly; drawSeq();
+      if (document.getElementById('polyPanel').style.display === 'none')
+        document.getElementById('btnPoly').click();
+      document.getElementById('btnPolyOn').click();
+      const beat = 60 / 100, out = {};
+      document.querySelectorAll('.polypre').forEach(b => {
+        b.click();
+        const c = polyCfg(pat, pad), bar = NSTEPS * stepDur();
+        out[b.textContent] = { cells: c.cells, beats: +(polyFigureDur(c, bar) / beat).toFixed(4) };
+      });
+      return out;
+    });
+    for (const [name, v] of Object.entries(presets))
+      t.note('    ' + name.padEnd(8) + v.cells + ' cells = ' + v.beats + ' beats');
+    t.ok('every preset lasts a whole number of beats',
+      Object.values(presets).every(v => Math.abs(v.beats - Math.round(v.beats)) < 1e-6),
+      Object.entries(presets).map(([k, v]) => k + ':' + v.beats).join(' '));
+    t.ok('triplet is three cells in one beat, not twelve in four',
+      presets['triplet'].cells === 3 && Math.abs(presets['triplet'].beats - 1) < 1e-6,
+      presets['triplet'].cells + ' cells / ' + presets['triplet'].beats + ' beats');
+    t.ok('and 3:4 is three cells across the bar, which is what it means',
+      presets['3:4'].cells === 3 && Math.abs(presets['3:4'].beats - 4) < 1e-6,
+      presets['3:4'].cells + ' cells / ' + presets['3:4'].beats + ' beats');
+
+    t.head('THE PANEL SAYS WHICH ONE IT IS DOING');
+    const says = await page.evaluate(() => {
+      const pad = S.seqPad;
+      if (document.getElementById('polyPanel').style.display === 'none')
+        document.getElementById('btnPoly').click();
+      document.getElementById('btnPolyStep').click();
+      const step = { hint: document.getElementById('polyTrigHint').textContent,
+        said: document.getElementById('lcdmsg').textContent,
+        on: document.getElementById('btnPolyStep').classList.contains('on') };
+      document.getElementById('btnPolyFree').click();
+      const free = { hint: document.getElementById('polyTrigHint').textContent,
+        said: document.getElementById('lcdmsg').textContent,
+        on: document.getElementById('btnPolyFree').classList.contains('on'),
+        trig: polyTrig(polyCfg(S.patterns[S.pattern], pad)) };
+      document.getElementById('btnPolyStep').click();
+      return { step, free };
+    });
+    t.note('    FROM EACH STEP: "' + says.step.hint.slice(0, 100) + '"');
+    t.note('    ON ITS OWN:     "' + says.free.hint.slice(0, 100) + '"');
+    t.ok('FROM EACH STEP is marked and explains the gate', says.step.on &&
+      /No step, no sound/.test(says.step.hint), says.step.hint.slice(0, 80));
+    t.ok('ON ITS OWN is marked and warns that it keeps going', says.free.on &&
+      says.free.trig === 'free' && /empty the row/.test(says.free.hint),
+      says.free.hint.slice(0, 80));
+    t.ok('and each switch says what changed', /FROM EACH STEP/.test(says.step.said) &&
+      /ON ITS OWN/.test(says.free.said));
 
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));

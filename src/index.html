@@ -467,7 +467,7 @@ someone else's.</p>
 <!-- SEQ -->
 <div class="view" role="tabpanel" aria-label="Sequencer" id="v-seq">
   <div class="hint">
-  <div class="hint-lead" data-lead-short><b>PROGRAM</b> — tap steps for the shown TRACK. <b>LOCK</b> + a step edits one hit; <b>NOTES</b> writes melodies; <b>POLY</b> gives this pad its own BPM.</div>
+  <div class="hint-lead" data-lead-short><b>PROGRAM</b> — tap steps for the shown TRACK. <b>LOCK</b> + a step edits one hit; <b>NOTES</b> writes melodies; <b>POLY</b> makes this pad's steps play a figure at its own BPM.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-seq">HOW A STEP SEQUENCER THINKS</button>
   <div class="hint-body" id="learn-seq" hidden>
 <p class="lead-was"><b>PROGRAM</b> — tap steps for the shown TRACK. <b>NOTES</b> opens a scale grid to write melodies on this pad. <b>POLY</b> takes this pad off the grid and gives it a BPM of its own. <b>LIVE REC</b> records pad taps quantized to the grid. <b>LOCK</b> + a step sets pitch / probability / ratchet / nudge. <b>HUMAN</b> adds timing + velocity drift.</p>
@@ -491,9 +491,9 @@ same speed, sliding. <b>Polyrhythm</b> keeps one span and divides it different
 <p>A step grid can do the first and genuinely cannot do the second, because a
 bar here is 16 steps and 16 does not divide by 3. Ask EUCLID for 3 hits in 16
 and it gives you 5-5-6 — the closest it can get, and audibly not a triplet.
-<b>POLY</b> is the answer to that: it gives one pad a second lane with a BPM of
-its own, running alongside the part it already plays on the grid. Its own panel
-explains the rest.</p>
+<b>POLY</b> is the answer to that: it gives one pad a figure with a BPM of its
+own, and every lit step of that pad plays the figure instead of a single hit. The
+grid still says when; the figure says what. Its own panel explains the rest.</p>
 
 <h4>Parameter locks — a different setting on one step</h4>
 <p><b>LOCK</b> plus a step changes that <em>single hit</em> without touching the
@@ -646,11 +646,24 @@ where they come back into alignment. On a grid that relationship is invisible.</
     <button id="btnPatClr">CLR PTN</button>
   </div>
   <div id="polyPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
+    <!-- Said in the open, not folded away. The one thing that surprised a tester
+         about this panel is that the lane is a SECOND rhythm running on its own
+         clock rather than something the steps above trigger, and a sentence at
+         the top of the panel is the cheapest place to say it. -->
+    <div class="polylead"><b>A figure this pad plays instead of a single hit.</b>
+      Set its tempo and its cells below, then every lit step of this pad on the grid above
+      fires it. No step, no sound &mdash; the grid still says when this pad plays.</div>
     <div class="row" style="margin-bottom:6px">
       <span class="lbl">PULSE</span>
       <button id="btnPolyOff" class="on">MAIN BEAT</button>
       <button id="btnPolyOn">OWN BPM</button>
     </div>
+    <div id="polyTrigRow" class="row" style="display:none;margin-bottom:6px">
+      <span class="lbl">PLAYS</span>
+      <button id="btnPolyStep" class="on">FROM EACH STEP</button>
+      <button id="btnPolyFree">ON ITS OWN</button>
+    </div>
+    <div id="polyTrigHint" style="display:none;font-size:11px;color:var(--txt-dim);margin:-2px 0 8px;line-height:1.45"></div>
     <div id="polyBody" style="display:none">
       <div class="pslider" style="margin-bottom:2px">
         <span class="lbl">BPM</span>
@@ -680,19 +693,37 @@ where they come back into alignment. On a grid that relationship is invisible.</
       <div id="polygrid"></div>
     </div>
     <details class="ex"><summary>Giving a pad its own BPM</summary><div class="ex-body">
-      <p>Every pad normally plays on the project's beat. Switch one to
-      <b>OWN BPM</b> and it gets a <em>second</em> lane, running at whatever
-      tempo you give it. Two pulses at once — a polyrhythm.</p>
+      <p>Every pad normally plays one hit per lit step. Switch one to
+      <b>OWN BPM</b> and you give it a <em>figure</em> instead: a short run of
+      cells at a tempo of its own. Every lit step of that pad then plays the
+      whole figure rather than a single hit. Two pulses at once — a
+      polyrhythm.</p>
 
-      <h4>This is a second lane, not a replacement</h4>
-      <p>The step grid above still belongs to this pad and still plays: its
-      ordinary part, on the main beat, at whatever length you set. The cells
-      down here are a separate row at the pad's own tempo, and the pad plays
-      <em>both</em>. Neither has to agree with the other — that is the point.
-      Put a straight kick on the grid and a triplet in the lane and you have one
-      pad doing two things.</p>
-      <p>Because the grid above no longer shows everything this pad plays, a
-      teal line under it says the lane is there and how many cells are lit.</p>
+      <h4>The grid still says when</h4>
+      <p>This is the part worth being clear about, because it is what most
+      people expect and it is what the app does: <b>no step, no sound</b>. The
+      figure does not run on its own. It is fired by the steps you have already
+      written, so emptying the row silences the pad exactly the way it always
+      did, and the grid above never stops being the truth about when this pad
+      plays.</p>
+      <p>The figure <em>replaces</em> the step's single hit rather than
+      decorating it — three lit cells on a step is three hits, not four — and
+      the step's own velocity scales the whole figure, so turning a step down
+      turns its figure down with it.</p>
+
+      <h4>One step at a time can opt out</h4>
+      <p><b>LOCK</b> plus a step gives that step a <b>PLAIN HIT</b> switch: it
+      plays one ordinary hit and skips the figure. Useful for a part that is
+      mostly tuplets with a couple of straight hits in it. A step set that way is
+      marked on the grid, like any other lock.</p>
+
+      <h4>ON ITS OWN — the other option</h4>
+      <p><b>PLAYS ▸ ON ITS OWN</b> unties the figure from the grid: it runs
+      continuously for as long as the sequence plays, whether or not the pad has
+      any steps. That is what you want for <em>phasing</em> — two pulses sliding
+      against each other for minutes at a time — and it is the only setting where
+      the pad can sound with an empty row, so the app says so plainly whenever it
+      is on.</p>
 
       <h4>The number means what you think it means</h4>
       <p>The project's BPM counts beats per minute. A pad's BPM counts
@@ -869,6 +900,13 @@ a silence gives the gap away.</p>
     <div class="pslider"><span class="lbl">PROB</span><input type="range" id="slProb" min="0.05" max="1" step="0.05" value="1"><span class="val" id="slProbV">100%</span></div>
     <div class="pslider"><span class="lbl">RATCH</span><input type="range" id="slRat" min="1" max="6" step="1" value="1"><span class="val" id="slRatV">1</span></div>
     <div class="pslider"><span class="lbl">NUDGE</span><input type="range" id="slNudge" min="-0.5" max="0.5" step="0.05" value="0"><span class="val" id="slNudgeV">0</span></div>
+    <!-- Only meaningful on a pad whose figure is fired from its steps, so it is
+         hidden otherwise rather than sitting there doing nothing. -->
+    <div class="row" id="slPlainRow" style="display:none">
+      <span class="lbl">POLY</span>
+      <button id="slPlain">FIGURE</button>
+      <span id="slPlainHint" style="font-size:10px;color:var(--txt-dim);flex:1">this step plays the pad's poly figure</span>
+    </div>
   </div>
   <div class="row">
     <button id="btnLiveRec" class="rec grow">LIVE REC (quantized pad input)</button>

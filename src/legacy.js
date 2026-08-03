@@ -2201,8 +2201,34 @@
      cleared nothing and the hit went on playing. It is copied back in place
      now. The rule is that a pattern's step array is mutated, never replaced:
      the notes lane, the circle view and the morph snapshots all hold on to it.
+   - R152: THE STEPS FIRE THE FIGURE. "The poly lane shouldn't play if nothing is
+     selected on the main sequencer to trigger the poly lane to play." Said three
+     times, three ways, before I heard it. The free-running lane was mine and
+     nobody asked for it: it made a pad go on sounding after its row was emptied,
+     which reads as a bug however carefully it is documented, and it cost three
+     rounds of confusion to arrive back at the obvious thing.
+     A poly pad now has a FIGURE rather than a lane, and every lit step of that
+     pad plays the whole figure instead of one hit. No step, no sound. The grid
+     never stops being the truth about when a pad plays, which is the rule this
+     sequencer was built on and the one I had quietly broken.
+     The figure REPLACES the step's hit rather than decorating it — three lit
+     cells on a step is three hits, not four — and the step's velocity scales the
+     whole figure, so turning a step down turns its figure down.
+     LOCK + a step gives that step PLAIN HIT: it plays one ordinary hit and skips
+     the figure, for a part that is mostly tuplets with a couple of straight ones.
+     It counts as a lock, so the step is marked; a step that sounds different
+     from its neighbours must not look the same as them.
+     PLAYS ▸ ON ITS OWN keeps the old behaviour, because phasing is real and the
+     app teaches it — but you have to go and ask, and the panel says plainly that
+     it is the one setting where the pad sounds with an empty row.
+     The QUICK presets had to change with it. They set a BAR's worth of cells,
+     which was right for a continuous lane and absurd the moment a step fires it:
+     `triplet` came out twelve cells long, so one step swallowed the next four
+     beats. A figure has to last a whole number of BEATS, and the smallest count
+     that does is what the button promises — triplet is three cells in one beat,
+     3:4 is three across the bar.
    ================================================================ */
-const BUILD = 'JBH-88 · R151 · 2026-08-02 · edits hold the pattern';
+const BUILD = 'JBH-88 · R152 · 2026-08-03 · the steps fire the figure';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -7055,7 +7081,7 @@ function schedStep(barStep, absStep, t){
        No `continue` after this: the pad ALSO plays its ordinary grid row. Two
        independent lanes is the whole point, and it is what lets a triplet go on
        a pad without taking away the part already written there. */
-    if(pc){
+    if(pc && polyTrig(pc)==='free'){
       const prow=polyRowOf(pat,p);
       for(const ev of polyHitsForStep(pc, absStep, t, sd)){
         const v=prow[ev.idx];
@@ -7076,6 +7102,24 @@ function schedStep(barStep, absStep, t){
       if(when<AC.currentTime) when=AC.currentTime; }
     // NOTES-lane harmony: a column can hold several pitches — fire the pad
     // once per note so they sound together as a chord.
+    /* FROM EACH STEP. The lit step fires the pad's figure INSTEAD of a single
+       hit, so the figure is gated by the grid exactly the way everything else on
+       this pad is: no step, no sound. A step can opt out per-step with PLAIN
+       HIT, for a pattern that is mostly figures with a couple of straight ones.
+       The step's own velocity scales the figure, so turning a step down turns
+       the whole thing down. */
+    if(pc && polyTrig(pc)==='step' && !(lk&&lk.plain)){
+      polyRowOf(pat,p);
+      const barDur=NSTEPS*sd, pd=polyStepDur(pc,barDur);
+      let any=false;
+      for(const f of polyFigure(pc, when, barDur)){
+        any=true;
+        polyFire(pat, p, f.idx, clamp(f.v*hv,0.02,1), f.when, pd, fired);
+      }
+      if(any){ if(p===S.seqPad) polyFigMark(when, pc, barDur); continue; }
+      /* a figure with no cells lit would silence the step altogether, which is
+         not what an empty lane should mean — fall through and play it plainly */
+    }
     const chord=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0];
     const rat=(lk&&lk.rat>1)?lk.rat:1;                           // ratchet / roll
     const creg=chord.length>1?null:chokeLive;                    // chord voices must not choke each other
@@ -8555,7 +8599,32 @@ function drawStepLock(){
   $('slProb').value=lk.prob!=null?lk.prob:1; $('slProbV').textContent=Math.round((lk.prob!=null?lk.prob:1)*100)+'%';
   $('slRat').value=lk.rat||1; $('slRatV').textContent=String(lk.rat||1);
   $('slNudge').value=lk.nudge||0; $('slNudgeV').textContent=(lk.nudge?(lk.nudge>0?'+':'')+Math.round(lk.nudge*100)+'%':'0');
+  /* One step at a time can opt out of the pad's figure, for a part that is
+     mostly figures with a couple of straight hits in it. Hidden unless the pad
+     actually has a figure fired from its steps — a control that cannot do
+     anything is worse than one that is not there. */
+  const pc=polyCfg(pat,S.seqPad);
+  const showPlain = !seqSelPoly && pc && polyTrig(pc)==='step';
+  $('slPlainRow').style.display = showPlain ? 'flex' : 'none';
+  if(showPlain){
+    const plain=!!lk.plain;
+    $('slPlain').textContent = plain ? 'PLAIN HIT' : 'FIGURE';
+    $('slPlain').classList.toggle('on',!plain);
+    $('slPlainHint').textContent = plain
+      ? 'this step plays one ordinary hit, not the figure'
+      : "this step plays the pad's poly figure";
+  }
 }
+$('slPlain').addEventListener('click',()=>{
+  if(seqSelStep<0 || seqSelPoly) return;
+  if(morphGuard()) return;
+  const pat=S.patterns[S.pattern], k=LK(S.seqPad,seqSelStep,false), lk=pat.locks[k]||{};
+  if(lk.plain) delete lk.plain; else lk.plain=1;
+  if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
+  drawSteps(); drawStepLock(); dirty();
+  lcd(lk.plain ? 'STEP '+(seqSelStep+1)+' plays one ordinary hit — the figure is skipped here.'
+                : 'STEP '+(seqSelStep+1)+" plays the pad's figure again.");
+});
 function setLock(field,val,def){
   if(seqSelStep<0) return;
   if(morphGuard()) return;
@@ -8828,7 +8897,7 @@ function polyWrite(){
   $('btnPolyOff').classList.toggle('on',!cfg);
   $('btnPolyOn').classList.toggle('on',!!cfg);
   $('polyBody').style.display=cfg?'block':'none';
-  if(!cfg) return;
+  if(!cfg){ $('polyTrigRow').style.display='none'; $('polyTrigHint').style.display='none'; return; }
   $('polyBpm').value=String(raw.bpm);
   $('polyCellV').textContent=cfg.cells;
   $('btnPolyLock').classList.toggle('on',cfg.lock);
@@ -8841,7 +8910,21 @@ function polyWrite(){
   $('polyLockHint').textContent = cfg.lock
     ? (snapped? 'nudged '+raw.bpm+' → '+(Math.round(s.eff*10)/10)+' so it fits the bar' : 'fits the bar exactly')
     : 'exactly '+raw.bpm+' BPM, wherever that falls';
-  $('polyCellHint').textContent='lane repeats every '+cfg.cells+' hit'+(cfg.cells>1?'s':'');
+  $('polyCellHint').textContent='the figure is '+cfg.cells+' cell'+(cfg.cells>1?'s':'')+' long';
+  const fromStep=polyTrig(cfg)==='step';
+  $('polyTrigRow').style.display='flex';
+  $('polyTrigHint').style.display='block';
+  $('btnPolyStep').classList.toggle('on',fromStep);
+  $('btnPolyFree').classList.toggle('on',!fromStep);
+  const dur=polyFigureDur(cfg,bar);
+  $('polyTrigHint').innerHTML = fromStep
+    ? 'Every lit step of this pad fires the whole figure instead of one hit — '
+      +'<b>'+padPolyHits(curPat(),S.seqPad)+' hit'+(padPolyHits(curPat(),S.seqPad)===1?'':'s')
+      +' spread over '+(Math.round(dur*100)/100)+'s</b>, which is '
+      +(Math.round(dur/(bar/NSTEPS)*10)/10)+' steps of the grid. No step, no sound.'
+    : 'The figure runs on its own clock for as long as the sequence plays, whether or not '
+      +'this pad has steps on the grid. Use it for phasing; it will keep going after you '
+      +'empty the row above.';
   document.querySelectorAll('.polypre').forEach(b=>{
     const want=mainBpmOf(bar)*parseFloat(b.dataset.mul);
     b.classList.toggle('on', Math.abs(want-raw.bpm)<0.6);
@@ -8890,11 +8973,25 @@ function drawPoly(){
    one at 30 sits still through several. So it rides the frame loop instead, and
    only writes to the DOM when the cell actually changes. */
 let polyHeadAt=-2;
+/* A figure fired FROM a step has no continuous clock to read — it exists only
+   from the moment its step went by. The scheduler tells the panel when one is
+   about to start on the selected pad, and the head is worked out from there. */
+let polyFig=null;
+function polyFigMark(at, cfg, barDur){
+  polyFig={ at, step:polyStepDur(cfg,barDur), cells:cfg.cells };
+}
 function markPolyHead(){
   const gr=$('polygrid');
   if(!polyMode || !gr || !gr.children.length){ polyHeadAt=-2; return; }
   const cfg=polyRead();
-  const cur=(cfg && playing && AC) ? polyIndexAt(cfg, seqT0, 0, AC.currentTime, polyBar()) : -1;
+  let cur=-1;
+  if(cfg && playing && AC){
+    if(polyTrig(cfg)==='free') cur=polyIndexAt(cfg, seqT0, 0, AC.currentTime, polyBar());
+    else if(polyFig && polyFig.step>0){
+      const k=Math.floor((AC.currentTime-polyFig.at)/polyFig.step);
+      cur=(k>=0 && k<polyFig.cells) ? k : -1;
+    }
+  }
   if(cur===polyHeadAt) return;
   polyHeadAt=cur;
   const cells=gr.children;
@@ -8917,46 +9014,75 @@ function polyAlso(){
      so emptying the grid does not silence the pad. That was reported as "I
      remove it from a sequence and it still plays as if I left it in", and the
      answer belongs on screen rather than in a reply to a message. */
-  el.innerHTML = n
-    ? '<b>+ POLY LANE</b> — this pad also plays <b>'+n+'</b> of '+cfg.cells+
-      ' cell'+(cfg.cells>1?'s':'')+' at '+(Math.round(eff*10)/10)+' BPM, below. '+
-      'The lane runs on its own for as long as the sequence plays — clearing the '+
-      'steps above will not stop it. <b>CLR ROW</b> empties both; <b>MAIN BEAT</b> '+
-      'turns the lane off. This pattern only.'
-    : '<b>+ POLY LANE</b> — this pad has a lane at '+(Math.round(eff*10)/10)+
-      ' BPM below, with no cells lit, so it adds nothing yet. Tap its cells to '+
-      'write it. This pattern only.';
+  const fromStep=polyTrig(cfg)==='step';
+  el.innerHTML = !n
+    ? '<b>+ POLY FIGURE</b> — this pad has a figure at '+(Math.round(eff*10)/10)+
+      ' BPM below with no cells lit, so its steps play ordinary hits. Tap its cells to write it.'
+    : fromStep
+      ? '<b>+ POLY FIGURE</b> — every lit step above plays <b>'+n+'</b> hit'+(n>1?'s':'')+
+        ' at '+(Math.round(eff*10)/10)+' BPM instead of one. Empty row, no sound. '+
+        'This pattern only.'
+      : '<b>+ POLY LANE (ON ITS OWN)</b> — this pad also plays <b>'+n+'</b> of '+cfg.cells+
+        ' cell'+(cfg.cells>1?'s':'')+' at '+(Math.round(eff*10)/10)+' BPM, below, on its own '+
+        'clock — clearing the steps above will not stop it. <b>CLR ROW</b> empties both; '+
+        '<b>MAIN BEAT</b> turns it off. This pattern only.';
 }
 $('btnPoly').addEventListener('click',()=>{
   polyMode=!polyMode; $('btnPoly').classList.toggle('on',polyMode);
   $('polyPanel').style.display=polyMode?'block':'none';
   if(polyMode){ drawPoly(); revealPanel($('polyPanel')); }
-  lcd(polyMode?'POLY: '+padName(S.seqPad)+' — give this pad its own BPM':'POLY closed');
+  lcd(polyMode
+    ? 'POLY: '+padName(S.seqPad)+' — a figure this pad plays instead of a single hit, at a tempo '
+      +'of its own. Its lit steps on the grid above are what fire it.'
+    : 'POLY closed — the figure is still set on this pad.');
 });
 $('btnPolyOff').addEventListener('click',()=>{ polySet(c=>{ c.on=false; });
-  lcd(padName(S.seqPad)+' plays on the main beat again.'); });
+  lcd(padName(S.seqPad)+' IS BACK ON THE MAIN BEAT — the poly lane is off and silent. '
+    +'Its cells and its tempo are kept, so OWN BPM brings them back exactly as they were.'); });
 $('btnPolyOn').addEventListener('click',()=>{ polySet(c=>{ c.on=true; if(!c.bpm) c.bpm=Math.round(bpmAbs()); });
-  lcd(padName(S.seqPad)+' has its own BPM — set it below.'); });
+  lcd(padName(S.seqPad)+' HAS A POLY FIGURE — set its tempo and cells below, and every lit step '
+    +'of this pad on the grid plays the whole figure instead of one hit. No step, no sound. '
+    +'PLAYS ▸ ON ITS OWN unties it from the grid if you want it running free.'); });
 $('btnPolyLock').addEventListener('click',()=>{ polySet(c=>{ c.lock=!c.lock; });
   const cfg=polyRead();
   lcd(cfg&&cfg.lock?'LOCKED to the bar — the tempo is fitted to a whole number of hits.'
                    :'UNLOCKED — exactly the BPM you set, drifting against the bar.'); });
 $('polyBpm').addEventListener('input',e=>{ const c=polyRaw(); c.bpm=parseFloat(e.target.value);
   polyWrite(); dirty(); });
+$('btnPolyStep').addEventListener('click',()=>{ polySet(c=>{ c.trig='step'; });
+  lcd(padName(S.seqPad)+' — the figure now plays FROM EACH STEP. Every lit step of this pad on '
+    +'the grid fires it instead of a single hit, and an empty row is silence.'); });
+$('btnPolyFree').addEventListener('click',()=>{ polySet(c=>{ c.trig='free'; });
+  lcd(padName(S.seqPad)+' — the figure now runs ON ITS OWN, ignoring the steps above. It will '
+    +'keep playing even with an empty row; press FROM EACH STEP to tie it back to the grid.'); });
 $('polyCellDn').addEventListener('click',()=>polySet(c=>{ c.cells=clamp((c.cells|0)-1,POLY_MIN_CELLS,POLY_MAX_CELLS); }));
 $('polyCellUp').addEventListener('click',()=>polySet(c=>{ c.cells=clamp((c.cells|0)+1,POLY_MIN_CELLS,POLY_MAX_CELLS); }));
 document.querySelectorAll('.polypre').forEach(b=>b.addEventListener('click',()=>{
   polySet(c=>{
     c.on=true;
     c.bpm=Math.round(mainBpmOf(polyBar())*parseFloat(b.dataset.mul)*10)/10;
-    /* A preset gives the whole obvious result, not half of it. Tapping 3:4 and
-       getting three hits per bar into a four-cell row would be polyrhythm AND
-       polymeter at once — interesting, but not what a button labelled 3:4
-       promises. One bar's worth of cells; CELLS is still there to layer
-       polymeter on deliberately. */
-    const hpb=parseFloat(b.dataset.mul)*4;
-    if(Math.abs(hpb-Math.round(hpb))<1e-9)
-      c.cells=clamp(Math.round(hpb),POLY_MIN_CELLS,POLY_MAX_CELLS);
+    /* A preset gives the whole obvious result, not half of it — but "the whole
+       result" depends on what fires the figure.
+       FROM EACH STEP: the figure should be as short as it can be while still
+       lasting a whole number of beats, so `triplet` is THREE cells filling one
+       beat. A bar's worth (twelve) would mean one step swallowing the next four
+       beats, which is not what a button labelled triplet promises.
+       ON ITS OWN: the row is a continuous lane, so a bar's worth is right.
+       Both fall out of the same fraction — cells/mul must be a whole number of
+       beats, and the smallest cell count that satisfies it is mul's numerator. */
+    const mul=parseFloat(b.dataset.mul);
+    if(c.trig==='free'){
+      const hpb=mul*4;
+      if(Math.abs(hpb-Math.round(hpb))<1e-9)
+        c.cells=clamp(Math.round(hpb),POLY_MIN_CELLS,POLY_MAX_CELLS);
+    }else{
+      let num=0;
+      for(let den=1;den<=16 && !num;den++){
+        const n=mul*den;
+        if(Math.abs(n-Math.round(n))<1e-9) num=Math.round(n);
+      }
+      if(num) c.cells=clamp(num,POLY_MIN_CELLS,POLY_MAX_CELLS);
+    }
   });
 }));
 function drawSil(){
@@ -11013,7 +11139,7 @@ async function renderMixInner(padSet, traxSet, opt){
              Poly tracks run forwards even under REV — a reversed tuplet is not
              a meaningful thing to want, and pretending otherwise would put a
              difference between the two paths for no musical gain. */
-          if(pc){
+          if(pc && polyTrig(pc)==='free'){
             const barDur=NSTEPS*sd, stepT=t+st*sd;
             const pd=polyStepDur(pc,barDur);
             /* The same anchoring the live scheduler uses, against the same pure
@@ -11053,6 +11179,17 @@ async function renderMixInner(padSet, traxSet, opt){
           let hv=v;
           if(!worst && S.human>0){ when=Math.max(0.01,when+(takeRnd()*2-1)*S.human*0.012);   // same humanize as live playback
             hv=clamp(v*(1-takeRnd()*S.human*0.22),0.05,1); }
+          /* the same gate the live scheduler applies, against the same pure
+             function, so the file cannot disagree with what was played */
+          if(pc && polyTrig(pc)==='step' && !(lk&&lk.plain)){
+            const prow=polyRowOf(pat,p), barDur=NSTEPS*sd;
+            let any=false;
+            for(const f of polyFigure(pc, when, barDur)){
+              any=true;
+              events.push({when:f.when, p, v:clamp(f.v*hv,0.02,1), pitch:0, chord:false});
+            }
+            if(any) continue;
+          }
           const chord=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0], rat=(lk&&lk.rat>1)?lk.rat:1;
           const isChord=chord.length>1;                            // NOTES-lane harmony bakes into the bounce too
           chord.forEach(pitch=>{
@@ -11527,7 +11664,7 @@ const TOUR=[
     body:'<b>CIRCLE</b> draws each part as a turning ring. Rings of different lengths drift against each other, which makes polymeter obvious instead of invisible.<br><br><b>&#128274; SCALE</b> pins every pitch you write to a key, so nothing you play lands wrong.' },
 
   { tab:'seq', el:'btnPoly', title:'ONE PAD, ITS OWN TEMPO',
-    body:'<b>POLY</b> gives the selected pad a <i>second</i> lane at a BPM of its own, running against the project tempo — the pad plays both. The same number as the project is one hit per beat; <b>3:4</b> puts three hits in the time of four.<br><br>That is a <b>polyrhythm</b> — two speeds at once, which a grid of sixteen steps cannot write, because sixteen does not divide by three.' },
+    body:'<b>POLY</b> gives the selected pad a <i>figure</i> at a BPM of its own — and every lit step of that pad plays the whole figure instead of a single hit. No step, no sound.<br><br>Set it to <b>triplet</b> and one step becomes three hits inside a beat. That is a <b>polyrhythm</b>, and it is the thing a grid of sixteen steps cannot write, because sixteen does not divide by three.' },
 
   { tab:'trax', el:'traxlist', title:'TRAX — RECORD YOUR TAKE',
     body:'These are your tape lanes. Arm one with <b>&#9679;</b>, press PLAY and it records a pass — the whole mix, just what you play in <b>LIVE</b>, or the mic.<br><br>Stack lanes into an arrangement, and reopen any take in the sample editor to chop it like any other sound.' },
@@ -11826,7 +11963,7 @@ const recipeBook=[
     waitFor:'press POLY.', didIt:'Open.',
     tap:'btnPoly' },
   { tab:'seq', el:'btnPolyOn', title:'GIVE IT ITS OWN BPM',
-    body:'<b>MAIN BEAT</b> is the ordinary grid. Press <b>OWN BPM</b> and this pad gets a <i>second</i> lane below, with its own tempo and its own cells.<br><br>The step grid above keeps the part already written on this pad and keeps playing it. The pad plays both.',
+    body:'<b>MAIN BEAT</b> is one hit per step, as usual. Press <b>OWN BPM</b> and this pad gets a <i>figure</i> below — its own tempo, its own cells — and every lit step plays that figure instead of one hit.<br><br>The grid above still says <i>when</i>. Empty row, no sound.',
     waitFor:'press OWN BPM.', didIt:'It has its own pulse now.',
     tap:'btnPolyOn', done:()=>!!polyCfg(curPat(),S.seqPad) },
   { tab:'seq', el:'polyPre34', title:'THREE AGAINST FOUR',
@@ -11835,11 +11972,11 @@ const recipeBook=[
     base:()=>{ const c=polyCfg(curPat(),S.seqPad); return c?c.bpm:0; },
     done:b=>{ const c=polyCfg(curPat(),S.seqPad); return !!c && c.bpm!==b; } },
   { el:'btnPlay', title:'HEAR IT',
-    body:'Two pulses, one bar. They start together, pull apart, and meet again on the downbeat — that is the whole effect.<br><br>Tap the cells to write the lane. Nothing you do down here touches the grid above, and nothing up there touches the lane.',
+    body:'Two pulses at once, fired from your own steps.<br><br>Tap the cells to write the figure. The grid above decides when it fires; the cells decide what it plays.',
     waitFor:'press PLAY.', didIt:'It is playing.',
     base:()=>playing, done:b=>playing&&!b },
   { tab:'seq', el:'btnPolyLock', title:'LOCKED, OR DRIFTING',
-    body:'<b>LOCK TO BAR</b> nudges the tempo to one that fits the bar exactly, so it comes back to the downbeat forever. Turn it off and the lane runs at precisely the number you set and never lines up again — that is <b>phasing</b>, and it is a technique, not a fault.<br><br><b>CELLS</b> is separate: how long the lane is, not how fast it goes. And <b>LOCK</b> + a cell gives that cell its own ratchet — five hits inside one third of a bar is a nested tuplet.' }]},
+    body:'<b>CELLS</b> is how long the figure is; <b>BPM</b> is how fast it goes. They are separate, so a 3-cell figure at 300 fills a beat and the same figure at 75 fills a bar.<br><br><b>LOCK</b> + a step gives it <b>PLAIN HIT</b> — that one step plays an ordinary hit and skips the figure. And <b>PLAYS ▸ ON ITS OWN</b> unties the figure from the grid entirely, so it runs continuously: that is <b>phasing</b>, and it is the one setting where the pad sounds with an empty row.' }]},
 
 { id:'arrange', name:'From a loop to an arrangement',
   blurb:'Use more than one pattern and chain them, so the track goes somewhere instead of repeating.',

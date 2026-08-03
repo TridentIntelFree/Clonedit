@@ -70,6 +70,7 @@ export function polyCfg(pat, p) {
       bpm: clampNum(c.bpm, POLY_MIN_BPM, POLY_MAX_BPM, 120),
       cells: clampInt(c.cells, POLY_MIN_CELLS, POLY_MAX_CELLS, 4),
       lock: c.lock !== false,
+      trig: c.trig === 'free' ? 'free' : 'step',
       /* null means "never split out of the grid row" — the caller does that,
          because it is a mutation and this module does not own the pattern. */
       row: Array.isArray(c.row) ? c.row : null,
@@ -80,12 +81,13 @@ export function polyCfg(pat, p) {
      BPM in sixteenths, so its hit rate was bpm*4. Both convert exactly. */
   const legacyLen = clampInt(c.len, 1, POLY_MAX_CELLS, 4);
   const row = Array.isArray(c.row) ? c.row : null;
+  const trig = c.trig === 'free' ? 'free' : 'step';
   if (c.mode === 'free') {
     return { bpm: clampNum(Number(c.bpm) * 4, POLY_MIN_BPM, POLY_MAX_BPM, 120),
-      cells: legacyLen, lock: false, row, migrated: true };
+      cells: legacyLen, lock: false, trig, row, migrated: true };
   }
   const bars = clampInt(c.bars, 1, 8, 1);
-  return { hitsPerBar: legacyLen / bars, cells: legacyLen, lock: true, row, migrated: true };
+  return { hitsPerBar: legacyLen / bars, cells: legacyLen, lock: true, trig, row, migrated: true };
 }
 
 export function isPoly(pat, p) { return polyCfg(pat, p) !== null; }
@@ -132,6 +134,47 @@ export function polyTrimRow(row, cells) {
   let cut = 0;
   for (let i = n; i < row.length; i++) if (row[i] > 0) { row[i] = 0; cut++; }
   return cut;
+}
+
+/* WHAT STARTS THE LANE.
+
+   'step' — a lit step on the main grid fires the figure. No step, no sound.
+   'free' — the lane runs on its own clock for as long as the sequence plays.
+
+   'step' is the default, and 'free' is the option, which is the opposite of how
+   this shipped. The free-running lane was mine, not asked for, and it cost three
+   rounds of confusion: a pad kept playing after its row was emptied, which reads
+   as a bug however carefully it is documented. Said plainly by the person using
+   it: "the poly lane shouldn't play if nothing is selected on the main sequencer
+   to trigger the poly lane to play."
+   'free' stays because phasing is a real technique and the app already teaches
+   it, but you have to go and ask for it. */
+export function polyTrig(cfg) { return cfg && cfg.trig === 'free' ? 'free' : 'step'; }
+
+/* The hits one firing of the figure places, starting at `at`.
+
+   The step that fires it does NOT also sound on its own: the figure replaces the
+   hit rather than decorating it, so a three-cell figure on a step is three hits,
+   not four. `v` is the cell's own velocity — the caller scales it by the step's,
+   so turning a step down turns its whole figure down. */
+export function polyFigure(cfg, at, barDur) {
+  const out = [];
+  if (!cfg || !(barDur > 0)) return out;
+  const step = polyStepDur(cfg, barDur);
+  if (!(step > 0)) return out;
+  const row = cfg.row;
+  for (let i = 0; i < cfg.cells; i++) {
+    const v = row ? row[i] : 0;
+    if (v > 0) out.push({ when: at + i * step, idx: i, v });
+  }
+  return out;
+}
+
+/* How long one firing lasts, which is what the panel needs to say whether a
+   figure fits between two steps or spills over the next one. */
+export function polyFigureDur(cfg, barDur) {
+  if (!cfg) return 0;
+  return polyStepDur(cfg, barDur) * cfg.cells;
 }
 
 /* The project's tempo in the same units, derived from the bar. A bar is four

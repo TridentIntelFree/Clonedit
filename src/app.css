@@ -779,5 +779,8 @@ input[type=range]::-webkit-slider-thumb{transition:border-color .12s ease,backgr
   padding:6px 9px;border-radius:var(--r-sm);
   background:rgba(127,212,194,.10);border:1px solid var(--send)}
 #polyAlso b{color:var(--send);letter-spacing:.5px}
+/* The panel says what the lane IS before it offers to configure one. */
+.polylead{font-size:11px;line-height:1.5;color:var(--txt-dim);margin:0 0 8px}
+.polylead b{color:var(--send)}
 .polypre{min-height:32px;padding:4px 10px;font-size:12px}
 #polyReadout{letter-spacing:.2px}
