@@ -2306,8 +2306,44 @@
      song rendered on R152 and on this build matches to 8e-6 peak and 1e-6 RMS,
      which is the browser's own float-summing noise. Nothing in those two builds
      changed the sound; only the live transport behaviour was wrong.
+   - R156: A BASS RIG, AND PLAYING YOUR OWN SOUND. "The ribbon bass is good, the
+     chord pad and single notes are cool... more bass options possibly, a way to
+     play bass pads live there would be great. Also would be good to have a way
+     to record hitting live pads on the main pad site."
+     FIVE BASS VOICES on the ribbon, and the claim is that they are five
+     instruments rather than one with the filter in five places — so it is
+     measured rather than asserted. SUB is 100dB down in the mids against
+     FINGER, which is what makes it a sub rather than a preset; PICK sits 8dB
+     brighter than FINGER; REESE is genuinely two oscillators 24 cents apart,
+     because the beating between them IS the sound and a lone oscillator with a
+     detune value would be silent about it; UPRIGHT runs a triangle through a
+     band resonance with a slow attack. FINGER, PICK and UPRIGHT snap the filter
+     open on each touch and fire a scrape of contact noise; SUB and REESE
+     sustain. On SUB, Y rides the level instead of the filter — a sine has no
+     harmonics to open — and the panel says so, because a control that appears
+     to do nothing is read as broken.
+     PAD KEYS is the answer to "play bass pads live", and it is the only thing
+     in that tab not made of oscillators: it plays whatever is on a pad across
+     the scale, through everything that pad already is. The offset is measured
+     from the pad's OWN note, so the middle of the keyboard is the sample as
+     recorded and a sampled bass lands in tune with the pattern. Same call the
+     sequencer makes, so playing and programming cannot drift apart.
+     RECORDING PAD HITS was a discoverability problem, not a missing feature.
+     Both paths already worked — STEP REC has always written pad hits into the
+     pattern, and hitLive has always passed liveTap so a lane set to LIVE ONLY
+     captures them — but one was an unlabelled dot in the header and the other
+     was on a different tab, and nothing said they produce completely different
+     things. Both are on PADS now with the difference stated: STEPS is notation
+     you can edit forever, AUDIO is the performance exactly as played.
+     That row cost 86px above the pad grid and put it back off the bottom of a
+     360x640 screen — the guides suite caught it in the same run. It shrinks
+     with the rest of the furniture now, and .rowhint gives every small
+     beside-the-control explainer somewhere to be hidden at TINY.
+     NOT DONE, deliberately: "fix the others". Theremin, harp, flute and perc
+     were named as weak without saying what is wrong with them, and guessing at
+     that is what cost three rounds on the poly panel.
    ================================================================ */
-const BUILD = 'JBH-88 · R155 · 2026-08-03 · the drain belongs to STOP';
+const BUILD = 'JBH-88 · R156 · 2026-08-03 · a bass rig and pad keys';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -3704,6 +3740,7 @@ function padPolyHits(pat,p){
   return n;
 }
 function drawPads(){
+  try{ drawPadRec(); }catch(e){}
   const pat=curPat();
   for(let s=0;s<16;s++){
     const idx=padIndex(s), p=S.pads[idx], el=padEls[s];
@@ -7657,8 +7694,33 @@ function stopSeq(){
 }
 $('btnPlay').addEventListener('click',startSeq);
 $('btnStop').addEventListener('click',stopSeq);
-$('btnRec').addEventListener('click',()=>{ S.liveRec=!S.liveRec; $('btnRec').classList.toggle('on',S.liveRec); $('btnLiveRec').classList.toggle('on',S.liveRec); lcd(S.liveRec?'STEP REC ARMED — pad hits write steps, not audio. For audio: LIVE \u25cf REC or TRAX.':'STEP REC OFF'); });
+$('btnRec').addEventListener('click',()=>{ S.liveRec=!S.liveRec; $('btnRec').classList.toggle('on',S.liveRec); $('btnLiveRec').classList.toggle('on',S.liveRec); drawPadRec(); lcd(S.liveRec?'STEP REC ARMED — pad hits write steps, not audio. For audio: \u25cf AUDIO \u2192 TRACK.':'STEP REC OFF'); });
 $('btnLiveRec').addEventListener('click',()=>$('btnRec').click());
+
+/* RECORDING WHAT YOU PLAY ON THE PADS.
+
+   "Would be good to have a way to record hitting live pads on the main pad
+   site, as an option." Both ways already worked — STEP REC has always written
+   pad hits into the pattern, and hitLive has always passed liveTap:true so a
+   tape lane set to LIVE ONLY captures the taps as audio — but one lived behind
+   an unlabelled dot in the header and the other lived on a different tab, and
+   nothing anywhere said they produce completely different things.
+   They are both here now, side by side, with the difference stated: STEPS gives
+   you something you can edit forever, AUDIO gives you the performance exactly
+   as you played it, timing and all. */
+function drawPadRec(){
+  const st=$('btnPadSteps'), au=$('btnPadAudio'), h=$('padRecHint');
+  if(!st||!au||!h) return;
+  const rolling=!!traxCap;
+  st.classList.toggle('on',!!S.liveRec);
+  au.classList.toggle('on',rolling);
+  au.textContent=rolling?'\u25a0 STOP & KEEP':'\u25cf AUDIO \u2192 TRACK';
+  h.textContent = rolling
+    ? 'recording your taps to a tape lane — press STOP or this button to keep it'
+    : S.liveRec
+      ? 'pad hits are writing STEPS into the pattern — editable forever, quantized to the grid'
+      : 'STEPS writes hits into the pattern · AUDIO keeps the performance exactly as played';
+}
 
 function setBpm(b){
   if(b===0) b=S.bpm>0?-1:1;   // crossing zero flips direction
@@ -8101,6 +8163,7 @@ function traxCommit(){
   S.trax[i].name='take'+(i+1);
   drawTrax(); dirty();
   $('btnPerfRec').classList.remove('on');
+  try{ drawPadRec(); }catch(e){}
   let tpk=0; for(let k=0;k<dl.length;k+=4){ const a=Math.abs(dl[k]); if(a>tpk) tpk=a; }
   if(tpk<0.004){
     plog('SILENT-TAKE GUARD: track '+(i+1)+' take peaked at '+tpk.toFixed(4)+' — likely wrong SOURCE (BUS/LIVE/MIC) or nothing played. Kept anyway.');
@@ -8112,7 +8175,7 @@ function traxCommit(){
 
 /* ---------------- LIVE — playable instruments ---------------- */
 /* SCALES, NOTE_NAMES, snapSemitone → src/pure/scale.js */
-const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker'};
+const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker',bass:'finger',padKey:-1};
 S.inst=Object.assign({},INSTDEF);
 const instVoices=new Set();
 let ther=null, arpTimer=0, arpNotes=null, arpIdx=0, arpNext=0;
@@ -8289,12 +8352,48 @@ function drawChordGrid(){
     el.appendChild(b);
   }
 }
+/* PAD KEYS — YOUR OWN SOUND, PLAYED.
+
+   "A way to play bass pads live there would be great." The app could already
+   pitch a pad per step in the NOTES lane, and could play synthesised voices
+   live, but there was no way to play YOUR sample with your fingers — which is
+   the one that matters, because a bass you sampled or built with BUILD KIT is
+   a better bass than any oscillator here.
+
+   It is the same scale keyboard, wired to triggerPad with a pitch offset
+   instead of to the oscillators. So everything the pad already is comes with
+   it: its filter, envelope, reverse, drive, sends, choke group. Playing it here
+   and sequencing it in NOTES produce the same sound, because they are the same
+   call.
+
+   The root is the pad's own note if it has one, which is what makes a sampled
+   bass land in tune with the pattern rather than a fourth away from it. */
+function padKeysPad(){
+  const p=S.inst.padKey;
+  if(p>=0 && S.pads[p] && S.pads[p].bufId>=0) return p;
+  if(S.pads[S.editPad] && S.pads[S.editPad].bufId>=0) return S.editPad;
+  return S.pads.findIndex(x=>x.bufId>=0);
+}
 function drawKeysGrid(){
   const el=$('keysgrid'); el.innerHTML='';
+  const padMode=S.inst.mode==='padkeys';
+  const pk=padMode?padKeysPad():-1;
+  const root=(padMode && pk>=0 && S.pads[pk].note>=0) ? S.pads[pk].note : 48+S.inst.key;
   scaleMidis(16).forEach(m=>{
     const b=document.createElement('button'); b.textContent=midiName(m);
     let v=null;
-    const press=()=>{ ensureAudio(); v=(S.inst.mode==='flute')?fluteVoiceStart(noteHz(m)):instVoice(noteHz(m)); b.classList.add('on'); };
+    const press=()=>{ ensureAudio();
+      if(padMode){
+        if(pk<0){ lcd('PAD KEYS: no pad has a sound on it yet — load one in SMPL first.'); return; }
+        /* The key's distance from the pad's OWN root, in semitones. A pad
+           carrying its natural note plays unpitched on that key and in tune
+           either side of it; one with no note falls back to the scale root, so
+           the middle of the keyboard is always the sample as recorded. */
+        hitLive(pk, 0.9, m-root);
+        b.classList.add('on'); setTimeout(()=>b.classList.remove('on'),110);
+        return;
+      }
+      v=(S.inst.mode==='flute')?fluteVoiceStart(noteHz(m)):instVoice(noteHz(m)); b.classList.add('on'); };
     const rel=()=>{ if(v){ v.stop(); v=null; } b.classList.remove('on'); };
     b.addEventListener('touchstart',e=>{ e.preventDefault(); press(); },{passive:false});
     b.addEventListener('touchend',e=>{ e.preventDefault(); rel(); },{passive:false});
@@ -8381,31 +8480,107 @@ function harpPluck(nx){
 /* ribbon bass — mono slide bass; X pitch (2 low octaves), Y opens the filter */
 let ribbon=null;
 function nearestIn(set,m){ return set.reduce((a,b)=>Math.abs(b-m)<Math.abs(a-m)?b:a,set[0]); }
+/* ---------------- THE BASS RIG ----------------------------------------------
+   The ribbon was one sound: a saw and a sub through a resonant lowpass, X for
+   pitch and Y for a wah. Liked, and asked to be given company — "more bass
+   options possibly, a way to play bass pads live there would be great."
+
+   Five voices rather than five filter settings. Each is a different instrument
+   in the way that matters — what harmonics it has, whether it has an attack
+   transient, and what Y does — because a bass patch that is only the same
+   oscillator with the filter somewhere else is one bass patch with a menu.
+
+     SUB      sine plus a whisper of second harmonic. Nearly pure, felt more
+              than heard, and the only one that does not need the filter.
+     FINGER   saw + square, plucked: a fast body thump on touch, filter opening
+              with the strike and closing behind it. The default electric.
+     PICK     brighter and harder — a noise transient at the onset for the
+              plectrum, filter higher, decay shorter.
+     REESE    two saws detuned far enough to beat against each other, kept low.
+              The sound is the interference, so the detune is the instrument.
+     UPRIGHT  triangle through a woody band resonance, slow attack, and a short
+              breath of finger noise. Acoustic-ish rather than acoustic; there
+              is no sample here, and pretending otherwise would be a lie. */
+const BASS_VOICES={
+  sub:     {name:'SUB',     osc:'sine',     detune:0,  sub:0.25, cut:400,  q:0.7, pluck:0,    yTop:8,  noise:0},
+  finger:  {name:'FINGER',  osc:'sawtooth', detune:0,  sub:0.6,  cut:520,  q:5,   pluck:0.35, yTop:60, noise:0},
+  pick:    {name:'PICK',    osc:'sawtooth', detune:4,  sub:0.35, cut:900,  q:3.5, pluck:0.18, yTop:40, noise:0.5},
+  reese:   {name:'REESE',   osc:'sawtooth', detune:24, sub:0.3,  cut:700,  q:2.5, pluck:0,    yTop:30, noise:0},
+  upright: {name:'UPRIGHT', osc:'triangle', detune:0,  sub:0.45, cut:260,  q:9,   pluck:0.5,  yTop:14, noise:0.22},
+};
+function bassDef(){ return BASS_VOICES[S.inst.bass] || BASS_VOICES.finger; }
 function ribbonStart(){
   ensureAudio(); const bus=instBus();
-  const o=pLive('sawtooth',55), sub=pLive('sine',27.5), sg=AC.createGain(); sg.gain.value=0.6;
-  const lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=600; lp.Q.value=5;
+  const d=bassDef(), t=AC.currentTime;
+  const o=pLive(d.osc,55);
+  /* REESE is two saws, and the beating between them IS the sound — one
+     oscillator with a detune value does nothing at all. */
+  const o2 = d.detune ? pLive(d.osc,55) : null;
+  if(o2){ o.detune.value=-d.detune/2; o2.detune.value=d.detune/2; }
+  const subo=pLive('sine',27.5), sg=AC.createGain(); sg.gain.value=d.sub;
+  const lp=AC.createBiquadFilter(); lp.type=(d.name==='UPRIGHT')?'bandpass':'lowpass';
+  lp.frequency.value=d.cut; lp.Q.value=d.q;
   const g=AC.createGain(); g.gain.value=0;
-  o.connect(lp); sub.connect(sg); sg.connect(lp); lp.connect(g); g.connect(bus.g);
-  o.start(); sub.start();
-  g.gain.setTargetAtTime(0.5,AC.currentTime,0.02);
-  ribbon={o,sub,lp,g};
+  o.connect(lp); if(o2) o2.connect(lp);
+  subo.connect(sg); sg.connect(lp); lp.connect(g); g.connect(bus.g);
+  o.start(); if(o2) o2.start(); subo.start();
+  /* The plectrum / fingertip: a short filtered noise burst at the moment of
+     contact. It is most of what tells an ear "something struck this". */
+  let nz=null, ng=null;
+  if(d.noise>0){
+    nz=pNoise(AC,1,4242); nz.loop=true;
+    const nf=AC.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=1400; nf.Q.value=1.2;
+    ng=AC.createGain(); ng.gain.value=0;
+    nz.connect(nf); nf.connect(ng); ng.connect(g); nz.start();
+  }
+  g.gain.setTargetAtTime(0.5,t,0.02);
+  ribbon={o,o2,sub:subo,lp,g,nz,ng,def:d};
+  ribbonPluck(t);
+  return ribbon;
+}
+/* The attack. A plucked voice snaps the filter open and lets it fall back, and
+   fires the contact noise; a sustained one has nothing to do here. */
+function ribbonPluck(t){
+  if(!ribbon) return;
+  const d=ribbon.def;
+  if(!(d.pluck>0)) return;
+  const base=ribbon.lp.frequency.value||d.cut;
+  try{
+    ribbon.lp.frequency.cancelScheduledValues(t);
+    ribbon.lp.frequency.setValueAtTime(Math.min(8000,base*4),t);
+    ribbon.lp.frequency.exponentialRampToValueAtTime(Math.max(40,base),t+d.pluck);
+  }catch(e){}
+  if(ribbon.ng){
+    try{
+      ribbon.ng.gain.cancelScheduledValues(t);
+      ribbon.ng.gain.setValueAtTime(d.noise,t);
+      ribbon.ng.gain.exponentialRampToValueAtTime(0.0001,t+0.07);
+    }catch(e){}
+  }
 }
 function ribbonMove(nx,ny){
   if(!ribbon) return;
   const lo=24+S.inst.key; let m=lo+nx*24;
   if(S.inst.snap) m=nearestIn(scaleMidis(15).map(x=>x-24),m);
-  const f=noteHz(m), t=AC.currentTime;
+  const f=noteHz(m), t=AC.currentTime, d=ribbon.def;
   ribbon.o.frequency.setTargetAtTime(f,t,0.04);
+  if(ribbon.o2) ribbon.o2.frequency.setTargetAtTime(f,t,0.04);
   ribbon.sub.frequency.setTargetAtTime(f/2,t,0.04);
-  ribbon.lp.frequency.setTargetAtTime(120*Math.pow(60,1-ny),t,0.03);   // Y = wah
+  /* Y is a wah on every voice except SUB, where opening a filter on a sine has
+     nothing to open — there it rides the level instead, which is what you
+     actually want from a sub. */
+  if(d.name==='SUB') ribbon.g.gain.setTargetAtTime(0.3+ny*0.45,t,0.05);
+  else ribbon.lp.frequency.setTargetAtTime(d.cut*0.35*Math.pow(d.yTop,ny),t,0.03);
 }
 function ribbonEnd(){
   if(!ribbon) return;
   const r=ribbon; ribbon=null;
   try{
     r.g.gain.setTargetAtTime(0,AC.currentTime,0.05);
-    r.o.stop(AC.currentTime+0.35); r.sub.stop(AC.currentTime+0.35);
+    r.o.stop(AC.currentTime+0.35);
+    if(r.o2) r.o2.stop(AC.currentTime+0.35);
+    r.sub.stop(AC.currentTime+0.35);
+    if(r.nz) r.nz.stop(AC.currentTime+0.35);
   }catch(e){}
   setTimeout(()=>{ try{r.g.disconnect();}catch(e){} },500);
   drawSurf(-1,-1);
@@ -8599,10 +8774,20 @@ function drawLive(){
   $('instSnap').style.display=(m==='ther'||m==='ribbon')?'':'none';
   $('liveSurf').style.display=(m==='ther'||m==='harp'||m==='ribbon')?'block':'none';
   $('chordgrid').style.display=(m==='chord')?'grid':'none';
-  $('keysgrid').style.display=(m==='keys'||m==='flute')?'grid':'none';
+  $('keysgrid').style.display=(m==='keys'||m==='flute'||m==='padkeys')?'grid':'none';
   $('chordopts').style.display=(m==='chord')?'flex':'none';
   $('percopts').style.display=(m==='perc')?'flex':'none';
   $('fluteopts').style.display=(m==='flute')?'flex':'none';
+  $('bassopts').style.display=(m==='ribbon')?'flex':'none';
+  $('bassHint').style.display=(m==='ribbon')?'block':'none';
+  $('bassVoice').value=S.inst.bass||'finger';
+  if(m==='ribbon'){
+    const d=bassDef();
+    $('bassHint').innerHTML='<b style="color:var(--lcd)">'+d.name+'</b> — slide left/right for pitch, '
+      + (d.name==='SUB' ? 'up/down for level. A sine has no harmonics to open, so there is no wah here.'
+                        : 'up/down opens the filter.')
+      + (d.pluck>0 ? ' Each touch strikes it again.' : ' It sustains for as long as you hold it.');
+  }
   $('percKind').value=S.inst.perc||'shaker';
   $('instShake').classList.toggle('on',shakeArmed);
   $('inst7').classList.toggle('on',S.inst.sev);
@@ -8612,13 +8797,43 @@ function drawLive(){
   $('instRev').value=S.inst.rev; $('instRevV').textContent=Math.round(S.inst.rev*100)+'%';
   $('instDly').value=S.inst.dly; $('instDlyV').textContent=Math.round(S.inst.dly*100)+'%';
   if(m==='chord') drawChordGrid();
-  if(m==='keys'||m==='flute') drawKeysGrid();
+  if(m==='keys'||m==='flute'||m==='padkeys') drawKeysGrid();
+  $('padkeyopts').style.display=(m==='padkeys')?'flex':'none';
+  $('padkeyHint').style.display=(m==='padkeys')?'block':'none';
+  if(m==='padkeys'){
+    const sel=$('padKeyPad'); const cur=padKeysPad();
+    sel.innerHTML='';
+    let any=false;
+    for(let i=0;i<NPADS;i++){ if(S.pads[i].bufId<0) continue; any=true;
+      const o=document.createElement('option'); o.value=i;
+      o.textContent=padName(i)+(S.pads[i].name?' · '+S.pads[i].name:'');
+      if(i===cur) o.selected=true;
+      sel.appendChild(o); }
+    $('padkeyHint').innerHTML = any
+      ? 'Plays <b style="color:var(--lcd)">'+padName(cur)+'</b> across the scale, with everything that pad already is — its filter, envelope, sends and choke. The same sound the sequencer makes, because it is the same call.'
+      : '<b style="color:var(--amber)">No pad has a sound on it yet.</b> Put one on a pad in SMPL — a bass you sampled or built with BUILD KIT plays better here than any oscillator in this tab.';
+  }
   if(m==='ther'||m==='harp'||m==='ribbon') drawSurf(-1,-1);
 }
 (function(){
   const names=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
   names.forEach((n,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=n; $('instKey').appendChild(o); });
 })();
+$('btnPadSteps').addEventListener('click',()=>$('btnRec').click());
+$('btnPadAudio').addEventListener('click',()=>{ $('btnPerfRec').click(); drawPadRec(); });
+$('padKeyPad').addEventListener('change',e=>{
+  S.inst.padKey=parseInt(e.target.value,10);
+  S.editPad=S.inst.padKey; drawPads(); drawLive(); dirty();
+  lcd('PAD KEYS: playing '+padName(S.inst.padKey)+'. The middle of the keyboard is the sample as recorded.');
+});
+$('bassVoice').addEventListener('change',e=>{
+  S.inst.bass=e.target.value;
+  /* Rebuild rather than retune: these are different oscillator arrangements,
+     not different settings of one, so a live voice cannot become another. */
+  if(ribbon){ ribbonEnd(); ribbonStart(); }
+  drawLive(); dirty();
+  lcd('BASS: '+bassDef().name+' — '+$('bassHint').textContent.replace(/^[A-Z]+ — /,''));
+});
 $('btnPerfRec').addEventListener('click',()=>{
   if(traxCap){ stopSeq(); return; }            // rolling — stop commits the take
   ensureAudio();
@@ -8634,6 +8849,7 @@ $('btnPerfRec').addEventListener('click',()=>{
   if(playing) stopSeq();
   startSeq();                                  // transport rolls; capture starts on the armed lane
   $('btnPerfRec').classList.add('on');
+  try{ drawPadRec(); }catch(e){}
   lcd('RECORDING \u2192 TRACK '+(i+1)+' — play! Only your live playing is captured, not the beat. Tap again (or STOP) to commit.');
 });
 $('instSel').addEventListener('change',e=>{ instPanic(); S.inst.mode=e.target.value; drawLive(); dirty(); });

@@ -267,6 +267,9 @@ h3 span{font-weight:400}
 /* pads */
 #bankrow button{flex:1}
 #padgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0}
+/* Small print sitting beside a control, explaining it. Sized here rather than
+   inline so the screen-size setting can reach it. */
+.rowhint{font-size:10px;color:var(--txt-dim)}
 .pad{aspect-ratio:1;background:var(--pad);border:1px solid var(--line);border-radius:10px;
   position:relative;touch-action:none;user-select:none;-webkit-user-select:none;
   display:flex;flex-direction:column;justify-content:flex-end;padding:6px;overflow:hidden}
@@ -598,6 +601,7 @@ body.sz-sm .view{padding:9px}
 body.sz-sm .hint{font-size:var(--fs-xs);padding:6px 9px;margin-bottom:var(--sp-2)}
 body.sz-sm .denbar button{min-height:28px;font-size:10px}
 body.sz-sm #coachBar{padding:5px 8px;font-size:var(--fs-xs)}
+body.sz-sm #padrec button{min-height:30px;padding:4px 9px;font-size:var(--fs-xs)}
 
 /* The header keeps the logo — it is how you know which app you are in when
    several tabs are open — but drops the build string, which is a thing you go
@@ -628,6 +632,18 @@ body.sz-xs .row{margin-bottom:var(--sp-2)}
 body.sz-xs h3{margin-top:8px}
 body.sz-xs #coachBar{padding:4px 7px;font-size:10px;line-height:1.35}
 body.sz-xs #coachBar button{min-height:24px;font-size:9px;padding:3px 7px}
+/* The RECORD row is worth its place — it is how you capture what you play — but
+   it is furniture, and at TINY the pads come first. The hint goes and the
+   buttons shrink to their labels; both still say what they do. */
+body.sz-xs #padrec{margin-bottom:5px;gap:5px}
+body.sz-xs #padrec button{min-height:26px;padding:3px 8px;font-size:10px}
+body.sz-xs #padRecHint{display:none}
+body.sz-xs #padrec .lbl{min-width:0}
+/* A row hint explains a control that is right next to it. At TINY the control
+   wins: the pad grid is what this tab is for, and eight pixels is the whole
+   difference between all sixteen pads fitting and two rows of them not. */
+body.sz-xs .rowhint{display:none}
+body.sz-xs #padgrid{margin:4px 0}
 /* keyboard / switch-control focus. -webkit-tap-highlight-color is off for touch,
    which left no focus indication at all for anyone driving this from a keyboard. */
 :focus-visible{outline:2px solid var(--sel);outline-offset:2px;border-radius:4px}

@@ -114,10 +114,23 @@
 <!-- PADS -->
 <div class="view on" role="tabpanel" aria-label="Pads" id="v-pads">
   <div class="hint">
-  <div class="hint-lead" data-lead-short><b>PADS</b> — tap to play (higher = louder). Tap <b>EDIT</b> then a pad to shape it.</div>
+  <div class="hint-lead" data-lead-short><b>PADS</b> — tap to play (higher = louder). <b>EDIT</b> shapes a pad; <b>RECORD</b> captures what you play as steps or as audio.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-pads">WHAT A PAD IS, AND HOW TO PLAY IT</button>
   <div class="hint-body" id="learn-pads" hidden>
-<p class="lead-was"><b>PADS</b> — tap to play (higher = louder). Tap <b>EDIT</b> then a pad to shape it (gain / pitch / FX). Record pad hits into the grid with the top-right <b>&#9679;</b>, or capture audio to a lane in <b>TRAX</b>.</p>
+<p class="lead-was"><b>PADS</b> — tap to play (higher = louder). Tap <b>EDIT</b> then a pad to shape it (gain / pitch / FX). The <b>RECORD</b> row above the pads captures what you play, two different ways.</p>
+
+<h4>Recording what you play, and the two things that means</h4>
+<p><b>&#9679; STEPS</b> writes your taps into the pattern, quantized to the grid.
+You get something you can edit forever — move a hit, change its velocity, give
+it a pitch lock — but you lose the exact timing of your hands.</p>
+<p><b>&#9679; AUDIO &rarr; TRACK</b> records the taps as audio to a tape lane and
+leaves the backing beat out of it. You get the performance exactly as you played
+it, timing and all, and it turns up in <b>TRAX</b> to loop, process, or send back
+to a pad. What you cannot do afterwards is move a single hit.</p>
+<p>They are not versions of each other. One is notation and the other is a
+recording, and which you want depends on whether you are writing the part or
+performing it.</p>
+
 <h4>A pad is a sound plus its settings</h4>
 <p>Each of the 64 pads (16 at a time, in 4 banks) holds one audio recording and
 everything about how that recording is played: level, pitch, pan, filter,
@@ -158,7 +171,17 @@ one instrument being played rather than two samples overlapping.</p>
   <div class="row">
     <button id="btnRepeat">REPEAT</button>
     <select aria-label="Repeat rate" id="repRate"><option value="1">1/4</option><option value="2">1/8</option><option value="4" selected>1/16</option><option value="6">1/16T</option><option value="8">1/32</option></select>
-    <span style="font-size:10px;color:var(--txt-dim)">hold a pad &#8594; BPM-synced roll (writes steps when &#9679; REC is on)</span>
+    <span class="rowhint">hold a pad &#8594; BPM-synced roll (writes steps when &#9679; REC is on)</span>
+  </div>
+  <!-- Both ways of capturing what you play, on the tab where you play it. Both
+       already existed — STEP REC lived behind the header dot, and pad taps have
+       always reached the live bus so TRAX could record them — but neither was
+       reachable from here, and nothing said they were different things. -->
+  <div class="row" id="padrec">
+    <span class="lbl">RECORD</span>
+    <button id="btnPadSteps">&#9679; STEPS</button>
+    <button id="btnPadAudio" class="rec">&#9679; AUDIO &rarr; TRACK</button>
+    <span id="padRecHint" style="font-size:10px;color:var(--txt-dim);flex:1;min-width:120px"></span>
   </div>
   <div id="padgrid"></div>
   <div id="editpanel" style="display:none">
@@ -1120,7 +1143,7 @@ would take them with it. Export anything you want to keep.</p>
 <!-- LIVE -->
 <div class="view" role="tabpanel" aria-label="Live instruments" id="v-live">
   <div class="hint">
-  <div class="hint-lead" data-lead-short><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records only what you play.</div>
+  <div class="hint-lead" data-lead-short><b>PLAY</b> the on-screen instrument &mdash; or <b>PAD KEYS</b> to play a pad's own sound. <b>&#9679; REC PERFORMANCE</b> records only what you play.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-live">PLAYING IT IN BY HAND</button>
   <div class="hint-body" id="learn-live" hidden>
 <p class="lead-was"><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records <b>only what you play</b> (not the backing beat) to the next empty tape lane &mdash; open <b>TRAX</b> to hear, loop, FX, or send it to a pad. To capture the whole mix instead, arm a lane in <b>TRAX</b> and set the source to MASTER BUS.</p>
@@ -1142,6 +1165,29 @@ free to move, loop, process, or throw away without touching anything else.</p>
 send it to a pad and trigger it from the sequencer — at which point your
 performance becomes an instrument you can program.</p>
 
+<h4>The bass rig</h4>
+<p><b>RIBBON BASS</b> has five voices, and they are five instruments rather than
+one with the filter in five places. <b>SUB</b> is very nearly a pure sine — felt
+more than heard, and the only one where up/down rides the level, because a sine
+has no harmonics for a filter to open. <b>FINGER</b> is the default electric:
+plucked, with the filter snapping open on each touch and falling back behind it.
+<b>PICK</b> is that harder and brighter, with a scrape of noise at the onset.
+<b>REESE</b> is two saws pulled 24 cents apart so they beat against each other —
+the interference <em>is</em> the sound. <b>UPRIGHT</b> is a triangle through a
+woody resonance with a slower attack; acoustic-<em>ish</em> rather than acoustic,
+because there is no sample here and pretending otherwise would be a lie.</p>
+
+<h4>PAD KEYS — playing your own sound</h4>
+<p>Everything else in this tab is made of oscillators. <b>PAD KEYS</b> is not: it
+plays whatever is on a pad, across the scale, with everything that pad already is
+— filter, envelope, reverse, sends, choke group. A bass you sampled, or grew with
+<b>BUILD KIT</b>, is a better bass than any oscillator here, and this is how you
+play it with your fingers.</p>
+<p>The middle of the keyboard is the sample <em>as recorded</em>. Intervals are
+measured from the pad's own note, so a sampled bass lands in tune with the
+pattern rather than a fourth away from it. It is the same call the sequencer
+makes, so what you play and what you program sound identical.</p>
+
 <p class="try"><b>Try this:</b> set the scale to minor pentatonic, record eight
 bars of anything, and send the best two to a pad.</p>
   </div>
@@ -1156,6 +1202,7 @@ bars of anything, and send the best two to a pad.</p>
       <option value="harp">STRUM HARP</option>
       <option value="keys">SCALE KEYS</option>
       <option value="ribbon">RIBBON BASS</option>
+      <option value="padkeys">PAD KEYS &mdash; play a pad's own sound</option>
       <option value="flute">BREATH FLUTE</option>
       <option value="perc">SHAKE PERC</option>
     </select>
@@ -1199,6 +1246,22 @@ bars of anything, and send the best two to a pad.</p>
     <button id="percTapA" class="grow">TAP</button>
     <button id="percTapG">soft</button>
   </div>
+  <div class="row" id="padkeyopts" style="display:none">
+    <span class="lbl">PAD</span>
+    <select id="padKeyPad" class="grow" aria-label="Which pad to play"></select>
+  </div>
+  <div id="padkeyHint" style="display:none;font-size:11px;color:var(--txt-dim);margin:-2px 0 6px;line-height:1.45"></div>
+  <div class="row" id="bassopts" style="display:none">
+    <span class="lbl">BASS</span>
+    <select id="bassVoice" class="grow">
+      <option value="sub">SUB &mdash; nearly pure, felt more than heard</option>
+      <option value="finger" selected>FINGER &mdash; plucked electric, the default</option>
+      <option value="pick">PICK &mdash; brighter, harder attack</option>
+      <option value="reese">REESE &mdash; two saws beating against each other</option>
+      <option value="upright">UPRIGHT &mdash; woody and slow, acoustic-ish</option>
+    </select>
+  </div>
+  <div id="bassHint" style="display:none;font-size:11px;color:var(--txt-dim);margin:-2px 0 6px;line-height:1.45"></div>
   <div class="row" id="fluteopts" style="display:none">
     <button id="instBreath" class="grow">BREATH CONTROL (MIC) — blow to play</button>
   </div>
