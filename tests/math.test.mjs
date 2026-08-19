@@ -23,6 +23,16 @@ test('clampBpm keeps the sign — negative BPM means backwards, not silent', () 
   assert.equal(clampBpm(120), 120);
   assert.equal(clampBpm(-120), -120);
   assert.equal(clampBpm(0), 1, 'zero would stop the clock');
+  /* A tempo that cannot be read must not become the tempo. Math.abs(NaN) is
+     NaN and clamp passed it through, so setBpm stored NaN and the next write
+     to an AudioParam threw — a whole-session failure from one bad number. */
+  assert.equal(clampBpm(NaN), 120, 'NaN is not a tempo');
+  assert.equal(clampBpm(Infinity), 120, 'nor is infinity');
+  assert.equal(clampBpm(-Infinity), 120);
+  assert.equal(clampBpm(undefined), 120, 'nor is a missing value');
+  assert.equal(clampBpm('120'), 120, 'nor is a string that looks like one');
+  assert.equal(clampBpm(NaN, 90), 90, 'the fallback is the caller\'s to choose');
+  assert.equal(clampBpm(-0), 1, 'negative zero still means the slowest forward tempo');
   assert.equal(clampBpm(-0.2), -1);
   assert.equal(clampBpm(5000), 999);
   assert.equal(clampBpm(-5000), -999);

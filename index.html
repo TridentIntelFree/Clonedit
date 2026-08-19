@@ -2135,7 +2135,8 @@ var __JBH_PURE = (() => {
   // src/pure/math.js
   var clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   var posMod = (n, m) => (n % m + m) % m;
-  function clampBpm(b) {
+  function clampBpm(b, dflt = 120) {
+    if (typeof b !== "number" || !isFinite(b)) return dflt;
     const sign = b < 0 ? -1 : 1;
     return sign * clamp(Math.abs(b), 1, 999);
   }
@@ -5097,8 +5098,41 @@ Object.assign(globalThis, __JBH_PURE);})();
      refusal also satisfies. The test asserts the load RETURNS TRUE now, and a
      separate check walks DOC_NUMS against a real document so the list cannot
      drift from the schema.
+   - R162: THE GUARD DID NOT GO DEEP ENOUGH. Four findings from an adversarial
+     QA pass on R161. The first is the same invariant, broken one level down.
+     PAD NUMBERS BYPASSED THE GATE, AND THE CORRUPTION REACHED DISK. DOC_NUMS
+     validates 29 TOP-LEVEL scalars; nothing looked inside pads[]. But
+     pads[].gain, .pan, .rev and .dly go to hardSet and then to an AudioParam,
+     so a document valid everywhere except pads[0].gain='banana' passed the
+     gate and threw at the pad stage — with S.bpm already moved to the poisoned
+     document's tempo and S.pads[0].gain now holding the string. Worse than the
+     R161 case, because it did not stop at the session: autosave wrote the
+     poisoned pad to the vault, and RESTORE brought it back, leaving the state
+     and the audio graph disagreeing permanently with nothing to say so.
+     No list is written out for it. newPad(0) and newTrack() ARE the schema, so
+     any field that is a number in the reference must be a finite number in the
+     document if present. That is the direct lesson of DOC_NUMS, which had to
+     be corrected twice for naming fields that were not numbers: a check
+     derived from the shape cannot drift away from the shape.
+     UNDOING TO THE BOTTOM WIPED THE CRASH-RECOVERY VAULT. Undo itself is
+     correct and redo recovers everything — but undoing to the bottom leaves
+     zero buffers, and dirty() then fires an ordinary autosave, so the vault
+     went from sixteen buffers to none. The undo stack lives in memory only, so
+     losing the page in that window (a crash, an iOS tab reap) takes redo with
+     it while the vault holds an empty session. An empty session no longer
+     overwrites a vault that holds audio: the old one is filed into REWIND and
+     the slot is left alone, once per distinct vault so nothing churns.
+     A HOSTILE SCALE FACTOR. buffers[].pk was read straight from the document
+     and pcmRestore only checked pk>0 && isFinite, which 1e30 satisfies —
+     producing samples around 9.4e29 in a live buffer. The limiter and soft
+     clip absorbed it (0.853 against a 0.843 baseline, no non-finite samples,
+     even with reverb and feedback up), so this is hardening, not a fix for
+     anything audible. Clamped to 64x full scale.
+     clampBpm(NaN) RETURNED NaN. Math.abs(NaN) is NaN and the clamp passed it
+     through, so setBpm stored it and the next AudioParam write threw. A tempo
+     that cannot be read is not a tempo; it falls back to the default now.
    ================================================================ */
-const BUILD = 'JBH-88 · R161 · 2026-08-19 · what survives being saved';
+const BUILD = 'JBH-88 · R162 · 2026-08-19 · the guard goes deeper';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -13778,13 +13812,22 @@ function pcmQuant(f32,pk){
   }
   return i16;
 }
+/* PK_MAX: a scale factor is the peak of a recorded channel, so anything past a
+   few times full scale is a damaged or hostile document rather than a loud
+   take. Unclamped, pk:1e30 was accepted and produced samples around 9.4e29 in
+   a live AudioBuffer. The limiter and soft clip absorbed it — measured 0.853
+   against a 0.843 baseline with no non-finite samples, even with reverb and
+   delay feedback up — so this is hardening rather than a fix for an audible
+   fault. It costs one comparison and removes the need to have been lucky. */
+const PK_MAX=64;
+function pcmScale(pk){ return (pk>0 && isFinite(pk)) ? Math.min(pk,PK_MAX) : 1; }
 function pcmRestore(i16,pk){
-  const k=((pk>0&&isFinite(pk))?pk:1)/32767, f=new Float32Array(i16.length);
+  const k=pcmScale(pk)/32767, f=new Float32Array(i16.length);
   for(let i=0;i<i16.length;i++) f[i]=i16[i]*k;
   return f;
 }
 function f32ToB64(f32,pk){
-  const i16=pcmQuant(f32,(pk>0&&isFinite(pk))?pk:1);
+  const i16=pcmQuant(f32,pcmScale(pk));
   const u8=new Uint8Array(i16.buffer);
   let s=''; const CH=0x8000;
   for(let i=0;i<u8.length;i+=CH) s+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));
@@ -13973,6 +14016,41 @@ function docAccept(doc,where){
            'so nothing in this session was changed.');
       return false;
     }
+  }
+  /* And the same one level down, where DOC_NUMS could not reach.
+
+     pads[].gain, .pan, .rev and .dly go to hardSet and then to an AudioParam,
+     so a pad carrying a string broke the invariant exactly as masterVol did —
+     and worse, because it did not stop at the session: the poisoned pad
+     reached S, autosave wrote it to the vault, and RESTORE brought it back,
+     leaving S.pads[0].gain a string while the audio node still held 0.9. The
+     state and the graph disagreed permanently and nothing said so.
+
+     The list is not written out here. newPad(0) and newTrack() ARE the schema,
+     so every field that is a number in the reference must be a finite number
+     here if it is present at all. That is the lesson from DOC_NUMS, which had
+     to be corrected twice for naming fields that were not numbers: a check
+     derived from the shape cannot drift away from the shape. */
+  const shapeBad=(list,ref,what)=>{
+    if(!Array.isArray(list)) return null;
+    for(let i=0;i<list.length;i++){
+      const o=list[i];
+      if(o==null || typeof o!=='object' || Array.isArray(o)) return what+'['+i+'] is '+JSON.stringify(o);
+      for(const k in ref){
+        if(typeof ref[k]!=='number') continue;
+        const x=o[k];
+        if(x!=null && (typeof x!=='number' || !isFinite(x)))
+          return what+'['+i+'].'+k+' is '+JSON.stringify(x);
+      }
+    }
+    return null;
+  };
+  const bad = shapeBad(doc.pads,newPad(0),'pads') || shapeBad(doc.trax,newTrack(),'trax');
+  if(bad){
+    lcd('LOAD FAILED — that project file is damaged.');
+    plog('Refused '+where+': '+bad+', which is not a finite number. It would be written to an '+
+         'audio parameter part way through loading and throw, so nothing in this session was changed.');
+    return false;
   }
   return true;
 }
@@ -14289,6 +14367,7 @@ let autosaving=false, saveBroken=false;
    filed into REWIND first, where it is one tap from coming back, and the offer
    updates to say where it went. */
 let pendingRestore=null;
+let emptyStashT=-1;      // the vault timestamp already filed away by the empty-session guard
 async function stashPendingRestore(){
   const doc=pendingRestore; if(!doc) return;
   pendingRestore=null;
@@ -14312,6 +14391,37 @@ async function autosave(){
      nothing here worth writing. Leave the offer alone and wait for you to
      actually make something. */
   if(pendingRestore && !S.buffers.length) return;
+  /* An EMPTY session must not overwrite a vault that holds audio.
+
+     Undoing to the bottom returns the session to its pre-load state — no
+     buffers, no loaded pads — and dirty() then fires an ordinary autosave, so
+     the vault went from sixteen buffers to zero. Redo still held the work, but
+     the undo stack lives in memory only: lose the page in that window (a
+     crash, an iOS tab reap, a closed lid) and redo goes with it while the
+     vault holds an empty session. The work is gone, silently, which is the one
+     outcome this file consistently refuses to allow.
+     The vault exists to recover work, and there is no work here to recover, so
+     the old one is filed into REWIND and the slot is left alone. Filed once
+     per distinct vault, so an genuinely empty session does not churn out a
+     checkpoint every time something is touched. */
+  if(!S.buffers.length){
+    try{
+      const prev=await idbGet('last');
+      if(prev && Array.isArray(prev.buffers) && prev.buffers.length){
+        const stamp=prev.t||0;
+        if(emptyStashT!==stamp){
+          emptyStashT=stamp;
+          try{ await idbPut('ckpt:'+(stamp||Date.now()), prev); }catch(e){}
+          plog('This session holds no audio, and the autosave slot held '+prev.buffers.length+
+               ' sample'+(prev.buffers.length===1?'':'s')+' — so the slot was left alone and that '+
+               'session was filed into REWIND. Undo does not live on disk; redo it, or take it '+
+               'back from PROJ \u25b8 REWIND.');
+          lcd('AUTOSAVE HELD BACK — this session is empty, so the saved one was kept and copied to REWIND.');
+        }
+        return;
+      }
+    }catch(e){}
+  }
   autosaving=true;
   await stashPendingRestore();
   try{
