@@ -5041,6 +5041,24 @@ Object.assign(globalThis, __JBH_PURE);})();
      The first sweep that "proved" the topology was flat was wrong: every test
      frequency happened to be a whole number of cycles of a 288-sample delay,
      so a phase error was invisible. Awkward frequencies found it immediately.
+     AND THE DE-ESSER WAS UNDOING ITS OWN WORK. Chrome's compressor applies a
+     makeup gain scaled to the threshold — the same thing that made CEILING run
+     backwards, documented under measureMakeup two hundred lines down, and
+     walked into again. Lowering the DE-ESS threshold lifted the whole high
+     band back up: -2.5dB of reduction where a ratio of 12 says twenty. Worse,
+     the makeup applies whether or not anything is above the threshold, so
+     turning the de-esser on made a quiet mix BRIGHTER. That table is now
+     measured per compressor, with the de-esser's own ratio and release, and
+     cancelled by a gain after it: -12.6dB at 9kHz and -21.6dB at 14kHz, and
+     quiet material moves by 0.00dB.
+     Its first table stopped at -36 while the slider reaches -38, and the
+     lookup clamped rather than extrapolating — 1.09dB of makeup left in at
+     14kHz. It runs past the end of the control now, in 2dB steps.
+     The suite that found all of this was itself the slowest thing in the run,
+     because buildGraph synthesises a reverb IR per call and measuring eleven
+     frequencies one render at a time built 138 of them. One render of a summed
+     multitone read with a Goertzel gives the same numbers for the linear
+     stages and a more realistic probe for the de-esser: 52s to 8s.
    ================================================================ */
 const BUILD = 'JBH-88 · R160 · 2026-08-19 · clarity, and a crossover fixed';
 /* The header line sits directly under a logo that already says JBH-88, and it
@@ -5375,10 +5393,19 @@ function buildGraph(ctx){
      be off. */
   g.dsComp.threshold.value=0; g.dsComp.knee.value=0; g.dsComp.ratio.value=12;
   g.dsComp.attack.value=0.001; g.dsComp.release.value=0.06;
+  /* And it needs its makeup gain cancelled, for the same reason the limiter
+     does — see the CEILING note below. Chrome's compressor applies a makeup
+     scaled to the threshold, so lowering the DE-ESS threshold lifted the whole
+     high band back up and the tool undid most of its own work: measured -2.5dB
+     of reduction where the ratio says twenty. Worse, it would BRIGHTEN quiet
+     material, since the makeup applies whether or not anything is above the
+     threshold. Compensated, the same probe reads the reduction it should. */
+  g.dsMakeup=ctx.createGain(); g.dsMakeup.gain.value=1;
   g.dsSum=ctx.createGain();
   g.mMud.connect(g.mAir);
   g.mAir.connect(g.dsLo1); g.dsLo1.connect(g.dsLo2); g.dsLo2.connect(g.dsDelay); g.dsDelay.connect(g.dsSum);
-  g.mAir.connect(g.dsHi1); g.dsHi1.connect(g.dsHi2); g.dsHi2.connect(g.dsComp); g.dsComp.connect(g.dsSum);
+  g.mAir.connect(g.dsHi1); g.dsHi1.connect(g.dsHi2); g.dsHi2.connect(g.dsComp);
+  g.dsComp.connect(g.dsMakeup); g.dsMakeup.connect(g.dsSum);
 
   /* FOCUS. A vocal sits in the middle of a stereo mix, so the mid channel of
      an M/S decomposition is mostly voice and the side channel is mostly
@@ -8154,34 +8181,50 @@ setTimeout(()=>{ measureMakeup(); }, 0);
    Until the table exists the compensation is 1, which is exactly the behaviour
    the app had before — so a slow or failed measurement costs nothing. */
 const MAKEUP=[];
-async function measureMakeup(){
-  for(let c=0;c>=-12.0001;c-=1){
+const MAKEUP_DS=[];
+/* The makeup gain depends on the compressor's settings, not just its
+   threshold, so each compressor that needs compensating gets its own table
+   measured with its own ratio and release. */
+async function measureTable(into, lo, step, ratio, release){
+  for(let c=0;c>=lo+1e-4;c-=step){
     try{
       const sr=44100, n=4096, a=Math.pow(10,(c-40)/20);
       const oc=new OfflineAudioContext(1,n,sr);
       const k=oc.createDynamicsCompressor();
-      k.threshold.value=c; k.knee.value=0; k.ratio.value=20;
-      k.attack.value=0.001; k.release.value=0.05;
+      k.threshold.value=c; k.knee.value=0; k.ratio.value=ratio;
+      k.attack.value=0.001; k.release.value=release;
       const b=oc.createBuffer(1,n,sr), d=b.getChannelData(0);
       for(let i=0;i<n;i++) d[i]=Math.sin(2*Math.PI*440*i/sr)*a;
       const src=oc.createBufferSource(); src.buffer=b;
       src.connect(k); k.connect(oc.destination); src.start();
       const out=await oc.startRendering(), o=out.getChannelData(0);
       let pk=0; for(let i=n>>1;i<n;i++) pk=Math.max(pk,Math.abs(o[i]));
-      if(pk>0) MAKEUP.push([c,pk/a]);
+      if(pk>0) into.push([c,pk/a]);
     }catch(e){ return; }                 // no table = no compensation, as before
   }
+}
+async function measureMakeup(){
+  await measureTable(MAKEUP,   -12,      1, 20, 0.05);   // the limiter, for CEILING
+  /* Past the bottom of the range, and in finer steps than the limiter's table.
+     Measured only to -DEESS_DB in 4dB steps, the lowest point landed at -36
+     and lerpTable CLAMPED the -38 the slider actually reaches — leaving ~1.1dB
+     of uncancelled makeup, which showed up as a de-esser brightening quiet
+     material by 1.09dB at 14kHz. The table has to cover past the end of the
+     control, not up to it. */
+  await measureTable(MAKEUP_DS,-(DEESS_DB+6),2, 12, 0.06);   // the de-esser
   try{ applyMaster(); }catch(e){}        // the live graph picks it up immediately
 }
-function makeupAt(ceil){
-  if(MAKEUP.length<2) return 1;
-  const c=clamp(ceil,MAKEUP[MAKEUP.length-1][0],MAKEUP[0][0]);
-  for(let i=1;i<MAKEUP.length;i++){
-    const [c1,g1]=MAKEUP[i];
-    if(c>=c1){ const [c0,g0]=MAKEUP[i-1], f=(c-c1)/(c0-c1); return g1+(g0-g1)*f; }
+function lerpTable(tbl, x){
+  if(tbl.length<2) return 1;
+  const c=clamp(x,tbl[tbl.length-1][0],tbl[0][0]);
+  for(let i=1;i<tbl.length;i++){
+    const [c1,g1]=tbl[i];
+    if(c>=c1){ const [c0,g0]=tbl[i-1], f=(c-c1)/(c0-c1); return g1+(g0-g1)*f; }
   }
-  return MAKEUP[MAKEUP.length-1][1];
+  return tbl[tbl.length-1][1];
 }
+function makeupAt(ceil){ return lerpTable(MAKEUP, ceil); }
+function deessMakeupAt(th){ return lerpTable(MAKEUP_DS, th); }
 
 /* ---------------- MASTER CHAIN — applied to any graph, live or offline -------
    Written as apply(g) so the live graph and the bounce get the same treatment
@@ -8206,7 +8249,9 @@ function applyMasterG(g, ctx){
     /* 0 is genuinely off — with knee 0 a threshold of 0dBFS is above anything
        the limiter lets through, so the band is passed untouched. */
     const de=byp?0:(S.mDeess||0);
-    set(g.dsComp.threshold, de>0 ? -DEESS_DB*de : 0);
+    const dth=de>0 ? -DEESS_DB*de : 0;
+    set(g.dsComp.threshold, dth);
+    set(g.dsMakeup.gain, 1/deessMakeupAt(dth));
   }
   // 10Hz is below anything audible: the mono band collects nothing and the
   // width path carries the whole mix, which is what "off" has to mean. It has

@@ -32,25 +32,48 @@ export default async function ({ browser, base }) {
     const r = await page.evaluate(async (F) => {
       const o = {};
       const SR = AC.sampleRate, N = Math.round(SR * 0.55);
+      const AN0 = Math.round(SR * 0.15), AN = N - AN0;      // analyse after the filters settle
 
-      /* Level in dB of a steady tone pushed through the app's OWN master graph
-         — buildGraph and applyMasterG, the same code the speakers and the
-         bounce use. Measured over the back half so filters have settled. */
-      const thru = async (f, state) => {
-        const oc = new OfflineAudioContext(1, N, SR);
+      /* Goertzel: the amplitude at exactly f. Used instead of a peak reading so
+         every frequency can be measured from ONE render of a summed multitone
+         rather than one render per frequency.
+         That matters more than it sounds: buildGraph synthesises a fresh
+         reverb impulse response on every call, so the per-frequency version
+         built 138 of them and was by a wide margin the slowest suite in the
+         run. Linear stages cannot intermodulate, so the readings are the same;
+         for DE-ESS, which is not linear, a broadband probe is if anything the
+         more realistic one, and reference and test see the identical input. */
+      const goertzel = (d, f) => {
+        const w = 2 * Math.PI * f / SR, cr = 2 * Math.cos(w);
+        let s1 = 0, s2 = 0;
+        for (let i = AN0; i < d.length; i++) { const s = d[i] + cr * s1 - s2; s2 = s1; s1 = s; }
+        return 2 * Math.sqrt(Math.max(0, s1 * s1 + s2 * s2 - cr * s1 * s2)) / AN;
+      };
+
+      /* One render of every test tone at once, through the app's OWN master
+         graph — buildGraph and applyMasterG, the same code the speakers and
+         the bounce use. */
+      const render = async (state, stereo) => {
+        const oc = new OfflineAudioContext(stereo ? 2 : 1, N, SR);
         const g = buildGraph(oc);
         const save = {};
         for (const k in state) { save[k] = S[k]; S[k] = state[k]; }
         applyMasterG(g, oc);
         for (const k in save) S[k] = save[k];
-        const osc = oc.createOscillator(); osc.frequency.value = f;
-        const amp = oc.createGain(); amp.gain.value = state.__amp != null ? state.__amp : 0.2;
-        osc.connect(amp); amp.connect(g.master);
-        osc.start();
+        return { oc, g };
+      };
+      const multitone = async (state) => {
+        const { oc, g } = await render(state, false);
+        const amp = state.__amp != null ? state.__amp : 0.05;
+        for (const f of F) {
+          const osc = oc.createOscillator(); osc.frequency.value = f;
+          const a = oc.createGain(); a.gain.value = amp;
+          osc.connect(a); a.connect(g.master); osc.start();
+        }
         const d = (await oc.startRendering()).getChannelData(0);
-        let pk = 0;
-        for (let i = (N >> 1); i < N; i++) { const a = Math.abs(d[i]); if (a > pk) pk = a; }
-        return 20 * Math.log10(pk || 1e-30);
+        const out = {};
+        for (const f of F) out[f] = goertzel(d, f);
+        return out;
       };
 
       /* Every reading is a DIFFERENCE against the same graph at rest, so the
@@ -58,19 +81,22 @@ export default async function ({ browser, base }) {
          stage under test. */
       const FLAT = { mEqLo: 0, mEqMid: 0, mEqHi: 0, mWidth: 1, mMono: 0, mByp: false,
         mMud: 0, mAir: 0, mFocus: 0, mDeess: 0 };
+      /* The level must match on both sides of the subtraction. DE-ESS needs a
+         hotter probe to cross its threshold, and running the reference at the
+         quiet level offset that whole column by +7.96dB — which read as the
+         de-esser boosting the bass. One reference per amplitude, reused. */
+      const refs = {};
+      const refFor = async (amp) => {
+        const k = String(amp);
+        if (!refs[k]) { const st = Object.assign({}, FLAT);
+          if (amp != null) st.__amp = amp; refs[k] = await multitone(st); }
+        return refs[k];
+      };
       const sweep = async (state) => {
+        const ref = await refFor(state.__amp != null ? state.__amp : null);
+        const got = await multitone(Object.assign({}, FLAT, state));
         const out = {};
-        /* The level must match on both sides of the subtraction. DE-ESS needs
-           a hotter tone to cross its threshold, and running the reference at
-           the quiet level offset that whole column by +7.96dB — which read as
-           the de-esser boosting the bass. */
-        const ref = Object.assign({}, FLAT);
-        if (state.__amp != null) ref.__amp = state.__amp;
-        for (const f of F) {
-          const a = await thru(f, ref);
-          const b = await thru(f, Object.assign({}, FLAT, state));
-          out[f] = +(b - a).toFixed(2);
-        }
+        for (const f of F) out[f] = +(20 * Math.log10((got[f] || 1e-30) / (ref[f] || 1e-30))).toFixed(2);
         return out;
       };
       const worstOf = m => Object.values(m).reduce((w, v) => Math.abs(v) > Math.abs(w) ? v : w, 0);
@@ -80,19 +106,19 @@ export default async function ({ browser, base }) {
       o.mud = await sweep({ mMud: -6 });
       o.air = await sweep({ mAir: 6 });
       o.deessOff = await sweep({ mDeess: 0 });
-      o.deessOn = await sweep({ mDeess: 1, __amp: 0.5 });
+      o.deessOn = await sweep({ mDeess: 1, __amp: 0.12 });
+      /* The other half of the makeup-gain bug: an uncompensated compressor
+         lifts the band it is watching whether or not anything is above the
+         threshold, so a quiet mix would come back BRIGHTER for turning a
+         de-esser on. Nothing here may rise. */
+      o.deessQuiet = await sweep({ mDeess: 1, __amp: 0.004 });
       o.worst = { defaults: worstOf(o.defaults), monoOn: worstOf(o.monoOn),
         deessOff: worstOf(o.deessOff) };
 
       /* FOCUS is a stereo effect, so it needs a stereo probe: a tone hard
          centred (pure mid) and the same tone in anti-phase (pure side). */
       const ms = async (focus, side) => {
-        const oc = new OfflineAudioContext(2, N, SR);
-        const g = buildGraph(oc);
-        const save = {}, st = Object.assign({}, FLAT, { mFocus: focus });
-        for (const k in st) { save[k] = S[k]; S[k] = st[k]; }
-        applyMasterG(g, oc);
-        for (const k in save) S[k] = save[k];
+        const { oc, g } = await render(Object.assign({}, FLAT, { mFocus: focus }), true);
         const osc = oc.createOscillator(); osc.frequency.value = 1811;
         const mg = oc.createChannelMerger(2);
         const L = oc.createGain(), R = oc.createGain();
@@ -100,11 +126,8 @@ export default async function ({ browser, base }) {
         osc.connect(L); osc.connect(R);
         L.connect(mg, 0, 0); R.connect(mg, 0, 1);
         mg.connect(g.master); osc.start();
-        const b = await oc.startRendering();
-        const d = b.getChannelData(0);
-        let pk = 0;
-        for (let i = (N >> 1); i < N; i++) { const a = Math.abs(d[i]); if (a > pk) pk = a; }
-        return 20 * Math.log10(pk || 1e-30);
+        const d = (await oc.startRendering()).getChannelData(0);
+        return 20 * Math.log10(goertzel(d, 1811) || 1e-30);
       };
       const mid0 = await ms(0, false), side0 = await ms(0, true);
       o.focusUp = { mid: +(await ms(1, false) - mid0).toFixed(2),
@@ -113,6 +136,7 @@ export default async function ({ browser, base }) {
         side: +(await ms(-1, true) - side0).toFixed(2) };
 
       o.constants = { BW_Q, DS_F, DS_LAT, FC_F, FOCUS_DB, DEESS_DB };
+      o.dsTable = MAKEUP_DS.length;
 
       /* Off means off in the state too, not just in the graph: BYPASS has to
          neutralise the new controls the way it neutralises the old ones. */
@@ -159,8 +183,10 @@ export default async function ({ browser, base }) {
 
     t.head('DE-ESS COMPRESSES SIBILANCE, NOT THE MIX');
     t.note('    ' + show(r.deessOn));
-    t.ok('it pulls the sibilant band down', r.deessOn[9041] < -3,
-      r.deessOn[9041].toFixed(2) + ' dB @9041, ' + r.deessOn[13907].toFixed(2) + ' dB @13907');
+    t.ok('it pulls the sibilant band down, by the depth the ratio implies',
+      r.deessOn[9041] < -8 && r.deessOn[13907] < -14,
+      r.deessOn[9041].toFixed(2) + ' dB @9041, ' + r.deessOn[13907].toFixed(2) + ' dB @13907'
+      + ' (was -2.03 / -2.51 with the makeup gain left in)');
     t.ok('harder the higher it goes', r.deessOn[13907] < r.deessOn[7013],
       r.deessOn[7013].toFixed(2) + ' → ' + r.deessOn[13907].toFixed(2) + ' dB');
     t.ok('while the body of the mix is left alone',
@@ -172,6 +198,12 @@ export default async function ({ browser, base }) {
       + ' @5099 (was -7.18 uncompensated)');
     t.ok('the compensation matches the measured pre-delay',
       Math.abs(r.constants.DS_LAT - 0.006) < 1e-9, r.constants.DS_LAT + 's');
+    t.note('    quiet source  ' + F.map(f => f + ':' + r.deessQuiet[f].toFixed(2)).join(' '));
+    t.ok('and it never BRIGHTENS quiet material — the makeup gain is cancelled',
+      Math.max(...F.map(f => r.deessQuiet[f])) < 0.5,
+      'worst rise ' + Math.max(...F.map(f => r.deessQuiet[f])).toFixed(2) + ' dB');
+    t.ok('the makeup table was actually measured, not defaulted to 1',
+      r.dsTable > 4, r.dsTable + ' points');
 
     t.head('FOCUS MOVES THE CENTRE AGAINST THE SIDES');
     t.ok('turned up, centred material rises and the sides fall',
