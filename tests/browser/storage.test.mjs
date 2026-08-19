@@ -310,6 +310,76 @@ export default async function ({ browser, base }) {
     t.ok('and once there is audio again the vault updates normally',
       vault.restored > 0, vault.restored + ' buffers');
 
+    t.head('A SHORT OR OVERLONG DOCUMENT IS REPAIRED, NOT REFUSED');
+    /* The loops that consume these run to NPADS and NTRAX whatever the
+       document brought, so a project carrying four pads threw on the fifth —
+       the same half-applied load one more level down, and older than the
+       numeric guard. A short pattern was quieter and worse: it LOADED, then
+       threw during playback when the scheduler reached a step row that was
+       not there, which is why this section renders as well as loads. */
+    const shape = await page.evaluate(async () => {
+      const o = { bad: [] };
+      const base = structuredClone(snapshotSession());
+      const run = async (name, mut, expect) => {
+        const d = structuredClone(base); mut(d);
+        let res = null, threw = null;
+        try { res = applySessionDoc(d, docToBuffers(structuredClone(d))); }
+        catch (e) { threw = 'load threw ' + (e.message || e); }
+        if (!threw && expect === 'load') {
+          if (res === false) threw = 'refused';
+          else {
+            /* And it must survive being PLAYED — that is where the short
+               pattern used to fail, long after the load reported success.
+               A null render is not a fault here: truncating a pattern's track
+               rows legitimately removes the hits that lived on them, so there
+               is genuinely nothing to play. Only a throw is a failure. */
+            try { const b = await renderMix(null, null, { loops: 1, src: 'pat', noTail: true });
+              if (b) { let pk = 0; const dd = b.getChannelData(0);
+                for (let i = 0; i < dd.length; i++) { const v = Math.abs(dd[i]); if (v > pk) pk = v; }
+                o.peaks = o.peaks || {}; o.peaks[name] = +pk.toFixed(3); }
+              else { o.silent = o.silent || []; o.silent.push(name); }
+            } catch (e) { threw = 'render threw ' + (e.message || e); }
+          }
+        }
+        if (!threw && expect === 'refuse' && res !== false) threw = 'was accepted';
+        if (threw) o.bad.push(name + ' → ' + threw);
+        // restore a sane session between cases
+        applySessionDoc(structuredClone(base), docToBuffers(structuredClone(base)));
+      };
+      await run('4 pads', d => { d.pads = d.pads.slice(0, 4); }, 'load');
+      await run('0 pads', d => { d.pads = []; }, 'load');
+      await run('80 pads', d => { while (d.pads.length < 80) d.pads.push(structuredClone(d.pads[0])); }, 'load');
+      await run('a pattern with 4 track rows', d => {
+        d.patterns.forEach(p => { p.steps = p.steps.slice(0, 4); }); }, 'load');
+      await run('a pattern whose steps is not an array', d => { d.patterns[0].steps = null; }, 'load');
+      await run('a track row that is not an array', d => { d.patterns[0].steps[2] = 'x'; }, 'load');
+      await run('1 tape lane', d => { d.trax = d.trax.slice(0, 1); }, 'load');
+      await run('no patterns at all', d => { d.patterns = []; }, 'refuse');
+      o.padsAfter = S.pads.length;
+      o.tracksAfter = S.patterns[0].steps.length;
+      return o;
+    });
+    t.ok('every short or overlong shape loads, and playing it cannot throw',
+      shape.bad.length === 0, shape.bad.join(' | ') || 'all 8 behaved');
+    /* Which of these SHOULD still make sound took two corrections to get
+       right, so it is spelled out. Truncating pads to four discards the sixty
+       samples that lived on the rest, and truncating a pattern's track rows
+       discards the hits on them — both are silent because the document really
+       did throw that material away, not because anything failed. The cases
+       that keep their audio are the ones where nothing was removed: extra pads
+       appended, a single malformed row, a short tape-lane list. */
+    t.ok('the shapes that lose nothing still make sound',
+      shape.peaks && shape.peaks['80 pads'] > 0.02
+      && shape.peaks['a track row that is not an array'] > 0.02
+      && shape.peaks['1 tape lane'] > 0.02,
+      JSON.stringify(shape.peaks));
+    t.note('    silent because the document discarded the material, not because it broke: '
+      + (shape.silent || []).concat(
+          Object.keys(shape.peaks || {}).filter(k => shape.peaks[k] === 0)).join(', '));
+    t.ok('and the session ends up with this build\'s own dimensions',
+      shape.padsAfter === 64 && shape.tracksAfter === 64,
+      shape.padsAfter + ' pads, ' + shape.tracksAfter + ' track rows');
+
     t.head('A HOSTILE SCALE FACTOR IS CLAMPED');
     const pk = await page.evaluate(() => {
       const f = new Float32Array(64);

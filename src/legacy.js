@@ -2550,6 +2550,18 @@
      clampBpm(NaN) RETURNED NaN. Math.abs(NaN) is NaN and the clamp passed it
      through, so setBpm stored it and the next AudioParam write threw. A tempo
      that cannot be read is not a tempo; it falls back to the default now.
+     AND ONE THE PASS DID NOT FIND, TURNED UP BY VERIFYING THE FIX. Checking
+     that the new pad guard did not over-refuse legitimate documents, a project
+     carrying FEWER pads than this build throws: the loops that consume pads
+     and patterns run to NPADS and NTRAX whatever the document brought, so four
+     pads threw on the fifth. Older than the numeric guard and the same
+     invariant again. A short PATTERN was quieter and worse — it loaded, and
+     threw during PLAYBACK when the scheduler reached a step row that was not
+     there. Both are repaired rather than refused, because this file treats an
+     absent field as a default everywhere else and a project from a build with
+     fewer pads is a real thing to want to open; extra entries are dropped so
+     state stays canonical. A document with no patterns at all is still
+     refused: there is no default that preserves anyone's intent.
    ================================================================ */
 const BUILD = 'JBH-88 · R162 · 2026-08-19 · the guard goes deeper';
 /* The header line sits directly under a logo that already says JBH-88, and it
@@ -11471,6 +11483,48 @@ function docAccept(doc,where){
          'audio parameter part way through loading and throw, so nothing in this session was changed.');
     return false;
   }
+  /* LENGTHS, repaired rather than refused.
+
+     The loops that consume these run to NPADS and NTRAX whatever the document
+     brought, so a project carrying four pads threw on the fifth — the same
+     half-applied load again, one more level down, and it predates the numeric
+     guard entirely. A short pattern was quieter and worse: it loaded, then
+     threw during PLAYBACK when the scheduler reached a step row that was not
+     there.
+     Repaired, not refused, because this file treats an absent field as a
+     default everywhere else and a project from a build with fewer pads is a
+     real thing to want to open. Extra entries are dropped so state stays
+     canonical rather than carrying rows nothing will ever read.
+     A document with NO patterns is the exception: there is no default that
+     preserves anyone's intent, and S.pattern would index past the end. */
+  if(!doc.patterns.length){
+    lcd('LOAD FAILED — that project file is damaged.');
+    plog('Refused '+where+': it contains no patterns at all. Nothing in this session was changed.');
+    return false;
+  }
+  const grew=[];
+  if(doc.pads.length!==NPADS){
+    grew.push(doc.pads.length+' pads');
+    while(doc.pads.length<NPADS) doc.pads.push(newPad(doc.pads.length));
+    doc.pads.length=NPADS;
+  }
+  doc.patterns.forEach(pt=>{
+    if(!pt || typeof pt!=='object') return;
+    if(!Array.isArray(pt.steps)) pt.steps=[];
+    if(pt.steps.length!==NPADS){
+      grew.push('a pattern with '+pt.steps.length+' tracks');
+      while(pt.steps.length<NPADS) pt.steps.push(new Array(MAXSTEPS).fill(0));
+      pt.steps.length=NPADS;
+    }
+    for(let i=0;i<NPADS;i++) if(!Array.isArray(pt.steps[i])) pt.steps[i]=new Array(MAXSTEPS).fill(0);
+  });
+  if(Array.isArray(doc.trax) && doc.trax.length && doc.trax.length!==NTRAX){
+    grew.push(doc.trax.length+' tape lanes');
+    while(doc.trax.length<NTRAX) doc.trax.push(newTrack());
+    doc.trax.length=NTRAX;
+  }
+  if(grew.length) plog('Note ('+where+'): the project carried '+grew.join(', ')+
+    ' — filled out to this build\'s '+NPADS+' pads / '+NTRAX+' lanes rather than refused.');
   return true;
 }
 function applySessionDoc(doc, bufs){
