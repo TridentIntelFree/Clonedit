@@ -384,6 +384,141 @@ export default async function ({ browser, base }) {
     t.ok('but a source you chose while the mic was live is left alone',
       mic.deliberate === 'live', mic.deliberate);
 
+    t.head('A NEW SOUND ON A PAD DOES NOT INHERIT THE LAST ONE\'S VOICING');
+    /* Reported: a TRAX take sent TO PAD came back very quiet, with the EQ
+       "looking insane", and inaudible over Bluetooth. The take was fine — the
+       pad it landed on still carried the previous sound's gain, filter and EQ,
+       because when every pad is full pickTargetPad falls back to the selected
+       one. Measured before the fix: rendered 0.20 instead of 0.82, with the
+       700-3000Hz band two million times below 30-90Hz — pure sub-bass, which
+       a Bluetooth speaker does not reproduce. */
+    const voice = await page.evaluate(async () => {
+      const pk = b => { let m = 0; const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > m) m = v; } return m; };
+      /* Measured AT the tones the take is made of, not across a band. A band
+         sum steps through six probe points and 1400Hz fell between two of
+         them, so it read the midrange as absent when it was fully present —
+         the test failing on its own arithmetic rather than on the app. */
+      const at = (buf, f) => { const d = buf.getChannelData(0);
+        const w = 2 * Math.PI * f / buf.sampleRate, cr = 2 * Math.cos(w);
+        let s1 = 0, s2 = 0;
+        for (let i = 0; i < d.length; i++) { const s = d[i] + cr * s1 - s2; s2 = s1; s1 = s; }
+        return 2 * Math.sqrt(Math.max(0, s1 * s1 + s2 * s2 - cr * s1 * s2)) / d.length; };
+      const o = {};
+      // a take on a lane, made directly so the test does not depend on timing
+      const SR = AC.sampleRate, N = Math.round(SR * 0.5);
+      const take = AC.createBuffer(1, N, SR), td = take.getChannelData(0);
+      for (let i = 0; i < N; i++) {           // broadband, so a lowpass is obvious
+        td[i] = 0.8 * (Math.sin(2 * Math.PI * 180 * i / SR) + Math.sin(2 * Math.PI * 1400 * i / SR)
+          + Math.sin(2 * Math.PI * 7000 * i / SR)) / 3;
+      }
+      S.buffers.push(take);
+      S.trax[0].bufId = S.buffers.length - 1;
+      S.trax[0].name = 'take';
+
+      // every pad full, so TO PAD must fall back to the selected one
+      for (let i = 0; i < NPADS; i++) if (S.pads[i].bufId < 0) S.pads[i].bufId = 0;
+      S.editPad = 5;
+      Object.assign(S.pads[5], { gain: 0.15, ftype: 'lp', fcut: 0.12, fres: 3,
+        eqLo: 9, eqMid: -12, eqHi: -12, pitch: -7, mode: 'one' });
+
+      traxFxSel = 0;
+      document.getElementById('tfxPad').click();
+      const pi = S.editPad, p = S.pads[pi];
+      o.landedOnUsedPad = pi === 5;
+      o.pad = { gain: p.gain, ftype: p.ftype, fcut: p.fcut, fres: p.fres,
+        eqLo: p.eqLo, eqMid: p.eqMid, eqHi: p.eqHi, pitch: p.pitch };
+      o.lcd = document.getElementById('lcdmsg').textContent;
+      /* placement must SURVIVE — the slot's identity is not the sound's */
+      o.keptNote = p.note, o.keptChoke = p.choke;
+
+      S.patterns[S.pattern].steps.forEach(r => r.fill(0));
+      S.patterns[S.pattern].steps[pi][0] = 1;
+      S.trax.forEach(tr => { tr.mute = true; });
+      const b = await renderMix(new Set([pi]), new Set(), { loops: 1, src: 'pat', noTail: true });
+      o.peak = b ? pk(b) : 0;
+      if (b) { o.low = at(b, 180); o.mid = at(b, 1400); o.high = at(b, 7000); }
+      return o;
+    });
+    t.ok('the take really did land on a pad that was already in use',
+      voice.landedOnUsedPad);
+    t.ok('and the pad\'s level, filter, EQ and pitch are back to defaults',
+      voice.pad.gain === 0.9 && voice.pad.ftype === 'off' && voice.pad.fcut === 1
+      && voice.pad.eqLo === 0 && voice.pad.eqMid === 0 && voice.pad.eqHi === 0
+      && voice.pad.pitch === 0, JSON.stringify(voice.pad));
+    t.ok('it says what it cleared rather than doing it silently',
+      /cleared/.test(voice.lcd) && /UNDO/.test(voice.lcd), '"' + voice.lcd + '"');
+    t.ok('the take plays at a normal level, not buried',
+      voice.peak > 0.5, 'peak ' + voice.peak.toFixed(4) + ' (0.20 before the fix)');
+    t.ok('AND IT KEEPS ITS MIDRANGE AND TOP — what Bluetooth actually reproduces',
+      voice.mid > voice.low * 0.25 && voice.high > voice.low * 0.1,
+      '180Hz ' + voice.low.toFixed(4) + ' · 1.4kHz ' + voice.mid.toFixed(4)
+      + ' · 7kHz ' + voice.high.toFixed(4) + ' (the lowpass left almost nothing above 180Hz)');
+
+    t.head('AN OPEN INPUT IS VISIBLE, AND RELEASES THE ROUTE WHEN IT CLOSES');
+    /* Reported: the app played through the phone speaker and would not play
+       through Bluetooth, while other apps used the same speaker fine without
+       reconnecting. That is the iOS audio session: any open input puts it in
+       'play-and-record', which routes output to the built-in speaker and
+       carries no A2DP Bluetooth. Bluetooth itself cannot be tested here — no
+       BT stack, no iOS, and Chromium does not implement navigator.audioSession
+       — so what is testable is checked: that the app knows when an input is
+       open, says so, and lets go the moment it closes. */
+    const route = await page.evaluate(async () => {
+      const o = {};
+      const pip = document.getElementById('recPip');
+      o.hasPip = !!pip;
+      o.hiddenAtRest = pip ? pip.hidden : null;
+      o.openAtRest = capturesOpen();
+
+      /* Drive the state the way each feature does, without a real getUserMedia:
+         the question is whether capturesOpen() and the badge follow it. */
+      micOn = true; drawRoutePip();
+      o.withMic = { open: capturesOpen(), shown: !pip.hidden, title: pip.title };
+      micOn = false; drawRoutePip();
+      o.afterMic = { open: capturesOpen(), shown: !pip.hidden };
+
+      ampOn = true; drawRoutePip();
+      o.withAmp = { open: capturesOpen(), shown: !pip.hidden, title: pip.title };
+      ampOn = false; drawRoutePip();
+
+      traxStream = { getTracks: () => [] }; drawRoutePip();
+      o.withTrax = { open: capturesOpen(), shown: !pip.hidden };
+      traxStream = null; drawRoutePip();
+      o.afterAll = { open: capturesOpen(), shown: !pip.hidden };
+
+      /* And the guard that used to yank the route out from under a live
+         capture: resumeSession must NOT reclaim playback while an input is
+         open. micOn and breathOn were missing from the old list. */
+      micOn = true;
+      let killed = false;
+      const realType = (() => { try { return navigator.audioSession && navigator.audioSession.type; }
+        catch (e) { return null; } })();
+      o.sessionApiPresent = realType != null;
+      resumeSession();
+      o.stillOpenAfterResume = capturesOpen().length > 0;
+      micOn = false;
+      resumeSession();
+      o.releasedAfterClose = capturesOpen().length === 0;
+      drawRoutePip();
+      o.pipHiddenAtEnd = pip.hidden;
+      return o;
+    });
+    t.ok('the badge exists and is hidden while nothing is capturing',
+      route.hasPip && route.hiddenAtRest && route.openAtRest.length === 0);
+    t.ok('the MIC panel raises it, and the tooltip names the feature',
+      route.withMic.shown && route.withMic.open.includes('MIC')
+      && /MIC/.test(route.withMic.title) && /Bluetooth/i.test(route.withMic.title),
+      route.withMic.open.join(', '));
+    t.ok('so does the AMP input', route.withAmp.shown && route.withAmp.open.includes('AMP INPUT'));
+    t.ok('so does a tape lane armed to the mic', route.withTrax.shown);
+    t.ok('and closing each one clears it again',
+      route.afterMic.open.length === 0 && !route.afterMic.shown
+      && route.afterAll.open.length === 0 && !route.afterAll.shown && route.pipHiddenAtEnd);
+    t.ok('resumeSession does not reclaim the route from a live capture',
+      route.stillOpenAfterResume, 'the old guard omitted micOn and breathOn');
+    t.ok('but does release it once the capture closes', route.releasedAfterClose);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

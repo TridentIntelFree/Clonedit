@@ -100,6 +100,15 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
   border:1px solid var(--txt-dim);color:var(--txt);background:transparent;
   font-size:10px;font-weight:700;letter-spacing:.6px;line-height:1.3}
 #offPip[hidden]{display:none}
+/* An open input takes the iOS audio session into 'play-and-record', which puts
+   output on the phone and carries no Bluetooth at all. That is invisible
+   otherwise — the app simply stops coming out of the speaker you were using,
+   while every other app still does. The pip says an input is holding it, and
+   its title names which feature. */
+#recPip{flex:none;padding:1px 5px;border-radius:3px;
+  border:1px solid var(--red);color:var(--red);background:transparent;
+  font-size:10px;font-weight:700;letter-spacing:.6px;line-height:1.3}
+#recPip[hidden]{display:none}
 /* Sharing one line leaves the build string about 40px on a 390px phone, which
    renders as "R1…" — the version is how you check which build you are testing,
    so it is not something to spend on a badge. Offline gives the build its own

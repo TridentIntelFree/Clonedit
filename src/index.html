@@ -38,6 +38,7 @@
     <div id="logo">JBH-88</div>
     <div id="idline">
       <span id="offPip" hidden title="No connection. Everything already on the device still works.">OFFLINE</span>
+      <span id="recPip" hidden>&#9679; INPUT OPEN</span>
       <div id="build" class="expandable" role="button" tabindex="0" title="tap to read the whole line"></div>
     </div>
   </div>
@@ -1061,6 +1062,20 @@ voice keeps its body on speakers that can reproduce it.</p>
 <p>If the mic can hear the speaker, the speaker feeds the mic, which feeds the
 speaker: that is the squeal. <b>Use headphones</b> before turning MONITOR on.
 There is no software fix for a loop that exists in the room.</p>
+
+<h4>Bluetooth goes quiet while an input is open</h4>
+<p>Turning the mic on &mdash; or the AMP input, or BREATH, or arming a tape
+lane with MIC as its source &mdash; puts the phone&rsquo;s audio session into
+record mode. On iOS that mode routes output to the <b>phone&rsquo;s own
+speaker</b> and carries no Bluetooth audio at all. So the app keeps playing,
+but out of the handset, while every other app on the phone still reaches your
+Bluetooth speaker normally. Nothing is broken and nothing needs reconnecting.</p>
+<p>The red <b>&#9679; INPUT OPEN</b> badge at the top of the screen is showing
+whenever this is the case, and its tooltip names which feature is holding it.
+Turn that input off and Bluetooth comes back on its own.</p>
+<p>This is the operating system&rsquo;s rule rather than a setting the app can
+override: a browser page cannot ask iOS for record rights and A2DP Bluetooth
+output at the same time.</p>
 
 <h4>Gain before anything else</h4>
 <p>Set the input level so the loudest thing you do reaches most of the meter
