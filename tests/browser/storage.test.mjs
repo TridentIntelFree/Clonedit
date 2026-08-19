@@ -217,6 +217,192 @@ export default async function ({ browser, base }) {
     t.ok('the reloaded session still plays', trip.peak > 0.05,
       'peak ' + trip.peak.toFixed(4) + ', ' + trip.bufs + ' buffers, ' + trip.pads + ' loaded pads');
 
+    t.head('AND THE SAME GUARD ONE LEVEL DOWN, INSIDE pads[] AND trax[]');
+    /* DOC_NUMS only ever saw top-level scalars. pads[].gain/.pan/.rev/.dly go
+       to hardSet and then to an AudioParam, so a pad carrying a string broke
+       the invariant exactly as masterVol did — and worse, because it did not
+       stop at the session: the poisoned pad reached S, autosave wrote it to
+       the vault, and RESTORE brought it back, leaving S.pads[0].gain a string
+       while the audio node still held 0.9, disagreeing permanently. */
+    const deep = await page.evaluate(async () => {
+      const o = {};
+      const base = structuredClone(snapshotSession());
+      S.bpm = 91;
+      const before = { bpm: S.bpm, gain: S.pads[0].gain };
+
+      const cases = [
+        ['pads[0].gain string', d => { d.pads[0].gain = 'banana'; }],
+        ['pads[0].pan NaN', d => { d.pads[0].pan = NaN; }],
+        ['pads[3].rev null-ish', d => { d.pads[3].rev = 'x'; }],
+        ['pads[5].dly Infinity', d => { d.pads[5].dly = Infinity; }],
+        ['pads[2].pitch string', d => { d.pads[2].pitch = '3'; }],
+        ['pads[1] is null', d => { d.pads[1] = null; }],
+        ['pads[0] is an array', d => { d.pads[0] = [1, 2, 3]; }],
+        ['trax[0].gain string', d => { if (d.trax && d.trax[0]) d.trax[0].gain = 'loud'; }],
+        ['trax[1].fcut NaN', d => { if (d.trax && d.trax[1]) d.trax[1].fcut = NaN; }],
+      ];
+      o.leaked = [];
+      for (const [name, poison] of cases) {
+        const d = structuredClone(base); poison(d);
+        S.bpm = 91;
+        let threw = null, res = null;
+        try { res = applySessionDoc(d, docToBuffers(structuredClone(d))); }
+        catch (e) { threw = String(e.message || e); }
+        const held = S.bpm === 91 && typeof S.pads[0].gain === 'number';
+        if (res !== false || threw || !held)
+          o.leaked.push(name + ' → ' + (threw ? 'threw ' + threw : 'returned ' + res)
+            + (held ? '' : ', SESSION TOUCHED bpm=' + S.bpm + ' gain=' + JSON.stringify(S.pads[0].gain)));
+      }
+      o.after = { bpm: S.bpm, gain: S.pads[0].gain };
+      o.before = before;
+      /* And a real pad document still loads — the check must not have become
+         so strict that it refuses the app's own output. */
+      o.realStillLoads = applySessionDoc(structuredClone(base),
+        docToBuffers(structuredClone(base))) !== false;
+      o.gainType = typeof S.pads[0].gain;
+      return o;
+    });
+    t.ok('a poisoned pad or lane number is refused whole, at the gate',
+      deep.leaked.length === 0, deep.leaked.join(' | ') || 'all 9 refused cleanly');
+    t.ok('and the live session never sees it',
+      deep.after.bpm === 91 && typeof deep.after.gain === 'number',
+      JSON.stringify(deep.after));
+    t.ok('while a real project still loads — the guard did not become the bug',
+      deep.realStillLoads && deep.gainType === 'number');
+
+    t.head('AN EMPTY SESSION DOES NOT WIPE THE VAULT');
+    /* Undoing to the bottom returns the session to zero buffers, and dirty()
+       then fires an ordinary autosave — which took the vault from sixteen
+       buffers to none. Redo still held the work, but the undo stack is memory
+       only: lose the page in that window and the work is gone silently. */
+    const vault = await page.evaluate(async () => {
+      const o = {};
+      await idbPut('last', snapshotSession());
+      const before = await idbGet('last');
+      o.before = before.buffers.length;
+      const keep = S.buffers;
+      S.buffers = [];                       // what undoing to the bottom leaves
+      await autosave();
+      const after = await idbGet('last');
+      o.after = after ? after.buffers.length : 'GONE';
+      o.sameStamp = !!after && after.t === before.t;
+      /* and it must SAY it filed the old one into REWIND, not fail silently */
+      o.log = document.getElementById('projlog').textContent.split('\n')[0];
+      o.lcd = document.getElementById('lcdmsg').textContent;
+      // a second empty autosave must not churn out another checkpoint
+      const logLen = document.getElementById('projlog').textContent.length;
+      await autosave();
+      o.noChurn = document.getElementById('projlog').textContent.length === logLen;
+      S.buffers = keep;
+      // and once there IS audio again, the vault updates normally
+      await autosave();
+      const back = await idbGet('last');
+      o.restored = back ? back.buffers.length : 'GONE';
+      return o;
+    });
+    t.ok('the vault still holds the audio after an empty-session autosave',
+      vault.after === vault.before && vault.sameStamp,
+      vault.before + ' buffers before, ' + vault.after + ' after');
+    t.ok('and it says what it did rather than doing it silently',
+      /REWIND/i.test(vault.log) && /HELD BACK|REWIND/i.test(vault.lcd),
+      '"' + vault.lcd + '"');
+    t.ok('a second empty autosave does not churn out another checkpoint', vault.noChurn);
+    t.ok('and once there is audio again the vault updates normally',
+      vault.restored > 0, vault.restored + ' buffers');
+
+    t.head('A SHORT OR OVERLONG DOCUMENT IS REPAIRED, NOT REFUSED');
+    /* The loops that consume these run to NPADS and NTRAX whatever the
+       document brought, so a project carrying four pads threw on the fifth —
+       the same half-applied load one more level down, and older than the
+       numeric guard. A short pattern was quieter and worse: it LOADED, then
+       threw during playback when the scheduler reached a step row that was
+       not there, which is why this section renders as well as loads. */
+    const shape = await page.evaluate(async () => {
+      const o = { bad: [] };
+      const base = structuredClone(snapshotSession());
+      const run = async (name, mut, expect) => {
+        const d = structuredClone(base); mut(d);
+        let res = null, threw = null;
+        try { res = applySessionDoc(d, docToBuffers(structuredClone(d))); }
+        catch (e) { threw = 'load threw ' + (e.message || e); }
+        if (!threw && expect === 'load') {
+          if (res === false) threw = 'refused';
+          else {
+            /* And it must survive being PLAYED — that is where the short
+               pattern used to fail, long after the load reported success.
+               A null render is not a fault here: truncating a pattern's track
+               rows legitimately removes the hits that lived on them, so there
+               is genuinely nothing to play. Only a throw is a failure. */
+            try { const b = await renderMix(null, null, { loops: 1, src: 'pat', noTail: true });
+              if (b) { let pk = 0; const dd = b.getChannelData(0);
+                for (let i = 0; i < dd.length; i++) { const v = Math.abs(dd[i]); if (v > pk) pk = v; }
+                o.peaks = o.peaks || {}; o.peaks[name] = +pk.toFixed(3); }
+              else { o.silent = o.silent || []; o.silent.push(name); }
+            } catch (e) { threw = 'render threw ' + (e.message || e); }
+          }
+        }
+        if (!threw && expect === 'refuse' && res !== false) threw = 'was accepted';
+        if (threw) o.bad.push(name + ' → ' + threw);
+        // restore a sane session between cases
+        applySessionDoc(structuredClone(base), docToBuffers(structuredClone(base)));
+      };
+      await run('4 pads', d => { d.pads = d.pads.slice(0, 4); }, 'load');
+      await run('0 pads', d => { d.pads = []; }, 'load');
+      await run('80 pads', d => { while (d.pads.length < 80) d.pads.push(structuredClone(d.pads[0])); }, 'load');
+      await run('a pattern with 4 track rows', d => {
+        d.patterns.forEach(p => { p.steps = p.steps.slice(0, 4); }); }, 'load');
+      await run('a pattern whose steps is not an array', d => { d.patterns[0].steps = null; }, 'load');
+      await run('a track row that is not an array', d => { d.patterns[0].steps[2] = 'x'; }, 'load');
+      await run('1 tape lane', d => { d.trax = d.trax.slice(0, 1); }, 'load');
+      await run('no patterns at all', d => { d.patterns = []; }, 'refuse');
+      o.padsAfter = S.pads.length;
+      o.tracksAfter = S.patterns[0].steps.length;
+      return o;
+    });
+    t.ok('every short or overlong shape loads, and playing it cannot throw',
+      shape.bad.length === 0, shape.bad.join(' | ') || 'all 8 behaved');
+    /* Which of these SHOULD still make sound took two corrections to get
+       right, so it is spelled out. Truncating pads to four discards the sixty
+       samples that lived on the rest, and truncating a pattern's track rows
+       discards the hits on them — both are silent because the document really
+       did throw that material away, not because anything failed. The cases
+       that keep their audio are the ones where nothing was removed: extra pads
+       appended, a single malformed row, a short tape-lane list. */
+    t.ok('the shapes that lose nothing still make sound',
+      shape.peaks && shape.peaks['80 pads'] > 0.02
+      && shape.peaks['a track row that is not an array'] > 0.02
+      && shape.peaks['1 tape lane'] > 0.02,
+      JSON.stringify(shape.peaks));
+    t.note('    silent because the document discarded the material, not because it broke: '
+      + (shape.silent || []).concat(
+          Object.keys(shape.peaks || {}).filter(k => shape.peaks[k] === 0)).join(', '));
+    t.ok('and the session ends up with this build\'s own dimensions',
+      shape.padsAfter === 64 && shape.tracksAfter === 64,
+      shape.padsAfter + ' pads, ' + shape.tracksAfter + ' track rows');
+
+    t.head('A HOSTILE SCALE FACTOR IS CLAMPED');
+    const pk = await page.evaluate(() => {
+      const f = new Float32Array(64);
+      for (let i = 0; i < 64; i++) f[i] = Math.sin(i / 3) * 0.8;
+      const q = pcmQuant(f, 1);
+      const peak = arr => { let m = 0; for (let i = 0; i < arr.length; i++) { const v = Math.abs(arr[i]); if (v > m) m = v; } return m; };
+      return {
+        huge: peak(pcmRestore(q, 1e30)),
+        max: PK_MAX,
+        neg: peak(pcmRestore(q, -5)),
+        zero: peak(pcmRestore(q, 0)),
+        str: peak(pcmRestore(q, 'loud')),
+        normal: peak(pcmRestore(q, 1)),
+        finite: pcmRestore(q, 1e30).every(v => isFinite(v)),
+      };
+    });
+    t.ok('a 1e30 scale cannot put astronomical samples in a buffer',
+      pk.huge <= pk.max && pk.finite, 'peak ' + pk.huge.toFixed(2) + ', ceiling ' + pk.max);
+    t.ok('negative, zero and non-numeric scales fall back to 1',
+      Math.abs(pk.neg - pk.normal) < 1e-6 && Math.abs(pk.zero - pk.normal) < 1e-6
+      && Math.abs(pk.str - pk.normal) < 1e-6,
+      [pk.neg, pk.zero, pk.str, pk.normal].map(v => v.toFixed(4)).join(' / '));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

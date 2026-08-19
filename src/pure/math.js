@@ -9,7 +9,12 @@ export const posMod = (n, m) => ((n % m) + m) % m;
 
 /* BPM is signed: negative means the sequencer runs backwards. Time maths always
    uses the magnitude; the sign only decides step order. */
-export function clampBpm(b) {
+/* NaN has no sign and no magnitude, and Math.abs(NaN) is NaN, which clamp
+   passes straight through — so clampBpm(NaN) returned NaN, setBpm stored it,
+   and the next write to an AudioParam threw. A tempo that cannot be read is
+   not a tempo, so it falls back to the default rather than propagating. */
+export function clampBpm(b, dflt = 120) {
+  if (typeof b !== 'number' || !isFinite(b)) return dflt;
   const sign = b < 0 ? -1 : 1;
   return sign * clamp(Math.abs(b), 1, 999);
 }
