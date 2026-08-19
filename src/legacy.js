@@ -2426,8 +2426,43 @@
      is the exact failure the comment at trackBus says was already fixed once.
      The tap is right and the word was wrong. It reads PRE-MASTER now, and the
      panel says why: the polish is applied once, at BOUNCE.
+   - R160: CLARITY — AND A CROSSOVER THAT HAD BEEN LYING FOR TWO BUILDS.
+     Asked for tools in OUT that isolate vocals or add clarity. Found a bug
+     first, while measuring whether the new ones would be transparent.
+     BASS MONO WAS A +7.4dB BOOST. The mono maker splits the mix with two
+     cascaded lowpass and two cascaded highpass sections and adds them back,
+     which sums flat only if each section is Butterworth. Q was set to
+     Math.SQRT1_2 — right everywhere else in this file, wrong here, because
+     the Web Audio spec reads Q in DECIBELS for lowpass and highpass and as a
+     real Q for peaking and shelving. So it asked for 0.71dB of resonance
+     instead of a Q of 0.71. Swept with tones through the actual recombination:
+     +7.43dB at the crossover, +4.57dB an octave below, +4.20dB above. A
+     control that says it centres the image was applying a large boost wherever
+     you put it. At -3.0103 the same sweep reads flat to 0.06dB.
+     FOUR CLARITY TOOLS, all exactly transparent at their defaults — verified
+     by rendering noise through the stage and subtracting, which returns
+     silence, not "close to" silence.
+     MUD, a cut at 300Hz: the most effective and least obvious move on a dense
+     mix. AIR, a shelf at 12kHz rather than TONE's 6.5k, so it opens instead of
+     hardening. FOCUS, an M/S balance in the vocal band, riding the mid/side
+     stage WIDTH already builds so it costs two biquads: mid up and side down
+     by the same amount pushes a centred voice forward, reversed pushes it
+     back. It is emphasis, not separation, there is no model picking a voice
+     out, and the panel says so rather than selling it as isolation.
+     DE-ESS is the one that needed real care. Chrome's DynamicsCompressorNode
+     carries a fixed 6ms pre-delay even while doing nothing — 288 samples at
+     48k — so recombining a compressed high band with an untouched low band is
+     a comb filter. Measured before building it: a -7.18dB notch at 5.1kHz and
+     -3.98dB at 6.0kHz, a hole torn in exactly the range the tool exists to
+     protect. Delaying the low band to match makes the same sweep read 0.00dB
+     at every frequency. The 6ms is then paid whether or not it is engaged,
+     which is stated in the panel; the alternative is rewiring the master graph
+     on a slider move, and that clicks.
+     The first sweep that "proved" the topology was flat was wrong: every test
+     frequency happened to be a whole number of cycles of a 288-sample delay,
+     so a phase error was invisible. Awkward frequencies found it immediately.
    ================================================================ */
-const BUILD = 'JBH-88 · R159 · 2026-08-19 · lossless export';
+const BUILD = 'JBH-88 · R160 · 2026-08-19 · clarity, and a crossover fixed';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2511,7 +2546,8 @@ const S = {
   morph:{ on:false, from:0, to:1, bars:8, curve:'weight', mode:'once', vel:true, amt:0, pos:0 },
   /* master chain (OUT tab). Neutral by default: flat EQ, natural width, and a
      ceiling just under 0 so nothing changes until it is asked to. */
-  mEqLo:0, mEqMid:0, mEqHi:0, mWidth:1, mCeil:-1.0, mMono:0, mByp:false, mTrim:0
+  mEqLo:0, mEqMid:0, mEqHi:0, mWidth:1, mCeil:-1.0, mMono:0, mByp:false, mTrim:0,
+  mMud:0, mAir:0, mFocus:0, mDeess:0
 };
 const revCache = {};      // bufId -> reversed AudioBuffer
 
@@ -2675,6 +2711,22 @@ function refreshLfoRates(){   // synced LFOs follow tempo changes
     if(p.lfoOn && p.lfoSync!=='free' && n&&n.lfoOsc){ try{ n.lfoOsc.frequency.value=lfoHz(p); }catch(e){} } }
 }
 
+/* Butterworth Q, in the units Web Audio actually wants.
+
+   For LOWPASS and HIGHPASS the spec reads the Q attribute in DECIBELS — it is
+   the height of the resonant peak at the cutoff, not the classical Q — while
+   PEAKING, NOTCH and BANDPASS take a real Q. So a Butterworth section, Q=1/√2,
+   is 20·log10(1/√2) = -3.0103 here, and writing Math.SQRT1_2 asks for
+   0.71dB of resonance instead. The difference is not subtle in a crossover:
+   see the sweep in the mono-maker comment below. */
+const BW_Q=-3.0103;
+function lrq(ctx,type,f){ const b=ctx.createBiquadFilter(); b.type=type;
+  b.frequency.value=f; b.Q.value=BW_Q; return b; }
+const DS_F=6500;      // de-ess crossover — sibilance lives above this
+const DS_LAT=0.006;   // Chrome's DynamicsCompressor pre-delay, measured at 288 samples @48k
+const FC_F=1800;      // FOCUS centre — where a voice carries
+const FOCUS_DB=6;     // FOCUS at full travel: mid +6dB / side -6dB in that band
+const DEESS_DB=38;    // DE-ESS at full travel: threshold pulled to -38dBFS
 function buildGraph(ctx){
   const g={};
   g.master = ctx.createGain(); g.master.gain.value = S.masterVol;
@@ -2704,6 +2756,66 @@ function buildGraph(ctx){
   g.mMid=ctx.createBiquadFilter(); g.mMid.type='peaking';  g.mMid.frequency.value=1000; g.mMid.Q.value=0.7;
   g.mHi =ctx.createBiquadFilter(); g.mHi.type='highshelf'; g.mHi.frequency.value=6500;
 
+  /* CLARITY (OUT tab). Four tools that between them do what people actually
+     mean by "make the vocal clearer", none of which pretends to be more than
+     it is — there is no source separation here and none is claimed.
+
+     MUD is a peaking cut at 300Hz. The single most effective move on a dense
+     mix: every instrument has energy there, it sums, and it is what buries a
+     voice. AIR is a shelf at 12kHz, above where TONE's HIGH sits, so it adds
+     sheen without the 6.5kHz harshness that makes people turn it back down.
+     Both are exactly transparent at 0 — measured, not assumed: a peaking or
+     shelving biquad at 0dB gain has H(z)=1 identically, and rendering noise
+     through one and subtracting gives a difference of exactly zero. */
+  g.mMud=ctx.createBiquadFilter(); g.mMud.type='peaking';   g.mMud.frequency.value=300;   g.mMud.Q.value=1;
+  g.mAir=ctx.createBiquadFilter(); g.mAir.type='highshelf'; g.mAir.frequency.value=12000;
+
+  /* DE-ESS. A split-band de-esser: the mix is divided at DS_F, the high band
+     is compressed hard and fast, and the two are added back.
+
+     The delay is not optional and this is why. Chrome's DynamicsCompressorNode
+     carries a fixed pre-delay — measured at 288 samples, 6.0ms at 48k — even
+     when it is doing nothing at all. Recombining a delayed high band with an
+     undelayed low band is a comb filter, and swept with tones it gouges a
+     -7.18dB notch at 5.1kHz and -3.98dB at 6.0kHz: a hole torn in exactly the
+     part of the spectrum a de-esser is supposed to protect. Delaying the low
+     band by the same 6ms makes the same sweep read 0.00dB at every frequency.
+
+     So the whole tool is transparent when off, at the cost of 6ms of latency
+     that is paid whether or not it is engaged — the alternative is rewiring
+     the master graph on a slider move, which clicks. The compressor and the
+     limiter each already impose the same 6ms, so this is a third of an
+     already-inaudible number. */
+  g.dsLo1=lrq(ctx,'lowpass',DS_F);  g.dsLo2=lrq(ctx,'lowpass',DS_F);
+  g.dsHi1=lrq(ctx,'highpass',DS_F); g.dsHi2=lrq(ctx,'highpass',DS_F);
+  g.dsDelay=ctx.createDelay(0.05); g.dsDelay.delayTime.value=DS_LAT;
+  g.dsComp=ctx.createDynamicsCompressor();
+  /* knee 0 matters as much as threshold 0: the default 30dB knee would start
+     compressing at -30dBFS with the threshold at the top, so "off" would not
+     be off. */
+  g.dsComp.threshold.value=0; g.dsComp.knee.value=0; g.dsComp.ratio.value=12;
+  g.dsComp.attack.value=0.001; g.dsComp.release.value=0.06;
+  g.dsSum=ctx.createGain();
+  g.mMud.connect(g.mAir);
+  g.mAir.connect(g.dsLo1); g.dsLo1.connect(g.dsLo2); g.dsLo2.connect(g.dsDelay); g.dsDelay.connect(g.dsSum);
+  g.mAir.connect(g.dsHi1); g.dsHi1.connect(g.dsHi2); g.dsHi2.connect(g.dsComp); g.dsComp.connect(g.dsSum);
+
+  /* FOCUS. A vocal sits in the middle of a stereo mix, so the mid channel of
+     an M/S decomposition is mostly voice and the side channel is mostly
+     everything else. Lifting the mid in the vocal band while cutting the side
+     by the same amount pushes a voice forward; reversing it pushes it back
+     toward an instrumental. It is band-limited on purpose — a broadband M/S
+     tilt takes the kick and the bass with it, which are centred too.
+
+     This is emphasis, not separation. Anything else centred in that band
+     (snare, lead) moves with the voice, and nothing here can undo a mix. Said
+     plainly in the panel rather than sold as isolation.
+
+     It rides the M/S stage the width control already builds, so it costs two
+     biquads and no extra encode/decode, and it is exactly unity at zero. */
+  g.fcMid =ctx.createBiquadFilter(); g.fcMid.type='peaking';  g.fcMid.frequency.value=FC_F;  g.fcMid.Q.value=0.6;
+  g.fcSide=ctx.createBiquadFilter(); g.fcSide.type='peaking'; g.fcSide.frequency.value=FC_F; g.fcSide.Q.value=0.6;
+
   /* Mono-maker: everything below this frequency is summed to the centre. A
      mastering habit rather than a gimmick — wide bass smears on a club system
      and disappears on a phone speaker. 10 Hz = off.
@@ -2711,11 +2823,22 @@ function buildGraph(ctx){
      A real crossover, not a filter bolted on the side: the mix is SPLIT here,
      the low band is summed to mono, the high band goes on to the width stage,
      and the two are added back at the compressor. Both halves are two cascaded
-     Butterworth sections (Q=1/sqrt2), i.e. Linkwitz-Riley 4th order, which is
-     the pairing that sums back to flat — a single lowpass/highpass pair leaves
-     a +3dB bump right at the crossover. */
-  const lr=(type)=>{ const f=ctx.createBiquadFilter(); f.type=type;
-    f.frequency.value=10; f.Q.value=Math.SQRT1_2; return f; };
+     Butterworth sections, i.e. Linkwitz-Riley 4th order, which is the pairing
+     that sums back to flat — a single lowpass/highpass pair leaves a +3dB bump
+     right at the crossover.
+
+     It did not, for two builds, because of BW_Q below. Q was set to
+     Math.SQRT1_2, the number a Butterworth section wants everywhere else in
+     audio — and everywhere else in this file, correctly, because peaking and
+     shelving filters take a real Q. For LOWPASS and HIGHPASS the Web Audio
+     spec reads Q in DECIBELS, so 0.7071 asked for 0.71dB of resonance rather
+     than a Q of 0.71, and the pair recombined with a bump instead of flat.
+     Swept with tones through the actual recombination: +7.43dB at the
+     crossover, +4.57dB an octave below it, +4.20dB above. Anyone using BASS
+     MONO at 120Hz was getting a large boost at 120Hz from a control that says
+     it only centres the image. At the correct value the same sweep reads
+     0.00 / -0.06 / -0.03 / 0.00 / -0.01 / -0.06 dB. */
+  const lr=(type)=>lrq(ctx,type,10);
   g.mMonoLo=lr('lowpass');  g.mMonoLo2=lr('lowpass');
   g.mMonoHi=lr('highpass'); g.mMonoHi2=lr('highpass');
   /* the low band, folded to the centre: L and R at half each into one channel,
@@ -2746,14 +2869,16 @@ function buildGraph(ctx){
   g.wMidL.connect(g.wMid);      g.wMidR.connect(g.wMid);
   g.wSplit.connect(g.wSideL,0); g.wSplit.connect(g.wSideR,1);
   g.wSideL.connect(g.wSide);    g.wSideR.connect(g.wSide);
-  g.wSide.connect(g.wAmt);
-  g.wMid.connect(g.wOutL);  g.wAmt.connect(g.wOutL);            // L = M + wS
-  g.wMid.connect(g.wOutR);  g.wAmt.connect(g.wNeg); g.wNeg.connect(g.wOutR);   // R = M - wS
+  g.wSide.connect(g.fcSide); g.fcSide.connect(g.wAmt);          // FOCUS sits on the side leg
+  g.wMid.connect(g.fcMid);                                       // and, inverted, on the mid leg
+  g.fcMid.connect(g.wOutL);  g.wAmt.connect(g.wOutL);            // L = M + wS
+  g.fcMid.connect(g.wOutR);  g.wAmt.connect(g.wNeg); g.wNeg.connect(g.wOutR);   // R = M - wS
   g.wOutL.connect(g.wMerge,0,0); g.wOutR.connect(g.wMerge,0,1);
 
   g.master.connect(g.perfFilt); g.perfFilt.connect(g.perfGain);
   g.perfGain.connect(g.mLo); g.mLo.connect(g.mMid); g.mMid.connect(g.mHi);
-  g.mHi.connect(g.mMonoHi); g.mHi.connect(g.mMonoLo);            // split at the mono frequency
+  g.mHi.connect(g.mMud);                                         // CLARITY: mud cut, air, de-ess
+  g.dsSum.connect(g.mMonoHi); g.dsSum.connect(g.mMonoLo);        // split at the mono frequency
   g.mMonoHi2.connect(g.wSplit);                                  // above it: stereo width
   g.wMerge.connect(g.comp); g.mMonoSum.connect(g.comp);          // below it: centred, added back
   // master trim — the one gain AUTO moves. It sits after the compressor and
@@ -5297,6 +5422,12 @@ function outLabels(){
   f('mMono', mono<25?'off':Math.round(mono)+'Hz');
   f('mCeil',parseFloat($('mCeil').value).toFixed(1)+'dB');
   f('mTrim',dbText(parseFloat($('mTrim').value)));
+  const mud=parseFloat($('mMud').value);   f('mMud', mud>=-0.01?'off':mud.toFixed(1)+'dB');
+  const air=parseFloat($('mAir').value);   f('mAir', air<=0.01?'off':'+'+air.toFixed(1)+'dB');
+  const de =parseFloat($('mDeess').value); f('mDeess', de<=0.005?'off':Math.round(de*100)+'%');
+  const fo =parseFloat($('mFocus').value);
+  f('mFocus', Math.abs(fo)<=0.01 ? 'off'
+    : (fo>0?'voice +':'voice \u2212')+Math.abs(fo*FOCUS_DB).toFixed(1)+'dB');
 }
 function outRead(){
   S.mEqLo=parseFloat($('mEqLo').value); S.mEqMid=parseFloat($('mEqMid').value); S.mEqHi=parseFloat($('mEqHi').value);
@@ -5304,16 +5435,21 @@ function outRead(){
   const mono=parseFloat($('mMono').value); S.mMono = mono<25 ? 0 : mono;
   S.mCeil=parseFloat($('mCeil').value);
   S.mTrim=parseFloat($('mTrim').value);
+  S.mMud=parseFloat($('mMud').value); S.mAir=parseFloat($('mAir').value);
+  S.mFocus=parseFloat($('mFocus').value); S.mDeess=parseFloat($('mDeess').value);
   outLabels(); applyMaster(); dirty();
 }
 function outWrite(){
   $('mEqLo').value=S.mEqLo; $('mEqMid').value=S.mEqMid; $('mEqHi').value=S.mEqHi;
   $('mWidth').value=S.mWidth; $('mMono').value=S.mMono||0; $('mCeil').value=S.mCeil;
   $('mTrim').value=S.mTrim||0;
+  $('mMud').value=S.mMud||0; $('mAir').value=S.mAir||0;
+  $('mFocus').value=S.mFocus||0; $('mDeess').value=S.mDeess||0;
   $('btnMByp').classList.toggle('on',!!S.mByp);
   outLabels();
 }
-['mEqLo','mEqMid','mEqHi','mWidth','mMono','mCeil','mTrim'].forEach(id=>
+['mEqLo','mEqMid','mEqHi','mWidth','mMono','mCeil','mTrim',
+ 'mMud','mAir','mFocus','mDeess'].forEach(id=>
   $(id).addEventListener('input',outRead));
 $('btnMByp').addEventListener('click',()=>{
   S.mByp=!S.mByp; $('btnMByp').classList.toggle('on',S.mByp);
@@ -5331,6 +5467,7 @@ $('btnBBOn').addEventListener('click',()=>{
 });
 $('btnMFlat').addEventListener('click',()=>{
   S.mEqLo=S.mEqMid=S.mEqHi=0; S.mWidth=1; S.mMono=0; S.mCeil=-1; S.mByp=false; S.mTrim=0;
+  S.mMud=0; S.mAir=0; S.mFocus=0; S.mDeess=0;
   outWrite(); applyMaster(); dirty(); lcd('MASTER CHAIN RESET to flat.');
 });
 
@@ -5477,6 +5614,20 @@ function applyMasterG(g, ctx){
   set(g.mMid.gain, byp?0:S.mEqMid);
   set(g.mHi.gain,  byp?0:S.mEqHi);
   set(g.wAmt.gain, byp?1:S.mWidth);
+  if(g.mMud){
+    set(g.mMud.gain, byp?0:S.mMud);
+    set(g.mAir.gain, byp?0:S.mAir);
+    /* FOCUS is one number driving two filters in opposition: the mid up by as
+       much as the side comes down, so the overall level barely moves and only
+       the balance between centre and sides changes. */
+    const foc=byp?0:(S.mFocus||0);
+    set(g.fcMid.gain,   foc*FOCUS_DB);
+    set(g.fcSide.gain, -foc*FOCUS_DB);
+    /* 0 is genuinely off — with knee 0 a threshold of 0dBFS is above anything
+       the limiter lets through, so the band is passed untouched. */
+    const de=byp?0:(S.mDeess||0);
+    set(g.dsComp.threshold, de>0 ? -DEESS_DB*de : 0);
+  }
   // 10Hz is below anything audible: the mono band collects nothing and the
   // width path carries the whole mix, which is what "off" has to mean. It has
   // to be this low — at 20Hz the 4th-order slope is still shaving ~1.5dB off
@@ -10959,6 +11110,7 @@ $('btnSave').addEventListener('click',()=>{
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
     mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp, mTrim:S.mTrim,
+    mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
@@ -11126,6 +11278,8 @@ function applySessionDoc(doc, bufs){
     S.mEqLo =num(doc.mEqLo, 0,-12,12); S.mEqMid=num(doc.mEqMid,0,-12,12); S.mEqHi=num(doc.mEqHi,0,-12,12);
     S.mWidth=num(doc.mWidth,1,0,2);    S.mMono =num(doc.mMono, 0,0,300);
     S.mCeil =num(doc.mCeil,-1,-12,0);  S.mByp  =!!doc.mByp;
+    S.mMud  =num(doc.mMud,  0,-9,0);   S.mAir  =num(doc.mAir,  0,0,9);
+    S.mFocus=num(doc.mFocus,0,-1,1);   S.mDeess=num(doc.mDeess,0,0,1);
     S.mTrim =num(doc.mTrim, 0,-24,12);
     try{ outWrite(); applyMaster(); }catch(e){} }
   S.scOn=!!doc.scOn; S.scTrig=clamp(doc.scTrig|0,0,NPADS-1);
@@ -11351,6 +11505,7 @@ function snapshotSession(){
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
     mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp, mTrim:S.mTrim,
+    mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
@@ -11435,6 +11590,7 @@ function undoSnap(){
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
     mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp, mTrim:S.mTrim,
+    mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns };
@@ -12549,6 +12705,9 @@ function diagDump(tag){
       'loudness tap: '+(kAn ? (kGraph===LIVE?'built + bound':'STALE — bound to an old graph')
                             : (kErr?'FAILED err='+kErr:'not built yet (opens with the OUT tab)'))
         +' · tone LOW '+S.mEqLo+'dB MID '+S.mEqMid+'dB HIGH '+S.mEqHi+'dB'
+        +' · clarity mud '+(S.mMud||0)+'dB air '+(S.mAir||0)+'dB focus '+(S.mFocus||0)
+        +' deess '+Math.round((S.mDeess||0)*100)+'%'
+        +' · export '+Math.round(bounceRate())+'Hz/'+wavDepth()+'bit'
         +' · width '+S.mWidth+' · mono '+S.mMono+'Hz',
       (function(){ let red='-'; try{ red=LIVE?LIVE.limiter.reduction.toFixed(1)+'dB':'-'; }catch(e){}
         return 'master — ceiling '+S.mCeil+'dB trim '+S.mTrim+'dB · limiter reduction now '+red

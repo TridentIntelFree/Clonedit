@@ -1651,6 +1651,66 @@ louder, you are probably losing more than you gain.</p>
   <div class="pslider"><span class="lbl">MID</span><input type="range" id="mEqMid" min="-12" max="12" step="0.5" value="0"><span class="val" id="mEqMidV">0dB</span></div>
   <div class="pslider"><span class="lbl">HIGH</span><input type="range" id="mEqHi" min="-12" max="12" step="0.5" value="0"><span class="val" id="mEqHiV">0dB</span></div>
 
+  <h3>CLARITY <span style="color:var(--txt-dim);letter-spacing:0">&mdash; getting a voice out in front</span></h3>
+  <div class="pslider"><span class="lbl">MUD</span><input type="range" id="mMud" min="-9" max="0" step="0.5" value="0"><span class="val" id="mMudV">off</span></div>
+  <div class="pslider"><span class="lbl">FOCUS</span><input type="range" id="mFocus" min="-1" max="1" step="0.02" value="0"><span class="val" id="mFocusV">off</span></div>
+  <div class="pslider"><span class="lbl">DE-ESS</span><input type="range" id="mDeess" min="0" max="1" step="0.01" value="0"><span class="val" id="mDeessV">off</span></div>
+  <div class="pslider"><span class="lbl">AIR</span><input type="range" id="mAir" min="0" max="9" step="0.5" value="0"><span class="val" id="mAirV">off</span></div>
+  <details class="ex"><summary>What these four actually do &mdash; and what FOCUS is not</summary><div class="ex-body">
+    <p>Every one of them is <b>exactly transparent at its default</b>, so this
+    section costs you nothing until you move something. That is measured rather
+    than assumed: noise rendered through the stage and subtracted from itself
+    comes back as silence.</p>
+
+    <h4>MUD &mdash; a cut at 300Hz</h4>
+    <p>The most effective single move on a crowded mix, and the least obvious.
+    Almost every instrument has energy around 300Hz, it all adds up, and the
+    result is a mix that sounds thick and tiring with the voice buried inside
+    it. Taking 3&ndash;5dB out there usually reads as the voice getting
+    <em>louder</em>, though nothing about the voice changed.</p>
+
+    <h4>FOCUS &mdash; centre against sides</h4>
+    <p>A stereo mix can be split into what the two channels have in common
+    (the <b>mid</b>) and what differs between them (the <b>side</b>). Lead
+    vocals are almost always panned dead centre, so they live in the mid.
+    FOCUS lifts the mid in the vocal range and drops the side by the same
+    amount &mdash; turn it up and the voice steps forward, turn it down and it
+    sinks back toward an instrumental.</p>
+    <p><b>This is emphasis, not isolation.</b> It is worth being straight about
+    that. There is no source separation here &mdash; no model is picking the
+    voice out. Anything else sitting in the centre in that frequency range,
+    typically the snare and the lead, moves along with it. It is a real
+    mastering technique and it will not turn a mix into an acapella; anyone
+    telling you a slider can do that is selling something.</p>
+    <p>It is deliberately band-limited around 1.8kHz. A broadband centre lift
+    would drag the kick and the bass with it, since those are centred too.</p>
+
+    <h4>DE-ESS &mdash; taming <i>sss</i></h4>
+    <p>Close-miked voices put far more energy into S and T sounds than the ear
+    expects, and every stage after that &mdash; compression, limiting, MP3
+    &mdash; makes it worse. This splits the mix at 6.5kHz, compresses only what
+    is above, and puts the two back together, so the sibilance comes down and
+    nothing else does.</p>
+    <p>Turn it up until the harshness goes and then back off slightly. Too much
+    is audible as a lisp.</p>
+
+    <h4>AIR &mdash; a shelf at 12kHz</h4>
+    <p>Higher than TONE&rsquo;s HIGH, on purpose. Lifting 6.5kHz for
+    &ldquo;brightness&rdquo; is what makes a mix harsh; 12kHz is above where
+    voices get shrill, so it adds openness instead. Try AIR first and reach for
+    HIGH second.</p>
+
+    <h4>A note on the 6ms</h4>
+    <p>The de-esser rejoins its two bands after a compressor, and this
+    browser&rsquo;s compressor carries a fixed 6ms delay whether or not it is
+    working. Recombining without accounting for that tears a &minus;7dB notch
+    at 5kHz, so the other band is delayed to match &mdash; which makes the sum
+    read 0.00dB at every frequency, at the price of 6ms of monitoring latency
+    that is there whether or not DE-ESS is up. The compressor and limiter each
+    already cost the same, and the bounce is offline so it never applies
+    there.</p>
+  </div></details>
+
   <h3>IMAGE <span style="color:var(--txt-dim);letter-spacing:0">&mdash; how wide it sits</span></h3>
   <div class="pslider"><span class="lbl">WIDTH</span><input type="range" id="mWidth" min="0" max="2" step="0.01" value="1"><span class="val" id="mWidthV">100%</span></div>
   <div class="pslider"><span class="lbl">BASS MONO</span><input type="range" id="mMono" min="0" max="300" step="5" value="0"><span class="val" id="mMonoV">off</span></div>
@@ -1943,7 +2003,7 @@ to any particular AI outliving any other.</p>
     <button id="btnLoad" class="grow">LOAD .JSON</button>
   </div>
   <input type="file" id="jsonIn" style="display:none">
-  <h3>MASTER OUT (WAV)</h3>
+  <h3>MASTER OUT (WAV) <span style="color:var(--txt-dim);letter-spacing:0">&mdash; bit-exact, if you want it</span></h3>
   <div class="row">
     <span class="lbl">SOURCE</span>
     <select id="bSrc"><option value="pat">CURRENT PATTERN</option><option value="chain">CHAIN</option><option value="song">SONG</option><option value="morph">MORPH A&#8594;B</option></select>
