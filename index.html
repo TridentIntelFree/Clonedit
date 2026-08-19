@@ -982,7 +982,7 @@ a silence gives the gap away.</p>
   <div class="hint-lead" data-lead-short><b>RECORD AUDIO TO A LANE</b> — pick a <b>SOURCE</b>, tap <b>&#9679;</b> on a lane to arm, press <b>PLAY</b>.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-trax">TAPE LANES — RECORDING AUDIO, NOT TRIGGERS</button>
   <div class="hint-body" id="learn-trax" hidden>
-<p class="lead-was"><b>RECORD AUDIO TO A LANE:</b> 1) pick <b>SOURCE</b> — <b>PRE-MASTER</b> = everything you hear, before the OUT master chain &middot; <b>LIVE ONLY</b> = just what YOU play (live instruments, AMP guitar, pads you hit) with the sequencer as silent backing &middot; <b>MIC</b>. 2) tap <b>&#9679;</b> on a lane to arm. 3) press <b>PLAY</b> to record, <b>STOP</b> to commit. <b>PUT A TAKE ON A PAD:</b> tap that lane&rsquo;s <b>FX</b> button &rarr; <b>TO PAD</b>. &#8734; = loop &middot; M / S = mute / solo.</p>
+<p class="lead-was"><b>RECORD AUDIO TO A LANE:</b> 1) pick <b>SOURCE</b> — <b>PRE-MASTER</b> = everything you hear, before the OUT master chain &middot; <b>LIVE ONLY</b> = just what YOU play (live instruments, AMP guitar, pads you hit) with the sequencer as silent backing &middot; <b>MIC</b>. 2) tap <b>&#9679;</b> on a lane to arm. 3) press <b>PLAY</b> to record, <b>STOP</b> to commit. <b>HEAR A TAKE ON ITS OWN:</b> tap <b>&#9654;</b> on the lane &mdash; it plays dry, ignoring mute, volume and FX, so you hear exactly what was captured. <b>PUT A TAKE ON A PAD:</b> tap that lane&rsquo;s <b>FX</b> button &rarr; <b>TO PAD</b>. &#8734; = loop &middot; M / S = mute / solo.</p>
 <h4>Two different kinds of track</h4>
 <p>The sequencer stores <em>instructions</em> — "play pad 3 here". A tape lane
 stores <em>audio</em>, exactly as it sounded. That difference decides which one
@@ -5209,8 +5209,36 @@ Object.assign(globalThis, __JBH_PURE);})();
      not implement navigator.audioSession — so the tests check what is
      testable: that the app knows when an input is open, says so, names it,
      and lets go the moment it closes.
+   - R165: SAY WHETHER THERE IS ANY AUDIO, AND LET THE REPORT BE COPIED.
+     A silence report arrived with a DIAG that looked perfect — context
+     running, gates open, pad unmuted, nothing dangling, buffers:1
+     loadedPads:1 — because nothing in it said whether that one buffer held
+     sound. It did not. DIAG prints a peak per buffer now, with what each is
+     loaded on, and SILENT rather than a number when there is nothing there,
+     plus a lane line naming the source and any open input. A dump that cannot
+     tell "healthy and playing nothing" from "healthy and holding silence"
+     sends everyone to look at the graph, which was the one part that was fine.
+     The silent-take warning on TRAX already existed — I misread it as missing
+     — but it listed all three sources and asked you to check, which came back
+     as "the source wasn't clear to me". It knew which source it had used and
+     made you work it out anyway. It names the source now, and says what that
+     source captures; the success message names it too.
+     And a COPY button beside DIAG, asked for directly. A report that is hard
+     to send is a report that does not get sent.
+   - R166: PREVIEW A TAPE LANE. Asked for. The only way to hear a take was to
+     press PLAY and wait for it to come round with the whole arrangement,
+     which is no way to answer "did that actually record?" — the exact
+     question you have after a take you are unsure of.
+     Its own path on purpose: dry, straight to master, ignoring the lane's
+     mute, solo, volume and FX, because the point is to hear WHAT WAS
+     CAPTURED rather than what the mix is doing with it, and a lane muted at
+     zero is the one you most need to audition. It says it is bypassing them
+     rather than leaving that a surprise, reports the peak, and says outright
+     when a take is silent instead of leaving you listening to nothing and
+     doubting the preview. One at a time, releases itself at the end, and
+     starting the transport ends it rather than layering on top.
    ================================================================ */
-const BUILD = 'JBH-88 · R164 · 2026-08-19 · who holds the audio route';
+const BUILD = 'JBH-88 · R166 · 2026-08-19 · preview a lane, and say what is in it';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -10932,6 +10960,7 @@ let curStepSched=0, absStepSched=0, curAbsStep=0, songPos=0, songRep=0;
 function startSeq(){
   ensureAudio();
   if(playing) return;
+  try{ traxPreviewStop(); }catch(e){}   // an audition is not part of the song
   playing=true;
   glitchReset();          // the reading is always "dropouts while you were listening"
   restoreTails();         // a drain from the last STOP must not eat the first bars
@@ -11024,6 +11053,7 @@ function flushTails(){
   }, 2100);
 }
 function panicVoices(){ // silence every sounding pad voice immediately (short click-free fade)
+  try{ traxPreviewStop(); }catch(e){}
   try{ repStopAll(); }catch(e){}
   try{ grainStopAll(); for(const k in grainVoices) grainCut(+k); }catch(e){}
   if(!AC||!LIVE) return;
@@ -11275,6 +11305,52 @@ function newTrack(){ return {bufId:-1,name:'',gain:0.9,pan:0,mute:false,loop:fal
 S.trax=Array.from({length:NTRAX},()=>newTrack());
 let traxArm=-1, traxSolo=-1, traxVoices=[], traxCap=null, traxStream=null;
 
+/* PREVIEW A LANE WITHOUT RUNNING THE SONG.
+
+   Asked for: "a way to preview the track in trax would be useful". Until now
+   the only way to hear a take was to press PLAY and let it come round with
+   everything else, which is no way to answer "did that record?" — the exact
+   question someone has after a take they are not sure about.
+
+   Deliberately its OWN path rather than the lane's playback chain: it goes
+   straight to the master, dry, ignoring the lane's mute, solo, volume and FX,
+   because the point is to hear WHAT WAS CAPTURED, not what the mix is
+   currently doing with it. A lane muted at zero volume is exactly the case you
+   most need to audition.
+   One at a time, and it releases on its own at the end so the button does not
+   sit there lit after the sound has finished. */
+let traxPrev=null;
+function traxPreviewStop(){
+  if(!traxPrev) return;
+  try{ traxPrev.src.onended=null; traxPrev.src.stop(); }catch(e){}
+  try{ traxPrev.src.disconnect(); traxPrev.g.disconnect(); }catch(e){}
+  traxPrev=null;
+  try{ drawTrax(); }catch(e){}
+}
+function traxPreview(i){
+  const tr=S.trax[i];
+  if(traxPrev && traxPrev.i===i){ traxPreviewStop(); lcd('PREVIEW STOPPED.'); return; }
+  traxPreviewStop();
+  if(!tr || tr.bufId<0){ lcd('TRACK '+(i+1)+' IS EMPTY — nothing to preview.'); return; }
+  ensureAudio();
+  const buf=S.buffers[tr.bufId];
+  if(!buf){ lcd('TRACK '+(i+1)+' has no audio.'); return; }
+  let pk=0; const d=buf.getChannelData(0);
+  for(let k=0;k<d.length;k+=32){ const a=Math.abs(d[k]); if(a>pk) pk=a; }
+  const src=AC.createBufferSource(); src.buffer=buf;
+  const g=AC.createGain(); g.gain.value=1;
+  src.connect(g); g.connect(LIVE.master);
+  src.onended=()=>{ if(traxPrev && traxPrev.src===src) traxPreviewStop(); };
+  try{ src.start(); }catch(e){ lcd('PREVIEW FAILED: '+(e.message||e)); return; }
+  traxPrev={i,src,g};
+  drawTrax();
+  /* If it is silent, say so here rather than letting someone listen to nothing
+     and wonder whether the preview itself is broken. */
+  lcd(pk<0.004
+    ? '\u26a0 TRACK '+(i+1)+' IS SILENT — the take has no audio in it, so the preview plays nothing.'
+    : 'PREVIEWING TRACK '+(i+1)+' \u00b7 '+buf.duration.toFixed(1)+'s \u00b7 peak '+pk.toFixed(2)
+      +' — dry, ignoring mute, volume and FX. Tap again to stop.');
+}
 function drawTrax(){
   const el=$('traxlist'); el.innerHTML='';
   S.trax.forEach((tr,i)=>{
@@ -11304,6 +11380,14 @@ function drawTrax(){
     lp.classList.toggle('on',tr.loop);
     lp.addEventListener('click',()=>{ tr.loop=!tr.loop; drawTrax(); dirty();
       lcd('TRACK '+(i+1)+(tr.loop?' LOOPS at the nearest bar':' plays once')); });
+    const pv=document.createElement('button');
+    const playing=!!(traxPrev && traxPrev.i===i);
+    pv.innerHTML = playing ? '&#9632;' : '&#9654;';
+    pv.title = b ? 'Preview this take on its own' : 'Nothing recorded on this track yet';
+    pv.setAttribute('aria-label',(playing?'Stop previewing':'Preview')+' track '+(i+1));
+    pv.classList.toggle('on',playing);
+    pv.disabled=!b;
+    pv.addEventListener('click',()=>traxPreview(i));
     const fx=document.createElement('button'); fx.textContent='FX';
     fx.setAttribute('aria-label','Effects for track '+(i+1));
     fx.classList.toggle('on',traxFxSel===i && $('traxfx').style.display!=='none');
@@ -11316,7 +11400,7 @@ function drawTrax(){
     clr.setAttribute('aria-label','Clear the take on track '+(i+1));
     clr.addEventListener('click',()=>{ if(tr.bufId<0){ lcd('TRACK '+(i+1)+' is already empty.'); return; }
       if(confirm('Clear the take on TRACK '+(i+1)+'?')) clearTrack(i); });
-    row.append(num,rec,mu,so,lp,nm,vol,fx,clr);
+    row.append(num,rec,pv,mu,so,lp,nm,vol,fx,clr);
     el.appendChild(row);
   });
   if($('traxfx').style.display!=='none') drawTraxFx();
@@ -11381,6 +11465,7 @@ $('tfxEdit').addEventListener('click',()=>{
   lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad)+' (a copy) \u2014 edit in SMPL: TRIM / CHOP / TRANSIENT / REVERSE / NORM. The lane\u2019s take is untouched.');
 });
 function clearTrack(i){
+  if(traxPrev && traxPrev.i===i) traxPreviewStop();   // do not leave a source playing a cleared take
   traxVoices.forEach(v=>{ if(v.i===i){ try{ v.src.stop(); }catch(e){} } });
   S.trax[i]=newTrack();
   try{ drawTraxBadge(); drawPadRec(); }catch(e){}
