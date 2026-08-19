@@ -2392,8 +2392,42 @@
      last build; tape pitch would have made it a blip.
      Measured: 61.1s, 23 bars, peak 0.9315 with nothing at full scale, 0.984
      correlation.
+   - R159: LOSSLESS EXPORT, AND A LABEL THAT WAS LYING.
+     Asked how close to lossless the export could get. Two things stood in the
+     way and both were arbitrary.
+     THE BOUNCE RESAMPLED EVERY FILE ON THE WAY OUT. renderMix built a 44100
+     OfflineAudioContext with the rate written into the source, while the
+     engine asks for 48k and every import is decoded at 48k. So the last thing
+     that happened to a finished master was a 160/147 conversion through the
+     browser's own converter, to reach a rate nobody chose. bounceRate() now
+     follows the engine, falling back to 48k only when the live context is
+     degraded — which also means the render's filters and IRs are derived at
+     the same rate the speakers heard, so the file is a closer match to the
+     performance than it was.
+     THE WRITER ONLY SPOKE 16-BIT. The render hands back Float32, and it was
+     quantised to a 1/32767 grid on the way to disk whether you wanted that or
+     not. 24-bit and 32-bit float are now offered. Float is the lossless one in
+     the literal sense — the same bits the renderer produced, no dither, no
+     rounding, and no clip either, so a sample above 0dBFS reaches a mastering
+     engineer intact instead of flattened. Measured in tests/browser/export:
+     4096 of 4096 frames bit-identical across both channels, and two encodes of
+     one buffer byte-for-byte the same. 16 and 24 keep their TPDF dither and
+     are checked from the other side — inside one LSB, and NOT reproducible
+     between encodes, because dither that repeats is not dither.
+     What is left is the browser summing floats in an order it does not promise
+     to repeat, about -74dB. That is render-to-render variation, not a loss in
+     any one render, and it is not ours to fix.
+     "MASTER BUS" WAS NOT THE MASTER BUS. A friend spotted that the TRAX
+     capture tap sits at perfGain, upstream of the entire OUT chain, so a lane
+     labelled MASTER BUS contained none of the master EQ, width, bus compressor
+     or limiter. The proposed fix — move the tap past the limiter to match the
+     bounce — would have broken the rig: tape lanes rejoin at mLo, so a tap
+     downstream of that re-records every playing lane into every overdub, which
+     is the exact failure the comment at trackBus says was already fixed once.
+     The tap is right and the word was wrong. It reads PRE-MASTER now, and the
+     panel says why: the polish is applied once, at BOUNCE.
    ================================================================ */
-const BUILD = 'JBH-88 · R158 · 2026-08-04 · Amber Signal learns the new tricks';
+const BUILD = 'JBH-88 · R159 · 2026-08-19 · lossless export';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -8206,7 +8240,7 @@ function stopJam(){
 }
 $('btnJamSave').addEventListener('click',()=>{
   if(!jamBuf) return;
-  download(encodeWav(jamBuf), jamStamp()+'.wav');
+  download(encodeWav(jamBuf,wavDepth()), jamStamp()+'.wav');
 });
 $('btnJamPad').addEventListener('click',()=>{
   if(!jamBuf) return;
@@ -8467,7 +8501,7 @@ function traxBeginCapture(when){
       ms.onended=()=>{ try{ms.disconnect();}catch(e){} };
     }catch(e){}
     traxCap=cap;
-    lcd('ROLLING — TRACK '+(traxArm+1)+' recording ('+cap.srcMode.toUpperCase()+') · STOP commits.');
+    lcd('ROLLING — TRACK '+(traxArm+1)+' recording ('+(cap.srcMode==='bus'?'PRE-MASTER':cap.srcMode.toUpperCase())+') · STOP commits.');
   }catch(e){ traxCap=null; lcd('TRACK REC FAILED: '+(e.message||'tap error')); }
 }
 function traxCommit(){
@@ -11838,27 +11872,69 @@ function bounceReport(buf){
   if(tp>1) lines.push('Over 0 dBTP: this will clip when converted to MP3 or AAC. Lower CEILING.');
   return lines;
 }
-function encodeWav(buf){
+/* The bounce renders at the rate the material actually lives at rather than a
+   hard-coded 44100. Imports are decoded at WANT_SR (48k) and the live context
+   asks for 48k, so a 44.1k render resampled every single sample on the way out
+   — 160/147, non-integer, through the browser's own converter — for a file
+   nobody asked to be 44.1k. Matching the rate removes that conversion entirely,
+   and it makes the bounce a closer match to what the speakers played, since the
+   live graph's filters and IRs are derived at the context rate too.
+   A degraded context (16kHz, see srBad) is not a rate to render at: fall back
+   to WANT_SR so a bad session still bounces at full bandwidth. */
+function bounceRate(){
+  const live=(AC&&AC.sampleRate)||0;
+  return live>=SR_MIN ? Math.round(live) : WANT_SR;
+}
+const WAV_DEPTHS={16:'16-bit',24:'24-bit',32:'32-bit float'};
+function wavDepth(){ const v=parseInt(($('bDepth')||{}).value,10); return WAV_DEPTHS[v]?v:16; }
+/* WAV writer, 16 / 24 / 32-float.
+
+   16 and 24 are integer PCM and therefore quantise, so both get TPDF dither —
+   the actual last step of finishing a fixed-point master. Rounding float to an
+   integer grid produces error that CORRELATES with the signal, heard as a
+   grainy fizz on reverb tails and fades. A triangular sub-LSB noise added
+   before rounding decorrelates it: the error becomes steady, inaudible hiss
+   instead. It costs about -93dB at 16-bit and about -141dB at 24-bit.
+
+   32-bit float is not quantised at all. The render hands back Float32Array and
+   this writes those same floats, so the file is bit-exact to what the renderer
+   produced: no dither, no rounding, and no clip either — a sample above 1.0
+   survives into the file instead of being flattened, which is what a mastering
+   engineer opening the stem wants. That path is the lossless one. */
+function encodeWav(buf, depth){
+  const bits=WAV_DEPTHS[depth]?depth:16;
+  const flt=bits===32, bps=bits>>3;
   const nCh=2, sr=buf.sampleRate, len=buf.length;
-  const bytes=44+len*nCh*2, ab=new ArrayBuffer(bytes), dv=new DataView(ab);
+  const head=flt?68:44;                       // float adds a fact chunk and 2 cbSize bytes
+  const data=len*nCh*bps;
+  const ab=new ArrayBuffer(head+data), dv=new DataView(ab);
   function ws(o,s){ for(let i=0;i<s.length;i++) dv.setUint8(o+i,s.charCodeAt(i)); }
-  ws(0,'RIFF'); dv.setUint32(4,bytes-8,true); ws(8,'WAVE');
-  ws(12,'fmt '); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,nCh,true);
-  dv.setUint32(24,sr,true); dv.setUint32(28,sr*nCh*2,true); dv.setUint16(32,nCh*2,true); dv.setUint16(34,16,true);
-  ws(36,'data'); dv.setUint32(40,len*nCh*2,true);
+  ws(0,'RIFF'); dv.setUint32(4,head+data-8,true); ws(8,'WAVE');
+  ws(12,'fmt '); dv.setUint32(16,flt?18:16,true);
+  dv.setUint16(20,flt?3:1,true); dv.setUint16(22,nCh,true);
+  dv.setUint32(24,sr,true); dv.setUint32(28,sr*nCh*bps,true);
+  dv.setUint16(32,nCh*bps,true); dv.setUint16(34,bits,true);
+  let o=36;
+  if(flt){ dv.setUint16(36,0,true);                       // cbSize — required when fmt is 18 bytes
+    ws(38,'fact'); dv.setUint32(42,4,true); dv.setUint32(46,len,true); o=50; }
+  ws(o,'data'); dv.setUint32(o+4,data,true); o+=8;
   const L=buf.getChannelData(0), R=buf.numberOfChannels>1?buf.getChannelData(1):L;
-  /* TPDF dither — the actual last step of finishing a 16-bit master.
-     Rounding 32-bit float to 16-bit quantises, and quantisation error that
-     CORRELATES with the signal is heard as a grainy fizz on reverb and fades.
-     Adding a triangular sub-LSB noise before rounding decorrelates it: the
-     error becomes steady, inaudible hiss instead. It costs about -93dB of
-     noise, which is a fair price and what every mastering chain does. */
-  const q=1/32767, tpdf=()=>(Math.random()-Math.random())*q;
+  if(flt){
+    for(let i=0;i<len;i++){ dv.setFloat32(o,L[i],true); dv.setFloat32(o+4,R[i],true); o+=8; }
+    return new Blob([ab],{type:'audio/wav'});
+  }
+  const peak=bits===16?32767:8388607;
+  const q=1/peak, tpdf=()=>(Math.random()-Math.random())*q;
   const clip=v=>v<-1?-1:(v>1?1:v);
-  let o=44;
-  for(let i=0;i<len;i++){
-    dv.setInt16(o,Math.round(clip(L[i]+tpdf())*32767),true); o+=2;
-    dv.setInt16(o,Math.round(clip(R[i]+tpdf())*32767),true); o+=2;
+  if(bits===16){
+    for(let i=0;i<len;i++){
+      dv.setInt16(o,Math.round(clip(L[i]+tpdf())*peak),true); o+=2;
+      dv.setInt16(o,Math.round(clip(R[i]+tpdf())*peak),true); o+=2;
+    }
+  } else {
+    const w24=v=>{ const n=Math.round(clip(v+tpdf())*peak);
+      dv.setUint8(o,n&0xff); dv.setUint8(o+1,(n>>8)&0xff); dv.setUint8(o+2,(n>>16)&0xff); o+=3; };
+    for(let i=0;i<len;i++){ w24(L[i]); w24(R[i]); }
   }
   return new Blob([ab],{type:'audio/wav'});
 }
@@ -12097,7 +12173,7 @@ async function renderMixInner(padSet, traxSet, opt){
      where it starts, under the music that produced it, and only decays from
      there, so cutting it cannot lower the peak being measured. It roughly
      halves the wait on a one-pattern analysis. */
-  const SR=44100, total=dur+((opt&&opt.noTail)?0.35:Math.max(3.0,S.revSize+0.5));
+  const SR=bounceRate(), total=dur+((opt&&opt.noTail)?0.35:Math.max(3.0,S.revSize+0.5));
   const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
   const g=buildGraph(oc);
   applyMasterG(g,oc);          // the bounce gets the same master chain as the speakers
@@ -12124,9 +12200,10 @@ $('btnBounce').addEventListener('click',async ()=>{
   try{
     const rendered=await renderMix(null,null);
     if(!rendered){ plog('Nothing to bounce — pattern and tracks are empty.'); lcd('NOTHING TO BOUNCE.'); return; }
-    const wav=encodeWav(rendered);
+    const d=wavDepth(), wav=encodeWav(rendered,d);
     download(wav, ($('projName').value||'mvx-session')+'.wav');
-    plog('WAV done: '+Math.round(wav.size/1024)+' KB · 44.1k/16-bit stereo.');
+    plog('WAV done: '+Math.round(wav.size/1024)+' KB · '+(rendered.sampleRate/1000).toFixed(1)+'k/'+WAV_DEPTHS[d]+' stereo'
+      +(d===32?' — bit-exact to the render.':'.'));
     /* Measure the file that just left, in the terms a release is judged on.
        Offline there is no excuse for an approximation. */
     let rep=[];
@@ -12172,7 +12249,8 @@ $('btnCompressed').addEventListener('click',async ()=>{
     const blob=new Blob(chunks,{type:mime});
     const ext=mime.indexOf('mp4')>=0?'m4a':'webm';
     download(blob, ($('projName').value||'mvx-session')+'.'+ext);
-    plog('Compressed export: '+Math.round(blob.size/1024)+' KB .'+ext+' (WAV would be ~'+Math.round(dur*44100*4/1024)+' KB).');
+    plog('Compressed export: '+Math.round(blob.size/1024)+' KB .'+ext
+      +' (WAV would be ~'+Math.round(dur*rendered.sampleRate*2*(wavDepth()>>3)/1024)+' KB).');
     lcd('EXPORTED .'+ext.toUpperCase()+' · '+Math.round(blob.size/1024)+' KB');
   }catch(err){ plog('Compressed export failed: '+err.message); lcd('EXPORT FAILED.'); }
   finally{ clearInterval(iv); cmpBusy=false; }
@@ -12292,7 +12370,7 @@ $('btnStems').addEventListener('click',async ()=>{
     try{ rendered = j.type==='pad'? await renderMix(new Set([j.id]), new Set()) : await renderMix(new Set(), new Set([j.id])); }
     catch(e){ plog('Stem '+j.label+' failed: '+e.message); continue; }
     if(!rendered) continue;
-    const wav=encodeWav(rendered), fname=base+'-'+j.label.replace(/[^A-Za-z0-9]+/g,'_')+'.wav';
+    const wav=encodeWav(rendered,wavDepth()), fname=base+'-'+j.label.replace(/[^A-Za-z0-9]+/g,'_')+'.wav';
     done.push({fname,wav});
     const row=document.createElement('div'); row.className='row';
     const nm=document.createElement('span'); nm.style.cssText='font-size:11px;flex:1;color:var(--lcd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
@@ -12882,7 +12960,7 @@ const recipeBook=[
   steps:[
   { title:'PLAY A TAKE OVER THE TOP', body:'<b>TRAX</b> is a tape recorder running alongside the sequencer. Anything you play while it rolls is captured as audio — no steps, no quantising.' },
   { tab:'trax', el:'traxSrc', title:'CHOOSE WHAT IT RECORDS',
-    body:'<b>LIVE ONLY</b> is the one you want here: it records what <i>you</i> play — pads you hit, the LIVE instruments, the AMP input — and treats the sequencer as silent backing you can hear but do not capture.<br><br><b>MASTER BUS</b> records everything instead, which is for bouncing rather than performing.',
+    body:'<b>LIVE ONLY</b> is the one you want here: it records what <i>you</i> play — pads you hit, the LIVE instruments, the AMP input — and treats the sequencer as silent backing you can hear but do not capture.<br><br><b>PRE-MASTER</b> records everything instead, tapped before the OUT master chain so the polish is applied once at BOUNCE rather than baked into the lane.',
     waitFor:'set SOURCE to LIVE ONLY.', didIt:'It will capture just your playing.',
     done:()=>$('traxSrc').value==='live' },
   { tab:'trax', el:'traxlist', title:'ARM A LANE',
