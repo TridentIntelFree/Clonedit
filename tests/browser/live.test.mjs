@@ -193,6 +193,184 @@ export default async function ({ browser, base }) {
     t.ok('after which the button offers to record again',
       /AUDIO/.test(rec.audio.label), rec.audio.label);
 
+    t.head('A DELETED SOUND THAT STILL PLAYS — IT WAS ON TAPE');
+    /* "I remove it from sequence, delete the pad, delete the track, and it
+       plays when I hit play when I'm trying to play something else"... "the
+       sample was from trax."
+       A tape lane plays with the transport, and nothing outside the TRAX tab
+       said one existed. Reproduced exactly: pad bufId -1, zero steps in any
+       pattern, and PLAY still put 0.89 peak out of the master. R156 made it far
+       easier to hit by putting AUDIO → TRACK on the pads tab, where a take can
+       be made without ever opening TRAX. */
+    const ghost = await page.evaluate(async () => {
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      S.chainOn = false; S.songOn = false; arrHeldOnce = true; setBpm(120);
+      document.querySelector('#tabs button[data-v="pads"]').click();
+      const pad = S.pads.findIndex(p => p.bufId >= 0);
+      S.trax.forEach((tr, i) => { if (tr.bufId >= 0) clearTrack(i); });
+      S.patterns.forEach(pt => pt.steps.forEach(r => r.fill(0)));
+      S.editPad = pad; drawSeq(); drawPads();
+      const tab = () => { const b = document.querySelector('#tabs button[data-v="trax"]');
+        return { marked: b.classList.contains('hasload'), n: b.dataset.n }; };
+      const out = { tabEmpty: tab() };
+
+      document.getElementById('btnPadAudio').click(); await wait(200);
+      for (let i = 0; i < 4; i++) { hitLive(pad, 0.95); await wait(200); }
+      document.getElementById('btnPadAudio').click(); await wait(800);
+      out.lanes = S.trax.filter(t => t.bufId >= 0).length;
+      out.tabLoaded = tab();
+      out.padHint = document.getElementById('padRecHint').textContent;
+
+      document.getElementById('epClear').click();
+      out.clearSaid = document.getElementById('lcdmsg').textContent;
+      out.padBuf = S.pads[pad].bufId;
+      out.steps = S.patterns.reduce((n, pt) => n + pt.steps.reduce((m, r) => m + r.filter(v => v > 0).length, 0), 0);
+      await wait(2400);
+
+      const an = AC.createAnalyser(); an.fftSize = 2048;
+      LIVE.softclip.connect(an);
+      const b = new Float32Array(an.fftSize);
+      const peakOver = async n => { let p = 0;
+        for (let i = 0; i < n; i++) { await wait(140); an.getFloatTimeDomainData(b);
+          for (let k = 0; k < b.length; k++) { const a = Math.abs(b[k]); if (a > p) p = a; } }
+        return p; };
+      startSeq(); out.stillAudible = await peakOver(12); stopSeq();
+      await wait(2400);
+
+      // and clearing the lane really does silence it
+      S.trax.forEach((tr, i) => { if (tr.bufId >= 0) clearTrack(i); });
+      out.tabAfterClear = tab();
+      startSeq(); out.afterLaneCleared = await peakOver(12); stopSeq();
+      return out;
+    });
+    t.note('    after deleting the pad: bufId ' + ghost.padBuf + ', ' + ghost.steps +
+      ' steps anywhere, master peak ' + ghost.stillAudible.toFixed(3));
+    t.ok('the take does still play — that part is correct, it is a recording',
+      ghost.stillAudible > 0.05, ghost.stillAudible.toFixed(3));
+    /* Which is fine. What was wrong is that nothing said so. */
+    t.ok('the TRAX tab is unmarked when no lane holds anything', !ghost.tabEmpty.marked);
+    t.ok('and carries a count the moment one does',
+      ghost.tabLoaded.marked && ghost.tabLoaded.n === String(ghost.lanes),
+      JSON.stringify(ghost.tabLoaded));
+    t.ok('the pads tab says the lanes will play too',
+      /tape lane/.test(ghost.padHint), ghost.padHint.slice(0, 90));
+    t.note('    "' + ghost.clearSaid + '"');
+    t.ok('and clearing a pad names the one place it cannot reach',
+      /tape lane/.test(ghost.clearSaid) && /TRAX/.test(ghost.clearSaid), ghost.clearSaid);
+    t.ok('clearing the lane finally silences it',
+      ghost.afterLaneCleared < 0.02, ghost.afterLaneCleared.toFixed(4));
+    t.ok('and the tab mark goes with it', !ghost.tabAfterClear.marked);
+
+    t.head('PITCH NO LONGER CHANGES HOW LONG THE SOUND LASTS');
+    /* "The pitch shift effects time it shouldn't effect the speed of the
+       sound." A sampler pitches by playback rate, so +12 is twice as fast and
+       half as long. KEEP TIME pre-stretches by the pitch ratio so the rate and
+       the stretch cancel in duration and compound in pitch. */
+    const pitch = await page.evaluate(async () => {
+      /* The LONGEST loaded sample. A grain stretcher works in ~80ms windows, so
+         on a sound shorter than a few grains the output length is quantised to
+         something coarse — measured at 122% of the original an octave down on a
+         185ms sample. That is a real limit of the technique and it is written
+         into the panel, but it is not what this check is about. */
+      let pad = -1, best = 0;
+      S.pads.forEach((x, i) => { if (x.bufId >= 0) { const d = S.buffers[x.bufId].duration;
+        if (d > best) { best = d; pad = i; } } });
+      const p = S.pads[pad];
+      p.start = 0; p.end = 1; p.rel = 0.06; p.keepPitch = false;
+      S.chainOn = false; S.songOn = false; S.human = 0;
+      document.getElementById('bSrc').value = 'pat';
+      document.getElementById('bLoops').value = '1';
+      const len = async () => {
+        S.patterns.forEach(pt => pt.steps.forEach(r => r.fill(0)));
+        S.patterns[S.pattern].steps[pad][0] = 0.9;
+        const kR = p.rev, kD = p.dly; p.rev = 0; p.dly = 0;
+        ensureSpeedCaches();
+        const buf = await renderMix(new Set([pad]), new Set());
+        p.rev = kR; p.dly = kD;
+        const d = buf.getChannelData(0);
+        let peak = 0; for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > peak) peak = a; }
+        const thr = peak * 0.02; let last = 0;
+        for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > thr) last = i;
+        return last / buf.sampleRate;
+      };
+      const out = { srcDur: best };
+      p.keepTime = false; p.pitch = 0;  out.tape0 = await len();
+      p.pitch = 12;                     out.tapeUp = await len();
+      p.pitch = -12;                    out.tapeDn = await len();
+      p.keepTime = true;  p.pitch = 0;  out.keep0 = await len();
+      p.pitch = 12;                     out.keepUp = await len();
+      p.pitch = -12;                    out.keepDn = await len();
+      p.pitch = 0;
+      return out;
+    });
+    t.note('    source ' + pitch.srcDur.toFixed(2) + 's');
+    t.note('    TAPE PITCH  0:' + pitch.tape0.toFixed(3) + '  +12:' + pitch.tapeUp.toFixed(3) +
+      '  -12:' + pitch.tapeDn.toFixed(3) + 's');
+    t.note('    KEEP TIME   0:' + pitch.keep0.toFixed(3) + '  +12:' + pitch.keepUp.toFixed(3) +
+      '  -12:' + pitch.keepDn.toFixed(3) + 's');
+    /* The old behaviour still has to be available — it is what a sampler does
+       and it is the right sound for a tape effect. */
+    t.ok('TAPE PITCH still shortens when you pitch up', pitch.tapeUp < pitch.tape0 * 0.7,
+      (pitch.tapeUp / pitch.tape0 * 100).toFixed(0) + '% of the original length');
+    /* Downward is only checked as "longer at all": a 6s sample pitched an
+       octave down runs 12s, and the render is one pattern long, so the tail is
+       cut by the window rather than by the pitch. */
+    t.ok('and lengthens when you pitch down', pitch.tapeDn > pitch.tape0 * 1.05,
+      (pitch.tapeDn / pitch.tape0 * 100).toFixed(0) + '% (truncated by the render window)');
+    const errUp = Math.abs(pitch.keepUp - pitch.keep0) / pitch.keep0;
+    const errDn = Math.abs(pitch.keepDn - pitch.keep0) / pitch.keep0;
+    t.ok('KEEP TIME holds the length an octave UP', errUp < 0.15,
+      (pitch.keepUp / pitch.keep0 * 100).toFixed(0) + '% of the original');
+    t.ok('and an octave DOWN', errDn < 0.15,
+      (pitch.keepDn / pitch.keep0 * 100).toFixed(0) + '%');
+    /* The comparison that matters to somebody using it: whatever the residual,
+       it has to be a different order of thing from what tape does. */
+    const tapeErrUp = Math.abs(pitch.tapeUp - pitch.tape0) / pitch.tape0;
+    const tapeErrDn = Math.abs(pitch.tapeDn - pitch.tape0) / pitch.tape0;
+    t.ok('and both are far closer to unchanged than tape is',
+      errUp < tapeErrUp / 3 && errDn < tapeErrDn / 3,
+      'up ' + (errUp * 100).toFixed(0) + '% vs ' + (tapeErrUp * 100).toFixed(0) +
+      '% · down ' + (errDn * 100).toFixed(0) + '% vs ' + (tapeErrDn * 100).toFixed(0) + '%');
+
+    t.head('AND AN OLDER PROJECT KEEPS THE VOICING IT WAS MADE WITH');
+    const mig = await page.evaluate(() => {
+      const doc = { fmt: DOC_FMT, v: 1, pads: [{ bufId: -1, pitch: 7 }, { bufId: -1 }], patterns: [] };
+      migrateDoc(doc, 1);
+      return { v: doc.v, cur: DOC_V, keepTime: doc.pads.map(p => p.keepTime),
+        newPad: newPad(0).keepTime };
+    });
+    t.ok('a v1 project has its pads stamped tape-style on load',
+      mig.keepTime.every(k => k === false), JSON.stringify(mig.keepTime));
+    t.ok('but a brand new pad keeps its length', mig.newPad === true);
+    t.ok('and the document is brought up to the current version', mig.v === mig.cur,
+      'v' + mig.v + ' of ' + mig.cur);
+
+    t.head('THE MIC CLAIMS THE TAPE SOURCE, AND GIVES IT BACK');
+    /* "When I record on the mic screen it doesn't automatically activate the
+       track and you have to manually change the source to mic on the trax
+       page." Arming a lane with the mic live and SOURCE on the master bus
+       records the backing track with the mic buried in it. */
+    const mic = await page.evaluate(() => {
+      const sel = document.getElementById('traxSrc');
+      const out = {};
+      sel.value = 'bus'; micOn = true;
+      out.msg = micClaimTrax();
+      out.during = sel.value;
+      micReleaseTrax(); micOn = false;
+      out.restored = sel.value;
+      // a deliberate choice made while the mic is live is not undone
+      sel.value = 'live'; micOn = true; micClaimTrax(); sel.value = 'live';
+      micReleaseTrax(); micOn = false;
+      out.deliberate = sel.value;
+      return out;
+    });
+    t.ok('turning the mic on points TRAX at it', mic.during === 'mic', mic.during);
+    t.ok('and says so rather than changing a setting in silence',
+      /TRAX SOURCE/.test(mic.msg), mic.msg);
+    t.ok('turning the mic off restores what was there', mic.restored === 'bus', mic.restored);
+    t.ok('but a source you chose while the mic was live is left alone',
+      mic.deliberate === 'live', mic.deliberate);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

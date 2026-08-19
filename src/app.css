@@ -242,6 +242,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
   padding:13px 18px;font-size:var(--fs-sm);letter-spacing:.6px;background:var(--panel);
   color:var(--txt-dim);white-space:nowrap;border-bottom:2px solid transparent}
 #tabs button.on{background:var(--chassis);color:var(--amber);font-weight:600;border-bottom-color:var(--amber)}
+/* A tab that is holding something which will make a sound. Only TRAX uses it so
+   far, and only because a tape lane plays with the transport whether or not you
+   remember it is there — see drawTraxBadge. */
+#tabs button.hasload::after{content:attr(data-n);margin-left:5px;font-size:9px;font-weight:700;
+  color:var(--lcd-bg);background:var(--send);border-radius:7px;padding:1px 5px;vertical-align:1px}
 .view{display:none;flex:1;overflow-y:auto;padding:var(--sp-3);-webkit-overflow-scrolling:touch}
 .view.on{display:block}
 /* ESSENTIALS / EVERYTHING. Two tabs carry nearly all the settings in the app —

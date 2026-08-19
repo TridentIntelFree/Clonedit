@@ -144,6 +144,20 @@ that sounds played. Real drummers do not hit every snare identically. The
 <b>VEL CURVE</b> in MIDI changes how hard you have to tap to get loud —
 <b>SOFT</b> makes quiet taps louder, useful on a small screen.</p>
 
+<h4>PITCH, and whether it changes the length</h4>
+<p>A sampler pitches by playing faster or slower, so up an octave is twice the
+speed and half the length. That is right for a tape effect and wrong for a
+melody, so <b>PITCH</b> has a switch under it.</p>
+<p><b>KEEP TIME</b> (on for new pads) holds the length: the sample is stretched
+by the pitch ratio first, so the stretch and the playback rate cancel out in
+duration and compound in pitch. <b>TAPE PITCH</b> is the old behaviour, and it is
+still the one you want for a turntable stall or a pitched-down break.</p>
+<p>Two honest limits. The stretch works in 80-millisecond grains, so a sound
+shorter than a few of those comes back with its length only roughly held —
+measured at 122% of the original an octave down on a 185ms hit, against 100% on
+a six-second one. And KEEP TIME is unavailable while <b>KEEP PITCH</b> is on,
+because both stretch the same buffer and they would be fighting over it.</p>
+
 <h4>Envelope — ATTACK and RELEASE</h4>
 <p><b>ATTACK</b> is how long the sound takes to reach full volume. Zero is
 instant, which is what you want for drums. Winding it up softens the front of
@@ -206,6 +220,7 @@ it, filter it, resample it. Nothing stays attached to the preset it came from.</
     <div class="pslider"><span class="lbl">GAIN</span><input type="range" id="epGain" min="0" max="2" step="0.01"><span class="val" id="epGainV"></span></div>
     <div class="pslider"><span class="lbl">PITCH</span><input type="range" id="epPitch" min="-12" max="12" step="1"><span class="val" id="epPitchV"></span></div>
     <div class="pslider"><span class="lbl">FINE</span><input type="range" id="epFine" min="-100" max="100" step="1"><span class="val" id="epFineV"></span></div>
+    <div class="row" style="margin:-2px 0 2px"><button id="epKeepTime" class="on">KEEP TIME</button><span class="rowhint">ON = PITCH holds the sound's length &middot; OFF = pitching up also makes it shorter, like tape</span></div>
     <div class="pslider"><span class="lbl">SPEED</span><input type="range" id="epSpeed" min="0.25" max="4" step="0.01"><span class="val" id="epSpeedV"></span></div>
     <div class="row" style="margin:-2px 0 2px"><button id="epKeepPitch">KEEP PITCH</button><span style="font-size:10px;color:var(--txt-dim)">ON = time-stretch (pitch stays) · OFF = varispeed (pitch follows, like tape)</span></div>
     <div class="pslider"><span class="lbl">PAN</span><input type="range" id="epPan" min="-1" max="1" step="0.05"><span class="val" id="epPanV"></span></div>

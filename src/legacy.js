@@ -2342,8 +2342,34 @@
      NOT DONE, deliberately: "fix the others". Theremin, harp, flute and perc
      were named as weak without saying what is wrong with them, and guessing at
      that is what cost three rounds on the poly panel.
+   - R157: THREE REPORTS. All three real, one of them mine.
+     A DELETED SOUND THAT KEPT PLAYING. "I remove it from sequence, delete the
+     pad, delete the track, and it plays when I hit play"... "the sample was
+     from trax." Reproduced exactly: pad bufId -1, zero steps in any pattern,
+     and PLAY still putting 0.89 peak out of the master. A tape lane plays with
+     the transport and nothing outside the TRAX tab ever said one existed — and
+     R156 made that far easier to hit by putting AUDIO → TRACK on the pads tab,
+     where a take can be made without opening TRAX at all.
+     The take playing is correct; a recording is not part of the pad and must
+     survive it. What was wrong is that it was invisible. The TRAX tab carries a
+     count whenever a lane holds audio, the pads RECORD line says the lanes will
+     play too, and clearing a pad names the one place it cannot reach.
+     PITCH CHANGED THE LENGTH. "The pitch shift effects time it shouldn't effect
+     the speed of the sound." A sampler pitches by playback rate, so +12 is half
+     as long — right for tape, wrong for a melody. KEEP TIME pre-stretches by
+     the pitch ratio so the stretch and the rate cancel in duration and compound
+     in pitch: measured 5.198s → 5.181s at +12 and 5.211s at -12, against tape's
+     2.631s. On for new pads; a v1 document is stamped tape-style in migrateDoc,
+     because turning it on retroactively would revoice every pitched pad in an
+     existing project. Grain limit stated rather than hidden — a 185ms hit comes
+     back at 122% an octave down, where a six-second one is exact.
+     THE MIC DID NOT CLAIM THE TAPE SOURCE. Arming a lane with the mic live and
+     SOURCE on the master bus records the backing track with the mic buried in
+     it. The mic being on is a clear statement of intent, so it takes the source
+     and says it has, gives it back when the mic goes off, and leaves alone any
+     source chosen deliberately while it was live.
    ================================================================ */
-const BUILD = 'JBH-88 · R156 · 2026-08-03 · a bass rig and pad keys';
+const BUILD = 'JBH-88 · R157 · 2026-08-04 · tape lanes are visible, pitch keeps time';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2398,7 +2424,7 @@ function panText(v){
 /* NPADS/NSTEPS/NPAT/MAXSTEPS/PATLENS, patLen → src/pure/pattern.js */
 function curPatLen(){ return patLen(typeof curPat==='function' ? curPat() : S.patterns[S.pattern]); }
 function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
-  gain:0.9, pitch:0, fine:0, speed:1, keepPitch:false, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
+  gain:0.9, pitch:0, fine:0, speed:1, keepPitch:false, keepTime:true, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
   grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grPos:0, grBurst:0.45,
   choke:0, note:36+i, reverse:false, mode:'one',
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
@@ -2802,9 +2828,37 @@ function buildSpeedStretch(bufId,reverse,spd){   // sync build + cache (no-op at
   speedCache[key]=out; return out;
 }
 function padSpeed(p){ return clamp(p.speed||1,0.25,4); }
+/* PITCH WITHOUT CHANGING THE LENGTH.
+
+   "The pitch shift effects time it shouldn't effect the speed of the sound."
+   Fair. A sampler pitches by playback rate, so +12 semitones is twice as fast
+   and half as long — which is right for a tape effect and wrong for a melody.
+   The app already had the opposite control (KEEP PITCH: change speed, hold the
+   pitch); this is its mirror, and it uses the same time-stretch.
+
+   To raise by r and keep the length, stretch the source to r times as long with
+   the pitch preserved, then play THAT at rate r. The stretch and the rate cancel
+   in duration and compound in pitch. Cached per pad and per amount, because it
+   is a real cost: an 80ms-grain stretch of the whole buffer.
+
+   Only the semitone/fine PITCH is compensated. SPEED is left alone — it is the
+   control whose entire job is to change the length. */
+function pitchRatio(p){ return Math.pow(2,((p.pitch||0)+(p.fine||0)/100)/12); }
+function buildPitchStretch(bufId,reverse,ratio){
+  if(bufId<0 || Math.abs(ratio-1)<=0.001) return null;
+  const key='p|'+bufId+'|'+(reverse?'r':'f')+'|'+ratio.toFixed(3);
+  if(speedCache[key]) return speedCache[key];
+  const src=reverse?getReversed(bufId):S.buffers[bufId];
+  if(!src) return null;
+  const out=timeStretch(src, ratio);   // longer by r, pitch untouched
+  speedCache[key]=out; return out;
+}
 function ensureSpeedCaches(){   // pre-build every pitch-locked pad's stretch (before a bounce, or after load)
   for(let i=0;i<NPADS;i++){ const p=S.pads[i];
-    if(p.bufId>=0 && p.keepPitch){ const s=padSpeed(p); if(Math.abs(s-1)>0.001) buildSpeedStretch(p.bufId,!!p.reverse,s); } }
+    if(p.bufId<0) continue;
+    if(p.keepPitch){ const s=padSpeed(p); if(Math.abs(s-1)>0.001) buildSpeedStretch(p.bufId,!!p.reverse,s); }
+    else if(p.keepTime){ const r=pitchRatio(p); if(Math.abs(r-1)>0.001) buildPitchStretch(p.bufId,!!p.reverse,r); }
+  }
 }
 /* trigger a pad into a given graph (live or offline) */
 const chokeLive = {};    // group -> last env GainNode (live path)
@@ -2836,11 +2890,23 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
     const sb=speedCache[speedKey(p.bufId,!!p.reverse,spd)];
     if(sb){ buf=sb; speedMul=1; }
   }
+  /* KEEP TIME: swap in a source pre-stretched by the pitch ratio, so playing it
+     at that rate lands back on the original duration. Falls through to ordinary
+     varispeed if the stretch is not built yet, exactly like KEEP PITCH does. */
+  let ktSlice=0;
+  if(p.keepTime && !p.keepPitch){
+    const pr=pitchRatio(p);
+    if(Math.abs(pr-1)>0.001){
+      const pb=speedCache['p|'+p.bufId+'|'+(p.reverse?'r':'f')+'|'+pr.toFixed(3)];
+      if(pb){ buf=pb; ktSlice=1; }
+    }
+  }
   const effBase=baseRate*speedMul;
   const live=(ctx===AC);
   const rate=live? effBase*perfFactor() : effBase;
   const off=s0*buf.duration;
   const sliceDur=Math.max(0.005,(e0-s0)*buf.duration);
+  void ktSlice;   // the stretched buffer is longer; start/end are fractions, so they still land right
   const outDur=sliceDur/rate;
   const src=ctx.createBufferSource(); src.buffer=buf; src.playbackRate.value=rate;
   if(live){
@@ -3799,6 +3865,13 @@ function drawEdit(){
   { const sp=padSpeed(p); $('epSpeed').value=sp; $('epSpeedV').textContent=sp.toFixed(2)+'×';
     $('epKeepPitch').classList.toggle('on',!!p.keepPitch);
     $('epKeepPitch').textContent=p.keepPitch?'KEEP PITCH':'VARISPEED';
+    $('epKeepTime').classList.toggle('on',!!p.keepTime);
+    $('epKeepTime').textContent=p.keepTime?'KEEP TIME':'TAPE PITCH';
+    /* The two cannot both be on: one stretches for SPEED and the other for
+       PITCH, and they would fight over the same buffer. Saying so beats a
+       control that silently does nothing. */
+    $('epKeepTime').disabled=!!p.keepPitch;
+    $('epKeepTime').style.opacity=p.keepPitch?'0.45':'';
     // keep-pitch pad showing a sample with no cached stretch yet (e.g. a freshly
     // loaded sample) — build it now so the next hit is pitch-locked, not varispeed
     if(p.keepPitch && p.bufId>=0 && Math.abs(sp-1)>0.001 && !speedCache[speedKey(p.bufId,!!p.reverse,sp)])
@@ -3866,7 +3939,35 @@ $('epKeepPitch').addEventListener('click',()=>{
   const p=S.pads[S.editPad]; p.keepPitch=!p.keepPitch;
   if(p.keepPitch && p.bufId>=0) buildSpeedStretch(p.bufId,!!p.reverse,padSpeed(p));
   drawEdit(); dirty();
-  lcd(p.keepPitch?('KEEP PITCH — pad plays '+padSpeed(p).toFixed(2)+'× with pitch preserved'):('VARISPEED — pad speed also shifts pitch (tape/turntable)'));
+  lcd(p.keepPitch?('KEEP PITCH — pad plays '+padSpeed(p).toFixed(2)+'× with pitch preserved'
+     +(p.keepTime?'. KEEP TIME is off while this is on; SPEED and PITCH cannot both stretch the same buffer.':''))
+    :('VARISPEED — pad speed also shifts pitch (tape/turntable)'));
+});
+$('epKeepTime').addEventListener('click',()=>{
+  const p=S.pads[S.editPad];
+  if(p.keepPitch){ lcd('KEEP TIME is unavailable while KEEP PITCH is on — both stretch the same buffer.'); return; }
+  p.keepTime=!p.keepTime;
+  if(p.keepTime && p.bufId>=0) buildPitchStretch(p.bufId,!!p.reverse,pitchRatio(p));
+  stopPadVoices(S.editPad);
+  drawEdit(); dirty();
+  const semi=(p.pitch||0)+(p.fine||0)/100;
+  lcd(p.keepTime
+    ? 'KEEP TIME — PITCH no longer changes how long the sound lasts'+(semi?'; at '+semi.toFixed(2)+' semitones it stays its original length.':'.')
+    : 'TAPE PITCH — pitching up now makes the sound shorter and pitching down makes it longer, the way a sampler does.');
+});
+/* A new pitch needs a new stretch, and it has to exist before the next hit or
+   that hit falls back to varispeed and jumps in length. Built on release rather
+   than on every slider frame — an 80ms-grain stretch of a whole buffer is not a
+   per-pixel operation. */
+function pitchStretchRefresh(){
+  const p=S.pads[S.editPad];
+  if(p.bufId<0 || !p.keepTime || p.keepPitch) return;
+  const r=pitchRatio(p);
+  if(Math.abs(r-1)>0.001) buildPitchStretch(p.bufId,!!p.reverse,r);
+}
+['epPitch','epFine'].forEach(id=>{
+  const el=$(id); if(!el) return;
+  ['change','pointerup','touchend'].forEach(ev=>el.addEventListener(ev,pitchStretchRefresh));
 });
 bindEdit('epPan','pan',null,(n,p)=>{ if(n.pan) n.pan.pan.setTargetAtTime(p.pan,AC.currentTime,0.01); });
 bindEdit('epRev','rev',null,(n,p)=>{ n.rev.gain.setTargetAtTime(p.rev,AC.currentTime,0.01); });
@@ -4172,7 +4273,15 @@ $('epClear').addEventListener('click',()=>{ const i=S.editPad; stopPadVoices(i);
   S.patterns.forEach(pt=>{ if(pt.steps[i]) pt.steps[i].fill(0);
     if(pt.locks) for(let s=0;s<MAXSTEPS;s++){ delete pt.locks[i+':'+s]; delete pt.locks['P'+i+':'+s]; }
     if(pt.poly && pt.poly[i]){ const lr=polyRowOf(pt,i); if(lr) lr.fill(0); } });   // the poly lane is part of the pad too
-  drawPads(); drawEdit(); drawMixer(); drawSeq(); drawSteps(); dirty(); lcd('PAD '+padName(i)+' CLEARED · removed from all patterns'); });
+  drawPads(); drawEdit(); drawMixer(); drawSeq(); drawSteps(); dirty();
+  /* Naming the one thing it cannot reach. A take is a recording of a
+     performance, not part of the pad, so clearing the pad must not delete it —
+     but somebody who has just deleted a sound and can still hear it deserves to
+     be told where it is rather than left hunting. */
+  const lanes=traxLoaded();
+  lcd('PAD '+padName(i)+' CLEARED · removed from every pattern'
+    + (lanes ? '. NOTE: '+lanes+' tape lane'+(lanes>1?'s':'')+' still play with the transport and may '
+      +'contain a recording of it — clear them in TRAX.' : '')); });
 
 /* ---------------- per-pad channel MIXER ---------------- */
 let mixMeters=[];   // [{idx, fill}] for the meter loop (idx=-1 => master)
@@ -4622,6 +4731,34 @@ function micBuild(){
   return M;
 }
 
+/* THE MIC AND THE TAPE LANES.
+
+   "When I record on the mic screen it doesn't automatically activate the track
+   and you have to manually change the source to mic on the trax page."
+
+   Right, and it is the kind of thing nobody discovers by reading: TRAX records
+   whatever SOURCE says, the default is the master bus, and arming a lane with
+   the mic live gave you a recording of the backing track with the mic buried in
+   it — or of nothing at all. The mic being on is a clear statement of intent,
+   so it claims the source, says it has, and gives it back when the mic goes
+   off. Whatever you had chosen is restored, so it cannot quietly cost you a
+   setting you made on purpose. */
+let traxSrcBeforeMic=null;
+function micClaimTrax(){
+  const sel=$('traxSrc'); if(!sel) return '';
+  if(sel.value==='mic') return '';
+  traxSrcBeforeMic=sel.value;
+  sel.value='mic';
+  try{ drawTrax(); }catch(e){}
+  return ' TRAX SOURCE → MIC, so arming a lane records the microphone.';
+}
+function micReleaseTrax(){
+  const sel=$('traxSrc'); if(!sel || traxSrcBeforeMic==null) return;
+  /* Only if nothing has changed it since. Somebody who deliberately picked a
+     source while the mic was live meant it. */
+  if(sel.value==='mic'){ sel.value=traxSrcBeforeMic; try{ drawTrax(); }catch(e){} }
+  traxSrcBeforeMic=null;
+}
 function micApply(){
   const M=micChain; if(!M||!AC) return;
   const t=AC.currentTime, v=id=>parseFloat($(id).value);
@@ -4706,7 +4843,7 @@ async function micEnable(){
   micOn=true;
   $('btnMicOn').classList.add('on'); $('btnMicOn').innerHTML='&#9673; MIC IS ON — TAP TO STOP';
   micApply(); micMeter(); micListDevices();
-  lcd('MIC ON — shape the voice, then RECORD. Headphones before MONITOR.');
+  lcd('MIC ON — shape the voice, then RECORD. Headphones before MONITOR.'+micClaimTrax());
 }
 function micDisable(){
   micOn=false;
@@ -4718,6 +4855,7 @@ function micDisable(){
   if(micStreamIn){ micStreamIn.getTracks().forEach(t=>t.stop()); micStreamIn=null; }
   $('btnMicOn').classList.remove('on'); $('btnMicOn').innerHTML='&#9673; TURN THE MIC ON';
   $('btnMicMon').classList.remove('on');
+  micReleaseTrax();
   const bar=$('micBar'); if(bar&&bar.firstElementChild) bar.firstElementChild.style.width='0%';
   $('micPeakV').textContent='—';
   resumeSession();
@@ -7708,6 +7846,31 @@ $('btnLiveRec').addEventListener('click',()=>$('btnRec').click());
    They are both here now, side by side, with the difference stated: STEPS gives
    you something you can edit forever, AUDIO gives you the performance exactly
    as you played it, timing and all. */
+/* WHAT ELSE IS GOING TO MAKE A SOUND WHEN YOU PRESS PLAY.
+
+   Reported, and reproduced exactly: "I remove it from sequence, delete the pad,
+   delete the track, and it plays when I hit play when I'm trying to play
+   something else" — followed by "the sample was from trax", which is the whole
+   answer. A tape lane plays with the transport, and until now nothing outside
+   the TRAX tab said one existed. Delete the pad, clear every step in every
+   pattern, and the RECORDING of what that pad played is still on tape.
+
+   Measured on the reproduction: pad bufId -1, zero steps in any pattern, and
+   PLAY still puts 0.89 peak out of the master.
+
+   I made it much easier to hit by putting AUDIO → TRACK on the pads tab in
+   R156, where a take can be made without ever opening TRAX. So the count goes
+   where it can always be seen — on the tab itself — and PADS says it too,
+   because that is where somebody hunting a phantom sound is standing. */
+function traxLoaded(){ let n=0; for(const t of S.trax) if(t.bufId>=0) n++; return n; }
+function drawTraxBadge(){
+  const b=document.querySelector('#tabs button[data-v="trax"]');
+  if(!b) return;
+  const n=traxLoaded();
+  b.classList.toggle('hasload',n>0);
+  b.dataset.n=n||'';
+  b.setAttribute('aria-label','Tape tracks'+(n?', '+n+' lane'+(n>1?'s':'')+' holding audio that plays with the transport':''));
+}
 function drawPadRec(){
   const st=$('btnPadSteps'), au=$('btnPadAudio'), h=$('padRecHint');
   if(!st||!au||!h) return;
@@ -7715,11 +7878,17 @@ function drawPadRec(){
   st.classList.toggle('on',!!S.liveRec);
   au.classList.toggle('on',rolling);
   au.textContent=rolling?'\u25a0 STOP & KEEP':'\u25cf AUDIO \u2192 TRACK';
-  h.textContent = rolling
+  const lanes=traxLoaded();
+  h.innerHTML = rolling
     ? 'recording your taps to a tape lane — press STOP or this button to keep it'
     : S.liveRec
       ? 'pad hits are writing STEPS into the pattern — editable forever, quantized to the grid'
-      : 'STEPS writes hits into the pattern · AUDIO keeps the performance exactly as played';
+      : lanes
+        ? 'STEPS writes hits into the pattern · AUDIO keeps the performance as played'
+          + ' &middot; <b style="color:var(--send)">'+lanes+' tape lane'+(lanes>1?'s':'')
+          + ' also play'+(lanes>1?'':'s')+' on PLAY — TRAX</b>'
+        : 'STEPS writes hits into the pattern · AUDIO keeps the performance exactly as played';
+  drawTraxBadge();
 }
 
 function setBpm(b){
@@ -7927,6 +8096,7 @@ function drawTrax(){
     el.appendChild(row);
   });
   if($('traxfx').style.display!=='none') drawTraxFx();
+  try{ drawTraxBadge(); drawPadRec(); }catch(e){}
   a11yPass(el);
 }
 let traxFxSel=0;
@@ -7983,6 +8153,7 @@ $('tfxEdit').addEventListener('click',()=>{
 function clearTrack(i){
   traxVoices.forEach(v=>{ if(v.i===i){ try{ v.src.stop(); }catch(e){} } });
   S.trax[i]=newTrack();
+  try{ drawTraxBadge(); drawPadRec(); }catch(e){}
   if(traxArm===i) disarmTrax();
   if(traxFxSel===i) $('traxfx').style.display='none';
   drawTrax(); dirty(); lcd('TRACK '+(i+1)+' CLEARED.');
@@ -8006,7 +8177,10 @@ async function armTrack(i){
   }
   traxArm=i; drawTrax();
   const hasTake=S.trax[i].bufId>=0;
-  lcd('TRACK '+(i+1)+' ARMED · '+$('traxSrc').selectedOptions[0].textContent+(hasTake
+  if(micOn && $('traxSrc').value!=='mic')
+    lcd('\u26a0 THE MIC IS ON but SOURCE is '+$('traxSrc').selectedOptions[0].textContent
+      +' — this lane will record that, not the microphone. Set SOURCE to MIC.');
+  else lcd('TRACK '+(i+1)+' ARMED · '+$('traxSrc').selectedOptions[0].textContent+(hasTake
     ? ' — PLAY RE-RECORDS over this take (its old audio is replaced on STOP).'
     : ' — press PLAY to roll, STOP to commit.'));
 }
@@ -10635,7 +10809,7 @@ function reapplyLivePads(){   // push S.pads channel state onto the live graph (
    The migration ladder below is a no-op today. That is the point of adding it
    now: the first real migration has somewhere to go. */
 const DOC_FMT='mvx880-project';
-const DOC_V=1;                 // schema version — bump ONLY when a field changes meaning
+const DOC_V=2;                 // schema version — bump ONLY when a field changes meaning
 function docVersion(doc){ return (doc&&doc.v!=null)?(doc.v|0):0; }   // 0 = written before R139
 function docBuildName(doc){
   if(!doc||!doc.build) return 'a newer build';
@@ -10648,6 +10822,14 @@ function migrateDoc(doc,from){
      absence of the version key itself, and the loader already defaults every
      field a v0 document can be missing. */
   if(from<1){ /* v0 → v1: no field changed meaning */ }
+  /* v1 → v2: KEEP TIME. New pads pitch without changing length; a project
+     written before that was voiced with tape-style pitch, where +12 semitones
+     is also half as long. Turning it on retroactively would change how every
+     pitched pad in an existing project sounds, so they are stamped OFF here —
+     which is the whole reason this rung exists rather than a default in the
+     loader. The loader cannot tell "field absent because old" from "field
+     absent because new" once the version has been rewritten. */
+  if(from<2 && Array.isArray(doc.pads)) doc.pads.forEach(p=>{ if(p&&p.keepTime==null) p.keepTime=false; });
   doc.v=DOC_V;
   return doc;
 }
@@ -10771,7 +10953,12 @@ function applySessionDoc(doc, bufs){
     }
     for(let i=pt.plen;i<pt.sil.length;i++) pt.sil[i]=0;
   });
-  S.pads.forEach(p=>{ if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16;
+  /* KEEP TIME arrived in R157 and is on for new pads. A project written before
+     it was voiced with tape-style pitch, and turning it on retroactively would
+     change how every pitched pad in it sounds — so an older document keeps what
+     it was made with. */
+  S.pads.forEach(p=>{ if(p.keepTime==null) p.keepTime=true;   // pre-v2 docs were stamped in migrateDoc
+    if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16;
     if(p.mute==null)p.mute=false; if(p.solo==null)p.solo=false;   // pre-R43/R44 docs lack these
     if(p.lfoOn==null)p.lfoOn=false; if(p.lfoTgt==null)p.lfoTgt='cutoff'; if(p.lfoShape==null)p.lfoShape='sine';
     if(p.lfoSync==null)p.lfoSync='free'; if(p.lfoRate==null)p.lfoRate=2; if(p.lfoDepth==null)p.lfoDepth=0.5;
