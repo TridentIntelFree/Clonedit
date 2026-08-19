@@ -518,9 +518,12 @@ export default async function ({ browser, base }) {
     t.ok('AND IT IS ACTUALLY VISIBLE — not underneath another control',
       route.visible && route.visible.onScreen && route.visible.topmost === 'recPip',
       JSON.stringify(route.visible) + ' (it sat under the tour button in the header at 320px)');
-    t.ok('tapping it explains the route rather than only having a tooltip',
-      /PHONE/i.test(route.tapLcd) && /Bluetooth/i.test(route.tapLcd),
-      route.tapLcd.slice(0, 80));
+    /* Tapping it used to explain the situation. Explaining is not much use
+       when the answer is "release the input and reopen the audio", so it now
+       does that — a tooltip is nothing on a touch screen and neither is a
+       paragraph you cannot act on. */
+    t.ok('tapping it resets the output rather than only describing the problem',
+      /OUTPUT RESET|RELEASING/i.test(route.tapLcd), route.tapLcd.slice(0, 90));
     t.ok('the MIC panel raises it, and the tooltip names the feature',
       route.withMic.shown && route.withMic.open.includes('MIC')
       && /MIC/.test(route.withMic.title) && /Bluetooth/i.test(route.withMic.title),
@@ -599,6 +602,107 @@ export default async function ({ browser, base }) {
       prev.playingBeforeTransport && prev.stoppedByTransport);
     t.ok('and a silent take says so instead of playing nothing in silence',
       /SILENT/.test(prev.silentLcd), '"' + prev.silentLcd + '"');
+
+    t.head('AN ARMED MIC LANE HOLDS NOTHING UNTIL IT IS ACTUALLY RECORDING');
+    /* Arming used to open the microphone so the capture would be live before
+       PLAY. The cost was hidden and large: on iOS an open input forces output
+       to the phone's own speaker and carries no Bluetooth, so merely arming a
+       lane cost the user their speaker for as long as it stayed armed —
+       reported as "no sound is coming out of it, it comes out of phone".
+       The stream opens on PLAY and closes at commit now. This runs against
+       Chromium's fake microphone, so it is the real getUserMedia path. */
+    await ctx.grantPermissions(['microphone']).catch(() => {});
+    const arm = await page.evaluate(async () => {
+      const o = {};
+      const pk = b => { let m = 0; const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > m) m = v; } return m; };
+      S.trax.forEach(t => { t.bufId = -1; });
+      document.getElementById('traxSrc').value = 'mic';
+
+      await armTrack(0);
+      o.armed = traxArm === 0;
+      o.openAfterArm = capturesOpen();
+      o.pipAfterArm = !document.getElementById('recPip').hidden;
+      o.armLcd = document.getElementById('lcdmsg').textContent;
+
+      await playPressed();
+      await new Promise(r => setTimeout(r, 1800));
+      o.openWhileRolling = capturesOpen();
+      o.pipWhileRolling = !document.getElementById('recPip').hidden;
+
+      stopSeq();
+      await new Promise(r => setTimeout(r, 1200));
+      o.openAfterStop = capturesOpen();
+      o.pipAfterStop = !document.getElementById('recPip').hidden;
+      o.tookIt = S.trax[0].bufId >= 0;
+      o.peak = S.trax[0].bufId >= 0 ? pk(S.buffers[S.trax[0].bufId]) : 0;
+      o.commitLcd = document.getElementById('lcdmsg').textContent;
+      return o;
+    });
+    t.ok('arming a MIC lane opens no input at all', arm.armed
+      && arm.openAfterArm.length === 0 && !arm.pipAfterArm,
+      'inputs open after arm: ' + (arm.openAfterArm.join(', ') || 'none'));
+    t.ok('and says so, rather than warning about a cost it no longer has',
+      /costs you nothing/.test(arm.armLcd), arm.armLcd.slice(-80));
+    t.ok('PLAY opens the microphone, and only then',
+      arm.openWhileRolling.length > 0 && arm.pipWhileRolling,
+      arm.openWhileRolling.join(', '));
+    t.ok('STOP closes it again, so the route comes straight back',
+      arm.openAfterStop.length === 0 && !arm.pipAfterStop);
+    t.ok('AND THE TAKE IS STILL RECORDED — timing did not depend on holding it early',
+      arm.tookIt && arm.peak > 0.05,
+      'peak ' + arm.peak.toFixed(4) + ' · "' + arm.commitLcd.slice(0, 60) + '"');
+
+    t.head('A LEAKED INPUT IS SEEN, AND THE OUTPUT CAN BE RESET');
+    /* Reported: nothing in the app reaches Bluetooth while other apps do. That
+       is not one feature holding the route — it is a stream that outlived its
+       feature. The badge read state FLAGS, so in exactly that case it stayed
+       hidden: the flag says closed, the track is still running, and iOS is in
+       record mode because of the track. */
+    const leak = await page.evaluate(async () => {
+      const o = {};
+      document.getElementById('btnMicOn').click();
+      await new Promise(r => setTimeout(r, 1800));
+      o.opened = micOn && liveInputTracks().length > 0;
+      micOn = false;                       // the leak: flag cleared, track still live
+      drawRoutePip();
+      o.stillLive = liveInputTracks();
+      o.badgeShown = !document.getElementById('recPip').hidden;
+      o.capturesSeesIt = capturesOpen().join(', ');
+      document.getElementById('btnDiag').click();
+      o.diag = (document.getElementById('docText').value.split('\n')
+        .find(l => /input streams:/.test(l)) || '');
+
+      const before = AC, rate = AC.sampleRate;
+      const bufs = S.buffers.length, pads = S.pads.filter(p => p.bufId >= 0).length;
+      document.getElementById('btnOutReset').click();
+      await new Promise(r => setTimeout(r, 1500));
+      o.liveAfter = liveInputTracks();
+      o.contextReplaced = AC !== before;
+      o.rateKept = AC.sampleRate === rate;
+      o.running = AC.state === 'running';
+      o.buffersKept = S.buffers.length === bufs;
+      o.padsKept = S.pads.filter(p => p.bufId >= 0).length === pads;
+      o.lcd = document.getElementById('lcdmsg').textContent;
+      const b = await renderMix(null, null, { loops: 1, src: 'pat', noTail: true });
+      let pk = 0; if (b) { const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > pk) pk = v; } }
+      o.stillPlays = pk;
+      return o;
+    });
+    t.ok('the real microphone opened', leak.opened);
+    t.ok('A STREAM THAT OUTLIVED ITS FEATURE IS STILL SEEN',
+      leak.badgeShown && /still open/.test(leak.capturesSeesIt),
+      leak.capturesSeesIt + ' (a flag-driven badge stayed hidden here)');
+    t.ok('and DIAG names it, so a dump can reveal it', /MIC panel/.test(leak.diag), leak.diag);
+    t.ok('RESET OUTPUT releases every live track', leak.liveAfter.length === 0,
+      leak.stillLive.join(', ') + ' → none');
+    t.ok('and opens a fresh audio context, which is what re-picks the output',
+      leak.contextReplaced && leak.running && leak.rateKept);
+    t.ok('without costing samples, pads, or the ability to play',
+      leak.buffersKept && leak.padsKept && leak.stillPlays > 0.05,
+      'peak ' + leak.stillPlays.toFixed(4));
+    t.ok('and it says what it released', /released/.test(leak.lcd), leak.lcd.slice(0, 70));
 
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));

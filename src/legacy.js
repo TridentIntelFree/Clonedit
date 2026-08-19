@@ -2661,8 +2661,35 @@
      start sample-accurately. That is the design and it stays, but the arm
      message now says that sound comes out of the phone rather than Bluetooth
      until the lane is disarmed, instead of leaving it to be discovered.
+   - R168: GETTING THE OUTPUT BACK. "It's not only trax that doesn't play
+     through bt, nothing in app does. Other apps do." That rules out any one
+     feature and points at the two things that pin an iOS route: an open input
+     track, and the AudioContext itself, whose output is chosen when the
+     session activates and does not move afterwards because the category
+     changed. So one leaked stream, once, anywhere, and the app never comes
+     back until the context is rebuilt.
+     THE MICROPHONE IS NO LONGER HELD WHILE MERELY ARMED. Arming a lane used to
+     open it so the capture would be live before PLAY. Fairly called out: the
+     mic should not brick things it has nothing to do with. It opens on PLAY
+     and closes when the take commits, so an armed lane costs nothing. Timing
+     never depended on the stream being old — alignment comes from the sync
+     marker fired at bar 1 — and the take still records: measured peak 1.13
+     through Chromium's real getUserMedia path.
+     If the MIC panel already holds the microphone its stream is BORROWED
+     rather than a second one opened, since two concurrent captures of one
+     device is exactly what hands back a dead track, and a dead track records
+     silence.
+     THE BADGE WAS BLIND TO THE CASE THAT MATTERS MOST. It read state flags,
+     so a stream that outlived its feature — flag cleared, track still running
+     — showed nothing at all, which is precisely "no input open and no
+     Bluetooth". It reads live track state now, and DIAG reports every stream
+     the app can hold plus the session type.
+     RESET OUTPUT, in OUT ▸ ENGINE and on the badge itself: stop every input
+     the app can be holding, then open a fresh audio context, because a context
+     keeps the route it was given. Samples, pads and takes are untouched —
+     verified across the reset, still rendering at 0.84.
    ================================================================ */
-const BUILD = 'JBH-88 · R167 · 2026-08-19 · a warning you can actually see';
+const BUILD = 'JBH-88 · R168 · 2026-08-19 · getting the output back';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -5666,6 +5693,7 @@ $('btnMByp').addEventListener('click',()=>{
   applyMaster(); dirty();
   lcd(S.mByp?'MASTER CHAIN BYPASSED — hearing it raw.':'MASTER CHAIN ON.');
 });
+$('btnOutReset').addEventListener('click',resetAudioOut);
 $('btnEngReset').addEventListener('click',()=>{ glitchReset();
   lcd('ENGINE COUNTER RESET — play for a while and see whether it stays green.'); });
 $('btnBBOn').addEventListener('click',()=>{
@@ -6132,7 +6160,85 @@ function capturesOpen(){
   if(traxStream) who.push('TRAX (mic source)');
   if(mediaRec && mediaRec.state==='recording') who.push('MIC RECORDING');
   if(micBusy && !who.length) who.push('the microphone');
+  /* AND WHAT IS ACTUALLY LIVE, not only what the flags believe.
+     The flags are what the app THINKS it has open, and the failure that
+     matters most is the one where they disagree: a stream whose tracks are
+     still running after its feature was switched off. iOS is in record mode
+     because of the track, not because of our variable, so a badge driven by
+     flags alone stays hidden in exactly the case someone needs it most —
+     "nothing in the app reaches Bluetooth" with no input showing anywhere. */
+  try{
+    for(const t of liveInputTracks()){
+      const name=t.replace(/\u00d7\d+$/,'');
+      if(!who.some(w=>w.indexOf(name)>=0)) who.push(name+' (still open)');
+    }
+  }catch(e){}
   return who;
+}
+/* EVERY MediaStream THE APP CAN BE HOLDING, and whether its tracks are live.
+
+   Reported: nothing in the app reaches Bluetooth while other apps do. That is
+   not one feature holding the route, it is the whole output stuck on the
+   handset — and on iOS the two things that pin it there are an open input
+   track and the AudioContext itself, whose route is negotiated when the
+   session activates and does not move afterwards just because the category
+   changed. So a stream leaked once, anywhere, and the app never comes back
+   until the context is rebuilt.
+   Named individually rather than tracked in a list, because the whole class of
+   bug here has been a claimant nobody was counting. */
+function inputStreams(){
+  return [['MIC panel',micStreamIn],['MIC recorder',micStream],['TRAX',traxStream],
+    ['AMP',typeof ampStream!=='undefined'?ampStream:null],
+    ['BREATH',typeof breathStream!=='undefined'?breathStream:null]];
+}
+function liveInputTracks(){
+  const out=[];
+  for(const [name,st] of inputStreams()){
+    if(!st) continue;
+    let live=0;
+    try{ st.getTracks().forEach(t=>{ if(t.readyState==='live') live++; }); }catch(e){}
+    if(live) out.push(name+'\u00d7'+live);
+  }
+  return out;
+}
+/* Stop everything, whoever opened it. Used by the output reset, which is the
+   one action that has to work when the ordinary release paths already failed. */
+function releaseAllInputs(){
+  const found=liveInputTracks();
+  for(const [,st] of inputStreams()){
+    if(!st) continue;
+    try{ st.getTracks().forEach(t=>t.stop()); }catch(e){}
+  }
+  micStreamIn=null; micStream=null; traxStream=null; traxStreamOwned=false;
+  try{ ampStream=null; }catch(e){}
+  try{ breathStream=null; }catch(e){}
+  micOn=false; micBusy=false;
+  try{ ampOn=false; }catch(e){}
+  try{ breathOn=false; }catch(e){}
+  if(traxArm>=0) traxArm=-1;
+  applyAudioRoute();
+  return found;
+}
+/* THE WAY BACK TO BLUETOOTH.
+
+   Setting the session category back to 'playback' is necessary and not
+   sufficient: an AudioContext that was created, or activated, while the
+   session was in record mode keeps the route it was given. A fresh context is
+   what makes the system choose again — which is why this does what the
+   low-rate RETRY does, for the same underlying reason. */
+function resetAudioOut(){
+  const held=releaseAllInputs();
+  const wasRate=AC?Math.round(AC.sampleRate):0;
+  try{ if(playing) stopSeq(); }catch(e){}
+  try{ traxPreviewStop(); }catch(e){}
+  try{ rebuildAudio(); }catch(e){ lcd('OUTPUT RESET FAILED: '+(e.message||e)); return; }
+  applyAudioRoute();
+  const now=AC?Math.round(AC.sampleRate):0;
+  plog('OUTPUT RESET: '+(held.length?'released '+held.join(', '):'no input was open')
+    +'; audio context rebuilt'+(wasRate&&now&&wasRate!==now?' ('+wasRate+' → '+now+' Hz)':'')+'.');
+  lcd(held.length
+    ? 'OUTPUT RESET — released '+held.join(', ')+' and reopened the audio. If a speaker was connected, sound should go back to it now.'
+    : 'OUTPUT RESET — no input was open, and the audio was reopened anyway. If sound still comes out of the phone, the connection is outside this app.');
 }
 function applyAudioRoute(){
   const open=capturesOpen().length>0;
@@ -6153,10 +6259,9 @@ document.addEventListener('DOMContentLoaded',()=>{
   const pip=$('recPip'); if(!pip) return;
   pip.addEventListener('click',()=>{
     const who=capturesOpen();
-    lcd(who.length
-      ? 'SOUND IS COMING OUT OF THE PHONE because '+who.join(' and ')+' has the microphone open. '
-        +'iOS will not send audio to Bluetooth while an input is open — turn it off and Bluetooth comes back.'
-      : 'No input is open — audio should be going wherever the phone normally sends it.');
+    if(!who.length){ lcd('No input is open — audio should be going wherever the phone normally sends it.'); return; }
+    lcd('RELEASING '+who.join(' and ')+' — iOS will not send audio to Bluetooth while an input is open.');
+    resetAudioOut();
   });
 });
 function stopMicStream(){
@@ -8520,7 +8625,18 @@ function stopSeq(){
   lcd('STOP.');
   if(traxCap) traxCommit();      // last, so a take message (incl. the silent-take warning) isn't clobbered by "STOP."
 }
-$('btnPlay').addEventListener('click',startSeq);
+/* PLAY opens the microphone first when a mic lane is armed, then rolls. The
+   wait is a few hundred milliseconds on the first press and nothing after,
+   which is the whole price of not holding an input open while idle. */
+async function playPressed(){
+  if(playing) return;
+  if(traxArm>=0 && traxArmSrc==='mic' && !traxStream){
+    lcd('OPENING THE MICROPHONE …');
+    if(!await traxOpenMic()){ drawTrax(); return; }   // it already said why
+  }
+  startSeq();
+}
+$('btnPlay').addEventListener('click',()=>{ playPressed(); });
 $('btnStop').addEventListener('click',stopSeq);
 $('btnRec').addEventListener('click',()=>{ S.liveRec=!S.liveRec; $('btnRec').classList.toggle('on',S.liveRec); $('btnLiveRec').classList.toggle('on',S.liveRec); drawPadRec(); lcd(S.liveRec?'STEP REC ARMED — pad hits write steps, not audio. For audio: \u25cf AUDIO \u2192 TRACK.':'STEP REC OFF'); });
 $('btnLiveRec').addEventListener('click',()=>$('btnRec').click());
@@ -8919,15 +9035,23 @@ async function armTrack(i){
   if(traxArm===i){ disarmTrax(); drawTrax(); lcd('TRACK '+(i+1)+' DISARMED.'); return; }
   ensureAudio();
   disarmTrax();
-  if($('traxSrc').value==='mic'){
-    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ lcd('MIC unavailable on this browser.'); drawTrax(); return; }
-    micBusy=true;
-    try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
-    drawRoutePip();
-    try{ traxStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}}); }
-    catch(err){ micBusy=false; applyAudioRoute(); drawTrax();
-      lcd('MIC DENIED/UNAVAILABLE ('+((err&&err.name)||'error')+') — the lane is not armed and the audio route is back to normal.'); return; }
+  /* ARMING NO LONGER OPENS THE MICROPHONE.
+
+     It used to, so the capture would be live before PLAY and could start
+     sample-accurately. The cost was hidden and large: on iOS an open input
+     forces output to the phone's own speaker and carries no Bluetooth, so
+     merely arming a lane cost you your speaker for as long as it stayed armed
+     — reported as "no sound is coming out of it, it comes out of phone", and
+     fairly called out as the mic bricking things it has no business touching.
+     The stream is opened when PLAY is pressed and closed when the take
+     commits, so an armed lane costs nothing until it is actually recording.
+     Timing is unaffected: the capture is still built before the transport
+     starts, it is just built a moment later. Alignment never depended on the
+     stream being old, only on the sync marker fired at bar 1. */
+  if($('traxSrc').value==='mic' && (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)){
+    lcd('MIC unavailable on this browser.'); drawTrax(); return;
   }
+  traxArmSrc=$('traxSrc').value;
   traxArm=i; drawTrax();
   const hasTake=S.trax[i].bufId>=0;
   if(micOn && $('traxSrc').value!=='mic')
@@ -8942,12 +9066,39 @@ async function armTrack(i){
        speaker goes quiet for exactly as long as the lane stays armed. That is
        the operating system's rule, but being surprised by it is avoidable. */
     +($('traxSrc').value==='mic'
-      ? ' The mic is open while this lane is armed, so sound comes out of the phone rather than Bluetooth until you disarm it.'
+      ? ' The microphone opens when you press PLAY and closes when the take commits, so being armed costs you nothing.'
       : ''));
+}
+let traxArmSrc='bus';      // the source chosen when the lane was armed
+let traxStreamOwned=false; // did we open it, or are we borrowing the MIC panel's?
+/* Opened at PLAY and released at commit, so an armed lane holds nothing.
+   If the MIC panel already has the microphone, its stream is BORROWED rather
+   than a second one opened: two concurrent captures of one device is exactly
+   the case that hands back a dead track, and a dead track records silence. */
+async function traxOpenMic(){
+  if(traxStream) return true;
+  if(micOn && micStreamIn){ traxStream=micStreamIn; traxStreamOwned=false; applyAudioRoute(); return true; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    lcd('MIC unavailable on this browser — the lane cannot record it.'); return false; }
+  micBusy=true;
+  try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
+  drawRoutePip();
+  try{
+    traxStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});
+    traxStreamOwned=true; applyAudioRoute(); return true;
+  }catch(err){
+    micBusy=false; traxStream=null; traxStreamOwned=false; applyAudioRoute();
+    lcd('MIC DENIED/UNAVAILABLE ('+((err&&err.name)||'error')+') — nothing was recorded and the audio route is back to normal.');
+    return false;
+  }
 }
 function disarmTrax(){
   traxArm=-1;
-  if(traxStream){ try{ traxStream.getTracks().forEach(t=>t.stop()); }catch(e){} traxStream=null; micBusy=false; applyAudioRoute(); resumeSession(); }
+  if(traxStream){
+    // only stop what we opened; the MIC panel's stream belongs to the MIC panel
+    if(traxStreamOwned){ try{ traxStream.getTracks().forEach(t=>t.stop()); }catch(e){} }
+    traxStream=null; traxStreamOwned=false; micBusy=false; applyAudioRoute(); resumeSession();
+  }
 }
 function trackLoopEnd(b){ // loop the take at the nearest whole bar so it stays in step
   const bar=60/bpmAbs()/4*NSTEPS;
@@ -9017,6 +9168,15 @@ function applyTraxMix(){
 }
 function stopTraxVoices(){ traxVoices.forEach(v=>{ try{v.src.stop();}catch(e){} }); traxVoices=[]; }
 function traxBeginCapture(when){
+  /* A lane armed for the mic with no stream must NOT quietly fall through to
+     recording the bus — that is how someone ends up with a take that is not
+     what they asked for. It happens when the transport is started by something
+     that cannot wait for getUserMedia, such as incoming MIDI clock. */
+  if(traxArmSrc==='mic' && !traxStream){
+    lcd('\u26a0 TRACK '+(traxArm+1)+' IS ARMED FOR THE MIC but the microphone is not open, '
+      +'so nothing was recorded. Press PLAY here rather than starting from external clock.');
+    return;
+  }
   const useMic=!!traxStream;
   let ctx=AC, srcNode=null;
   try{
@@ -13386,6 +13546,8 @@ function diagDump(tag){
             return i+(on.length?'('+on.join('/')+')':'')+':'
               +(pk<0.004?'SILENT':pk.toFixed(3)); }).join(' ')
         : 'no audio loaded at all'),
+      'input streams: '+(liveInputTracks().join(' ')||'none live')
+        +' · session '+((()=>{ try{ return (navigator.audioSession&&navigator.audioSession.type)||'n/a'; }catch(e){ return 'n/a'; } })()),
       'lanes: '+(S.trax.some(t=>t.bufId>=0)
         ? S.trax.map((t,i)=>t.bufId>=0?(i+1)+':buf'+t.bufId+(t.mute?' M':'')+(t.loop?' loop':''):null)
             .filter(Boolean).join(' ')
