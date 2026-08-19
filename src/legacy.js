@@ -2586,8 +2586,34 @@
      what it cleared, so nothing happens silently in either direction.
      Measured after: 0.908 peak, and the 1.4kHz and 7kHz components come back
      level with the 180Hz one instead of a million times below it.
+   - R164: BLUETOOTH WENT QUIET AND NOTHING SAID WHY. Reported alongside the
+     pad-voicing bug and initially folded into it, wrongly: the app played
+     through the phone's own speaker and would not play through Bluetooth,
+     while other apps used the same Bluetooth speaker fine without
+     reconnecting. That is not a level or a filter, it is the iOS audio
+     session. Opening any input — the MIC panel, AMP INPUT, BREATH, or arming
+     a tape lane with MIC as its source — puts the session into
+     'play-and-record', and that category routes OUTPUT to the built-in
+     speaker and carries no A2DP Bluetooth at all. Every other app has its own
+     session, which is why they were unaffected.
+     Five places set 'play-and-record' by hand and exactly one place set
+     'playback' back, behind a guard listing micBusy, ampOn and the recorder —
+     but not micOn or breathOn. So the MIC panel could hold the route with
+     nothing tracking it, and, the same fault inverted, a touch anywhere on
+     screen could yank the route out from under a live MIC capture.
+     The route is computed from state in one place now, applied whenever that
+     state changes, and capturesOpen() is the single list both the guard and
+     the UI read. A red INPUT OPEN badge sits in the header the whole time an
+     input is held, and its tooltip names which feature is holding it; the MIC
+     panel explains that this is the operating system's rule and not a setting
+     the app can override, since a page cannot have record rights and A2DP
+     output at once.
+     Bluetooth cannot be tested here — no BT stack, no iOS, and Chromium does
+     not implement navigator.audioSession — so the tests check what is
+     testable: that the app knows when an input is open, says so, names it,
+     and lets go the moment it closes.
    ================================================================ */
-const BUILD = 'JBH-88 · R163 · 2026-08-19 · a pad stops wearing the last sound';
+const BUILD = 'JBH-88 · R164 · 2026-08-19 · who holds the audio route';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -4983,6 +5009,7 @@ async function openMicStream(constraints){
   }catch(e){ if(/blocked for this site/.test(e.message)) throw e; }
   // a 'playback' audio session forbids capture on iOS: the track arrives dead
   try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
+  drawRoutePip();
   try{
     return await navigator.mediaDevices.getUserMedia(constraints||{audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
   }catch(err){
@@ -5157,7 +5184,7 @@ async function micEnable(){
   catch(err){ lcd(err.message); return; }
   try{ micChain=micBuild(); }
   catch(e){ lcd('MIC SETUP FAILED: '+e.message); micDisable(); return; }
-  micOn=true;
+  micOn=true; drawRoutePip();
   $('btnMicOn').classList.add('on'); $('btnMicOn').innerHTML='&#9673; MIC IS ON — TAP TO STOP';
   micApply(); micMeter(); micListDevices();
   lcd('MIC ON — shape the voice, then RECORD. Headphones before MONITOR.'+micClaimTrax());
@@ -5174,8 +5201,8 @@ function micDisable(){
   $('btnMicMon').classList.remove('on');
   micReleaseTrax();
   const bar=$('micBar'); if(bar&&bar.firstElementChild) bar.firstElementChild.style.width='0%';
-  $('micPeakV').textContent='—';
-  resumeSession();
+  $('micPeakV').textContent='\u2014';
+  applyAudioRoute(); resumeSession();
 }
 async function micListDevices(){
   try{
@@ -5984,6 +6011,7 @@ $('btnMic').addEventListener('click',async ()=>{
   // a 'playback' session category forbids capture on iOS — the mic track arrives
   // dead and MediaRecorder.start() throws InvalidStateError. Ask for record rights first.
   try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
+  drawRoutePip();
   try{
     micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});
   }catch(err){
@@ -6003,7 +6031,7 @@ $('btnMic').addEventListener('click',async ()=>{
   mediaRec.onstop=async ()=>{
     stopMicStream();
     micBusy=false;
-    resumeSession();   // mic capture flips iOS to play-and-record — reclaim the playback route first
+    applyAudioRoute(); resumeSession();   // mic capture flips iOS to play-and-record — reclaim the playback route first
     $('btnMic').classList.remove('on'); $('btnMic').textContent='REC MIC';
     if(!chunks.length){ lcd('NOTHING CAPTURED — recording too short?'); return; }
     lcd('DECODING RECORDING …');
@@ -6025,6 +6053,51 @@ $('btnMic').addEventListener('click',async ()=>{
   lcd('RECORDING… tap STOP to capture into '+padName(S.editPad));
   meterMic();
 });
+/* WHO HOLDS THE AUDIO ROUTE.
+
+   Reported: the app played through the phone speaker and would not play
+   through Bluetooth, while other apps used the same Bluetooth speaker fine
+   without reconnecting.
+
+   That is not a level or a filter, it is the iOS audio session. Opening any
+   input puts the session into 'play-and-record', and that category routes
+   OUTPUT to the built-in speaker and does not carry A2DP Bluetooth at all.
+   Every other app has its own session, so they keep playing to the speaker
+   normally — exactly what was described. Nothing in the app said this was
+   happening, and nothing showed which feature was holding it.
+
+   Five places used to set 'play-and-record' by hand and exactly one place set
+   'playback' back, guarded by a condition that did not know about half of
+   them: micOn (the MIC screen) and breathOn were missing from it, so a touch
+   anywhere on the screen could yank the route out from under a live capture —
+   the inverse fault, in the same guard.
+
+   So the route is computed from state in one place and applied whenever that
+   state changes. capturesOpen() is also what the UI reads, so the banner can
+   name the feature responsible rather than saying something is wrong. */
+function capturesOpen(){
+  const who=[];
+  if(micOn) who.push('MIC');
+  if(ampOn) who.push('AMP INPUT');
+  if(typeof breathOn!=='undefined' && breathOn) who.push('BREATH');
+  if(traxStream) who.push('TRAX (mic source)');
+  if(mediaRec && mediaRec.state==='recording') who.push('MIC RECORDING');
+  if(micBusy && !who.length) who.push('the microphone');
+  return who;
+}
+function applyAudioRoute(){
+  const open=capturesOpen().length>0;
+  try{ if(navigator.audioSession) navigator.audioSession.type = open?'play-and-record':'playback'; }catch(e){}
+  drawRoutePip();
+  return open;
+}
+function drawRoutePip(){
+  const pip=$('recPip'); if(!pip) return;
+  const who=capturesOpen();
+  pip.hidden=!who.length;
+  if(who.length) pip.title='An input is open ('+who.join(', ')+'). While it is, iOS keeps output '
+    +'on the phone and Bluetooth speakers get nothing. Turn the input off to get Bluetooth back.';
+}
 function stopMicStream(){
   cancelAnimationFrame(micRAF);
   const bar=$('miclvl').firstElementChild; bar.style.width='0%';
@@ -8732,6 +8805,7 @@ async function armTrack(i){
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ lcd('MIC unavailable on this browser.'); drawTrax(); return; }
     micBusy=true;
     try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
+    drawRoutePip();
     try{ traxStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}}); }
     catch(err){ micBusy=false; drawTrax(); lcd('MIC DENIED/UNAVAILABLE ('+((err&&err.name)||'error')+').'); return; }
   }
@@ -8746,7 +8820,7 @@ async function armTrack(i){
 }
 function disarmTrax(){
   traxArm=-1;
-  if(traxStream){ try{ traxStream.getTracks().forEach(t=>t.stop()); }catch(e){} traxStream=null; micBusy=false; resumeSession(); }
+  if(traxStream){ try{ traxStream.getTracks().forEach(t=>t.stop()); }catch(e){} traxStream=null; micBusy=false; applyAudioRoute(); resumeSession(); }
 }
 function trackLoopEnd(b){ // loop the take at the nearest whole bar so it stays in step
   const bar=60/bpmAbs()/4*NSTEPS;
@@ -9350,6 +9424,7 @@ async function breathToggle(){
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ lcd('BREATH: mic unavailable.'); return; }
   micBusy=true;
   try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
+  drawRoutePip();
   try{ breathStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}}); }
   catch(err){ micBusy=false; lcd('BREATH: mic denied ('+((err&&err.name)||'error')+').'); return; }
   let src, ctx=AC;
@@ -9379,7 +9454,7 @@ function breathStop(){
   breathOn=false; cancelAnimationFrame(breathRAF);
   if(breathStream){ try{ breathStream.getTracks().forEach(t=>t.stop()); }catch(e){} breathStream=null; }
   if(breathCtx){ try{ breathCtx.close(); }catch(e){} breathCtx=null; }
-  breathAn=null; breathLvl=0; micBusy=false; resumeSession();
+  breathAn=null; breathLvl=0; micBusy=false; applyAudioRoute(); resumeSession();
   $('instBreath').classList.remove('on');
 }
 /* shake percussion — devicemotion jerk triggers synthesized shaker family */
@@ -10957,6 +11032,7 @@ async function ampEnable(){
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ lcd('INPUT: getUserMedia unavailable on this browser.'); return; }
   micBusy=true;
   try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
+  drawRoutePip();
   const dev=$('ampIn').value;
   const con={audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}};
   if(dev&&dev!=='default') con.audio.deviceId={exact:dev};
@@ -10975,7 +11051,7 @@ function ampDisable(){
   ampOn=false; cancelAnimationFrame(ampRAF);
   if(ampNodes){ try{ ampNodes.src.disconnect(); ampNodes.out.disconnect(); ampNodes.chLfo.stop(); ampNodes.chLfo.disconnect(); }catch(e){} }
   if(ampStream){ try{ ampStream.getTracks().forEach(t=>t.stop()); }catch(e){} ampStream=null; }
-  ampNodes=null; micBusy=false; resumeSession();
+  ampNodes=null; micBusy=false; applyAudioRoute(); resumeSession();
   $('btnAmpOn').classList.remove('on'); $('btnAmpOn').innerHTML='&#9673; ENABLE INPUT (guitar / line / mic)';
   $('ampTuner').textContent='—'; $('ampTunerCents').textContent='';
 }
@@ -13046,9 +13122,13 @@ async function wakeAcquire(){  // keep the screen on while music plays (iOS 16.4
 function wakeRelease(){ try{ if(wakeLock){ wakeLock.release(); wakeLock=null; } }catch(e){} }
 function resumeSession(){
   if(!AC) return;
-  if(micBusy || ampOn || (mediaRec && mediaRec.state==='recording')) return;   // mic/amp owns the session — forcing 'playback' here kills the capture
+  /* An open input owns the session — forcing 'playback' here kills the
+     capture. The old list named micBusy, ampOn and the recorder but not micOn
+     or breathOn, so touching the screen with the MIC panel live could cut it.
+     capturesOpen() is the whole list, in one place. */
+  if(capturesOpen().length) { drawRoutePip(); return; }
   // re-assert playback session category (DRUKBOX lesson — iOS can revert it)
-  try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
+  applyAudioRoute();
   if(AC.state!=='running'){
     try{ const p=AC.resume(); if(p && p.catch) p.catch(()=>{}); }catch(e){}
   }

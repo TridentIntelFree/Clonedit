@@ -455,6 +455,70 @@ export default async function ({ browser, base }) {
       '180Hz ' + voice.low.toFixed(4) + ' · 1.4kHz ' + voice.mid.toFixed(4)
       + ' · 7kHz ' + voice.high.toFixed(4) + ' (the lowpass left almost nothing above 180Hz)');
 
+    t.head('AN OPEN INPUT IS VISIBLE, AND RELEASES THE ROUTE WHEN IT CLOSES');
+    /* Reported: the app played through the phone speaker and would not play
+       through Bluetooth, while other apps used the same speaker fine without
+       reconnecting. That is the iOS audio session: any open input puts it in
+       'play-and-record', which routes output to the built-in speaker and
+       carries no A2DP Bluetooth. Bluetooth itself cannot be tested here — no
+       BT stack, no iOS, and Chromium does not implement navigator.audioSession
+       — so what is testable is checked: that the app knows when an input is
+       open, says so, and lets go the moment it closes. */
+    const route = await page.evaluate(async () => {
+      const o = {};
+      const pip = document.getElementById('recPip');
+      o.hasPip = !!pip;
+      o.hiddenAtRest = pip ? pip.hidden : null;
+      o.openAtRest = capturesOpen();
+
+      /* Drive the state the way each feature does, without a real getUserMedia:
+         the question is whether capturesOpen() and the badge follow it. */
+      micOn = true; drawRoutePip();
+      o.withMic = { open: capturesOpen(), shown: !pip.hidden, title: pip.title };
+      micOn = false; drawRoutePip();
+      o.afterMic = { open: capturesOpen(), shown: !pip.hidden };
+
+      ampOn = true; drawRoutePip();
+      o.withAmp = { open: capturesOpen(), shown: !pip.hidden, title: pip.title };
+      ampOn = false; drawRoutePip();
+
+      traxStream = { getTracks: () => [] }; drawRoutePip();
+      o.withTrax = { open: capturesOpen(), shown: !pip.hidden };
+      traxStream = null; drawRoutePip();
+      o.afterAll = { open: capturesOpen(), shown: !pip.hidden };
+
+      /* And the guard that used to yank the route out from under a live
+         capture: resumeSession must NOT reclaim playback while an input is
+         open. micOn and breathOn were missing from the old list. */
+      micOn = true;
+      let killed = false;
+      const realType = (() => { try { return navigator.audioSession && navigator.audioSession.type; }
+        catch (e) { return null; } })();
+      o.sessionApiPresent = realType != null;
+      resumeSession();
+      o.stillOpenAfterResume = capturesOpen().length > 0;
+      micOn = false;
+      resumeSession();
+      o.releasedAfterClose = capturesOpen().length === 0;
+      drawRoutePip();
+      o.pipHiddenAtEnd = pip.hidden;
+      return o;
+    });
+    t.ok('the badge exists and is hidden while nothing is capturing',
+      route.hasPip && route.hiddenAtRest && route.openAtRest.length === 0);
+    t.ok('the MIC panel raises it, and the tooltip names the feature',
+      route.withMic.shown && route.withMic.open.includes('MIC')
+      && /MIC/.test(route.withMic.title) && /Bluetooth/i.test(route.withMic.title),
+      route.withMic.open.join(', '));
+    t.ok('so does the AMP input', route.withAmp.shown && route.withAmp.open.includes('AMP INPUT'));
+    t.ok('so does a tape lane armed to the mic', route.withTrax.shown);
+    t.ok('and closing each one clears it again',
+      route.afterMic.open.length === 0 && !route.afterMic.shown
+      && route.afterAll.open.length === 0 && !route.afterAll.shown && route.pipHiddenAtEnd);
+    t.ok('resumeSession does not reclaim the route from a live capture',
+      route.stillOpenAfterResume, 'the old guard omitted micOn and breathOn');
+    t.ok('but does release it once the capture closes', route.releasedAfterClose);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
