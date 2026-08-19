@@ -5143,8 +5143,32 @@ Object.assign(globalThis, __JBH_PURE);})();
      fewer pads is a real thing to want to open; extra entries are dropped so
      state stays canonical. A document with no patterns at all is still
      refused: there is no default that preserves anyone's intent.
+   - R163: A NEW SOUND ON A PAD NO LONGER INHERITS THE LAST ONE'S VOICING.
+     Reported: a TRAX take sent TO PAD came back very quiet, the EQ "looking
+     insane", and it would not play over Bluetooth. Reproduced exactly, and
+     every symptom came from one cause.
+     The take was fine — peak 0.97. But pickTargetPad falls back to the
+     SELECTED pad when every pad already holds a sound, and TO PAD set only
+     bufId, name and trim. So the take landed on a pad still carrying the
+     previous sample's voicing: gain 0.15, a lowpass at 117Hz with resonance 3,
+     and +9/-12/-12 across the EQ. It rendered 0.20 where it should have been
+     0.82, and measured as almost pure sub-bass — 700-3000Hz two million times
+     below 30-90Hz. A Bluetooth speaker reproduces very little under ~150Hz, so
+     it played nothing audible while the meters still moved. "The EQ looks
+     insane" was not a symptom; it was the cause, on screen, being read
+     correctly.
+     Three loaders each cleared a different arbitrary subset — assignBufToPad
+     did pitch, fine, reverse and mode; loadIntoTarget did none of them; TO PAD
+     did none. Same hole on every route in, hit least often on the routes least
+     used. One resetPadVoice() now, used by all of them.
+     Voicing is cleared, PLACEMENT is kept: the MIDI note so a controller
+     mapping survives, the choke group so a hi-hat stays a hi-hat, the sends,
+     pan and mute/solo. The old voicing is one UNDO away and the message names
+     what it cleared, so nothing happens silently in either direction.
+     Measured after: 0.908 peak, and the 1.4kHz and 7kHz components come back
+     level with the 180Hz one instead of a million times below it.
    ================================================================ */
-const BUILD = 'JBH-88 · R162 · 2026-08-19 · the guard goes deeper';
+const BUILD = 'JBH-88 · R163 · 2026-08-19 · a pad stops wearing the last sound';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -8509,10 +8533,12 @@ function loadIntoTarget(buf,name){
   S.buffers.push(buf);
   const bid=S.buffers.length-1;
   const p=S.pads[S.editPad];
-  p.bufId=bid; p.start=0; p.end=1; p.name=name.slice(0,14); p.warped=false;
+  const cleared=voiceWords(resetPadVoice(p));
+  p.bufId=bid; p.name=name.slice(0,14); p.warped=false;
   delete warpOrig[S.editPad]; delete p.srcPreset; delete p.srcNote;
   drawPads(); drawEdit(); drawWave(); drawMixer(); dirty();
-  lcd('LOADED → '+padName(S.editPad)+' · '+buf.duration.toFixed(2)+'s');
+  lcd('LOADED → '+padName(S.editPad)+' · '+buf.duration.toFixed(2)+'s'
+    +(cleared.length?' · cleared this pad\u2019s '+cleared.join(', ')+' from the last sound — UNDO puts it back':''));
 }
 
 /* mic — specific error handling (incl. Lockdown Mode hypothesis) */
@@ -9605,11 +9631,55 @@ const KITS=[
     slots:[['dkick',36],['dohat',46],['xbell',72],['xglass',60],['kep',60],['pwarm',57],['scello',48],['bsub',29]],
     beat:{ 0:[0,8], 3:[0,4,8,12], 6:[0], 7:[0,8] } },
 ];
+/* A NEW SOUND ON A PAD CLEARS THAT PAD'S VOICING.
+
+   Reported as: a TRAX take sent TO PAD came back very quiet, with the EQ
+   "looking insane", and inaudible over Bluetooth. Reproduced exactly. The take
+   itself was fine — peak 0.97 — but when every pad already holds a sound
+   pickTargetPad falls back to the SELECTED pad, and the take landed on one
+   still carrying the last sound's voicing: gain 0.15, a lowpass at 117Hz with
+   resonance 3, and +9/-12/-12 on the EQ. It rendered at 0.20 instead of 0.82,
+   and measured as almost pure sub-bass — energy at 700-3000Hz two million
+   times below the 30-90Hz band. A Bluetooth speaker reproduces very little
+   under ~150Hz, so it played nothing you could hear. Every symptom, from one
+   cause: settings dialled in for a completely different sample.
+
+   Three loaders each reset a different arbitrary subset of the pad — this one
+   did pitch, fine, reverse and mode; loadIntoTarget did none of them — so the
+   same hole existed on every route in, just hit least often on the ones people
+   use least. One function now, used by all of them.
+
+   Voicing is cleared; PLACEMENT is kept, because it belongs to the slot rather
+   than to the sound: the MIDI note so a controller mapping survives, the choke
+   group so a hi-hat stays a hi-hat, the mixer sends and pan, and mute/solo.
+   The old voicing is one UNDO away, and the caller says what it cleared rather
+   than doing it silently. */
+function resetPadVoice(p){
+  const d=newPad(0), keep={bufId:1,name:1,note:1,choke:1,pan:1,rev:1,dly:1,mute:1,solo:1};
+  const changed=[];
+  for(const k in d){
+    if(keep[k]) continue;
+    if(p[k]!==d[k]){ changed.push(k); p[k]=d[k]; }
+  }
+  return changed;
+}
+/* Named for the message, so it reads as something rather than as a field list. */
+function voiceWords(ch){
+  const g={gain:'level',pitch:'pitch',fine:'pitch',speed:'speed',keepPitch:'speed',keepTime:'speed',
+    att:'envelope',rel:'envelope',ftype:'filter',fcut:'filter',fres:'filter',drv:'drive',crush:'drive',
+    eqLo:'EQ',eqMid:'EQ',eqHi:'EQ',reverse:'direction',mode:'play mode',start:'trim',end:'trim',
+    lfoOn:'LFO',lfoTgt:'LFO',lfoShape:'LFO',lfoSync:'LFO',lfoRate:'LFO',lfoDepth:'LFO',
+    grSize:'grain',grDens:'grain',grSpread:'grain',grPitch:'grain',grPos:'grain',grBurst:'grain',
+    warpBeats:'warp',warpBpm:'warp'};
+  const seen=[]; ch.forEach(k=>{ const w=g[k]; if(w && seen.indexOf(w)<0) seen.push(w); });
+  return seen;
+}
 function assignBufToPad(idx,buf,name){
   try{ stopPadVoices(idx); }catch(e){}
   S.buffers.push(buf); const bid=S.buffers.length-1;
   const p=S.pads[idx];
-  p.bufId=bid; p.start=0; p.end=1; p.pitch=0; p.fine=0; p.reverse=false; p.mode='one'; p.warped=false;
+  resetPadVoice(p);
+  p.bufId=bid; p.warped=false;
   delete warpOrig[idx]; delete p.srcPreset; delete p.srcNote;   // provenance is re-set by preset/kit/songdoc loaders
   p.name=(name||'').slice(0,14);
   return bid;
@@ -11194,8 +11264,13 @@ $('tfxPad').addEventListener('click',()=>{
   const tr=S.trax[traxFxSel];
   if(tr.bufId<0){ lcd('TRACK '+(traxFxSel+1)+' IS EMPTY.'); return; }
   S.editPad=pickTargetPad();   // never silently overwrite a used pad when an empty one exists
-  const p=S.pads[S.editPad]; p.bufId=tr.bufId; p.start=0; p.end=1; p.name=(tr.name||'take').slice(0,14); p.warped=false; delete warpOrig[S.editPad];
-  drawPads(); drawEdit(); dirty(); lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad)+(S.pads[S.editPad]?'':''));
+  const p=S.pads[S.editPad];
+  const cleared=voiceWords(resetPadVoice(p));
+  p.bufId=tr.bufId; p.name=(tr.name||'take').slice(0,14); p.warped=false; delete warpOrig[S.editPad];
+  drawPads(); drawEdit(); drawMixer(); dirty();
+  lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad)
+    +(cleared.length?' · cleared that pad\u2019s '+cleared.join(', ')+' from the last sound — UNDO puts it back'
+      :' — the take plays as recorded'));
 });
 $('tfxEdit').addEventListener('click',()=>{
   const tr=S.trax[traxFxSel];
@@ -11208,7 +11283,8 @@ $('tfxEdit').addEventListener('click',()=>{
   for(let c=0;c<orig.numberOfChannels;c++) copy.copyToChannel(orig.getChannelData(c).slice(),c);
   S.buffers.push(copy); const bid=S.buffers.length-1;
   S.editPad=pickTargetPad();
-  const p=S.pads[S.editPad]; p.bufId=bid; p.start=0; p.end=1; p.name=(tr.name||'take').slice(0,14); p.warped=false; delete warpOrig[S.editPad];
+  const p=S.pads[S.editPad]; resetPadVoice(p);
+  p.bufId=bid; p.name=(tr.name||'take').slice(0,14); p.warped=false; delete warpOrig[S.editPad];
   workBuf=copy; slices=[]; selSlice=-1;
   drawPads(); drawEdit(); dirty();
   const b=document.querySelector('#tabs button[data-v="smpl"]'); if(b) b.click();
