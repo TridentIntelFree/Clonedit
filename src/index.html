@@ -38,7 +38,6 @@
     <div id="logo">JBH-88</div>
     <div id="idline">
       <span id="offPip" hidden title="No connection. Everything already on the device still works.">OFFLINE</span>
-      <span id="recPip" hidden>&#9679; INPUT OPEN</span>
       <div id="build" class="expandable" role="button" tabindex="0" title="tap to read the whole line"></div>
     </div>
   </div>
@@ -53,6 +52,7 @@
 </div>
 
 <div id="lcdstrip">
+  <button id="recPip" hidden aria-label="An input is open, so sound plays through the phone rather than Bluetooth. Tap to see what is holding it.">&#9679; PHONE OUT</button>
   <div id="lcdmsg" class="expandable" role="status" aria-live="polite" aria-atomic="true" tabindex="0" title="tap to read the whole message">READY.</div>
   <div id="bpmbox">
     <button aria-label="Tempo down" id="bpmDown">&#8722;</button>
