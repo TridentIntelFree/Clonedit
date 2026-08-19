@@ -35,8 +35,15 @@ try { ({ chromium } = await import('playwright-core')); }
 catch { console.error('playwright-core is missing (npm install)'); process.exit(1); }
 
 const { base, close } = await serve();
+/* A synthetic microphone, so the capture paths can be tested for real rather
+   than by poking state. Chromium's fake device produces a steady tone and the
+   fake UI auto-grants permission; neither has any effect on a test that does
+   not call getUserMedia. Without it the mic, AMP and TRAX-mic paths — which is
+   where the audio-route bugs live — could only ever be simulated. */
 const browser = await chromium.launch({ executablePath: exe,
-  args: ['--autoplay-policy=no-user-gesture-required'] });
+  args: ['--autoplay-policy=no-user-gesture-required',
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream'] });
 
 let failed = 0;
 const t0 = Date.now();

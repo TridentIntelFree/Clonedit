@@ -1609,6 +1609,35 @@ louder, you are probably losing more than you gain.</p>
   </div>
   <div id="engWhat" style="font-size:11px;color:var(--txt-dim);margin:0 0 6px;line-height:1.5"></div>
   <div class="row">
+    <span class="lbl">OUTPUT</span>
+    <button id="btnOutReset">RESET OUTPUT</button>
+    <span style="font-size:10px;color:var(--txt-dim);flex:1">If sound comes out of the phone while a Bluetooth speaker is connected, tap this. It releases any microphone the app is holding and reopens the audio, which is what makes the phone choose an output again.</span>
+  </div>
+  <details class="ex"><summary>Why the phone keeps the sound</summary><div class="ex-body">
+    <p>iOS decides where audio goes when the audio session becomes active, and
+    it does not move afterwards just because something changed its mind. Two
+    things push it onto the handset&rsquo;s own speaker:</p>
+    <ul>
+    <li><b>An open input.</b> While anything is recording &mdash; the MIC panel,
+    AMP INPUT, BREATH, or a tape lane rolling with MIC as its source &mdash; the
+    session is in record mode, and record mode carries no Bluetooth audio at
+    all. The <b>&#9679; PHONE OUT</b> badge shows whenever this is the case.</li>
+    <li><b>A stream that was never released.</b> If a microphone request failed
+    or a capture ended badly, the input can stay open with nothing visibly
+    using it. Then the route stays on the phone and nothing in the app reaches
+    Bluetooth, while every other app is unaffected because each app has its own
+    session.</li>
+    </ul>
+    <p><b>RESET OUTPUT</b> handles both: it stops every input the app can be
+    holding, then opens a fresh audio context, because a context keeps the
+    route it was given and only a new one makes the system choose again. It is
+    the same move the low sample-rate <b>RETRY</b> makes, for the same
+    reason.</p>
+    <p>It costs you nothing but a moment of silence &mdash; your samples,
+    patterns and takes are untouched.</p>
+  </div></details>
+
+  <div class="row">
     <span class="lbl">BLACK BOX</span>
     <button id="btnBBOn" class="on">ON</button>
     <span style="font-size:10px;color:var(--txt-dim);flex:1">always keeps the last 30 seconds so nothing is lost &mdash; the one thing running whether or not you are recording</span>
