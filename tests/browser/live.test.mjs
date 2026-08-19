@@ -475,6 +475,15 @@ export default async function ({ browser, base }) {
          the question is whether capturesOpen() and the badge follow it. */
       micOn = true; drawRoutePip();
       o.withMic = { open: capturesOpen(), shown: !pip.hidden, title: pip.title };
+      /* Shown is not the same as seen. The first version of this badge lived in
+         the header, whose left column is clipped where the transport begins,
+         and at 320px it rendered underneath the tour button. */
+      const bb = pip.getBoundingClientRect();
+      const mid = document.elementFromPoint(bb.left + bb.width / 2, bb.top + bb.height / 2);
+      o.visible = { onScreen: bb.left >= 0 && bb.right <= window.innerWidth && bb.width > 20,
+        topmost: mid ? (mid.id || mid.tagName) : 'none' };
+      pip.click();
+      o.tapLcd = document.getElementById('lcdmsg').textContent;
       micOn = false; drawRoutePip();
       o.afterMic = { open: capturesOpen(), shown: !pip.hidden };
 
@@ -506,6 +515,12 @@ export default async function ({ browser, base }) {
     });
     t.ok('the badge exists and is hidden while nothing is capturing',
       route.hasPip && route.hiddenAtRest && route.openAtRest.length === 0);
+    t.ok('AND IT IS ACTUALLY VISIBLE — not underneath another control',
+      route.visible && route.visible.onScreen && route.visible.topmost === 'recPip',
+      JSON.stringify(route.visible) + ' (it sat under the tour button in the header at 320px)');
+    t.ok('tapping it explains the route rather than only having a tooltip',
+      /PHONE/i.test(route.tapLcd) && /Bluetooth/i.test(route.tapLcd),
+      route.tapLcd.slice(0, 80));
     t.ok('the MIC panel raises it, and the tooltip names the feature',
       route.withMic.shown && route.withMic.open.includes('MIC')
       && /MIC/.test(route.withMic.title) && /Bluetooth/i.test(route.withMic.title),

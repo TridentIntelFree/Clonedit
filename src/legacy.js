@@ -2640,8 +2640,29 @@
      when a take is silent instead of leaving you listening to nothing and
      doubting the preview. One at a time, releases itself at the end, and
      starting the transport ends it rather than layering on top.
+   - R167: THE WARNING WAS UNDER THE TOUR BUTTON, AND FAILURES LEAKED THE
+     ROUTE. Reported: TRAX playing through the phone rather than connected
+     Bluetooth. Two things behind it, and R164 caused one of them.
+     THE BADGE COULD NOT BE SEEN. It went in the header, whose left column is
+     clipped where the transport begins — the exact trap the OFFLINE badge
+     documents three lines above it, and I walked into it anyway. Measured at
+     320px, elementFromPoint over the badge returned btnTour: it was rendering
+     underneath the tour button. A warning that cannot be seen is not a
+     warning. It lives in the LCD strip now, which is full width and where
+     messages are read, it reads PHONE OUT, and tapping it says which feature
+     is holding the microphone — a tooltip alone is nothing on a touch screen.
+     EVERY FAILURE PATH LEAKED. The session is set to 'play-and-record' BEFORE
+     asking for the microphone, and six paths returned on failure without
+     giving it back: a denied or busy mic left output on the phone with
+     capturesOpen() empty, so not even the badge would show. All six release
+     it now.
+     And arming a lane with MIC as its source holds the microphone open for as
+     long as it stays armed, because the capture has to be live before PLAY to
+     start sample-accurately. That is the design and it stays, but the arm
+     message now says that sound comes out of the phone rather than Bluetooth
+     until the lane is disarmed, instead of leaving it to be discovered.
    ================================================================ */
-const BUILD = 'JBH-88 · R166 · 2026-08-19 · preview a lane, and say what is in it';
+const BUILD = 'JBH-88 · R167 · 2026-08-19 · a warning you can actually see';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -5209,7 +5230,7 @@ async function micEnable(){
   const con={audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}};
   if(dev && dev!=='default') con.audio.deviceId={exact:dev};
   try{ micStreamIn=await openMicStream(con); }
-  catch(err){ lcd(err.message); return; }
+  catch(err){ applyAudioRoute(); lcd(err.message); return; }
   try{ micChain=micBuild(); }
   catch(e){ lcd('MIC SETUP FAILED: '+e.message); micDisable(); return; }
   micOn=true; drawRoutePip();
@@ -6043,7 +6064,7 @@ $('btnMic').addEventListener('click',async ()=>{
   try{
     micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});
   }catch(err){
-    micBusy=false;
+    micBusy=false; applyAudioRoute();
     const n=err && err.name;
     if(n==='NotAllowedError') lcd('MIC DENIED — Safari: aA menu → Website Settings → Microphone → Allow. Or iOS Settings → Safari → Microphone.');
     else if(n==='NotFoundError') lcd('MIC: no microphone found on this device.');
@@ -6126,6 +6147,18 @@ function drawRoutePip(){
   if(who.length) pip.title='An input is open ('+who.join(', ')+'). While it is, iOS keeps output '
     +'on the phone and Bluetooth speakers get nothing. Turn the input off to get Bluetooth back.';
 }
+/* Tapping it says what is holding the route, because a badge that only has a
+   tooltip has nothing on a touch screen. */
+document.addEventListener('DOMContentLoaded',()=>{
+  const pip=$('recPip'); if(!pip) return;
+  pip.addEventListener('click',()=>{
+    const who=capturesOpen();
+    lcd(who.length
+      ? 'SOUND IS COMING OUT OF THE PHONE because '+who.join(' and ')+' has the microphone open. '
+        +'iOS will not send audio to Bluetooth while an input is open — turn it off and Bluetooth comes back.'
+      : 'No input is open — audio should be going wherever the phone normally sends it.');
+  });
+});
 function stopMicStream(){
   cancelAnimationFrame(micRAF);
   const bar=$('miclvl').firstElementChild; bar.style.width='0%';
@@ -8892,7 +8925,8 @@ async function armTrack(i){
     try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
     drawRoutePip();
     try{ traxStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}}); }
-    catch(err){ micBusy=false; drawTrax(); lcd('MIC DENIED/UNAVAILABLE ('+((err&&err.name)||'error')+').'); return; }
+    catch(err){ micBusy=false; applyAudioRoute(); drawTrax();
+      lcd('MIC DENIED/UNAVAILABLE ('+((err&&err.name)||'error')+') — the lane is not armed and the audio route is back to normal.'); return; }
   }
   traxArm=i; drawTrax();
   const hasTake=S.trax[i].bufId>=0;
@@ -8901,7 +8935,15 @@ async function armTrack(i){
       +' — this lane will record that, not the microphone. Set SOURCE to MIC.');
   else lcd('TRACK '+(i+1)+' ARMED · '+$('traxSrc').selectedOptions[0].textContent+(hasTake
     ? ' — PLAY RE-RECORDS over this take (its old audio is replaced on STOP).'
-    : ' — press PLAY to roll, STOP to commit.'));
+    : ' — press PLAY to roll, STOP to commit.')
+    /* Arming a MIC lane opens the microphone and keeps it open, because the
+       capture has to be live before PLAY to start sample-accurately. On iOS an
+       open input forces output to the phone's own speaker, so a Bluetooth
+       speaker goes quiet for exactly as long as the lane stays armed. That is
+       the operating system's rule, but being surprised by it is avoidable. */
+    +($('traxSrc').value==='mic'
+      ? ' The mic is open while this lane is armed, so sound comes out of the phone rather than Bluetooth until you disarm it.'
+      : ''));
 }
 function disarmTrax(){
   traxArm=-1;
@@ -9525,7 +9567,7 @@ async function breathToggle(){
   try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
   drawRoutePip();
   try{ breathStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}}); }
-  catch(err){ micBusy=false; lcd('BREATH: mic denied ('+((err&&err.name)||'error')+').'); return; }
+  catch(err){ micBusy=false; applyAudioRoute(); lcd('BREATH: mic denied ('+((err&&err.name)||'error')+').'); return; }
   let src, ctx=AC;
   try{ src=AC.createMediaStreamSource(breathStream); }
   catch(e){
@@ -11136,9 +11178,9 @@ async function ampEnable(){
   const con={audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}};
   if(dev&&dev!=='default') con.audio.deviceId={exact:dev};
   try{ ampStream=await navigator.mediaDevices.getUserMedia(con); }
-  catch(err){ micBusy=false; lcd('INPUT DENIED/UNAVAILABLE ('+((err&&err.name)||'error')+').'); return; }
+  catch(err){ micBusy=false; applyAudioRoute(); lcd('INPUT DENIED/UNAVAILABLE ('+((err&&err.name)||'error')+').'); return; }
   try{ ampNodes=ampBuild(); }
-  catch(e){ micBusy=false; try{ampStream.getTracks().forEach(t=>t.stop());}catch(e2){} ampStream=null; lcd('AMP BUILD FAILED: '+(e.message||'graph error')); return; }
+  catch(e){ micBusy=false; try{ampStream.getTracks().forEach(t=>t.stop());}catch(e2){} ampStream=null; applyAudioRoute(); lcd('AMP BUILD FAILED: '+(e.message||'graph error')); return; }
   ampBuf=new Float32Array(ampNodes.an.fftSize);
   ampApplyModel(); ampApplyTone(); ampApplyFx();
   ampOn=true; $('btnAmpOn').classList.add('on'); $('btnAmpOn').innerHTML='&#9673; INPUT LIVE — tap to stop';
