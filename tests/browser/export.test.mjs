@@ -206,6 +206,32 @@ export default async function ({ browser, base }) {
     t.ok('which is full-bandwidth, not the old hard-coded 44100',
       r.rate.bounce >= 44100, r.rate.bounce + ' Hz');
 
+    t.head('AND ON A REAL BOUNCE, NOT ONLY A SYNTHETIC BUFFER');
+    const real = await page.evaluate(async () => {
+      const rendered = await renderMix(null, null, { loops: 1, src: 'pat', noTail: true });
+      const ab = await encodeWav(rendered, 32).arrayBuffer();
+      const dv = new DataView(ab);
+      const tag = k => String.fromCharCode(dv.getUint8(k), dv.getUint8(k + 1),
+        dv.getUint8(k + 2), dv.getUint8(k + 3));
+      let p = 12, off = -1, size = 0;
+      while (p + 8 <= ab.byteLength) { const id = tag(p), sz = dv.getUint32(p + 4, true);
+        if (id === 'data') { off = p + 8; size = sz; break; } p += 8 + sz + (sz & 1); }
+      const L = rendered.getChannelData(0), R = rendered.getChannelData(1);
+      let bad = 0;
+      for (let i = 0; i < rendered.length; i++) {
+        if (dv.getFloat32(off + i * 8, true) !== L[i]) bad++;
+        if (dv.getFloat32(off + i * 8 + 4, true) !== R[i]) bad++;
+      }
+      return { frames: rendered.length, bad, sr: rendered.sampleRate, acSr: AC.sampleRate,
+        hdrSr: dv.getUint32(24, true), sizeOk: size === rendered.length * 8 };
+    });
+    t.ok('a full-length render of the demo bounces at the engine rate',
+      real.sr === real.acSr && real.hdrSr === real.sr,
+      real.sr + ' Hz, header says ' + real.hdrSr);
+    t.ok('the data chunk length matches the render', real.sizeOk);
+    t.ok('and EVERY sample of it survives bit-exact into the file',
+      real.bad === 0, real.frames + ' frames, ' + real.bad + ' wrong');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

@@ -216,6 +216,122 @@ export default async function ({ browser, base }) {
       Math.abs(r.focusUp.mid + r.focusUp.side) < 1.0,
       'net ' + (r.focusUp.mid + r.focusUp.side).toFixed(2) + ' dB');
 
+    t.head('THE SETTINGS SURVIVE, AND OLD PROJECTS DO NOT SPROUT THEM');
+    const persist = await page.evaluate(async () => {
+      const o = {};
+      const set = (id, v) => { const e = document.getElementById(id);
+        e.value = v; e.dispatchEvent(new Event('input')); };
+      set('mMud', -4.5); set('mAir', 3.5); set('mFocus', 0.62); set('mDeess', 0.4);
+      o.before = { mMud: S.mMud, mAir: S.mAir, mFocus: S.mFocus, mDeess: S.mDeess };
+      /* structuredClone, not JSON — snapshotSession stores each channel as a
+         raw ArrayBuffer of Int16 PCM, which is exactly what IndexedDB keeps
+         and exactly what JSON.stringify turns into {}. Round-tripping this doc
+         through JSON silently empties every sample and the render comes back
+         at peak 0.0000, which looks like an engine fault and is not one. */
+      const snap = structuredClone(snapshotSession());
+      S.mMud = 0; S.mAir = 0; S.mFocus = 0; S.mDeess = 0;
+      applySessionDoc(structuredClone(snap), docToBuffers(structuredClone(snap)));
+      o.after = { mMud: S.mMud, mAir: S.mAir, mFocus: S.mFocus, mDeess: S.mDeess };
+      o.ui = ['mMud','mAir','mFocus','mDeess'].map(i => +document.getElementById(i).value);
+      /* A project written before these controls existed must open with them
+         OFF. Anything else means loading an old session quietly applies
+         processing its author never chose. */
+      const old = structuredClone(snap);
+      delete old.mMud; delete old.mAir; delete old.mFocus; delete old.mDeess;
+      applySessionDoc(old, docToBuffers(structuredClone(old)));
+      o.legacy = { mMud: S.mMud, mAir: S.mAir, mFocus: S.mFocus, mDeess: S.mDeess };
+      const evil = structuredClone(snap);
+      evil.mMud = -999; evil.mAir = 999; evil.mFocus = 50; evil.mDeess = 'x';
+      applySessionDoc(evil, docToBuffers(structuredClone(evil)));
+      o.clamped = { mMud: S.mMud, mAir: S.mAir, mFocus: S.mFocus, mDeess: S.mDeess };
+      /* And the round-trip must leave the instrument playable, not just
+         carry four numbers. */
+      applySessionDoc(structuredClone(snap), docToBuffers(structuredClone(snap)));
+      const back = await renderMix(null, null, { loops: 1, src: 'pat', noTail: true });
+      let pk = 0;
+      if (back) { const d = back.getChannelData(0);
+        for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > pk) pk = v; } }
+      o.peakAfterLoad = pk;
+      return o;
+    });
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    t.ok('a save/load round-trip returns every value',
+      same(persist.before, persist.after), JSON.stringify(persist.after));
+    t.ok('and the sliders redraw to match',
+      same(persist.ui, [-4.5, 3.5, 0.62, 0.4]), JSON.stringify(persist.ui));
+    t.ok('a project saved before these existed opens with them OFF',
+      Object.values(persist.legacy).every(v => v === 0), JSON.stringify(persist.legacy));
+    t.ok('and a damaged or hostile doc is clamped, not trusted',
+      persist.clamped.mMud === -9 && persist.clamped.mAir === 9
+      && persist.clamped.mFocus === 1 && persist.clamped.mDeess === 0,
+      JSON.stringify(persist.clamped));
+    t.ok('and the reloaded project still makes sound', persist.peakAfterLoad > 0.05,
+      'peak ' + persist.peakAfterLoad.toFixed(4));
+
+    t.head('AND IT IS IN THE FILE, NOT JUST THE SPEAKERS');
+    const inFile = await page.evaluate(async () => {
+      const band = (buf, lo, hi) => { const d = buf.getChannelData(0); let a = 0;
+        const g = f => { const w = 2 * Math.PI * f / buf.sampleRate, cr = 2 * Math.cos(w);
+          let s1 = 0, s2 = 0;
+          for (let i = 0; i < d.length; i++) { const s = d[i] + cr * s1 - s2; s2 = s1; s1 = s; }
+          return Math.sqrt(Math.max(0, s1 * s1 + s2 * s2 - cr * s1 * s2)) / d.length; };
+        for (let f = lo; f <= hi; f += (hi - lo) / 8) { const v = g(f); a += v * v; }
+        return a; };
+      /* Driven through the controls, not by assigning to S.
+         Setting S directly raced the app: applySessionDoc calls outWrite(),
+         which writes S back into the sliders, and any later outRead() then
+         writes the SLIDERS back into S — wiping a value assigned behind the
+         UI's back. It passed alone and failed in the full run, which is the
+         worst kind of test. Moving the slider is what a person does and it
+         cannot drift out of step with the DOM. */
+      /* The demo has almost nothing above 11kHz — dry band energy measured
+         between 1.8e-13 and 1.5e-11 across runs, which is numerical noise, and
+         Chrome's float summing varies by about -74dB render to render anyway.
+         Reading AIR as a ratio of that to itself gave +6.03dB, -4.88dB and
+         +5.63dB on three consecutive runs of the same code. The band needs
+         real material in it, so a broadband noise pad goes in and gets a step:
+         now both bands are well above the floor and the reading is stable. */
+      const nb = AC.createBuffer(1, Math.round(AC.sampleRate * 0.45), AC.sampleRate);
+      const nd = nb.getChannelData(0);
+      let seed = 2463534242;
+      for (let i = 0; i < nd.length; i++) {
+        seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; seed |= 0;
+        nd[i] = (seed / 0x80000000) * 0.35;
+      }
+      S.buffers.push(nb);
+      const P = 0;
+      Object.assign(S.pads[P], { bufId: S.buffers.length - 1, gain: 1, pitch: 0, pan: 0,
+        rev: 0, dly: 0, fcut: 1, fres: 0, start: 0, end: 1, rel: 1, reverse: false });
+      S.patterns[S.pattern].steps[P].fill(0);
+      S.patterns[S.pattern].steps[P][0] = 1;
+      if (S.patterns[S.pattern].poly) delete S.patterns[S.pattern].poly[P];
+      if (LIVE) reapplyLivePads();
+
+      const set = (id, v) => { const e = document.getElementById(id);
+        e.value = v; e.dispatchEvent(new Event('input')); };
+      ['mMud','mAir','mFocus','mDeess'].forEach(id => set(id, 0));
+      if (S.mByp) document.getElementById('btnMByp').click();
+      const dry = await renderMix(null, null, { loops: 1, src: 'pat', noTail: true });
+      const dTop = band(dry, 11000, 16000), dMud = band(dry, 250, 400);
+      set('mAir', 9); set('mMud', -9);
+      const armed = { mAir: S.mAir, mMud: S.mMud, byp: S.mByp };   // reported, so a flake explains itself
+      const wet = await renderMix(null, null, { loops: 1, src: 'pat', noTail: true });
+      const wTop = band(wet, 11000, 16000), wMud = band(wet, 250, 400);
+      ['mMud','mAir'].forEach(id => set(id, 0));
+      return { air: 10 * Math.log10(wTop / dTop), mud: 10 * Math.log10(wMud / dMud),
+        armed, held: { mAir: S.mAir, mMud: S.mMud }, dTop, dMud };
+    });
+    t.ok('the controls really were up for the second render',
+      inFile.armed.mAir === 9 && inFile.armed.mMud === -9 && !inFile.armed.byp,
+      JSON.stringify(inFile.armed));
+    t.ok('and there is material in both bands to measure',
+      inFile.dTop > 1e-8 && inFile.dMud > 1e-8,
+      'top ' + inFile.dTop.toExponential(2) + ', mud ' + inFile.dMud.toExponential(2));
+    t.ok('AIR is in the exported bounce', inFile.air > 2,
+      '+' + inFile.air.toFixed(2) + ' dB across 11-16kHz of the render');
+    t.ok('MUD is in the exported bounce', inFile.mud < -2,
+      inFile.mud.toFixed(2) + ' dB across 250-400Hz of the render');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
