@@ -965,7 +965,7 @@ a silence gives the gap away.</p>
   <div class="hint-lead" data-lead-short><b>RECORD AUDIO TO A LANE</b> — pick a <b>SOURCE</b>, tap <b>&#9679;</b> on a lane to arm, press <b>PLAY</b>.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-trax">TAPE LANES — RECORDING AUDIO, NOT TRIGGERS</button>
   <div class="hint-body" id="learn-trax" hidden>
-<p class="lead-was"><b>RECORD AUDIO TO A LANE:</b> 1) pick <b>SOURCE</b> — <b>MASTER BUS</b> = everything you hear &middot; <b>LIVE ONLY</b> = just what YOU play (live instruments, AMP guitar, pads you hit) with the sequencer as silent backing &middot; <b>MIC</b>. 2) tap <b>&#9679;</b> on a lane to arm. 3) press <b>PLAY</b> to record, <b>STOP</b> to commit. <b>PUT A TAKE ON A PAD:</b> tap that lane&rsquo;s <b>FX</b> button &rarr; <b>TO PAD</b>. &#8734; = loop &middot; M / S = mute / solo.</p>
+<p class="lead-was"><b>RECORD AUDIO TO A LANE:</b> 1) pick <b>SOURCE</b> — <b>PRE-MASTER</b> = everything you hear, before the OUT master chain &middot; <b>LIVE ONLY</b> = just what YOU play (live instruments, AMP guitar, pads you hit) with the sequencer as silent backing &middot; <b>MIC</b>. 2) tap <b>&#9679;</b> on a lane to arm. 3) press <b>PLAY</b> to record, <b>STOP</b> to commit. <b>PUT A TAKE ON A PAD:</b> tap that lane&rsquo;s <b>FX</b> button &rarr; <b>TO PAD</b>. &#8734; = loop &middot; M / S = mute / solo.</p>
 <h4>Two different kinds of track</h4>
 <p>The sequencer stores <em>instructions</em> — "play pad 3 here". A tape lane
 stores <em>audio</em>, exactly as it sounded. That difference decides which one
@@ -975,8 +975,13 @@ cannot — a vocal, a guitar, a live performance with all its imperfection.</p>
 
 <h4>The three sources</h4>
 <ul>
-<li><b>MASTER BUS</b> — everything you can hear, mixed together. Use it to
-bounce a section down, or to capture a live tweak of the filters.</li>
+<li><b>PRE-MASTER</b> — everything you can hear, mixed together, tapped
+<em>before</em> the OUT master chain. Use it to bounce a section down, or to
+capture a live tweak of the pad filters. It is deliberately dry: the master
+EQ, width, bus compressor and limiter are applied once at BOUNCE, so a lane
+recorded here does not arrive with them already baked in and then get them a
+second time on playback. If you want the polished master as a file, use
+BOUNCE in the PROJ tab, not a tape lane.</li>
 <li><b>LIVE ONLY</b> — just what <em>you</em> play: pads you hit by hand, the
 on-screen instrument, a guitar through AMP. The sequencer keeps playing so you
 have something to play along to, but it does not end up in the recording. This
@@ -997,7 +1002,7 @@ hum a bassline into the mic over your beat. Then set the lane to loop with the
 </div>
   <div class="row">
     <span class="lbl">SOURCE</span>
-    <select id="traxSrc"><option value="bus">MASTER BUS</option><option value="live">LIVE ONLY</option><option value="mic">MIC</option></select>
+    <select id="traxSrc"><option value="bus">PRE-MASTER</option><option value="live">LIVE ONLY</option><option value="mic">MIC</option></select>
     <span class="grow" style="font-size:10px;color:var(--txt-dim)">arm &#9679; · PLAY rolls &amp; records · STOP commits</span>
   </div>
   <div id="traxlist"></div>
@@ -1161,7 +1166,7 @@ would take them with it. Export anything you want to keep.</p>
   <div class="hint-lead" data-lead-short><b>PLAY</b> the on-screen instrument &mdash; or <b>PAD KEYS</b> to play a pad's own sound. <b>&#9679; REC PERFORMANCE</b> records only what you play.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-live">PLAYING IT IN BY HAND</button>
   <div class="hint-body" id="learn-live" hidden>
-<p class="lead-was"><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records <b>only what you play</b> (not the backing beat) to the next empty tape lane &mdash; open <b>TRAX</b> to hear, loop, FX, or send it to a pad. To capture the whole mix instead, arm a lane in <b>TRAX</b> and set the source to MASTER BUS.</p>
+<p class="lead-was"><b>PLAY</b> the on-screen instrument. <b>&#9679; REC PERFORMANCE</b> records <b>only what you play</b> (not the backing beat) to the next empty tape lane &mdash; open <b>TRAX</b> to hear, loop, FX, or send it to a pad. To capture the whole mix instead, arm a lane in <b>TRAX</b> and set the source to PRE-MASTER.</p>
 <h4>Scale lock — you cannot play a wrong note</h4>
 <p>Turning on a scale restricts the keyboard to notes that belong together.
 If you do not read music this is the single most useful setting in the app:
@@ -1301,7 +1306,7 @@ a phrase you played by hand becomes material you can build with.</p>
   <div class="hint-lead" data-lead-short><b>GUITAR / LINE / MIC IN</b> — ENABLE INPUT, then play through the amp. <b>Use headphones</b> (feedback!).</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-amp">GUITAR AND LINE INPUT</button>
   <div class="hint-body" id="learn-amp" hidden>
-<p class="lead-was"><b>GUITAR / LINE / MIC IN</b> — ENABLE INPUT, then play through the amp. <b>Use headphones</b> (feedback!). Record the processed tone with <b>TRAX</b> (SOURCE: MASTER BUS) or <b>DJ &#9679; REC OUT</b>.</p>
+<p class="lead-was"><b>GUITAR / LINE / MIC IN</b> — ENABLE INPUT, then play through the amp. <b>Use headphones</b> (feedback!). Record the processed tone with <b>TRAX</b> (SOURCE: PRE-MASTER) or <b>DJ &#9679; REC OUT</b>.</p>
 <h4>What an amp simulator is doing</h4>
 <p>An electric guitar plugged straight into a recorder sounds thin and brittle,
 because half of an electric guitar's sound is the amplifier and speaker it is
@@ -1646,6 +1651,66 @@ louder, you are probably losing more than you gain.</p>
   <div class="pslider"><span class="lbl">MID</span><input type="range" id="mEqMid" min="-12" max="12" step="0.5" value="0"><span class="val" id="mEqMidV">0dB</span></div>
   <div class="pslider"><span class="lbl">HIGH</span><input type="range" id="mEqHi" min="-12" max="12" step="0.5" value="0"><span class="val" id="mEqHiV">0dB</span></div>
 
+  <h3>CLARITY <span style="color:var(--txt-dim);letter-spacing:0">&mdash; getting a voice out in front</span></h3>
+  <div class="pslider"><span class="lbl">MUD</span><input type="range" id="mMud" min="-9" max="0" step="0.5" value="0"><span class="val" id="mMudV">off</span></div>
+  <div class="pslider"><span class="lbl">FOCUS</span><input type="range" id="mFocus" min="-1" max="1" step="0.02" value="0"><span class="val" id="mFocusV">off</span></div>
+  <div class="pslider"><span class="lbl">DE-ESS</span><input type="range" id="mDeess" min="0" max="1" step="0.01" value="0"><span class="val" id="mDeessV">off</span></div>
+  <div class="pslider"><span class="lbl">AIR</span><input type="range" id="mAir" min="0" max="9" step="0.5" value="0"><span class="val" id="mAirV">off</span></div>
+  <details class="ex"><summary>What these four actually do &mdash; and what FOCUS is not</summary><div class="ex-body">
+    <p>Every one of them is <b>exactly transparent at its default</b>, so this
+    section costs you nothing until you move something. That is measured rather
+    than assumed: noise rendered through the stage and subtracted from itself
+    comes back as silence.</p>
+
+    <h4>MUD &mdash; a cut at 300Hz</h4>
+    <p>The most effective single move on a crowded mix, and the least obvious.
+    Almost every instrument has energy around 300Hz, it all adds up, and the
+    result is a mix that sounds thick and tiring with the voice buried inside
+    it. Taking 3&ndash;5dB out there usually reads as the voice getting
+    <em>louder</em>, though nothing about the voice changed.</p>
+
+    <h4>FOCUS &mdash; centre against sides</h4>
+    <p>A stereo mix can be split into what the two channels have in common
+    (the <b>mid</b>) and what differs between them (the <b>side</b>). Lead
+    vocals are almost always panned dead centre, so they live in the mid.
+    FOCUS lifts the mid in the vocal range and drops the side by the same
+    amount &mdash; turn it up and the voice steps forward, turn it down and it
+    sinks back toward an instrumental.</p>
+    <p><b>This is emphasis, not isolation.</b> It is worth being straight about
+    that. There is no source separation here &mdash; no model is picking the
+    voice out. Anything else sitting in the centre in that frequency range,
+    typically the snare and the lead, moves along with it. It is a real
+    mastering technique and it will not turn a mix into an acapella; anyone
+    telling you a slider can do that is selling something.</p>
+    <p>It is deliberately band-limited around 1.8kHz. A broadband centre lift
+    would drag the kick and the bass with it, since those are centred too.</p>
+
+    <h4>DE-ESS &mdash; taming <i>sss</i></h4>
+    <p>Close-miked voices put far more energy into S and T sounds than the ear
+    expects, and every stage after that &mdash; compression, limiting, MP3
+    &mdash; makes it worse. This splits the mix at 6.5kHz, compresses only what
+    is above, and puts the two back together, so the sibilance comes down and
+    nothing else does.</p>
+    <p>Turn it up until the harshness goes and then back off slightly. Too much
+    is audible as a lisp.</p>
+
+    <h4>AIR &mdash; a shelf at 12kHz</h4>
+    <p>Higher than TONE&rsquo;s HIGH, on purpose. Lifting 6.5kHz for
+    &ldquo;brightness&rdquo; is what makes a mix harsh; 12kHz is above where
+    voices get shrill, so it adds openness instead. Try AIR first and reach for
+    HIGH second.</p>
+
+    <h4>A note on the 6ms</h4>
+    <p>The de-esser rejoins its two bands after a compressor, and this
+    browser&rsquo;s compressor carries a fixed 6ms delay whether or not it is
+    working. Recombining without accounting for that tears a &minus;7dB notch
+    at 5kHz, so the other band is delayed to match &mdash; which makes the sum
+    read 0.00dB at every frequency, at the price of 6ms of monitoring latency
+    that is there whether or not DE-ESS is up. The compressor and limiter each
+    already cost the same, and the bounce is offline so it never applies
+    there.</p>
+  </div></details>
+
   <h3>IMAGE <span style="color:var(--txt-dim);letter-spacing:0">&mdash; how wide it sits</span></h3>
   <div class="pslider"><span class="lbl">WIDTH</span><input type="range" id="mWidth" min="0" max="2" step="0.01" value="1"><span class="val" id="mWidthV">100%</span></div>
   <div class="pslider"><span class="lbl">BASS MONO</span><input type="range" id="mMono" min="0" max="300" step="5" value="0"><span class="val" id="mMonoV">off</span></div>
@@ -1938,7 +2003,7 @@ to any particular AI outliving any other.</p>
     <button id="btnLoad" class="grow">LOAD .JSON</button>
   </div>
   <input type="file" id="jsonIn" style="display:none">
-  <h3>MASTER OUT (WAV)</h3>
+  <h3>MASTER OUT (WAV) <span style="color:var(--txt-dim);letter-spacing:0">&mdash; bit-exact, if you want it</span></h3>
   <div class="row">
     <span class="lbl">SOURCE</span>
     <select id="bSrc"><option value="pat">CURRENT PATTERN</option><option value="chain">CHAIN</option><option value="song">SONG</option><option value="morph">MORPH A&#8594;B</option></select>
@@ -1951,7 +2016,12 @@ to any particular AI outliving any other.</p>
     <button id="btnNewTake">NEW TAKE</button>
     <span style="font-size:10px;color:var(--txt-dim);flex:1;min-width:0">HUMANIZE and step PROBABILITY play this same performance every bounce. NEW TAKE rolls a different one.</span>
   </div>
-  <div class="row"><button id="btnBounce" class="grow">BOUNCE &#8594; 44.1k / 16-BIT STEREO WAV (+3s tail)</button></div>
+  <div class="row">
+    <span class="lbl">FORMAT</span>
+    <select id="bDepth"><option value="16" selected>16-BIT (SMALLEST)</option><option value="24">24-BIT</option><option value="32">32-BIT FLOAT (BIT-EXACT)</option></select>
+    <span style="font-size:10px;color:var(--txt-dim);flex:1;min-width:0">Rate follows the engine &mdash; no resampling on the way out. <b>32-BIT FLOAT</b> writes the render&rsquo;s own samples untouched: no dither, no rounding, nothing clipped. 16 and 24 are dithered integer PCM.</span>
+  </div>
+  <div class="row"><button id="btnBounce" class="grow">BOUNCE &#8594; STEREO WAV (+3s tail)</button></div>
   <div class="row"><button id="btnCompressed" class="grow">EXPORT COMPRESSED (M4A/WEBM &middot; renders in real time)</button></div>
   <div class="row"><button id="btnStems" class="grow">BOUNCE STEMS &#8594; PER-PAD / PER-TRACK WAV</button></div>
   <div class="row"><button id="btnMidi" class="grow">EXPORT MIDI &#8594; .MID (SOURCE, per-pad tracks)</button></div>
@@ -1966,6 +2036,7 @@ to any particular AI outliving any other.</p>
   <footer>
     JSON is the session disk — pads, patterns, samples, maps.<br>
     WAV is the master out — full chain render: pitch, pan, envelopes, chokes, reverb, delay, compressor.<br>
+    It renders at the engine&rsquo;s own rate, so nothing is resampled on the way out; 32-BIT FLOAT writes those samples bit-for-bit.<br>
     <span id="build2"></span>
   </footer>
 </div>

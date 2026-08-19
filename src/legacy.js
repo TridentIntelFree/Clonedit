@@ -2392,8 +2392,95 @@
      last build; tape pitch would have made it a blip.
      Measured: 61.1s, 23 bars, peak 0.9315 with nothing at full scale, 0.984
      correlation.
+   - R159: LOSSLESS EXPORT, AND A LABEL THAT WAS LYING.
+     Asked how close to lossless the export could get. Two things stood in the
+     way and both were arbitrary.
+     THE BOUNCE RESAMPLED EVERY FILE ON THE WAY OUT. renderMix built a 44100
+     OfflineAudioContext with the rate written into the source, while the
+     engine asks for 48k and every import is decoded at 48k. So the last thing
+     that happened to a finished master was a 160/147 conversion through the
+     browser's own converter, to reach a rate nobody chose. bounceRate() now
+     follows the engine, falling back to 48k only when the live context is
+     degraded — which also means the render's filters and IRs are derived at
+     the same rate the speakers heard, so the file is a closer match to the
+     performance than it was.
+     THE WRITER ONLY SPOKE 16-BIT. The render hands back Float32, and it was
+     quantised to a 1/32767 grid on the way to disk whether you wanted that or
+     not. 24-bit and 32-bit float are now offered. Float is the lossless one in
+     the literal sense — the same bits the renderer produced, no dither, no
+     rounding, and no clip either, so a sample above 0dBFS reaches a mastering
+     engineer intact instead of flattened. Measured in tests/browser/export:
+     4096 of 4096 frames bit-identical across both channels, and two encodes of
+     one buffer byte-for-byte the same. 16 and 24 keep their TPDF dither and
+     are checked from the other side — inside one LSB, and NOT reproducible
+     between encodes, because dither that repeats is not dither.
+     What is left is the browser summing floats in an order it does not promise
+     to repeat, about -74dB. That is render-to-render variation, not a loss in
+     any one render, and it is not ours to fix.
+     "MASTER BUS" WAS NOT THE MASTER BUS. A friend spotted that the TRAX
+     capture tap sits at perfGain, upstream of the entire OUT chain, so a lane
+     labelled MASTER BUS contained none of the master EQ, width, bus compressor
+     or limiter. The proposed fix — move the tap past the limiter to match the
+     bounce — would have broken the rig: tape lanes rejoin at mLo, so a tap
+     downstream of that re-records every playing lane into every overdub, which
+     is the exact failure the comment at trackBus says was already fixed once.
+     The tap is right and the word was wrong. It reads PRE-MASTER now, and the
+     panel says why: the polish is applied once, at BOUNCE.
+   - R160: CLARITY — AND A CROSSOVER THAT HAD BEEN LYING FOR TWO BUILDS.
+     Asked for tools in OUT that isolate vocals or add clarity. Found a bug
+     first, while measuring whether the new ones would be transparent.
+     BASS MONO WAS A +7.4dB BOOST. The mono maker splits the mix with two
+     cascaded lowpass and two cascaded highpass sections and adds them back,
+     which sums flat only if each section is Butterworth. Q was set to
+     Math.SQRT1_2 — right everywhere else in this file, wrong here, because
+     the Web Audio spec reads Q in DECIBELS for lowpass and highpass and as a
+     real Q for peaking and shelving. So it asked for 0.71dB of resonance
+     instead of a Q of 0.71. Swept with tones through the actual recombination:
+     +7.43dB at the crossover, +4.57dB an octave below, +4.20dB above. A
+     control that says it centres the image was applying a large boost wherever
+     you put it. At -3.0103 the same sweep reads flat to 0.06dB.
+     FOUR CLARITY TOOLS, all exactly transparent at their defaults — verified
+     by rendering noise through the stage and subtracting, which returns
+     silence, not "close to" silence.
+     MUD, a cut at 300Hz: the most effective and least obvious move on a dense
+     mix. AIR, a shelf at 12kHz rather than TONE's 6.5k, so it opens instead of
+     hardening. FOCUS, an M/S balance in the vocal band, riding the mid/side
+     stage WIDTH already builds so it costs two biquads: mid up and side down
+     by the same amount pushes a centred voice forward, reversed pushes it
+     back. It is emphasis, not separation, there is no model picking a voice
+     out, and the panel says so rather than selling it as isolation.
+     DE-ESS is the one that needed real care. Chrome's DynamicsCompressorNode
+     carries a fixed 6ms pre-delay even while doing nothing — 288 samples at
+     48k — so recombining a compressed high band with an untouched low band is
+     a comb filter. Measured before building it: a -7.18dB notch at 5.1kHz and
+     -3.98dB at 6.0kHz, a hole torn in exactly the range the tool exists to
+     protect. Delaying the low band to match makes the same sweep read 0.00dB
+     at every frequency. The 6ms is then paid whether or not it is engaged,
+     which is stated in the panel; the alternative is rewiring the master graph
+     on a slider move, and that clicks.
+     The first sweep that "proved" the topology was flat was wrong: every test
+     frequency happened to be a whole number of cycles of a 288-sample delay,
+     so a phase error was invisible. Awkward frequencies found it immediately.
+     AND THE DE-ESSER WAS UNDOING ITS OWN WORK. Chrome's compressor applies a
+     makeup gain scaled to the threshold — the same thing that made CEILING run
+     backwards, documented under measureMakeup two hundred lines down, and
+     walked into again. Lowering the DE-ESS threshold lifted the whole high
+     band back up: -2.5dB of reduction where a ratio of 12 says twenty. Worse,
+     the makeup applies whether or not anything is above the threshold, so
+     turning the de-esser on made a quiet mix BRIGHTER. That table is now
+     measured per compressor, with the de-esser's own ratio and release, and
+     cancelled by a gain after it: -12.6dB at 9kHz and -21.6dB at 14kHz, and
+     quiet material moves by 0.00dB.
+     Its first table stopped at -36 while the slider reaches -38, and the
+     lookup clamped rather than extrapolating — 1.09dB of makeup left in at
+     14kHz. It runs past the end of the control now, in 2dB steps.
+     The suite that found all of this was itself the slowest thing in the run,
+     because buildGraph synthesises a reverb IR per call and measuring eleven
+     frequencies one render at a time built 138 of them. One render of a summed
+     multitone read with a Goertzel gives the same numbers for the linear
+     stages and a more realistic probe for the de-esser: 52s to 8s.
    ================================================================ */
-const BUILD = 'JBH-88 · R158 · 2026-08-04 · Amber Signal learns the new tricks';
+const BUILD = 'JBH-88 · R160 · 2026-08-19 · clarity, and a crossover fixed';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2477,7 +2564,8 @@ const S = {
   morph:{ on:false, from:0, to:1, bars:8, curve:'weight', mode:'once', vel:true, amt:0, pos:0 },
   /* master chain (OUT tab). Neutral by default: flat EQ, natural width, and a
      ceiling just under 0 so nothing changes until it is asked to. */
-  mEqLo:0, mEqMid:0, mEqHi:0, mWidth:1, mCeil:-1.0, mMono:0, mByp:false, mTrim:0
+  mEqLo:0, mEqMid:0, mEqHi:0, mWidth:1, mCeil:-1.0, mMono:0, mByp:false, mTrim:0,
+  mMud:0, mAir:0, mFocus:0, mDeess:0
 };
 const revCache = {};      // bufId -> reversed AudioBuffer
 
@@ -2641,6 +2729,22 @@ function refreshLfoRates(){   // synced LFOs follow tempo changes
     if(p.lfoOn && p.lfoSync!=='free' && n&&n.lfoOsc){ try{ n.lfoOsc.frequency.value=lfoHz(p); }catch(e){} } }
 }
 
+/* Butterworth Q, in the units Web Audio actually wants.
+
+   For LOWPASS and HIGHPASS the spec reads the Q attribute in DECIBELS — it is
+   the height of the resonant peak at the cutoff, not the classical Q — while
+   PEAKING, NOTCH and BANDPASS take a real Q. So a Butterworth section, Q=1/√2,
+   is 20·log10(1/√2) = -3.0103 here, and writing Math.SQRT1_2 asks for
+   0.71dB of resonance instead. The difference is not subtle in a crossover:
+   see the sweep in the mono-maker comment below. */
+const BW_Q=-3.0103;
+function lrq(ctx,type,f){ const b=ctx.createBiquadFilter(); b.type=type;
+  b.frequency.value=f; b.Q.value=BW_Q; return b; }
+const DS_F=6500;      // de-ess crossover — sibilance lives above this
+const DS_LAT=0.006;   // Chrome's DynamicsCompressor pre-delay, measured at 288 samples @48k
+const FC_F=1800;      // FOCUS centre — where a voice carries
+const FOCUS_DB=6;     // FOCUS at full travel: mid +6dB / side -6dB in that band
+const DEESS_DB=38;    // DE-ESS at full travel: threshold pulled to -38dBFS
 function buildGraph(ctx){
   const g={};
   g.master = ctx.createGain(); g.master.gain.value = S.masterVol;
@@ -2670,6 +2774,75 @@ function buildGraph(ctx){
   g.mMid=ctx.createBiquadFilter(); g.mMid.type='peaking';  g.mMid.frequency.value=1000; g.mMid.Q.value=0.7;
   g.mHi =ctx.createBiquadFilter(); g.mHi.type='highshelf'; g.mHi.frequency.value=6500;
 
+  /* CLARITY (OUT tab). Four tools that between them do what people actually
+     mean by "make the vocal clearer", none of which pretends to be more than
+     it is — there is no source separation here and none is claimed.
+
+     MUD is a peaking cut at 300Hz. The single most effective move on a dense
+     mix: every instrument has energy there, it sums, and it is what buries a
+     voice. AIR is a shelf at 12kHz, above where TONE's HIGH sits, so it adds
+     sheen without the 6.5kHz harshness that makes people turn it back down.
+     Both are exactly transparent at 0 — measured, not assumed: a peaking or
+     shelving biquad at 0dB gain has H(z)=1 identically, and rendering noise
+     through one and subtracting gives a difference of exactly zero. */
+  g.mMud=ctx.createBiquadFilter(); g.mMud.type='peaking';   g.mMud.frequency.value=300;   g.mMud.Q.value=1;
+  g.mAir=ctx.createBiquadFilter(); g.mAir.type='highshelf'; g.mAir.frequency.value=12000;
+
+  /* DE-ESS. A split-band de-esser: the mix is divided at DS_F, the high band
+     is compressed hard and fast, and the two are added back.
+
+     The delay is not optional and this is why. Chrome's DynamicsCompressorNode
+     carries a fixed pre-delay — measured at 288 samples, 6.0ms at 48k — even
+     when it is doing nothing at all. Recombining a delayed high band with an
+     undelayed low band is a comb filter, and swept with tones it gouges a
+     -7.18dB notch at 5.1kHz and -3.98dB at 6.0kHz: a hole torn in exactly the
+     part of the spectrum a de-esser is supposed to protect. Delaying the low
+     band by the same 6ms makes the same sweep read 0.00dB at every frequency.
+
+     So the whole tool is transparent when off, at the cost of 6ms of latency
+     that is paid whether or not it is engaged — the alternative is rewiring
+     the master graph on a slider move, which clicks. The compressor and the
+     limiter each already impose the same 6ms, so this is a third of an
+     already-inaudible number. */
+  g.dsLo1=lrq(ctx,'lowpass',DS_F);  g.dsLo2=lrq(ctx,'lowpass',DS_F);
+  g.dsHi1=lrq(ctx,'highpass',DS_F); g.dsHi2=lrq(ctx,'highpass',DS_F);
+  g.dsDelay=ctx.createDelay(0.05); g.dsDelay.delayTime.value=DS_LAT;
+  g.dsComp=ctx.createDynamicsCompressor();
+  /* knee 0 matters as much as threshold 0: the default 30dB knee would start
+     compressing at -30dBFS with the threshold at the top, so "off" would not
+     be off. */
+  g.dsComp.threshold.value=0; g.dsComp.knee.value=0; g.dsComp.ratio.value=12;
+  g.dsComp.attack.value=0.001; g.dsComp.release.value=0.06;
+  /* And it needs its makeup gain cancelled, for the same reason the limiter
+     does — see the CEILING note below. Chrome's compressor applies a makeup
+     scaled to the threshold, so lowering the DE-ESS threshold lifted the whole
+     high band back up and the tool undid most of its own work: measured -2.5dB
+     of reduction where the ratio says twenty. Worse, it would BRIGHTEN quiet
+     material, since the makeup applies whether or not anything is above the
+     threshold. Compensated, the same probe reads the reduction it should. */
+  g.dsMakeup=ctx.createGain(); g.dsMakeup.gain.value=1;
+  g.dsSum=ctx.createGain();
+  g.mMud.connect(g.mAir);
+  g.mAir.connect(g.dsLo1); g.dsLo1.connect(g.dsLo2); g.dsLo2.connect(g.dsDelay); g.dsDelay.connect(g.dsSum);
+  g.mAir.connect(g.dsHi1); g.dsHi1.connect(g.dsHi2); g.dsHi2.connect(g.dsComp);
+  g.dsComp.connect(g.dsMakeup); g.dsMakeup.connect(g.dsSum);
+
+  /* FOCUS. A vocal sits in the middle of a stereo mix, so the mid channel of
+     an M/S decomposition is mostly voice and the side channel is mostly
+     everything else. Lifting the mid in the vocal band while cutting the side
+     by the same amount pushes a voice forward; reversing it pushes it back
+     toward an instrumental. It is band-limited on purpose — a broadband M/S
+     tilt takes the kick and the bass with it, which are centred too.
+
+     This is emphasis, not separation. Anything else centred in that band
+     (snare, lead) moves with the voice, and nothing here can undo a mix. Said
+     plainly in the panel rather than sold as isolation.
+
+     It rides the M/S stage the width control already builds, so it costs two
+     biquads and no extra encode/decode, and it is exactly unity at zero. */
+  g.fcMid =ctx.createBiquadFilter(); g.fcMid.type='peaking';  g.fcMid.frequency.value=FC_F;  g.fcMid.Q.value=0.6;
+  g.fcSide=ctx.createBiquadFilter(); g.fcSide.type='peaking'; g.fcSide.frequency.value=FC_F; g.fcSide.Q.value=0.6;
+
   /* Mono-maker: everything below this frequency is summed to the centre. A
      mastering habit rather than a gimmick — wide bass smears on a club system
      and disappears on a phone speaker. 10 Hz = off.
@@ -2677,11 +2850,22 @@ function buildGraph(ctx){
      A real crossover, not a filter bolted on the side: the mix is SPLIT here,
      the low band is summed to mono, the high band goes on to the width stage,
      and the two are added back at the compressor. Both halves are two cascaded
-     Butterworth sections (Q=1/sqrt2), i.e. Linkwitz-Riley 4th order, which is
-     the pairing that sums back to flat — a single lowpass/highpass pair leaves
-     a +3dB bump right at the crossover. */
-  const lr=(type)=>{ const f=ctx.createBiquadFilter(); f.type=type;
-    f.frequency.value=10; f.Q.value=Math.SQRT1_2; return f; };
+     Butterworth sections, i.e. Linkwitz-Riley 4th order, which is the pairing
+     that sums back to flat — a single lowpass/highpass pair leaves a +3dB bump
+     right at the crossover.
+
+     It did not, for two builds, because of BW_Q below. Q was set to
+     Math.SQRT1_2, the number a Butterworth section wants everywhere else in
+     audio — and everywhere else in this file, correctly, because peaking and
+     shelving filters take a real Q. For LOWPASS and HIGHPASS the Web Audio
+     spec reads Q in DECIBELS, so 0.7071 asked for 0.71dB of resonance rather
+     than a Q of 0.71, and the pair recombined with a bump instead of flat.
+     Swept with tones through the actual recombination: +7.43dB at the
+     crossover, +4.57dB an octave below it, +4.20dB above. Anyone using BASS
+     MONO at 120Hz was getting a large boost at 120Hz from a control that says
+     it only centres the image. At the correct value the same sweep reads
+     0.00 / -0.06 / -0.03 / 0.00 / -0.01 / -0.06 dB. */
+  const lr=(type)=>lrq(ctx,type,10);
   g.mMonoLo=lr('lowpass');  g.mMonoLo2=lr('lowpass');
   g.mMonoHi=lr('highpass'); g.mMonoHi2=lr('highpass');
   /* the low band, folded to the centre: L and R at half each into one channel,
@@ -2712,14 +2896,16 @@ function buildGraph(ctx){
   g.wMidL.connect(g.wMid);      g.wMidR.connect(g.wMid);
   g.wSplit.connect(g.wSideL,0); g.wSplit.connect(g.wSideR,1);
   g.wSideL.connect(g.wSide);    g.wSideR.connect(g.wSide);
-  g.wSide.connect(g.wAmt);
-  g.wMid.connect(g.wOutL);  g.wAmt.connect(g.wOutL);            // L = M + wS
-  g.wMid.connect(g.wOutR);  g.wAmt.connect(g.wNeg); g.wNeg.connect(g.wOutR);   // R = M - wS
+  g.wSide.connect(g.fcSide); g.fcSide.connect(g.wAmt);          // FOCUS sits on the side leg
+  g.wMid.connect(g.fcMid);                                       // and, inverted, on the mid leg
+  g.fcMid.connect(g.wOutL);  g.wAmt.connect(g.wOutL);            // L = M + wS
+  g.fcMid.connect(g.wOutR);  g.wAmt.connect(g.wNeg); g.wNeg.connect(g.wOutR);   // R = M - wS
   g.wOutL.connect(g.wMerge,0,0); g.wOutR.connect(g.wMerge,0,1);
 
   g.master.connect(g.perfFilt); g.perfFilt.connect(g.perfGain);
   g.perfGain.connect(g.mLo); g.mLo.connect(g.mMid); g.mMid.connect(g.mHi);
-  g.mHi.connect(g.mMonoHi); g.mHi.connect(g.mMonoLo);            // split at the mono frequency
+  g.mHi.connect(g.mMud);                                         // CLARITY: mud cut, air, de-ess
+  g.dsSum.connect(g.mMonoHi); g.dsSum.connect(g.mMonoLo);        // split at the mono frequency
   g.mMonoHi2.connect(g.wSplit);                                  // above it: stereo width
   g.wMerge.connect(g.comp); g.mMonoSum.connect(g.comp);          // below it: centred, added back
   // master trim — the one gain AUTO moves. It sits after the compressor and
@@ -5263,6 +5449,12 @@ function outLabels(){
   f('mMono', mono<25?'off':Math.round(mono)+'Hz');
   f('mCeil',parseFloat($('mCeil').value).toFixed(1)+'dB');
   f('mTrim',dbText(parseFloat($('mTrim').value)));
+  const mud=parseFloat($('mMud').value);   f('mMud', mud>=-0.01?'off':mud.toFixed(1)+'dB');
+  const air=parseFloat($('mAir').value);   f('mAir', air<=0.01?'off':'+'+air.toFixed(1)+'dB');
+  const de =parseFloat($('mDeess').value); f('mDeess', de<=0.005?'off':Math.round(de*100)+'%');
+  const fo =parseFloat($('mFocus').value);
+  f('mFocus', Math.abs(fo)<=0.01 ? 'off'
+    : (fo>0?'voice +':'voice \u2212')+Math.abs(fo*FOCUS_DB).toFixed(1)+'dB');
 }
 function outRead(){
   S.mEqLo=parseFloat($('mEqLo').value); S.mEqMid=parseFloat($('mEqMid').value); S.mEqHi=parseFloat($('mEqHi').value);
@@ -5270,16 +5462,21 @@ function outRead(){
   const mono=parseFloat($('mMono').value); S.mMono = mono<25 ? 0 : mono;
   S.mCeil=parseFloat($('mCeil').value);
   S.mTrim=parseFloat($('mTrim').value);
+  S.mMud=parseFloat($('mMud').value); S.mAir=parseFloat($('mAir').value);
+  S.mFocus=parseFloat($('mFocus').value); S.mDeess=parseFloat($('mDeess').value);
   outLabels(); applyMaster(); dirty();
 }
 function outWrite(){
   $('mEqLo').value=S.mEqLo; $('mEqMid').value=S.mEqMid; $('mEqHi').value=S.mEqHi;
   $('mWidth').value=S.mWidth; $('mMono').value=S.mMono||0; $('mCeil').value=S.mCeil;
   $('mTrim').value=S.mTrim||0;
+  $('mMud').value=S.mMud||0; $('mAir').value=S.mAir||0;
+  $('mFocus').value=S.mFocus||0; $('mDeess').value=S.mDeess||0;
   $('btnMByp').classList.toggle('on',!!S.mByp);
   outLabels();
 }
-['mEqLo','mEqMid','mEqHi','mWidth','mMono','mCeil','mTrim'].forEach(id=>
+['mEqLo','mEqMid','mEqHi','mWidth','mMono','mCeil','mTrim',
+ 'mMud','mAir','mFocus','mDeess'].forEach(id=>
   $(id).addEventListener('input',outRead));
 $('btnMByp').addEventListener('click',()=>{
   S.mByp=!S.mByp; $('btnMByp').classList.toggle('on',S.mByp);
@@ -5297,6 +5494,7 @@ $('btnBBOn').addEventListener('click',()=>{
 });
 $('btnMFlat').addEventListener('click',()=>{
   S.mEqLo=S.mEqMid=S.mEqHi=0; S.mWidth=1; S.mMono=0; S.mCeil=-1; S.mByp=false; S.mTrim=0;
+  S.mMud=0; S.mAir=0; S.mFocus=0; S.mDeess=0;
   outWrite(); applyMaster(); dirty(); lcd('MASTER CHAIN RESET to flat.');
 });
 
@@ -5403,34 +5601,50 @@ setTimeout(()=>{ measureMakeup(); }, 0);
    Until the table exists the compensation is 1, which is exactly the behaviour
    the app had before — so a slow or failed measurement costs nothing. */
 const MAKEUP=[];
-async function measureMakeup(){
-  for(let c=0;c>=-12.0001;c-=1){
+const MAKEUP_DS=[];
+/* The makeup gain depends on the compressor's settings, not just its
+   threshold, so each compressor that needs compensating gets its own table
+   measured with its own ratio and release. */
+async function measureTable(into, lo, step, ratio, release){
+  for(let c=0;c>=lo+1e-4;c-=step){
     try{
       const sr=44100, n=4096, a=Math.pow(10,(c-40)/20);
       const oc=new OfflineAudioContext(1,n,sr);
       const k=oc.createDynamicsCompressor();
-      k.threshold.value=c; k.knee.value=0; k.ratio.value=20;
-      k.attack.value=0.001; k.release.value=0.05;
+      k.threshold.value=c; k.knee.value=0; k.ratio.value=ratio;
+      k.attack.value=0.001; k.release.value=release;
       const b=oc.createBuffer(1,n,sr), d=b.getChannelData(0);
       for(let i=0;i<n;i++) d[i]=Math.sin(2*Math.PI*440*i/sr)*a;
       const src=oc.createBufferSource(); src.buffer=b;
       src.connect(k); k.connect(oc.destination); src.start();
       const out=await oc.startRendering(), o=out.getChannelData(0);
       let pk=0; for(let i=n>>1;i<n;i++) pk=Math.max(pk,Math.abs(o[i]));
-      if(pk>0) MAKEUP.push([c,pk/a]);
+      if(pk>0) into.push([c,pk/a]);
     }catch(e){ return; }                 // no table = no compensation, as before
   }
+}
+async function measureMakeup(){
+  await measureTable(MAKEUP,   -12,      1, 20, 0.05);   // the limiter, for CEILING
+  /* Past the bottom of the range, and in finer steps than the limiter's table.
+     Measured only to -DEESS_DB in 4dB steps, the lowest point landed at -36
+     and lerpTable CLAMPED the -38 the slider actually reaches — leaving ~1.1dB
+     of uncancelled makeup, which showed up as a de-esser brightening quiet
+     material by 1.09dB at 14kHz. The table has to cover past the end of the
+     control, not up to it. */
+  await measureTable(MAKEUP_DS,-(DEESS_DB+6),2, 12, 0.06);   // the de-esser
   try{ applyMaster(); }catch(e){}        // the live graph picks it up immediately
 }
-function makeupAt(ceil){
-  if(MAKEUP.length<2) return 1;
-  const c=clamp(ceil,MAKEUP[MAKEUP.length-1][0],MAKEUP[0][0]);
-  for(let i=1;i<MAKEUP.length;i++){
-    const [c1,g1]=MAKEUP[i];
-    if(c>=c1){ const [c0,g0]=MAKEUP[i-1], f=(c-c1)/(c0-c1); return g1+(g0-g1)*f; }
+function lerpTable(tbl, x){
+  if(tbl.length<2) return 1;
+  const c=clamp(x,tbl[tbl.length-1][0],tbl[0][0]);
+  for(let i=1;i<tbl.length;i++){
+    const [c1,g1]=tbl[i];
+    if(c>=c1){ const [c0,g0]=tbl[i-1], f=(c-c1)/(c0-c1); return g1+(g0-g1)*f; }
   }
-  return MAKEUP[MAKEUP.length-1][1];
+  return tbl[tbl.length-1][1];
 }
+function makeupAt(ceil){ return lerpTable(MAKEUP, ceil); }
+function deessMakeupAt(th){ return lerpTable(MAKEUP_DS, th); }
 
 /* ---------------- MASTER CHAIN — applied to any graph, live or offline -------
    Written as apply(g) so the live graph and the bounce get the same treatment
@@ -5443,6 +5657,22 @@ function applyMasterG(g, ctx){
   set(g.mMid.gain, byp?0:S.mEqMid);
   set(g.mHi.gain,  byp?0:S.mEqHi);
   set(g.wAmt.gain, byp?1:S.mWidth);
+  if(g.mMud){
+    set(g.mMud.gain, byp?0:S.mMud);
+    set(g.mAir.gain, byp?0:S.mAir);
+    /* FOCUS is one number driving two filters in opposition: the mid up by as
+       much as the side comes down, so the overall level barely moves and only
+       the balance between centre and sides changes. */
+    const foc=byp?0:(S.mFocus||0);
+    set(g.fcMid.gain,   foc*FOCUS_DB);
+    set(g.fcSide.gain, -foc*FOCUS_DB);
+    /* 0 is genuinely off — with knee 0 a threshold of 0dBFS is above anything
+       the limiter lets through, so the band is passed untouched. */
+    const de=byp?0:(S.mDeess||0);
+    const dth=de>0 ? -DEESS_DB*de : 0;
+    set(g.dsComp.threshold, dth);
+    set(g.dsMakeup.gain, 1/deessMakeupAt(dth));
+  }
   // 10Hz is below anything audible: the mono band collects nothing and the
   // width path carries the whole mix, which is what "off" has to mean. It has
   // to be this low — at 20Hz the 4th-order slope is still shaving ~1.5dB off
@@ -8206,7 +8436,7 @@ function stopJam(){
 }
 $('btnJamSave').addEventListener('click',()=>{
   if(!jamBuf) return;
-  download(encodeWav(jamBuf), jamStamp()+'.wav');
+  download(encodeWav(jamBuf,wavDepth()), jamStamp()+'.wav');
 });
 $('btnJamPad').addEventListener('click',()=>{
   if(!jamBuf) return;
@@ -8467,7 +8697,7 @@ function traxBeginCapture(when){
       ms.onended=()=>{ try{ms.disconnect();}catch(e){} };
     }catch(e){}
     traxCap=cap;
-    lcd('ROLLING — TRACK '+(traxArm+1)+' recording ('+cap.srcMode.toUpperCase()+') · STOP commits.');
+    lcd('ROLLING — TRACK '+(traxArm+1)+' recording ('+(cap.srcMode==='bus'?'PRE-MASTER':cap.srcMode.toUpperCase())+') · STOP commits.');
   }catch(e){ traxCap=null; lcd('TRACK REC FAILED: '+(e.message||'tap error')); }
 }
 function traxCommit(){
@@ -10925,6 +11155,7 @@ $('btnSave').addEventListener('click',()=>{
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
     mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp, mTrim:S.mTrim,
+    mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
@@ -11092,6 +11323,8 @@ function applySessionDoc(doc, bufs){
     S.mEqLo =num(doc.mEqLo, 0,-12,12); S.mEqMid=num(doc.mEqMid,0,-12,12); S.mEqHi=num(doc.mEqHi,0,-12,12);
     S.mWidth=num(doc.mWidth,1,0,2);    S.mMono =num(doc.mMono, 0,0,300);
     S.mCeil =num(doc.mCeil,-1,-12,0);  S.mByp  =!!doc.mByp;
+    S.mMud  =num(doc.mMud,  0,-9,0);   S.mAir  =num(doc.mAir,  0,0,9);
+    S.mFocus=num(doc.mFocus,0,-1,1);   S.mDeess=num(doc.mDeess,0,0,1);
     S.mTrim =num(doc.mTrim, 0,-24,12);
     try{ outWrite(); applyMaster(); }catch(e){} }
   S.scOn=!!doc.scOn; S.scTrig=clamp(doc.scTrig|0,0,NPADS-1);
@@ -11317,6 +11550,7 @@ function snapshotSession(){
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
     mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp, mTrim:S.mTrim,
+    mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
@@ -11401,6 +11635,7 @@ function undoSnap(){
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
     mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp, mTrim:S.mTrim,
+    mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns };
@@ -11838,27 +12073,69 @@ function bounceReport(buf){
   if(tp>1) lines.push('Over 0 dBTP: this will clip when converted to MP3 or AAC. Lower CEILING.');
   return lines;
 }
-function encodeWav(buf){
+/* The bounce renders at the rate the material actually lives at rather than a
+   hard-coded 44100. Imports are decoded at WANT_SR (48k) and the live context
+   asks for 48k, so a 44.1k render resampled every single sample on the way out
+   — 160/147, non-integer, through the browser's own converter — for a file
+   nobody asked to be 44.1k. Matching the rate removes that conversion entirely,
+   and it makes the bounce a closer match to what the speakers played, since the
+   live graph's filters and IRs are derived at the context rate too.
+   A degraded context (16kHz, see srBad) is not a rate to render at: fall back
+   to WANT_SR so a bad session still bounces at full bandwidth. */
+function bounceRate(){
+  const live=(AC&&AC.sampleRate)||0;
+  return live>=SR_MIN ? Math.round(live) : WANT_SR;
+}
+const WAV_DEPTHS={16:'16-bit',24:'24-bit',32:'32-bit float'};
+function wavDepth(){ const v=parseInt(($('bDepth')||{}).value,10); return WAV_DEPTHS[v]?v:16; }
+/* WAV writer, 16 / 24 / 32-float.
+
+   16 and 24 are integer PCM and therefore quantise, so both get TPDF dither —
+   the actual last step of finishing a fixed-point master. Rounding float to an
+   integer grid produces error that CORRELATES with the signal, heard as a
+   grainy fizz on reverb tails and fades. A triangular sub-LSB noise added
+   before rounding decorrelates it: the error becomes steady, inaudible hiss
+   instead. It costs about -93dB at 16-bit and about -141dB at 24-bit.
+
+   32-bit float is not quantised at all. The render hands back Float32Array and
+   this writes those same floats, so the file is bit-exact to what the renderer
+   produced: no dither, no rounding, and no clip either — a sample above 1.0
+   survives into the file instead of being flattened, which is what a mastering
+   engineer opening the stem wants. That path is the lossless one. */
+function encodeWav(buf, depth){
+  const bits=WAV_DEPTHS[depth]?depth:16;
+  const flt=bits===32, bps=bits>>3;
   const nCh=2, sr=buf.sampleRate, len=buf.length;
-  const bytes=44+len*nCh*2, ab=new ArrayBuffer(bytes), dv=new DataView(ab);
+  const head=flt?68:44;                       // float adds a fact chunk and 2 cbSize bytes
+  const data=len*nCh*bps;
+  const ab=new ArrayBuffer(head+data), dv=new DataView(ab);
   function ws(o,s){ for(let i=0;i<s.length;i++) dv.setUint8(o+i,s.charCodeAt(i)); }
-  ws(0,'RIFF'); dv.setUint32(4,bytes-8,true); ws(8,'WAVE');
-  ws(12,'fmt '); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,nCh,true);
-  dv.setUint32(24,sr,true); dv.setUint32(28,sr*nCh*2,true); dv.setUint16(32,nCh*2,true); dv.setUint16(34,16,true);
-  ws(36,'data'); dv.setUint32(40,len*nCh*2,true);
+  ws(0,'RIFF'); dv.setUint32(4,head+data-8,true); ws(8,'WAVE');
+  ws(12,'fmt '); dv.setUint32(16,flt?18:16,true);
+  dv.setUint16(20,flt?3:1,true); dv.setUint16(22,nCh,true);
+  dv.setUint32(24,sr,true); dv.setUint32(28,sr*nCh*bps,true);
+  dv.setUint16(32,nCh*bps,true); dv.setUint16(34,bits,true);
+  let o=36;
+  if(flt){ dv.setUint16(36,0,true);                       // cbSize — required when fmt is 18 bytes
+    ws(38,'fact'); dv.setUint32(42,4,true); dv.setUint32(46,len,true); o=50; }
+  ws(o,'data'); dv.setUint32(o+4,data,true); o+=8;
   const L=buf.getChannelData(0), R=buf.numberOfChannels>1?buf.getChannelData(1):L;
-  /* TPDF dither — the actual last step of finishing a 16-bit master.
-     Rounding 32-bit float to 16-bit quantises, and quantisation error that
-     CORRELATES with the signal is heard as a grainy fizz on reverb and fades.
-     Adding a triangular sub-LSB noise before rounding decorrelates it: the
-     error becomes steady, inaudible hiss instead. It costs about -93dB of
-     noise, which is a fair price and what every mastering chain does. */
-  const q=1/32767, tpdf=()=>(Math.random()-Math.random())*q;
+  if(flt){
+    for(let i=0;i<len;i++){ dv.setFloat32(o,L[i],true); dv.setFloat32(o+4,R[i],true); o+=8; }
+    return new Blob([ab],{type:'audio/wav'});
+  }
+  const peak=bits===16?32767:8388607;
+  const q=1/peak, tpdf=()=>(Math.random()-Math.random())*q;
   const clip=v=>v<-1?-1:(v>1?1:v);
-  let o=44;
-  for(let i=0;i<len;i++){
-    dv.setInt16(o,Math.round(clip(L[i]+tpdf())*32767),true); o+=2;
-    dv.setInt16(o,Math.round(clip(R[i]+tpdf())*32767),true); o+=2;
+  if(bits===16){
+    for(let i=0;i<len;i++){
+      dv.setInt16(o,Math.round(clip(L[i]+tpdf())*peak),true); o+=2;
+      dv.setInt16(o,Math.round(clip(R[i]+tpdf())*peak),true); o+=2;
+    }
+  } else {
+    const w24=v=>{ const n=Math.round(clip(v+tpdf())*peak);
+      dv.setUint8(o,n&0xff); dv.setUint8(o+1,(n>>8)&0xff); dv.setUint8(o+2,(n>>16)&0xff); o+=3; };
+    for(let i=0;i<len;i++){ w24(L[i]); w24(R[i]); }
   }
   return new Blob([ab],{type:'audio/wav'});
 }
@@ -12097,7 +12374,7 @@ async function renderMixInner(padSet, traxSet, opt){
      where it starts, under the music that produced it, and only decays from
      there, so cutting it cannot lower the peak being measured. It roughly
      halves the wait on a one-pattern analysis. */
-  const SR=44100, total=dur+((opt&&opt.noTail)?0.35:Math.max(3.0,S.revSize+0.5));
+  const SR=bounceRate(), total=dur+((opt&&opt.noTail)?0.35:Math.max(3.0,S.revSize+0.5));
   const oc=new OfflineAudioContext(2, Math.ceil(total*SR), SR);
   const g=buildGraph(oc);
   applyMasterG(g,oc);          // the bounce gets the same master chain as the speakers
@@ -12124,9 +12401,10 @@ $('btnBounce').addEventListener('click',async ()=>{
   try{
     const rendered=await renderMix(null,null);
     if(!rendered){ plog('Nothing to bounce — pattern and tracks are empty.'); lcd('NOTHING TO BOUNCE.'); return; }
-    const wav=encodeWav(rendered);
+    const d=wavDepth(), wav=encodeWav(rendered,d);
     download(wav, ($('projName').value||'mvx-session')+'.wav');
-    plog('WAV done: '+Math.round(wav.size/1024)+' KB · 44.1k/16-bit stereo.');
+    plog('WAV done: '+Math.round(wav.size/1024)+' KB · '+(rendered.sampleRate/1000).toFixed(1)+'k/'+WAV_DEPTHS[d]+' stereo'
+      +(d===32?' — bit-exact to the render.':'.'));
     /* Measure the file that just left, in the terms a release is judged on.
        Offline there is no excuse for an approximation. */
     let rep=[];
@@ -12172,7 +12450,8 @@ $('btnCompressed').addEventListener('click',async ()=>{
     const blob=new Blob(chunks,{type:mime});
     const ext=mime.indexOf('mp4')>=0?'m4a':'webm';
     download(blob, ($('projName').value||'mvx-session')+'.'+ext);
-    plog('Compressed export: '+Math.round(blob.size/1024)+' KB .'+ext+' (WAV would be ~'+Math.round(dur*44100*4/1024)+' KB).');
+    plog('Compressed export: '+Math.round(blob.size/1024)+' KB .'+ext
+      +' (WAV would be ~'+Math.round(dur*rendered.sampleRate*2*(wavDepth()>>3)/1024)+' KB).');
     lcd('EXPORTED .'+ext.toUpperCase()+' · '+Math.round(blob.size/1024)+' KB');
   }catch(err){ plog('Compressed export failed: '+err.message); lcd('EXPORT FAILED.'); }
   finally{ clearInterval(iv); cmpBusy=false; }
@@ -12292,7 +12571,7 @@ $('btnStems').addEventListener('click',async ()=>{
     try{ rendered = j.type==='pad'? await renderMix(new Set([j.id]), new Set()) : await renderMix(new Set(), new Set([j.id])); }
     catch(e){ plog('Stem '+j.label+' failed: '+e.message); continue; }
     if(!rendered) continue;
-    const wav=encodeWav(rendered), fname=base+'-'+j.label.replace(/[^A-Za-z0-9]+/g,'_')+'.wav';
+    const wav=encodeWav(rendered,wavDepth()), fname=base+'-'+j.label.replace(/[^A-Za-z0-9]+/g,'_')+'.wav';
     done.push({fname,wav});
     const row=document.createElement('div'); row.className='row';
     const nm=document.createElement('span'); nm.style.cssText='font-size:11px;flex:1;color:var(--lcd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
@@ -12471,6 +12750,9 @@ function diagDump(tag){
       'loudness tap: '+(kAn ? (kGraph===LIVE?'built + bound':'STALE — bound to an old graph')
                             : (kErr?'FAILED err='+kErr:'not built yet (opens with the OUT tab)'))
         +' · tone LOW '+S.mEqLo+'dB MID '+S.mEqMid+'dB HIGH '+S.mEqHi+'dB'
+        +' · clarity mud '+(S.mMud||0)+'dB air '+(S.mAir||0)+'dB focus '+(S.mFocus||0)
+        +' deess '+Math.round((S.mDeess||0)*100)+'%'
+        +' · export '+Math.round(bounceRate())+'Hz/'+wavDepth()+'bit'
         +' · width '+S.mWidth+' · mono '+S.mMono+'Hz',
       (function(){ let red='-'; try{ red=LIVE?LIVE.limiter.reduction.toFixed(1)+'dB':'-'; }catch(e){}
         return 'master — ceiling '+S.mCeil+'dB trim '+S.mTrim+'dB · limiter reduction now '+red
@@ -12882,7 +13164,7 @@ const recipeBook=[
   steps:[
   { title:'PLAY A TAKE OVER THE TOP', body:'<b>TRAX</b> is a tape recorder running alongside the sequencer. Anything you play while it rolls is captured as audio — no steps, no quantising.' },
   { tab:'trax', el:'traxSrc', title:'CHOOSE WHAT IT RECORDS',
-    body:'<b>LIVE ONLY</b> is the one you want here: it records what <i>you</i> play — pads you hit, the LIVE instruments, the AMP input — and treats the sequencer as silent backing you can hear but do not capture.<br><br><b>MASTER BUS</b> records everything instead, which is for bouncing rather than performing.',
+    body:'<b>LIVE ONLY</b> is the one you want here: it records what <i>you</i> play — pads you hit, the LIVE instruments, the AMP input — and treats the sequencer as silent backing you can hear but do not capture.<br><br><b>PRE-MASTER</b> records everything instead, tapped before the OUT master chain so the polish is applied once at BOUNCE rather than baked into the lane.',
     waitFor:'set SOURCE to LIVE ONLY.', didIt:'It will capture just your playing.',
     done:()=>$('traxSrc').value==='live' },
   { tab:'trax', el:'traxlist', title:'ARM A LANE',
