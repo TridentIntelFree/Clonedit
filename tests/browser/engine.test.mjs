@@ -297,6 +297,45 @@ export default async function ({ browser, base }) {
     t.ok('and a short one does not nag about it', !/STOP silences it/.test(ring.mild));
     t.ok('zero feedback reads as no ring at all', /nothing/.test(ring.off), ring.off);
 
+    t.head('DIAG SAYS WHETHER THERE IS ANY AUDIO, AND CAN BE COPIED');
+    /* A silence report arrived with a DIAG that looked perfect: context
+       running, gates open, pad unmuted, nothing dangling. It looked perfect
+       because nothing in it said whether the one buffer held sound — it did
+       not. A dump that cannot tell "healthy and playing nothing" from "healthy
+       and holding silence" points everyone at the graph, which was the one
+       part that was fine. */
+    const diag = await page.evaluate(async () => {
+      S.buffers.length = 0;
+      S.pads.forEach(p => { p.bufId = -1; });
+      S.trax.forEach(t => { t.bufId = -1; });
+      const quiet = AC.createBuffer(2, AC.sampleRate, AC.sampleRate);
+      const loud = AC.createBuffer(2, AC.sampleRate, AC.sampleRate);
+      const d0 = loud.getChannelData(0);
+      for (let i = 0; i < d0.length; i++) d0[i] = 0.6 * Math.sin(i / 20);
+      S.buffers.push(quiet, loud);
+      S.pads[0].bufId = 0; S.editPad = 0;
+      S.pads[1].bufId = 1;
+      S.trax[0].bufId = 0;
+      document.getElementById('btnDiag').click();
+      const text = document.getElementById('docText').value;
+      const line = re => text.split('\n').find(l => re.test(l)) || '';
+      const o = { peaks: line(/buffer peaks:/), lanes: line(/^lanes:/) };
+      document.getElementById('btnDiagCopy').click();
+      await new Promise(r => setTimeout(r, 400));
+      o.copyLcd = document.getElementById('lcdmsg').textContent;
+      o.boxHasIt = /buffer peaks:/.test(document.getElementById('docText').value);
+      return o;
+    });
+    t.ok('a silent buffer is named as SILENT, with what it is loaded on',
+      /0\(A01\/T1\):SILENT/.test(diag.peaks), diag.peaks);
+    t.ok('and one with audio in it reports its peak instead',
+      /1\(A02\):0\.\d/.test(diag.peaks));
+    t.ok('the lane line names the source and any open input',
+      /source \w+/.test(diag.lanes) && /inputs open:/.test(diag.lanes), diag.lanes);
+    t.ok('COPY puts the report on the clipboard, or says why it could not',
+      /COPIED|CLIPBOARD/i.test(diag.copyLcd), '"' + diag.copyLcd + '"');
+    t.ok('and the report is in the text box either way', diag.boxHasIt);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

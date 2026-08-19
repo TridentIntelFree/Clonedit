@@ -519,6 +519,72 @@ export default async function ({ browser, base }) {
       route.stillOpenAfterResume, 'the old guard omitted micOn and breathOn');
     t.ok('but does release it once the capture closes', route.releasedAfterClose);
 
+    t.head('A TAPE LANE CAN BE PREVIEWED ON ITS OWN');
+    /* Asked for: until now the only way to hear a take was to press PLAY and
+       wait for it to come round with everything else, which is no way to
+       answer "did that actually record?". The preview is deliberately its own
+       path — dry, straight to master, ignoring the lane's mute, volume and FX
+       — because a lane muted at zero is exactly the one you need to audition. */
+    const prev = await page.evaluate(async () => {
+      const o = {};
+      const SR = AC.sampleRate;
+      const take = AC.createBuffer(2, Math.round(SR * 0.6), SR);
+      const d = take.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = 0.5 * Math.sin(2 * Math.PI * 300 * i / SR);
+      S.buffers.push(take);
+      S.trax[1].bufId = S.buffers.length - 1;
+      S.trax[1].name = 'take2';
+      S.trax[1].mute = true; S.trax[1].gain = 0;      // the hard case
+      drawTrax();
+
+      const rows = document.querySelectorAll('#traxlist .row');
+      const btn = rows[1].querySelector('button[aria-label^="Preview track 2"]');
+      o.hasButton = !!btn;
+      o.enabledWithTake = btn ? !btn.disabled : null;
+      const empty = rows[3].querySelector('button[aria-label^="Preview track 4"]');
+      o.disabledWhenEmpty = empty ? empty.disabled : null;
+
+      btn.click();
+      o.playingAfterTap = !!traxPrev && traxPrev.i === 1;
+      o.lcd = document.getElementById('lcdmsg').textContent;
+      const again = document.querySelectorAll('#traxlist .row')[1]
+        .querySelector('button[aria-label^="Stop previewing track 2"]');
+      o.buttonBecameStop = !!again;
+      if (again) { again.click(); o.stoppedAfterSecondTap = !traxPrev; }
+
+      // the transport takes over an audition rather than layering on it
+      btn.click ? document.querySelectorAll('#traxlist .row')[1]
+        .querySelector('button[aria-label^="Preview track 2"]').click() : null;
+      o.playingBeforeTransport = !!traxPrev;
+      startSeq();
+      o.stoppedByTransport = !traxPrev;
+      stopSeq();
+
+      // a silent take says so instead of leaving you listening to nothing
+      const quiet = AC.createBuffer(2, Math.round(SR * 0.3), SR);
+      S.buffers.push(quiet);
+      S.trax[2].bufId = S.buffers.length - 1;
+      drawTrax();
+      document.querySelectorAll('#traxlist .row')[2]
+        .querySelector('button[aria-label^="Preview track 3"]').click();
+      o.silentLcd = document.getElementById('lcdmsg').textContent;
+      traxPreviewStop();
+      return o;
+    });
+    t.ok('every lane holding a take gets a preview button',
+      prev.hasButton && prev.enabledWithTake);
+    t.ok('and an empty lane\'s is disabled rather than misleading', prev.disabledWhenEmpty);
+    t.ok('tapping it plays the take even though the lane is muted at zero volume',
+      prev.playingAfterTap, '"' + prev.lcd + '"');
+    t.ok('it says it is bypassing the mix rather than leaving that a surprise',
+      /ignoring mute/.test(prev.lcd), prev.lcd.slice(0, 90));
+    t.ok('the button turns into a stop, and a second tap stops it',
+      prev.buttonBecameStop && prev.stoppedAfterSecondTap);
+    t.ok('starting the transport ends the audition rather than layering on it',
+      prev.playingBeforeTransport && prev.stoppedByTransport);
+    t.ok('and a silent take says so instead of playing nothing in silence',
+      /SILENT/.test(prev.silentLcd), '"' + prev.silentLcd + '"');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
