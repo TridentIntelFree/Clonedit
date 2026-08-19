@@ -4877,8 +4877,32 @@ Object.assign(globalThis, __JBH_PURE);})();
      it. The mic being on is a clear statement of intent, so it takes the source
      and says it has, gives it back when the mic goes off, and leaves alone any
      source chosen deliberately while it was live.
+   - R158: "AMBER SIGNAL" LEARNS THE NEW TRICKS. Asked to update the factory song
+     to use POLY and NOTES, and to be creative about where the sounds come from.
+     A feature the demo does not touch is a feature nobody meets.
+     POLY in the two places a sixteen-step grid genuinely cannot go. Both
+     choruses: the closed hat keeps ordinary time except on steps 7 and 14,
+     which open into three hits inside one beat — 276 against a project at 92.
+     The breakdown: congas three across the WHOLE bar at 69, three quarters of
+     the tempo, against a kick squarely in four.
+     PLAIN HIT earned its place immediately. With the beat-long figure firing
+     from all six lit hats it overlapped four deep and measured as hits 54ms
+     apart across the bar — a machine gun, not a triplet. Marking the
+     timekeeping hats plain leaves two flourishes and it plays.
+     NOTES: the warm pad held single notes, wasting the one instrument in the
+     kit that can carry a triad without turning to mud. Am/F and C/G now.
+     SOUNDS THAT ARE NOT IN THE PRESET LIST. Two pads are built rather than
+     chosen — two renders summed with one arriving late, which is what a player
+     does with two layers on a pad. A11 is a pluck with a bell 12ms behind it,
+     close enough to read as the string's own ring; A14 is cello + glass played
+     in GRAIN mode, so the pad sprays fragments of a pair that exists nowhere
+     in the list. A15 is the riser reversed — an intake, not a push. A12 drops
+     an octave in the breakdown and holds its length because KEEP TIME landed
+     last build; tape pitch would have made it a blip.
+     Measured: 61.1s, 23 bars, peak 0.9315 with nothing at full scale, 0.984
+     correlation.
    ================================================================ */
-const BUILD = 'JBH-88 · R157 · 2026-08-04 · tape lanes are visible, pitch keeps time';
+const BUILD = 'JBH-88 · R158 · 2026-08-04 · Amber Signal learns the new tricks';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -9558,11 +9582,79 @@ const MIRRORS_DOC={ fmt:'mvx-songdoc-1', title:'Mirrors for Machines',
    A composition by Claude, written as the factory demo. A-minor, 92 BPM,
    lo-fi cinematic hip-hop: Am | F | C | G under an e-piano arpeggio,
    with a pluck hook in the chorus and a cello answer in the breakdown.
-   Built entirely from the in-house synth presets and sequenced with the
-   app's own tools — pitch locks (melody), ratchets, probability ghost
-   notes, sidechain pump, humanize, ping-pong delay, SONG arrangement:
-   intro ×2 → build ×2 → verse ×4 → chorus ×4 → verse ×2 → chorus ×4 →
-   breakdown ×2 → outro ×2. */
+   Sequenced with the app's own tools — pitch locks, ratchets, probability
+   ghost notes, sidechain pump, humanize, ping-pong delay, and a SONG
+   arrangement: intro ×2 → build ×2 → verse ×4 → chorus ×4 → verse ×2 →
+   chorus ×4 → breakdown ×2 → outro ×2.
+
+   WHAT IT USES THAT IT DID NOT BEFORE
+
+   POLY. Two places, chosen because they are the two things a sixteen-step
+   grid cannot write. In both choruses the closed hat keeps ordinary time
+   except on steps 7 and 14, which open into three hits inside one beat —
+   276 against a project at 92. Every other hat is marked PLAIN HIT, and
+   that is not decoration: with the figure firing from all six lit hats it
+   overlapped four deep and measured as hits 54ms apart across the whole
+   bar. A machine gun, not a triplet. One property per step fixes it.
+   In the breakdown the congas run three across the WHOLE bar — 69, three
+   quarters of the tempo — against a kick squarely in four. Stripped back
+   is the clearest place in the piece to hear three against four.
+
+   NOTES. The warm pad held single notes, which wastes the one instrument
+   in the kit that can carry a triad without turning to mud. It plays real
+   chords now: Am and F in the verse, C and G in its answer.
+
+   SOUNDS THAT ARE NOT IN THE PRESET LIST. The app ships no audio, so
+   everything is synthesised — but a preset played straight is a preset.
+   Two pads are built rather than chosen, by summing two renders with one
+   arriving slightly late, which is what a player does with two layers on
+   a pad:
+     A11 GLASS PLUCK  pluck + a bell 12ms behind it. Struck together they
+                      are one timbre; slightly apart the bell reads as the
+                      string's own ring rather than a second instrument.
+     A14 BOWED AIR    cello + glass, then played in GRAIN mode, so the pad
+                      sprays fragments of the pair instead of playing them.
+   A15 is the noise riser REVERSED — an intake before the chorus rather
+   than a push into it. A12's bell drops an octave in the breakdown and
+   holds its length, because KEEP TIME is on; tape pitch would have made
+   that a short blip instead of a drone.
+
+   Measured: 61.1s, 23 bars, peak 0.9315 with nothing at full scale, and
+   0.984 correlation — it survives being folded to mono. */
+/* MAKING A SOUND THAT IS NOT IN THE PRESET LIST.
+
+   The app ships no audio, so every sound here is synthesised — but a preset
+   played straight is a preset, and asked to be creative about it I would rather
+   not just pick different ones. Two sounds in this song are built rather than
+   chosen: two renders summed with one arriving slightly late, which is what a
+   sampler player does with two layers on a pad, and it produces attacks and
+   beating that neither source has on its own.
+
+   Normalised on the way out, because a sum of two things that each peaked near
+   1.0 does not, and a pad that arrives 6dB hotter than its neighbours is a
+   mixing problem shipped as a feature. */
+function blendBufs(a,b,opt){
+  const o=opt||{};
+  const ga=o.ga!=null?o.ga:1, gb=o.gb!=null?o.gb:1;
+  const sr=a.sampleRate;
+  const off=Math.max(0,Math.round((o.offset||0)*sr));
+  const len=Math.max(a.length, b.length+off);
+  const out=AC.createBuffer(2,len,sr);
+  for(let ch=0;ch<2;ch++){
+    const d=out.getChannelData(ch);
+    const A=a.getChannelData(Math.min(ch,a.numberOfChannels-1));
+    const B=b.getChannelData(Math.min(ch,b.numberOfChannels-1));
+    for(let i=0;i<A.length;i++) d[i]+=A[i]*ga;
+    for(let i=0;i<B.length;i++){ const j=i+off; if(j<len) d[j]+=B[i]*gb; }
+  }
+  let pk=0;
+  for(let ch=0;ch<2;ch++){ const d=out.getChannelData(ch);
+    for(let i=0;i<d.length;i++){ const v=Math.abs(d[i]); if(v>pk) pk=v; } }
+  if(pk>0.99){ const g=0.99/pk;
+    for(let ch=0;ch<2;ch++){ const d=out.getChannelData(ch);
+      for(let i=0;i<d.length;i++) d[i]*=g; } }
+  return out;
+}
 async function loadClaudeSong(){
   if(kitBusy) return; kitBusy=true;
   ensureAudio();
@@ -9579,11 +9671,11 @@ async function loadClaudeSong(){
       ['kep',57,{gain:.7,pan:.15,rev:.25,dly:.12}],      // A3 e-piano
       ['pwarm',45,{gain:.55,rev:.35}],                   // A2 pad
       ['scello',45,{gain:.65,pan:-.25,rev:.3}],          // A2 cello
-      ['lpluck',69,{gain:.7,pan:-.2,rev:.3,dly:.25}],    // A4 pluck hook
+      ['lpluck',69,{gain:.7,pan:-.2,rev:.3,dly:.25}],    // A4 pluck hook — layered below
       ['xbell',69,{gain:.5,pan:.3,rev:.5,dly:.2}],       // A4 bell accents
       ['dclap',39,{gain:.7,rev:.2}],
-      ['xglass',57,{gain:.5,rev:.5}],                    // atmosphere
-      ['xsweep',60,{gain:.55,rev:.3}],                   // riser into the chorus
+      ['xglass',57,{gain:.5,rev:.5}],                    // atmosphere — turned into a cloud below
+      ['xsweep',60,{gain:.55,rev:.3,reverse:true}],      // REVERSED: an intake, not a riser
       ['dcong',63,{gain:.55,pan:-.35}],
     ];
     for(let i=0;i<PADS.length;i++){
@@ -9592,11 +9684,66 @@ async function loadClaudeSong(){
       assignBufToPad(i,buf,def.name);
       Object.assign(S.pads[i],tw);
     }
+    /* ---- two sounds that are not in the preset list ---------------------- */
+    const rp=async(id,note)=>renderPreset(PRESETS.find(p=>p.id===id),note);
+    // A11 GLASS PLUCK — a pluck with a bell 12ms behind it. The offset is the
+    // point: struck together they are one timbre, and slightly apart the bell
+    // reads as the string's own ring rather than a second instrument.
+    try{
+      const gp=blendBufs(await rp('lpluck',69), await rp('xbell',81), {ga:1, gb:.5, offset:.012});
+      assignBufToPad(10,gp,'glass pluck');
+      Object.assign(S.pads[10],{gain:.7,pan:-.2,rev:.3,dly:.25});
+    }catch(e){}
+    // A14 BOWED AIR — cello and glass summed, then played in GRAIN mode, so the
+    // pad sprays fragments of the pair instead of playing them. A texture that
+    // exists nowhere in the preset list and cannot be got at by choosing one.
+    try{
+      const air=blendBufs(await rp('scello',45), await rp('xglass',57), {ga:.8, gb:.7, offset:.06});
+      assignBufToPad(13,air,'bowed air');
+      /* Density and burst kept modest on purpose. A grain cloud is the most
+         expensive thing a pad can be — every grain is a source node — and this
+         is the FACTORY song, which is the first thing a phone ever renders.
+         14 grains/s over 1.6s is ~22 voices per hit; 9 over 1.1s is ~10, and at
+         this spread and size it still reads as a cloud rather than a stutter.
+         Caught by the engine suite picking up a real dropout on the machine
+         running the tests once this pad went in. */
+      Object.assign(S.pads[13],{gain:.5,rev:.55,dly:.15,mode:'grain',
+        grSize:.16,grDens:9,grSpread:.35,grPitch:5,grPos:.18,grBurst:1.1});
+    }catch(e){}
+    // A12 the bell doubles as a drone: an octave down, holding its length
+    // because KEEP TIME is on — tape pitch would have made it a short blip.
+    Object.assign(S.pads[11],{keepTime:true});
     // ---- patterns. Harmony offsets from A: Am=0, F=-4, C=+3, G=-2 ----
     const P=Array.from({length:NPAT},()=>newPattern());
     const N=(pi,pad,st,vel,pitch,x)=>{ P[pi].steps[pad][st]=vel;
       const lk={}; if(pitch) lk.pitch=pitch; if(x) Object.assign(lk,x);
       if(Object.keys(lk).length) P[pi].locks[pad+':'+st]=lk; };
+    /* A CHORD is one step carrying several pitches — the NOTES lane's own
+       shape. The warm pad held single notes before, which is a waste of the one
+       instrument in the kit that can hold a triad without turning to mud. */
+    const CH=(pi,pad,st,vel,pitches)=>{ P[pi].steps[pad][st]=vel;
+      P[pi].locks[pad+':'+st]={pitches:pitches.slice(), pitch:pitches[0]}; };
+    /* A POLY FIGURE. Its cells are fired by the pad's own lit steps, so the
+       steps say WHEN and the figure says WHAT — three hits inside a beat, or
+       three across a bar, neither of which sixteen steps can write.
+       bpm is in the figure's own units: hits per minute. At a project tempo of
+       92, 276 is three per beat and 69 is three per bar. */
+    /* PLAIN HIT on a step: it plays one ordinary hit and skips the pad's
+       figure. Without it a figure that lasts a beat, fired from hats a quarter
+       of a beat apart, overlaps four deep and comes out as a machine gun —
+       measured before this was added: hits 54ms apart across the whole bar. The
+       part wants ordinary hats keeping time and two of them opening into
+       triplets, which is one property per step. */
+    const PLAIN=(pi,pad,steps)=>steps.forEach(st=>{
+      const k=pad+':'+st, lk=P[pi].locks[k]||{};
+      lk.plain=1; P[pi].locks[k]=lk;
+    });
+    const POLY=(pi,pad,bpm,cells,lit)=>{
+      const row=polyEmptyRow();
+      lit.forEach(([i,v])=>{ row[i]=v; });
+      P[pi].poly=P[pi].poly||{};
+      P[pi].poly[pad]={on:true,bpm,cells,lock:true,trig:'step',row};
+    };
     const arpAmF=[[0,0],[2,3],[4,7],[6,12],[8,-4],[10,0],[12,3],[14,8]];     // Am then F, broken
     const arpCG =[[0,3],[2,7],[4,10],[6,15],[8,-2],[10,2],[12,5],[14,10]];   // C then G
     const ep=(pi,arp,vel)=>arp.forEach(a=>N(pi,7,a[0],vel,a[1]));
@@ -9620,28 +9767,49 @@ async function loadClaudeSong(){
     ep(1,arpAmF,.7); N(1,8,0,.55); N(1,8,8,.5,-4); N(1,13,0,.35,0,{prob:.7});
     N(1,0,0,.6); N(1,0,8,.6); [2,6,10,14].forEach(s=>N(1,4,s,.45)); N(1,5,4,.45); N(1,5,12,.45);
     N(1,14,8,.5);
-    // P2 VERSE Am|F
+    // P2 VERSE Am|F — the pad holds real triads now, not one note
     verseDrums(2); ep(2,arpAmF,.6);
+    CH(2,8,0,.5,[0,3,7]);      // Am
+    CH(2,8,8,.48,[-4,0,3]);    // F
     N(2,6,0,.9); N(2,6,5,.85,0,{prob:.7}); N(2,6,8,.9,-4); N(2,6,13,.85,-4,{prob:.7});
-    N(2,8,0,.5); N(2,8,8,.5,-4);
     // P3 VERSE C|G — cello slips in
     verseDrums(3); ep(3,arpCG,.6);
     N(3,6,0,.9,3); N(3,6,5,.85,3,{prob:.7}); N(3,6,8,.9,-2); N(3,6,13,.85,-2,{prob:.7});
-    N(3,8,0,.5,3); N(3,8,8,.5,-2);
+    CH(3,8,0,.5,[3,7,10]);     // C
+    CH(3,8,8,.48,[-2,2,5]);    // G
     N(3,9,0,.5,12); N(3,9,8,.5,10);
     // P4 CHORUS Am|F — the pluck hook, bass jumps the octave
     chorusDrums(4); ep(4,arpAmF,.5);
+    /* THE TRIPLET HATS. Two steps in the bar stop being single hats and become
+       three-inside-a-beat, against a kick that is squarely in four. This is the
+       figure a sixteen-step grid cannot write at all — sixteen does not divide
+       by three — and it is why POLY exists. */
+    POLY(4,2,276,3,[[0,.5],[1,.32],[2,.42]]);
+    PLAIN(4,2,[0,4,6,8,12,15]);      // the timekeeping hats stay single hits
+    N(4,2,7,.5); N(4,2,14,.5);       // these two open into a triplet
     N(4,6,0,.95); N(4,6,3,.7,12); N(4,6,5,.85); N(4,6,8,.95,-4); N(4,6,11,.7,8); N(4,6,13,.85,-4);
     N(4,10,0,.8,12); N(4,10,3,.75,7); N(4,10,6,.7,3); N(4,10,8,.8,8); N(4,10,11,.75,7); N(4,10,14,.7);
     N(4,8,0,.5); N(4,8,8,.5,-4); N(4,11,0,.3,12);
     // P5 CHORUS C|G — hook answers, congas talk
     chorusDrums(5); ep(5,arpCG,.5);
+    POLY(5,2,276,3,[[0,.5],[1,.32],[2,.42]]);
+    PLAIN(5,2,[0,4,6,8,12,15]);
+    N(5,2,3,.5); N(5,2,7,.5); N(5,2,14,.5);
     N(5,15,3,.5); N(5,15,11,.5); N(5,15,14,.45,-3);
     N(5,6,0,.95,3); N(5,6,3,.7,15); N(5,6,5,.85,3); N(5,6,8,.95,-2); N(5,6,11,.7,10); N(5,6,13,.85,-2);
     N(5,10,0,.8,15); N(5,10,3,.75,10); N(5,10,6,.7,7); N(5,10,8,.8,10); N(5,10,10,.7,5); N(5,10,12,.7,2); N(5,10,14,.75,5);
     N(5,8,0,.5,3); N(5,8,8,.5,-2);
     // P6 BREAKDOWN — the floor drops out, cello sings the answer
     N(6,0,0,.7); N(6,0,10,.6); [2,6,10,14].forEach(s=>N(6,4,s,.35));
+    /* THREE AGAINST FOUR, across the whole bar. One step at the top of the bar
+       fires a three-cell figure at 69 — three quarters of the project tempo —
+       so the congas lay three evenly over the kick's four. With the drums
+       stripped back it is the clearest place in the song to hear it. */
+    POLY(6,15,69,3,[[0,.6],[1,.42],[2,.5]]);
+    N(6,15,0,.6);
+    /* The bell an octave down, holding its length because KEEP TIME is on. Tape
+       pitch would have made this a short blip instead of a drone. */
+    N(6,11,0,.4,-12); N(6,11,8,.35,-12);
     N(6,8,0,.6); N(6,13,0,.35);
     N(6,9,0,.65,12); N(6,9,4,.6,15); N(6,9,8,.6,10); N(6,9,12,.65,7);
     N(6,7,6,.4,7,{prob:.6}); N(6,7,14,.4,3,{prob:.6});
@@ -9673,7 +9841,10 @@ async function loadClaudeSong(){
     S.bank=0; S.editPad=7; S.seqPad=7;   // land on the e-piano so NOTES shows the melody
     $('projName').value="Claude's Song";
     buildPads(); drawPads(); drawEdit(); drawSeq(); drawFader(); drawMixer(); drawSong(); dirty();
-    lcd("CLAUDE'S SONG · “Amber Signal” — press PLAY for the full arrangement ♪");
+    lcd("CLAUDE'S SONG · “Amber Signal” — press PLAY. New in this version: triplet hats "
+      +"in the chorus and three-against-four congas in the breakdown (SEQ ▸ POLY), real chords "
+      +"on the warm pad, and two sounds built by layering two renders — A11 glass pluck, "
+      +"A14 bowed air (a GRAIN cloud). ♪");
   }catch(err){ lcd('SONG FAILED: '+(err&&err.message?err.message:'error')); }
   finally{ kitBusy=false; }
 }

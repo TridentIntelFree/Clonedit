@@ -272,12 +272,28 @@ export default async function ({ browser, base }) {
          something coarse — measured at 122% of the original an octave down on a
          185ms sample. That is a real limit of the technique and it is written
          into the panel, but it is not what this check is about. */
+      /* The longest ONE-SHOT pad. A GRAIN pad's length is set by its burst, not
+         by its sample, so pitch cannot change it — and the demo song's longest
+         pad happens to be exactly that, which made this measure the one pad
+         where the property does not apply and read 100% for tape pitch too. */
       let pad = -1, best = 0;
-      S.pads.forEach((x, i) => { if (x.bufId >= 0) { const d = S.buffers[x.bufId].duration;
+      S.pads.forEach((x, i) => { if (x.bufId >= 0 && x.mode !== 'grain') {
+        const d = S.buffers[x.bufId].duration;
         if (d > best) { best = d; pad = i; } } });
       const p = S.pads[pad];
       p.start = 0; p.end = 1; p.rel = 0.06; p.keepPitch = false;
-      S.chainOn = false; S.songOn = false; S.human = 0;
+      S.chainOn = false; S.songOn = false; S.human = 0; S.swing = 0;
+      /* Its own tempo, explicitly. An earlier section leaves the transport at
+         120, where one bar is 2s — shorter than this sample — so every
+         measurement came back as the render window rather than the sound, and
+         all three pitches read identical. A test that inherits state measures
+         whatever ran before it. */
+      /* ONE hit, in a window long enough to hold it. Two loops put a second
+         hit at the four-second mark and the measurement ran to the end of THAT
+         — so tape at +12 read 73% of the original instead of the ~50% one hit
+         actually gives. At 30 BPM a sixteen-step bar is 8s, which holds the 6s
+         sample whole. */
+      setBpm(30); setPatLen(16);
       document.getElementById('bSrc').value = 'pat';
       document.getElementById('bLoops').value = '1';
       const len = async () => {
@@ -312,11 +328,8 @@ export default async function ({ browser, base }) {
        and it is the right sound for a tape effect. */
     t.ok('TAPE PITCH still shortens when you pitch up', pitch.tapeUp < pitch.tape0 * 0.7,
       (pitch.tapeUp / pitch.tape0 * 100).toFixed(0) + '% of the original length');
-    /* Downward is only checked as "longer at all": a 6s sample pitched an
-       octave down runs 12s, and the render is one pattern long, so the tail is
-       cut by the window rather than by the pitch. */
-    t.ok('and lengthens when you pitch down', pitch.tapeDn > pitch.tape0 * 1.05,
-      (pitch.tapeDn / pitch.tape0 * 100).toFixed(0) + '% (truncated by the render window)');
+    t.ok('and lengthens when you pitch down', pitch.tapeDn > pitch.tape0 * 1.6,
+      (pitch.tapeDn / pitch.tape0 * 100).toFixed(0) + '%');
     const errUp = Math.abs(pitch.keepUp - pitch.keep0) / pitch.keep0;
     const errDn = Math.abs(pitch.keepDn - pitch.keep0) / pitch.keep0;
     t.ok('KEEP TIME holds the length an octave UP', errUp < 0.15,

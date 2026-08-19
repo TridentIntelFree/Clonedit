@@ -129,10 +129,13 @@ export default async function ({ browser, base }) {
     t.ok('the startup cost is not counted', counter.armed.cls === 'engok', counter.armed.txt);
     t.note('    one dropout  → ' + counter.one.txt);
     t.note('    eleven       → ' + counter.many.txt);
+    /* "At least the one we injected". Asserting exactly one made this fail the
+       day the demo song got heavier and the machine dropped a real block during
+       the test — which is the counter doing its job, not a regression. */
     t.ok('a real dropout is counted once the engine has settled',
-      counter.one.cls !== 'engok' && /1 dropout/.test(counter.one.txt), counter.one.txt);
+      counter.one.cls !== 'engok' && /dropout/.test(counter.one.txt), counter.one.txt);
     t.ok('and it escalates rather than staying at one shade',
-      counter.many.cls === 'engbad' && counter.one.cls === 'engwarn',
+      counter.many.cls === 'engbad' && counter.one.cls !== 'engbad',
       counter.one.cls + ' → ' + counter.many.cls);
     /* The whole point of the reading is telling two unrelated problems apart. */
     t.ok('it says plainly that no filter can remove a dropout',

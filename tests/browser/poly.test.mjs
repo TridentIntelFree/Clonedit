@@ -793,6 +793,59 @@ export default async function ({ browser, base }) {
     t.ok('and each switch says what changed', /FROM EACH STEP/.test(says.step.said) &&
       /ON ITS OWN/.test(says.free.said));
 
+    t.head("THE DEMO SONG ACTUALLY USES ANY OF THIS");
+    /* A feature the factory song does not touch is a feature nobody meets. It
+       is also the only end-to-end check that poly figures, chords and built
+       sounds survive a real arrangement rather than a test fixture. */
+    const song = await page.evaluate(async () => {
+      await loadClaudeSong();
+      await new Promise(r => setTimeout(r, 400));
+      const beat = 60 / Math.abs(S.bpm), bar = NSTEPS * (beat / 4);
+      const poly = [];
+      S.patterns.forEach((pt, pi) => {
+        if (!pt.poly) return;
+        Object.keys(pt.poly).forEach(k => {
+          const c = polyCfg(pt, +k); if (!c) return;
+          poly.push({ pat: pi, pad: +k, bpm: c.bpm, cells: c.cells,
+            beats: polyFigureDur(c, bar) / beat, trig: polyTrig(c) });
+        });
+      });
+      let chords = 0, plain = 0;
+      S.patterns.forEach(pt => { for (const k in pt.locks) {
+        const lk = pt.locks[k];
+        if (lk.pitches && lk.pitches.length > 1) chords++;
+        if (lk.plain) plain++;
+      } });
+      return { bpm: S.bpm, poly, chords, plain,
+        built: S.pads.filter(p => /glass pluck|bowed air/.test(p.name || '')).map(p => p.name),
+        grain: S.pads.filter(p => p.mode === 'grain').length,
+        reversed: S.pads.filter(p => p.bufId >= 0 && p.reverse).length,
+        keepTime: S.pads.filter(p => p.bufId >= 0 && p.keepTime).length };
+    });
+    song.poly.forEach(p => t.note('    P' + p.pat + ' pad ' + p.pad + ' — ' + p.bpm +
+      'bpm × ' + p.cells + ' cells = ' + p.beats.toFixed(2) + ' beats, fired ' + p.trig));
+    t.ok('the song carries poly figures', song.poly.length >= 3, song.poly.length + '');
+    t.ok('all of them are fired by the steps, not free-running',
+      song.poly.every(p => p.trig === 'step'));
+    /* The two cases worth having: three inside a beat, and three across a bar. */
+    t.ok('one is three hits inside a single beat',
+      song.poly.some(p => p.cells === 3 && Math.abs(p.beats - 1) < 0.01),
+      song.poly.map(p => p.beats.toFixed(2)).join(' '));
+    t.ok('and one is three across the whole bar — three against four',
+      song.poly.some(p => p.cells === 3 && Math.abs(p.beats - 4) < 0.01),
+      song.poly.map(p => p.beats.toFixed(2)).join(' '));
+    /* Without PLAIN HIT the beat-long figure fires from every lit hat and
+       overlaps four deep; measured at 54ms between hits before it was added. */
+    t.ok('the timekeeping hats are marked PLAIN so the figure does not smear',
+      song.plain >= 8, song.plain + ' steps');
+    t.ok('the notes lane carries real chords, not single notes',
+      song.chords >= 4, song.chords + ' chords');
+    t.ok('and two sounds are built by layering rather than chosen',
+      song.built.length === 2, song.built.join(', '));
+    t.ok('with a grain cloud, a reversed pad and KEEP TIME in use',
+      song.grain >= 1 && song.reversed >= 1 && song.keepTime >= 1,
+      'grain ' + song.grain + ' · reversed ' + song.reversed + ' · keepTime ' + song.keepTime);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
