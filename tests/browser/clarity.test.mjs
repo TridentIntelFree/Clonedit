@@ -240,10 +240,20 @@ export default async function ({ browser, base }) {
       delete old.mMud; delete old.mAir; delete old.mFocus; delete old.mDeess;
       applySessionDoc(old, docToBuffers(structuredClone(old)));
       o.legacy = { mMud: S.mMud, mAir: S.mAir, mFocus: S.mFocus, mDeess: S.mDeess };
+      /* Two different contracts, and they are different on purpose.
+         A number outside the control's range is a value the loader can honour
+         by clamping — the project is real, one setting was extreme.
+         A field of the WRONG TYPE is a damaged file, and docAccept refuses it
+         whole rather than applying half of it. */
       const evil = structuredClone(snap);
-      evil.mMud = -999; evil.mAir = 999; evil.mFocus = 50; evil.mDeess = 'x';
+      evil.mMud = -999; evil.mAir = 999; evil.mFocus = 50; evil.mDeess = 0.5;
       applySessionDoc(evil, docToBuffers(structuredClone(evil)));
       o.clamped = { mMud: S.mMud, mAir: S.mAir, mFocus: S.mFocus, mDeess: S.mDeess };
+
+      const bent = structuredClone(snap);
+      bent.mDeess = 'x';
+      o.bentRefused = applySessionDoc(bent, docToBuffers(structuredClone(bent))) === false;
+      o.afterBent = { mMud: S.mMud, mAir: S.mAir, mFocus: S.mFocus, mDeess: S.mDeess };
       /* And the round-trip must leave the instrument playable, not just
          carry four numbers. */
       applySessionDoc(structuredClone(snap), docToBuffers(structuredClone(snap)));
@@ -261,10 +271,14 @@ export default async function ({ browser, base }) {
       same(persist.ui, [-4.5, 3.5, 0.62, 0.4]), JSON.stringify(persist.ui));
     t.ok('a project saved before these existed opens with them OFF',
       Object.values(persist.legacy).every(v => v === 0), JSON.stringify(persist.legacy));
-    t.ok('and a damaged or hostile doc is clamped, not trusted',
+    t.ok('an out-of-range NUMBER is clamped to the control\'s range',
       persist.clamped.mMud === -9 && persist.clamped.mAir === 9
-      && persist.clamped.mFocus === 1 && persist.clamped.mDeess === 0,
+      && persist.clamped.mFocus === 1 && persist.clamped.mDeess === 0.5,
       JSON.stringify(persist.clamped));
+    t.ok('but a field of the wrong TYPE is refused whole, not half-applied',
+      persist.bentRefused
+      && JSON.stringify(persist.afterBent) === JSON.stringify(persist.clamped),
+      'refused: ' + persist.bentRefused + ', state held at ' + JSON.stringify(persist.afterBent));
     t.ok('and the reloaded project still makes sound', persist.peakAfterLoad > 0.05,
       'peak ' + persist.peakAfterLoad.toFixed(4));
 

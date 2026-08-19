@@ -5059,8 +5059,46 @@ Object.assign(globalThis, __JBH_PURE);})();
      frequencies one render at a time built 138 of them. One render of a summed
      multitone read with a Goertzel gives the same numbers for the linear
      stages and a more realistic probe for the de-esser: 52s to 8s.
+   - R161: WHAT SURVIVES BEING SAVED. Three findings from a QA pass on R160,
+     all reproduced before being fixed. Two of them were worse than reported.
+     A LOAD COULD FAIL HALFWAY. docAccept's own comment states the invariant:
+     every route in must be refused whole or applied whole. Two fields broke
+     it. masterVol and delayFb were assigned raw where every neighbour carried
+     a default, and both are written straight into AudioParams, which throw on
+     a non-finite value — so a document missing either failed a third of the
+     way down, AFTER pads, patterns and tape lanes had been replaced, and
+     printed LOAD FAILED over a session that had in fact been half-overwritten.
+     They carry defaults now, and docAccept checks every number that reaches an
+     AudioParam before anything is applied, so the invariant is enforced at the
+     gate rather than depending on each future field remembering its own
+     default.
+     SAVING CLIPPED ANYTHING OVER 0dBFS. Reported against the autosave vault;
+     it was every persistence path, because f32ToB64 — the .json project file
+     and the library — is also Int16 despite its name. The TRAX tap sits
+     upstream of the limiter deliberately, so takes above 1.0 are normal and
+     the float path carries them; 32-bit export was measured carrying 1.9
+     intact. Saving flat-topped every one, permanently. Measured: a source
+     peaking 1.9 came back at 1.00003 with 704 samples pinned flat.
+     AND IT WASTED THE QUIET END. Undithered Int16 error is fixed in absolute
+     terms, so quiet material loses most: a channel at -48dBFS kept 8.0
+     effective bits.
+     One scale factor per channel fixes both. The channel is normalised on the
+     way in and multiplied back on the way out: nothing clips at any level, and
+     every channel gets the whole grid regardless of level — the same -48dBFS
+     channel now keeps 16.0 bits. It costs one float per channel and not one
+     byte of sample data. Absent pk means 1, exactly the old behaviour, so
+     older projects still open; DOC_V goes to 3 so an older build refuses these
+     files rather than playing a normalised take at the wrong level.
+     THE GUARD NEARLY BECAME THE BUG. DOC_NUMS is a hand-written list of field
+     names, and naming a field that is not numeric makes docAccept refuse EVERY
+     real project — far worse than what it prevents. It happened twice: morph
+     is an object, vcurve is the string 'linear'. The first slipped past
+     because the test only asserted the load did not THROW, which a blanket
+     refusal also satisfies. The test asserts the load RETURNS TRUE now, and a
+     separate check walks DOC_NUMS against a real document so the list cannot
+     drift from the schema.
    ================================================================ */
-const BUILD = 'JBH-88 · R160 · 2026-08-19 · clarity, and a crossover fixed';
+const BUILD = 'JBH-88 · R161 · 2026-08-19 · what survives being saved';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -13696,20 +13734,66 @@ const mlines=[];
 function mlog(s){ mlines.push(s); if(mlines.length>10) mlines.shift(); $('mididlog').textContent=mlines.join('\n'); }
 
 /* ---------------- project: JSON save/load ---------------- */
-function f32ToB64(f32){
-  const i16=new Int16Array(f32.length);
-  for(let i=0;i<f32.length;i++) i16[i]=Math.max(-32768,Math.min(32767,Math.round(f32[i]*32767)));
+/* STORED AUDIO: 16-bit PCM, scaled per channel.
+
+   Every persistence path in the app — the .json project file, the project
+   library, and the autosave vault the app restores from after a crash — kept
+   audio as Int16 clamped to +/-1:
+
+       i16[i] = clamp(round(f[i] * 32767))
+
+   Two things were wrong with that, and they pull in opposite directions.
+
+   IT CLIPPED. The TRAX capture tap sits at perfGain, upstream of the limiter,
+   deliberately — moving it downstream would re-record playing lanes into every
+   overdub. So a take can legitimately exceed 1.0, and the float path carries it
+   happily; 32-bit-float export was measured carrying samples at 1.9 intact.
+   Saving flat-topped every one of those, permanently, including into the slot
+   crash-recovery reads. A recorded take peaking 1.163 lost 89 samples; a
+   sustained tone at 1.16 lost 16,280, which is audible flat-topping.
+
+   IT WASTED THE QUIET END. The error of an undithered 16-bit grid is fixed in
+   absolute terms, so it is the quiet material that suffers: measured through
+   the real vault, -6dBFS kept 15.0 effective bits and -60dBFS kept 6.0.
+
+   One scale factor per channel fixes both. The channel is normalised to full
+   scale on the way in and multiplied back on the way out, so nothing clips at
+   any level and every channel gets the whole 16-bit grid regardless of how
+   quiet it is. It costs one float per channel and not one byte of sample data.
+
+   Absent pk means 1, which is exactly the old behaviour, so documents written
+   before this still decode correctly. DOC_V goes to 3 so that an OLDER build,
+   which would ignore pk and play a normalised take at the wrong level, refuses
+   the file instead of misreading it. */
+function pcmPeak(f32){
+  let pk=0;
+  for(let i=0;i<f32.length;i++){ const a=Math.abs(f32[i]); if(a>pk) pk=a; }
+  return (pk>0 && isFinite(pk)) ? pk : 1;      // silence scales by 1, not by 0
+}
+function pcmQuant(f32,pk){
+  const i16=new Int16Array(f32.length), inv=32767/pk;
+  for(let i=0;i<f32.length;i++){
+    const v=Math.round(f32[i]*inv);
+    i16[i] = v>32767 ? 32767 : (v<-32768 ? -32768 : v);   // rounding only, the scale did the rest
+  }
+  return i16;
+}
+function pcmRestore(i16,pk){
+  const k=((pk>0&&isFinite(pk))?pk:1)/32767, f=new Float32Array(i16.length);
+  for(let i=0;i<i16.length;i++) f[i]=i16[i]*k;
+  return f;
+}
+function f32ToB64(f32,pk){
+  const i16=pcmQuant(f32,(pk>0&&isFinite(pk))?pk:1);
   const u8=new Uint8Array(i16.buffer);
   let s=''; const CH=0x8000;
   for(let i=0;i<u8.length;i+=CH) s+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));
   return btoa(s);
 }
-function b64ToF32(b64){
+function b64ToF32(b64,pk){
   const bin=atob(b64), u8=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
-  const i16=new Int16Array(u8.buffer), f32=new Float32Array(i16.length);
-  for(let i=0;i<i16.length;i++) f32[i]=i16[i]/32767;
-  return f32;
+  return pcmRestore(new Int16Array(u8.buffer), pk);
 }
 function download(blob,name){
   const a=document.createElement('a');
@@ -13720,9 +13804,12 @@ function download(blob,name){
 $('btnSave').addEventListener('click',()=>{
   gcBuffers();
   const bufs=S.buffers.map(b=>{
-    const chans=[];
-    for(let c=0;c<b.numberOfChannels;c++) chans.push(f32ToB64(b.getChannelData(c)));
-    return {sr:b.sampleRate,len:b.length,ch:chans};
+    const chans=[], pk=[];
+    for(let c=0;c<b.numberOfChannels;c++){
+      const d=b.getChannelData(c), p=pcmPeak(d);
+      pk.push(p); chans.push(f32ToB64(d,p));
+    }
+    return {sr:b.sampleRate,len:b.length,ch:chans,pk};
   });
   const doc={ fmt:DOC_FMT, v:DOC_V, build:BUILD, name:$('projName').value,
     bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
@@ -13791,7 +13878,14 @@ function reapplyLivePads(){   // push S.pads channel state onto the live graph (
    The migration ladder below is a no-op today. That is the point of adding it
    now: the first real migration has somewhere to go. */
 const DOC_FMT='mvx880-project';
-const DOC_V=2;                 // schema version — bump ONLY when a field changes meaning
+/* Every numeric field that ends up in an AudioParam or a clamp that assumes a
+   number. docAccept refuses a document that carries any of these as something
+   other than a finite number, so the apply path cannot throw half way. */
+const DOC_NUMS=['bpm','swing','human','masterVol','delayFb','silFade','revLvl','revSize',
+  'delayDiv','dlyTone','compAmt','midiCh','midiRoot','midiOutCh','scaleRoot',
+  'mEqLo','mEqMid','mEqHi','mWidth','mMono','mCeil','mTrim',
+  'mMud','mAir','mFocus','mDeess','scDepth','scRel','takeSeed'];
+const DOC_V=3;                 // schema version — bump ONLY when a field changes meaning
 function docVersion(doc){ return (doc&&doc.v!=null)?(doc.v|0):0; }   // 0 = written before R139
 function docBuildName(doc){
   if(!doc||!doc.build) return 'a newer build';
@@ -13812,6 +13906,13 @@ function migrateDoc(doc,from){
      loader. The loader cannot tell "field absent because old" from "field
      absent because new" once the version has been rewritten. */
   if(from<2 && Array.isArray(doc.pads)) doc.pads.forEach(p=>{ if(p&&p.keepTime==null) p.keepTime=false; });
+  /* v2 → v3: stored audio carries a per-channel scale. Nothing to rewrite —
+     a v2 buffer was quantised against full scale, which is exactly what an
+     absent pk means, so the decoders read it correctly as it stands. The bump
+     exists for the other direction: a v2 build would ignore pk and play every
+     normalised channel at the wrong level, so it must refuse the file rather
+     than open it and be quietly wrong. */
+  if(from<3){ /* v2 → v3: no stored field changed meaning */ }
   doc.v=DOC_V;
   return doc;
 }
@@ -13853,11 +13954,31 @@ function docAccept(doc,where){
     migrateDoc(doc,v);
     plog('Project written before format v'+DOC_V+' — migrated on load ('+where+').');
   }
+  /* Numbers that reach an AudioParam, checked before anything is applied.
+     An AudioParam throws on a non-finite value, and the apply path is a long
+     straight run of assignments with no transaction around it — so one bad
+     number a third of the way down left pads, patterns and tape lanes
+     replaced and everything after them untouched, under a message saying
+     nothing had loaded. That is the exact failure the note at the top says
+     must not happen, so it is caught here rather than in each assignment.
+     Present-and-wrong is refused; absent is fine, the loader has defaults.
+     Last, after the version gate, so a document from a newer build keeps its
+     own more useful message instead of being called damaged. */
+  for(const k of DOC_NUMS){
+    const x=doc[k];
+    if(x!=null && (typeof x!=='number' || !isFinite(x))){
+      lcd('LOAD FAILED — that project file is damaged.');
+      plog('Refused '+where+': "'+k+'" is '+JSON.stringify(x)+', which is not a finite number. '+
+           'It would be written to an audio parameter part way through loading and throw, '+
+           'so nothing in this session was changed.');
+      return false;
+    }
+  }
   return true;
 }
 function applySessionDoc(doc, bufs){
   if(!docAccept(doc,'session load')) return false;
-  S.bpm=doc.bpm; S.swing=doc.swing; S.human=doc.human||0;
+  S.bpm=(doc.bpm!=null)?doc.bpm:120; S.swing=(doc.swing!=null)?doc.swing:0; S.human=doc.human||0;
   // an older project has no seed: give it one now and keep it from here on, so
   // it at least becomes repeatable from this point rather than never
   S.takeSeed = (doc.takeSeed!=null) ? doc.takeSeed : newTakeSeed();
@@ -13865,14 +13986,29 @@ function applySessionDoc(doc, bufs){
   // is retired as a default — always load OFF so a project saved under the old
   // default doesn't keep slowing loops/trax-on-pads when the tempo changes.
   S.autoWarp=false;
-  S.silFade=doc.silFade!=null?doc.silFade:0.06; S.masterVol=doc.masterVol; S.delayFb=doc.delayFb;
+  S.silFade=doc.silFade!=null?doc.silFade:0.06;
+  /* These two go straight into AudioParams a few hundred lines down, and an
+     AudioParam throws on a non-finite value — so a document missing either one
+     used to fail PART WAY THROUGH applySessionDoc, after S.pads, S.patterns
+     and S.trax had already been replaced. The user got "LOAD FAILED" over a
+     session that had in fact been half-overwritten and could not be got back.
+     docAccept now refuses such a file at the gate, and these carry defaults so
+     absence is a value rather than a fault. Both belts, because the invariant
+     in docAccept says every route in is refused whole or applied whole, and a
+     field that defends itself is one less way to break that later. */
+  S.masterVol=(doc.masterVol!=null)?doc.masterVol:0.9;
+  S.delayFb=(doc.delayFb!=null)?doc.delayFb:0.35;
   S.revLvl=(doc.revLvl!=null)?doc.revLvl:0.9;
   S.revSize=(doc.revSize!=null)?doc.revSize:3.0;
   S.delayDiv=(doc.delayDiv!=null)?doc.delayDiv:0.375;
   S.dlyTone=(doc.dlyTone!=null)?doc.dlyTone:5200;
   S.compAmt=(doc.compAmt!=null)?doc.compAmt:0.4;
   S.revType=doc.revType||'hall'; S.dlyMode=doc.dlyMode||'digital';
-  S.vcurve=doc.vcurve; S.midiCh=doc.midiCh; S.pcPat=doc.pcPat; S.ccMaps=doc.ccMaps||{};
+  /* Defaults taken from S's own initial values, not invented: vcurve is the
+     string 'linear' and midiCh is -1 (omni), so 0.5 and 0 would have been
+     quietly wrong rather than absent. */
+  S.vcurve=(doc.vcurve!=null)?doc.vcurve:'linear'; S.midiCh=(doc.midiCh!=null)?doc.midiCh:-1;
+  S.pcPat=(doc.pcPat!=null)?doc.pcPat:true; S.ccMaps=doc.ccMaps||{};
   S.midiChrom=!!doc.midiChrom; S.midiRoot=doc.midiRoot!=null?doc.midiRoot:60;
   S.notesOut=!!doc.notesOut; S.clkOut=!!doc.clkOut; S.midiOutCh=doc.midiOutCh!=null?doc.midiOutCh:0;
   S.scaleLock=!!doc.scaleLock; S.scaleRoot=doc.scaleRoot|0; S.scaleName=(doc.scaleName in SCALES)?doc.scaleName:'minor';
@@ -14036,7 +14172,7 @@ $('jsonIn').addEventListener('change',async e=>{
     if(!docAccept(doc,'file import: '+f.name)) return;
     const bufs=doc.buffers.map(b=>{
       const ab=mkAudioBuf(b.len,b.sr,b.ch.length);
-      b.ch.forEach((c64,i)=>ab.copyToChannel(b64ToF32(c64),i));
+      b.ch.forEach((c64,i)=>ab.copyToChannel(b64ToF32(c64, b.pk?b.pk[i]:1),i));
       return ab;
     });
     if(!applySessionDoc(doc,bufs)) return;
@@ -14111,13 +14247,12 @@ function gcBuffers(){ // drop orphaned samples (every re-render leaves one) so t
 function snapshotSession(){
   gcBuffers();
   const bufs=S.buffers.map(b=>{
-    const ch=[];
+    const ch=[], pk=[];
     for(let c=0;c<b.numberOfChannels;c++){
-      const f=b.getChannelData(c), i16=new Int16Array(f.length);
-      for(let i=0;i<f.length;i++) i16[i]=Math.max(-32768,Math.min(32767,Math.round(f[i]*32767)));
-      ch.push(i16.buffer);
+      const f=b.getChannelData(c), p=pcmPeak(f);
+      pk.push(p); ch.push(pcmQuant(f,p).buffer);
     }
-    return {sr:b.sampleRate,len:b.length,ch};
+    return {sr:b.sampleRate,len:b.length,ch,pk};
   });
   return { fmt:DOC_FMT, v:DOC_V, build:BUILD, t:Date.now(), name:$('projName').value, projId:curProjId,
     bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
@@ -14287,9 +14422,7 @@ function docToBuffers(doc){   // PCM (Int16) back to AudioBuffers
   return (doc.buffers||[]).map(b=>{
     const ab=mkAudioBuf(b.len,b.sr,b.ch.length);
     b.ch.forEach((raw,i)=>{
-      const i16=new Int16Array(raw), f=new Float32Array(i16.length);
-      for(let j=0;j<i16.length;j++) f[j]=i16[j]/32767;
-      ab.copyToChannel(f,i);
+      ab.copyToChannel(pcmRestore(new Int16Array(raw), b.pk?b.pk[i]:1), i);
     });
     return ab;
   });
