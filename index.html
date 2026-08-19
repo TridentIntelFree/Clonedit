@@ -2016,6 +2016,7 @@ Same notes, different performance. Keep whichever you prefer.</p>
     <button id="btnDocExport">EXPORT CURRENT</button>
     <button id="btnDocSpec">SPEC</button>
     <button id="btnDiag" title="engine state snapshot">DIAG</button>
+    <button id="btnDiagCopy" title="Copy the diagnostic report to the clipboard">COPY</button>
   </div>
   <textarea id="docText" spellcheck="false" placeholder='Tap SPEC → copy the whole thing → paste it to any AI and ask for a beat → paste the AI&apos;s reply back here → tap LOAD DOC. (Code fences / extra text are fine.)'></textarea>
   <details class="ex"><summary>How AI JAM works</summary><div class="ex-body">
@@ -11540,6 +11541,13 @@ function traxCommit(){
   disarmTrax();
   if(cap.ctx!==AC){ try{ cap.ctx.close(); }catch(e){} }
   if(i<0 || !cap.len){ drawTrax(); lcd('TAKE EMPTY.'); return; }
+  /* The silent-take warning names the source it ACTUALLY used. It used to list
+     all three and ask you to check — reported back as "visually it shows it
+     did record something" and "the source wasn't clear to me", which is the
+     warning doing half its job: it knew the take was silent and it knew what
+     it had been recording, and it made you go and work out the second part. */
+  const srcName = cap.srcMode==='mic' ? 'MIC'
+    : cap.srcMode==='live' ? 'LIVE ONLY' : 'PRE-MASTER';
   const sr=cap.ctx.sampleRate;
   const L=new Float32Array(cap.len), R=new Float32Array(cap.len);
   let o=0; for(const c of cap.L){ L.set(c,o); o+=c.length; }
@@ -11570,10 +11578,17 @@ function traxCommit(){
   try{ drawPadRec(); }catch(e){}
   let tpk=0; for(let k=0;k<dl.length;k+=4){ const a=Math.abs(dl[k]); if(a>tpk) tpk=a; }
   if(tpk<0.004){
-    plog('SILENT-TAKE GUARD: track '+(i+1)+' take peaked at '+tpk.toFixed(4)+' — likely wrong SOURCE (BUS/LIVE/MIC) or nothing played. Kept anyway.');
-    lcd('\u26a0 TAKE '+(i+1)+' LOOKS SILENT — check SOURCE (BUS records the mix, LIVE ONLY records what you play, MIC needs the mic).');
+    const why = cap.srcMode==='mic'
+      ? 'the microphone sent nothing — check it is on and that the meter moves in MIC'
+      : cap.srcMode==='live'
+        ? 'LIVE ONLY records only what YOU play — pads you hit, the LIVE instruments, AMP. The sequencer is not captured'
+        : 'PRE-MASTER records what the app is playing, and nothing was — press PLAY, or hit some pads, while it rolls';
+    plog('SILENT-TAKE GUARD: track '+(i+1)+' recorded from '+srcName+' and peaked at '
+      +tpk.toFixed(4)+'. '+why+'. Kept anyway.');
+    lcd('\u26a0 TAKE '+(i+1)+' IS SILENT — it recorded from '+srcName+', and '+why+'.');
   }else{
-    lcd('TAKE \u2192 TRACK '+(i+1)+' \u00b7 '+buf.duration.toFixed(1)+'s — it plays with the transport; find it in TRAX.');
+    lcd('TAKE \u2192 TRACK '+(i+1)+' \u00b7 '+buf.duration.toFixed(1)+'s from '+srcName
+      +' — it plays with the transport; find it in TRAX.');
   }
 }
 
@@ -15575,7 +15590,26 @@ $('btnDocExport').addEventListener('click',()=>{
   lcd('DOC EXPORTED to the text box — copy it to your AI.');
 });
 $('btnDocSpec').addEventListener('click',()=>{ $('docText').value=SONGDOC_SPEC; lcd('SPEC + example in the box — copy ALL of it to an AI, ask for a beat, paste the reply back, tap LOAD DOC.'); });
-$('btnDiag').addEventListener('click',()=>{ const d=diagDump('manual'); $('docText').value=d; lcd('DIAG in the text box + PROJ log — screenshot or copy it when reporting a bug.'); });
+let lastDiag='';
+$('btnDiag').addEventListener('click',()=>{ lastDiag=diagDump('manual'); $('docText').value=lastDiag;
+  lcd('DIAG in the text box + PROJ log — tap COPY to put it on the clipboard.'); });
+/* Asked for directly: "an easy way to copy and paste the diagnostic report
+   would help". Selecting a full dump by hand on a phone is genuinely awkward,
+   and a report that is hard to send is a report that does not get sent.
+   The textarea fallback is there because clipboard.writeText needs a secure
+   context and a recent gesture, and neither is guaranteed on every phone —
+   select-all at least leaves one long-press between you and a paste. */
+$('btnDiagCopy').addEventListener('click',async ()=>{
+  const d=lastDiag||diagDump('manual'); lastDiag=d; $('docText').value=d;
+  try{
+    if(!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('no clipboard API');
+    await navigator.clipboard.writeText(d);
+    lcd('DIAG COPIED — paste it straight into a bug report.');
+  }catch(e){
+    try{ $('docText').focus(); $('docText').select(); }catch(e2){}
+    lcd('COULD NOT REACH THE CLIPBOARD — the report is selected in the box below, long-press \u2192 Copy.');
+  }
+});
 
 $('libIn').addEventListener('change',async e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;
@@ -15807,6 +15841,27 @@ function diagDump(tag){
           +' · vol '+S.masterVol+' · pads over 100%: '
           +(S.pads.map((pd,i)=>pd.bufId>=0&&pd.gain>1?padName(i)+':'+Math.round(pd.gain*100)+'%':null).filter(Boolean).join(' ')||'none'); })(),
       'buffers:'+S.buffers.length+' loadedPads:'+S.pads.filter(x=>x.bufId>=0).length+' dangling:'+(dang.length?dang.join(' '):'none')+' voices:'+acts,
+      /* WHETHER THERE IS ANY AUDIO IN THEM. A report came in of silence with a
+         DIAG that looked perfect — running context, gates open, pad unmuted,
+         no dangling ids — because nothing here said whether the one buffer
+         held sound. It did not. A dump that cannot distinguish "healthy and
+         playing nothing" from "healthy and holding silence" sends everyone
+         looking at the graph, which is the one part that was fine. */
+      'buffer peaks: '+(S.buffers.length
+        ? S.buffers.map((b,i)=>{ if(!b) return i+':MISSING';
+            let pk=0; const d=b.getChannelData(0);
+            for(let k=0;k<d.length;k+=32){ const a=Math.abs(d[k]); if(a>pk) pk=a; }
+            const on=S.pads.map((pd,pi)=>pd.bufId===i?padName(pi):null).filter(Boolean)
+              .concat(S.trax.map((tr,ti)=>tr.bufId===i?'T'+(ti+1):null).filter(Boolean));
+            return i+(on.length?'('+on.join('/')+')':'')+':'
+              +(pk<0.004?'SILENT':pk.toFixed(3)); }).join(' ')
+        : 'no audio loaded at all'),
+      'lanes: '+(S.trax.some(t=>t.bufId>=0)
+        ? S.trax.map((t,i)=>t.bufId>=0?(i+1)+':buf'+t.bufId+(t.mute?' M':'')+(t.loop?' loop':''):null)
+            .filter(Boolean).join(' ')
+        : 'none recorded')+' · armed:'+(traxArm<0?'none':traxArm+1)
+        +' · source '+($('traxSrc')?$('traxSrc').value:'?')
+        +' · inputs open: '+(capturesOpen().join(', ')||'none'),
       'gates — perf:'+(LIVE?g(LIVE.perfGain):'-')+' duck:'+(LIVE?g(LIVE.duckBus):'-')+' master:'+(LIVE?g(LIVE.master):'-')+' silGate:'+silGateDown,
       'selPad '+padName(S.editPad)+' — bufId:'+(p0?S.pads[S.editPad].bufId:'-')+' ch:'+(p0?g(p0.ch):'-')+' mute:'+(p0?g(p0.mute):'-')+' solo:'+S.pads.filter(x=>x.solo).length+' muted:'+S.pads.filter(x=>x.mute).length,
       'padGains: '+S.pads.map((pd,i)=>pd.bufId>=0?padName(i)+':'+pd.gain.toFixed(2)+'/'+(LIVE&&LIVE.pads[i]?g(LIVE.pads[i].ch):'-'):null).filter(Boolean).join(' '),
