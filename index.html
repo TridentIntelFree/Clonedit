@@ -1627,6 +1627,7 @@ louder, you are probably losing more than you gain.</p>
   <div class="row">
     <span class="lbl">OUTPUT</span>
     <button id="btnOutReset">RESET OUTPUT</button>
+    <select id="outRoute" aria-label="How the app asks for audio output"><option value="playback">ASK FOR PLAYBACK</option><option value="auto">LET THE BROWSER CHOOSE</option></select>
     <span style="font-size:10px;color:var(--txt-dim);flex:1">If sound comes out of the phone while a Bluetooth speaker is connected, tap this. It releases any microphone the app is holding and reopens the audio, which is what makes the phone choose an output again.</span>
   </div>
   <details class="ex"><summary>Why the phone keeps the sound</summary><div class="ex-body">
@@ -1651,6 +1652,22 @@ louder, you are probably losing more than you gain.</p>
     reason.</p>
     <p>It costs you nothing but a moment of silence &mdash; your samples,
     patterns and takes are untouched.</p>
+
+    <h4>If a connected speaker is being ignored entirely</h4>
+    <p>The app asks the phone for the <b>playback</b> audio category whenever
+    it is not recording. That is an explicit request, and on some phones and
+    some versions an explicit request is honoured less well than simply letting
+    the browser decide &mdash; which is what <b>LET THE BROWSER CHOOSE</b>
+    does.</p>
+    <p>If sound comes out of the handset while a Bluetooth speaker is paired
+    and other apps reach it fine, switch this to <b>LET THE BROWSER CHOOSE</b>,
+    then tap <b>RESET OUTPUT</b>. If that fixes it, the explicit request was
+    the problem. The setting is remembered on this device and does not travel
+    with your projects.</p>
+    <p>This one is genuinely an experiment rather than a known fix: it cannot
+    be tested anywhere except on a phone with a speaker paired to it, so if you
+    find out which setting works, that is real information and worth
+    reporting.</p>
   </div></details>
 
   <div class="row">
@@ -5314,8 +5331,29 @@ Object.assign(globalThis, __JBH_PURE);})();
      the app can be holding, then open a fresh audio context, because a context
      keeps the route it was given. Samples, pads and takes are untouched —
      verified across the reset, still rendering at 0.84.
+   - R169: THE OUTPUT CATEGORY BECOMES A CHOICE. Since R111 the app has forced
+     navigator.audioSession.type='playback' whenever nothing is recording — on
+     essentially every touch, because resumeSession is bound to touchstart.
+     That is an override of the browser's own routing judgement, and the spec's
+     default is 'auto'. Forcing a category is the unusual move and a plausible
+     reason a paired speaker stops being chosen.
+     It cannot be tested anywhere here: Chromium does not implement
+     navigator.audioSession, so that line is a no-op in every suite. So it is a
+     setting rather than a guess — LET THE BROWSER CHOOSE hands the decision
+     back, ASK FOR PLAYBACK keeps exactly what the app has always done, and the
+     default does not move without evidence. Remembered per device, since it
+     describes the hardware rather than the music. What IS tested: the choice
+     reaches the API, a live capture still overrides it, the preference returns
+     when the capture ends, and DIAG reports both it and whether the API exists
+     at all.
+     NOTE FOR THE NEXT PERSON READING THIS: "a pad plays through Bluetooth and
+     a tape lane does not, in the same session" cannot be a routing fault.
+     Both go tail → trackBus → mLo → … → softclip → MediaStreamDestination →
+     the hidden audio element. One context, one output, one route. If one is
+     heard and the other is not, the other is not producing audio — check the
+     buffer peaks line in DIAG, or preview the lane, before looking at routes.
    ================================================================ */
-const BUILD = 'JBH-88 · R168 · 2026-08-19 · getting the output back';
+const BUILD = 'JBH-88 · R169 · 2026-08-19 · the output category becomes a choice';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -8320,6 +8358,7 @@ $('btnMByp').addEventListener('click',()=>{
   lcd(S.mByp?'MASTER CHAIN BYPASSED — hearing it raw.':'MASTER CHAIN ON.');
 });
 $('btnOutReset').addEventListener('click',resetAudioOut);
+$('outRoute').addEventListener('change',e=>{ setSessPref(e.target.value); });
 $('btnEngReset').addEventListener('click',()=>{ glitchReset();
   lcd('ENGINE COUNTER RESET — play for a while and see whether it stays green.'); });
 $('btnBBOn').addEventListener('click',()=>{
@@ -8866,12 +8905,40 @@ function resetAudioOut(){
     ? 'OUTPUT RESET — released '+held.join(', ')+' and reopened the audio. If a speaker was connected, sound should go back to it now.'
     : 'OUTPUT RESET — no input was open, and the audio was reopened anyway. If sound still comes out of the phone, the connection is outside this app.');
 }
+/* WHICH CATEGORY TO ASK FOR WHEN NOTHING IS RECORDING.
+
+   Since R111 the app has forced 'playback' whenever no input is open — on
+   essentially every touch, because resumeSession is bound to touchstart. That
+   is an override of the browser's own routing judgement, and the Web Audio
+   Session spec's default is 'auto', where Safari decides. Forcing a category
+   is the unusual choice, and a plausible reason a connected Bluetooth speaker
+   stops being picked when it used to be.
+   I cannot test that here: Chromium does not implement navigator.audioSession
+   at all, so this code path is a no-op in every test I can run, and the only
+   evidence available is from a phone with a speaker paired to it. So it is a
+   setting rather than a guess — 'auto' hands the decision back to the browser,
+   'playback' keeps exactly what the app has been doing. It is remembered per
+   device, not per project, because it describes the hardware you are on.
+   Default stays 'playback' so nobody's behaviour changes by surprise; it moves
+   only when there is evidence to move it. */
+const SESS_KEY='jbh_sess_v1';
+let sessPref=(()=>{ try{ const v=localStorage.getItem(SESS_KEY); return v==='auto'?'auto':'playback'; }
+  catch(e){ return 'playback'; } })();
+function setSessPref(v){
+  sessPref = v==='auto' ? 'auto' : 'playback';
+  try{ localStorage.setItem(SESS_KEY,sessPref); }catch(e){}
+  applyAudioRoute();
+  lcd(sessPref==='auto'
+    ? 'OUTPUT ROUTING → AUTO — the browser chooses where sound goes. Try this if a connected speaker is being ignored.'
+    : 'OUTPUT ROUTING → PLAYBACK — the app asks for the playback category explicitly.');
+}
 function applyAudioRoute(){
   const open=capturesOpen().length>0;
-  try{ if(navigator.audioSession) navigator.audioSession.type = open?'play-and-record':'playback'; }catch(e){}
+  try{ if(navigator.audioSession) navigator.audioSession.type = open ? 'play-and-record' : sessPref; }catch(e){}
   drawRoutePip();
   return open;
 }
+try{ const sel=$('outRoute'); if(sel) sel.value=sessPref; }catch(e){}
 function drawRoutePip(){
   const pip=$('recPip'); if(!pip) return;
   const who=capturesOpen();
@@ -16173,7 +16240,9 @@ function diagDump(tag){
               +(pk<0.004?'SILENT':pk.toFixed(3)); }).join(' ')
         : 'no audio loaded at all'),
       'input streams: '+(liveInputTracks().join(' ')||'none live')
-        +' · session '+((()=>{ try{ return (navigator.audioSession&&navigator.audioSession.type)||'n/a'; }catch(e){ return 'n/a'; } })()),
+        +' · session '+((()=>{ try{ return (navigator.audioSession&&navigator.audioSession.type)||'n/a'; }catch(e){ return 'n/a'; } })())
+        +' · routing pref '+sessPref
+        +' · audioSession API '+((()=>{ try{ return navigator.audioSession?'present':'ABSENT'; }catch(e){ return 'ABSENT'; } })()),
       'lanes: '+(S.trax.some(t=>t.bufId>=0)
         ? S.trax.map((t,i)=>t.bufId>=0?(i+1)+':buf'+t.bufId+(t.mute?' M':'')+(t.loop?' loop':''):null)
             .filter(Boolean).join(' ')

@@ -1611,6 +1611,7 @@ louder, you are probably losing more than you gain.</p>
   <div class="row">
     <span class="lbl">OUTPUT</span>
     <button id="btnOutReset">RESET OUTPUT</button>
+    <select id="outRoute" aria-label="How the app asks for audio output"><option value="playback">ASK FOR PLAYBACK</option><option value="auto">LET THE BROWSER CHOOSE</option></select>
     <span style="font-size:10px;color:var(--txt-dim);flex:1">If sound comes out of the phone while a Bluetooth speaker is connected, tap this. It releases any microphone the app is holding and reopens the audio, which is what makes the phone choose an output again.</span>
   </div>
   <details class="ex"><summary>Why the phone keeps the sound</summary><div class="ex-body">
@@ -1635,6 +1636,22 @@ louder, you are probably losing more than you gain.</p>
     reason.</p>
     <p>It costs you nothing but a moment of silence &mdash; your samples,
     patterns and takes are untouched.</p>
+
+    <h4>If a connected speaker is being ignored entirely</h4>
+    <p>The app asks the phone for the <b>playback</b> audio category whenever
+    it is not recording. That is an explicit request, and on some phones and
+    some versions an explicit request is honoured less well than simply letting
+    the browser decide &mdash; which is what <b>LET THE BROWSER CHOOSE</b>
+    does.</p>
+    <p>If sound comes out of the handset while a Bluetooth speaker is paired
+    and other apps reach it fine, switch this to <b>LET THE BROWSER CHOOSE</b>,
+    then tap <b>RESET OUTPUT</b>. If that fixes it, the explicit request was
+    the problem. The setting is remembered on this device and does not travel
+    with your projects.</p>
+    <p>This one is genuinely an experiment rather than a known fix: it cannot
+    be tested anywhere except on a phone with a speaker paired to it, so if you
+    find out which setting works, that is real information and worth
+    reporting.</p>
   </div></details>
 
   <div class="row">

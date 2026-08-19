@@ -704,6 +704,48 @@ export default async function ({ browser, base }) {
       'peak ' + leak.stillPlays.toFixed(4));
     t.ok('and it says what it released', /released/.test(leak.lcd), leak.lcd.slice(0, 70));
 
+    t.head('THE OUTPUT CATEGORY IS A CHOICE, NOT A HARD-CODED GUESS');
+    /* Since R111 the app has forced 'playback' whenever nothing is recording —
+       an override of the browser's own routing judgement, on every touch,
+       because resumeSession is bound to touchstart. The spec default is
+       'auto'. That override is a plausible reason a paired speaker stops being
+       chosen, and it cannot be tested anywhere Chromium runs: navigator.
+       audioSession is not implemented, so the real code path is a no-op here.
+       What CAN be tested is that the choice reaches the API, that a capture
+       still overrides it, and that it survives a reload — so the person with
+       the phone is changing something real. */
+    const sess = await page.evaluate(async () => {
+      const o = {}, sel = document.getElementById('outRoute');
+      o.defaultsToPlayback = sel.value === 'playback' && sessPref === 'playback';
+      let asked = [];
+      Object.defineProperty(navigator, 'audioSession', { configurable: true,
+        value: { get type() { return this._t || 'auto'; }, set type(v) { this._t = v; asked.push(v); } } });
+      applyAudioRoute(); o.withPlayback = asked.slice();
+      asked = []; sel.value = 'auto'; sel.dispatchEvent(new Event('change'));
+      o.withAuto = asked.slice(); o.pref = sessPref;
+      o.persisted = localStorage.getItem('jbh_sess_v1');
+      asked = []; micOn = true; applyAudioRoute(); micOn = false;
+      o.whileCapturing = asked.slice();
+      asked = []; applyAudioRoute(); o.afterCapturing = asked.slice();
+      document.getElementById('btnDiag').click();
+      o.diag = document.getElementById('docText').value.split('\n')
+        .find(l => /routing pref/.test(l)) || '';
+      sel.value = 'playback'; sel.dispatchEvent(new Event('change'));
+      return o;
+    });
+    t.ok('it defaults to what the app already did, so nothing changes by surprise',
+      sess.defaultsToPlayback);
+    t.ok('choosing PLAYBACK asks for playback', sess.withPlayback.join() === 'playback');
+    t.ok('choosing AUTO hands the decision back to the browser',
+      sess.withAuto.join() === 'auto' && sess.pref === 'auto', sess.withAuto.join());
+    t.ok('and the choice is remembered on the device', sess.persisted === 'auto');
+    t.ok('but a live capture still forces record mode whatever the preference',
+      sess.whileCapturing.join() === 'play-and-record');
+    t.ok('and the preference returns the moment the capture ends',
+      sess.afterCapturing.join() === 'auto');
+    t.ok('DIAG reports the preference and whether the API exists at all',
+      /routing pref/.test(sess.diag) && /audioSession API/.test(sess.diag), sess.diag);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
