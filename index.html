@@ -5380,8 +5380,34 @@ Object.assign(globalThis, __JBH_PURE);})();
      escaped as an unhandled rejection — "Cannot close a closed AudioContext",
      surfaced by the new rebuild paths overlapping. Every close goes through
      closeCtx() now.
+   - R171: MOVING A PAD EFFECT COST THE AUDIO THREAD. "When I mess with
+     settings (up or down) on my pads effects it wrecks them timing wise,
+     distorts in a strange way." Both symptoms came from the cost of the move
+     rather than from the setting itself, and there were two causes.
+     TWELVE KILOBYTES OF GARBAGE PER INPUT EVENT. Every event rebuilt a
+     1024-float drive curve AND a 2048-float crush curve and handed both to a
+     WaveShaperNode — roughly 720KB a second through a drag, plus a table the
+     audio thread has to pick up each time. A garbage collector running under a
+     real-time thread is heard as dropouts, and a dropout inside a note is
+     heard as distortion. A drive rounded to 1% has a hundred possible curves
+     and a crush has sixteen, so they are built once and kept.
+     Assignment is skipped when the value has not changed — compared against
+     what we last set, not against node.curve, because Chrome's getter hands
+     back a COPY and the reference never matches. Measured, not assumed: fifty
+     identical calls now reach the node zero times instead of fifty.
+     AND THE ANTI-CLICK DIP FOUGHT ITSELF. It ramped the FX gain to silence and
+     used a 6ms setTimeout to bring it back — right for one change, wrong for a
+     drag, where events arrive faster than the timeout returns and the ramps
+     cancel each other. That is an amplitude modulation at the rate of your
+     finger, which is the strange distortion, and it could leave the gain
+     sitting at 0.0001 with the pad simply gone. One dip per burst now: while
+     one is in flight the newest values are recorded and the pending write
+     takes them, so the last thing you chose lands and the gain moves exactly
+     twice however long you drag. Twenty abrupt changes: 14 ramps, not 40, and
+     the gain ends at 1.
+     A 120-event drag under a running transport now costs 0.0ms of dropout.
    ================================================================ */
-const BUILD = 'JBH-88 · R170 · 2026-08-19 · closing the mic gives the speaker back';
+const BUILD = 'JBH-88 · R171 · 2026-08-19 · pad effects stop costing the beat';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -5541,16 +5567,41 @@ function liveDelaySync(){ if(!LIVE) return; (LIVE.dlyNodes||[]).forEach(d=>d.del
   try{ drawDlyRing(); }catch(e){} }
 function compThresh(){ return -6 - S.compAmt*26; }
 
+/* CURVES ARE CACHED, BECAUSE DRAGGING A SLIDER REBUILT THEM SIXTY TIMES A
+   SECOND.
+
+   Reported as pad effects wrecking the timing and distorting strangely while
+   the settings were being moved. Both symptoms come from the cost of the move
+   rather than from the setting: every input event rebuilt a 1024-float drive
+   curve AND a 2048-float crush curve — 12KB of garbage per event, so about
+   720KB a second through a drag — and handed both to a WaveShaperNode, which
+   makes the audio thread pick up a new table each time. That is a garbage
+   collector running under a real-time thread, which is heard as dropouts, and
+   dropouts in the middle of a note are heard as distortion.
+   A drive amount rounded to 1% has a hundred possible curves and a crush has
+   sixteen, so they are built once and kept. Identical values now return the
+   identical array, which also lets the caller skip the assignment entirely. */
+const driveCurves=new Map(), crushCurves=new Map();
 function makeDriveCurve(amt){
   if(amt<=0) return null;                      // null curve = pass-through
-  const n=1024, c=new Float32Array(n), k=1+amt*40, norm=Math.tanh(k);
+  const key=Math.round(clamp(amt,0,1)*100);
+  let c=driveCurves.get(key);
+  if(c) return c;
+  const n=1024, k=1+(key/100)*40, norm=Math.tanh(k);
+  c=new Float32Array(n);
   for(let i=0;i<n;i++){ const x=i/(n-1)*2-1; c[i]=Math.tanh(k*x)/norm; }
+  driveCurves.set(key,c);
   return c;
 }
 function makeCrushCurve(bits){
   if(bits>=16) return null;
-  const n=2048, c=new Float32Array(n), steps=Math.pow(2,bits);
+  const key=clamp(bits|0,1,15);
+  let c=crushCurves.get(key);
+  if(c) return c;
+  const n=2048, steps=Math.pow(2,key);
+  c=new Float32Array(n);
   for(let i=0;i<n;i++){ const x=i/(n-1)*2-1; c[i]=Math.round(x*steps)/steps; }
+  crushCurves.set(key,c);
   return c;
 }
 function cutHz(x){ return 60*Math.pow(16000/60, clamp(x,0,1)); } // log map 60Hz–16kHz
@@ -5585,8 +5636,15 @@ function applyPadFx(n, p, ctx, live){
     || Math.abs(crush-(n._crush==null?crush:n._crush))>=2
     || n.flt.type!==typ;
   const write=()=>{
-    n.drv.curve = makeDriveCurve(drv);
-    n.crush.curve = makeCrushCurve(crush);
+    /* Only assign when it actually differs. Handing a WaveShaper the same
+       table again is not free — the audio thread has to take up a new curve —
+       and with the cache, equal values are the same object.
+       Compared against what we last set rather than against node.curve:
+       Chrome's getter hands back a COPY, so reading it never matches what you
+       put in and the skip would never fire. Measured, not assumed. */
+    const dc=makeDriveCurve(+p.drv||0), cc=makeCrushCurve(p.crush|0);
+    if(n._drvCurve!==dc){ n.drv.curve=dc; n._drvCurve=dc; }
+    if(n._crushCurve!==cc){ n.crush.curve=cc; n._crushCurve=cc; }
     n.flt.type=typ;
     if(p.ftype==='off'){ ramp(n.flt.gain,0); ramp(n.flt.frequency,1000); ramp(n.flt.Q,0.5); }
     else{ ramp(n.flt.gain,0); ramp(n.flt.frequency,cutHz(p.fcut)); ramp(n.flt.Q,p.fres); }
@@ -5594,6 +5652,20 @@ function applyPadFx(n, p, ctx, live){
     n._drv=drv; n._crush=crush;
   };
   if(!live || !n.fxg || !abrupt){ write(); n._drv=drv; n._crush=crush; return; }
+  /* ONE DUCK PER BURST.
+
+     The dip exists so an abrupt curve change does not click. It scheduled a
+     ramp to silence and a setTimeout 6ms later to ramp back — fine for one
+     change, wrong for a drag, where events arrive faster than the timeout
+     returns. Overlapping ducks cancelled each other's ramps: the gain could be
+     driven up and down at the rate of the drag, which is an amplitude
+     modulation in the audible range and sounds like distortion, and it could
+     be left sitting at 0.0001 with the pad simply gone.
+     While a dip is in flight the newest values are just recorded; the pending
+     write picks them up, so the last thing you chose is what lands and the
+     gain moves exactly twice however long you drag. */
+  if(n._fxPend){ n._fxWrite=write; return; }
+  n._fxPend=true; n._fxWrite=write;
   const g=n.fxg.gain, dip=0.004;
   try{
     g.cancelScheduledValues(t);
@@ -5601,7 +5673,8 @@ function applyPadFx(n, p, ctx, live){
     g.linearRampToValueAtTime(0.0001,t+dip);
   }catch(e){}
   setTimeout(()=>{
-    write();
+    try{ (n._fxWrite||write)(); }catch(e){}
+    n._fxWrite=null; n._fxPend=false;
     try{ const t2=ctx.currentTime;
       g.cancelScheduledValues(t2); g.setValueAtTime(0.0001,t2);
       g.linearRampToValueAtTime(1,t2+dip); }catch(e){}

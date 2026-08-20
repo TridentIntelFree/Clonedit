@@ -336,6 +336,78 @@ export default async function ({ browser, base }) {
       /COPIED|CLIPBOARD/i.test(diag.copyLcd), '"' + diag.copyLcd + '"');
     t.ok('and the report is in the text box either way', diag.boxHasIt);
 
+    t.head('MOVING A PAD EFFECT DOES NOT COST THE AUDIO THREAD');
+    /* Reported: "when I mess with settings (up or down) on my pads effects it
+       wrecks them timing wise, distorts in a strange way". Both symptoms came
+       from the cost of the move, not the setting. Every input event rebuilt a
+       1024-float drive curve and a 2048-float crush curve — 12KB of garbage
+       per event — and handed both to a WaveShaperNode. A garbage collector
+       running under a real-time thread is heard as dropouts, and a dropout
+       inside a note is heard as distortion.
+       The anti-click dip made it worse: it ramped the FX gain to silence and
+       used a 6ms setTimeout to bring it back, so on a drag the ramps overlap
+       and cancel each other — amplitude modulation at the rate of your finger,
+       and a pad that can be left sitting silent. */
+    const fx = await page.evaluate(async () => {
+      const o = {}, p = S.pads[0], n = LIVE.pads[0];
+      o.sameValueSameObject = makeDriveCurve(0.5) === makeDriveCurve(0.5)
+        && makeCrushCurve(8) === makeCrushCurve(8);
+      const first = makeDriveCurve(0.37);
+      for (let i = 0; i < 200; i++) makeDriveCurve(0.37);
+      o.neverRebuilt = makeDriveCurve(0.37) === first;
+
+      // repeated identical settings must stop at the node
+      const proto = Object.getPrototypeOf(n.drv);
+      const desc = Object.getOwnPropertyDescriptor(proto, 'curve');
+      let writes = 0;
+      Object.defineProperty(n.drv, 'curve', { configurable: true,
+        get() { return desc.get.call(this); },
+        set(v) { writes++; desc.set.call(this, v); } });
+      p.drv = 0.5; applyPadFx(n, p, AC, false); writes = 0;
+      for (let i = 0; i < 50; i++) applyPadFx(n, p, AC, false);
+      o.writesForFiftyIdenticalCalls = writes;
+
+      // an abrupt drag must move the gain twice per burst and end up back at 1
+      p.drv = 0; applyPadFx(n, p, AC, false);
+      const g = n.fxg.gain, realRamp = g.linearRampToValueAtTime.bind(g);
+      let ramps = 0;
+      g.linearRampToValueAtTime = (v, t) => { ramps++; return realRamp(v, t); };
+      for (let i = 0; i < 20; i++) {
+        p.drv = i % 2 ? 0.95 : 0.05;          // every step abrupt, faster than the dip
+        applyPadFx(n, p, AC, true);
+        await new Promise(r => setTimeout(r, 2));
+      }
+      await new Promise(r => setTimeout(r, 400));
+      o.rampsForTwentyAbruptChanges = ramps;
+      o.gainRecovered = g.value;
+      o.nothingPending = !n._fxPend;
+      o.landedOnLastValue = n._drvCurve === makeDriveCurve(p.drv);
+
+      // and the whole thing under a running transport
+      glitchReset();
+      startSeq();
+      for (let i = 0; i <= 120; i++) { p.drv = (i % 101) / 100;
+        applyPadFx(n, p, AC, true); await new Promise(r => setTimeout(r, 5)); }
+      await new Promise(r => setTimeout(r, 2200));
+      o.glitchMs = glitchMs();
+      stopSeq();
+      p.drv = 0; applyPadFx(n, p, AC, false);
+      return o;
+    });
+    t.ok('the same setting returns the same cached curve, never rebuilt',
+      fx.sameValueSameObject && fx.neverRebuilt);
+    t.ok('fifty identical calls reach the WaveShaper once, not fifty times',
+      fx.writesForFiftyIdenticalCalls <= 1, fx.writesForFiftyIdenticalCalls + ' assignments');
+    t.ok('twenty abrupt changes duck the gain per burst, not per event',
+      fx.rampsForTwentyAbruptChanges <= 24,
+      fx.rampsForTwentyAbruptChanges + ' ramps (uncoalesced would be 40)');
+    t.ok('AND THE GAIN COMES BACK — a drag cannot leave the pad silent',
+      Math.abs(fx.gainRecovered - 1) < 0.01 && fx.nothingPending,
+      'gain ' + fx.gainRecovered.toFixed(4));
+    t.ok('the last value you chose is the one that lands', fx.landedOnLastValue);
+    t.ok('and a 120-event drag while playing costs no dropouts',
+      fx.glitchMs < 20, fx.glitchMs.toFixed(1) + 'ms lost');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
