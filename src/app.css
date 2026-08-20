@@ -827,3 +827,9 @@ input[type=range]::-webkit-slider-thumb{transition:border-color .12s ease,backgr
 #engHealth.engbad{color:var(--red)}
 .polypre{min-height:32px;padding:4px 10px;font-size:12px}
 #polyReadout{letter-spacing:.2px}
+
+/* A destructive action should look different from a safe one. TO PAD names the
+   pad it will land on; when that pad already holds a sound it is marked, and
+   the confirm that follows is not the first you hear of it. */
+button.warn{border-color:var(--red);color:var(--red)}
+button.warn:not(:disabled):active{background:var(--red);color:#fff}
