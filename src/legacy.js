@@ -2763,8 +2763,30 @@
      twice however long you drag. Twenty abrupt changes: 14 ramps, not 40, and
      the gain ends at 1.
      A 120-event drag under a running transport now costs 0.0ms of dropout.
+   - R172: AN EMPTY PAD IS THE DEFAULT, AND OVERWRITING ASKS FIRST.
+     "I want to click like ten samples from my list and have them go to
+     separate empty pads unless I select a pad to overwrite." They all went to
+     pad 1, each one overwriting the last.
+     The chooser to do this properly has existed for builds — pickTargetPad
+     takes the selected pad if it is empty, honours a deliberate tap once, then
+     finds the first empty pad in the bank, then any empty pad, and only falls
+     back to the selection when all 64 are full. loadIntoTarget and libToPad
+     both wrote to S.editPad directly and never called it, so the default was
+     "overwrite the selection" when it should have been "use an empty pad".
+     Every route in goes through the chooser now. Ten clicks fill A01..A10.
+     AND IT ASKS BEFORE REPLACING A SOUND — but only when there is something to
+     lose. An empty pad is never questioned, because ten dialogs for ten clicks
+     would be worse than the bug it fixes. The question names both the sound
+     leaving and the sound arriving, says whether you are here because you
+     picked this pad or because every pad is full, and mentions UNDO.
+     TO PAD NAMES ITS DESTINATION BEFORE YOU TAP IT. It read "TO PAD", so where
+     the take landed was something you found out afterwards — the wrong order
+     for an action that can replace a sound. It reads "TO PAD → B01", turns red
+     with a warning mark when that pad already holds something, says what is on
+     it, and is disabled outright on a lane with no take. The target is read
+     with a peek, so looking at the panel never spends a deliberate selection.
    ================================================================ */
-const BUILD = 'JBH-88 · R171 · 2026-08-19 · pad effects stop costing the beat';
+const BUILD = 'JBH-88 · R172 · 2026-08-19 · empty pads by default';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -6126,6 +6148,7 @@ async function expandItems(items){   // unpack any zips into their audio entries
 async function importItems(items){   // items:[{name,ab}] → decode each onto consecutive pads from the target
   if(!items.length) return;
   ensureAudio();
+  S.editPad=pickTargetPad();          // start on an empty pad, not on the selection
   let cur=S.editPad, ok=0, fail=0, full=false, landed=[], first=true;
   for(let k=0;k<items.length;k++){
     const it=items[k];
@@ -6135,7 +6158,8 @@ async function importItems(items){   // items:[{name,ab}] → decode each onto c
       let t=-1; for(let off=1;off<=NPADS;off++){ const i=(cur+off)%NPADS; if(S.pads[i].bufId<0){ t=i; break; } }
       if(t<0){ full=true; break; } S.editPad=t;
     }
-    loadIntoTarget(buf, (it.name||'sample').replace(/^.*[\/\\]/,'').replace(/\.[^.]+$/,''));
+    if(loadIntoTarget(buf, (it.name||'sample').replace(/^.*[\/\\]/,'').replace(/\.[^.]+$/,''),
+      {keepTarget:true})===false) break;      // declined an overwrite: stop, do not plough on
     landed.push(padName(S.editPad)); cur=S.editPad; first=false; ok++;
   }
   drawPads();
@@ -6175,7 +6199,39 @@ $('btnImportUrl').addEventListener('click',async ()=>{
   }
 });
 
-function loadIntoTarget(buf,name){
+/* ASK BEFORE REPLACING A SOUND, AND NEVER ASK WHEN THERE IS NOTHING TO LOSE.
+
+   Reported: clicking ten samples in the list sent all ten to pad 1, each one
+   overwriting the last. The chooser to do this properly already existed —
+   pickTargetPad finds the first empty pad in the bank, then any empty pad, and
+   only falls back to the selection when every pad is full — but loadIntoTarget
+   and libToPad both wrote to S.editPad directly and never called it. So the
+   default was "overwrite whatever is selected" when it should have been "land
+   on the next empty pad".
+   Deliberate targeting still wins: tapping a pad sets manualPad, pickTargetPad
+   honours that once, and then this asks first because replacing a sound you
+   chose to replace is still worth a sentence. */
+function confirmPadOverwrite(i,label){
+  const p=S.pads[i];
+  if(!p || p.bufId<0) return true;             // empty pad: nothing to warn about
+  const held=p.name||'a sound';
+  const anyEmpty=firstEmptyPad()>=0;
+  return confirm('Replace what is on '+padName(i)+'?\n\n'
+    +padName(i)+' currently holds "'+held+'".\n'
+    +(label?'"'+label+'" ':'The new sound ')+'will take its place.\n\n'
+    +(anyEmpty
+      ? 'You selected this pad, so it is being used on purpose.'
+      : 'Every pad is full, so there is no empty one to use instead.')
+    +'\nUNDO puts it back.');
+}
+function loadIntoTarget(buf,name,opt){
+  opt=opt||{};
+  /* Pick the destination unless the caller already worked one out. */
+  if(!opt.keepTarget) S.editPad=pickTargetPad();
+  if(!opt.noAsk && !confirmPadOverwrite(S.editPad,name)){
+    lcd(padName(S.editPad)+' LEFT ALONE — nothing was replaced.');
+    return false;
+  }
   try{ stopPadVoices(S.editPad); }catch(e){}
   workBuf=buf; slices=[]; selSlice=-1;
   S.buffers.push(buf);
@@ -6185,8 +6241,10 @@ function loadIntoTarget(buf,name){
   p.bufId=bid; p.name=name.slice(0,14); p.warped=false;
   delete warpOrig[S.editPad]; delete p.srcPreset; delete p.srcNote;
   drawPads(); drawEdit(); drawWave(); drawMixer(); dirty();
-  lcd('LOADED → '+padName(S.editPad)+' · '+buf.duration.toFixed(2)+'s'
+  try{ drawTraxFx(); }catch(e){}     // the TO PAD button names its target, which just moved
+  lcd('LOADED \u2192 '+padName(S.editPad)+' · '+buf.duration.toFixed(2)+'s'
     +(cleared.length?' · cleared this pad\u2019s '+cleared.join(', ')+' from the last sound — UNDO puts it back':''));
+  return true;
 }
 
 /* mic — specific error handling (incl. Lockdown Mode hypothesis) */
@@ -8306,12 +8364,15 @@ async function libDownload(sm,btn){
 }
 async function libToPad(sm){
   ensureAudio();
-  lcd('LOADING '+sm.name+' → '+padName(S.editPad)+' …');
+  /* Worked out BEFORE the decode so the message names where it is going, and
+     so ten clicks in a row fill ten pads instead of one pad ten times. */
+  const target=pickTargetPad(true);
+  lcd('LOADING '+sm.name+' → '+padName(target)+' …');
   try{
     const rec=await idbGetS(IDB_LIB,LIBKEY(sm.id));
     if(!rec || !rec.bytes) throw new Error('not on device — GET it first');
     const buf=await decode(rec.bytes.slice(0));   // slice: decodeAudioData detaches the buffer
-    loadIntoTarget(buf,sm.name);
+    if(loadIntoTarget(buf,sm.name)===false) return;
     hitLive(S.editPad,0.9);
   }catch(err){ lcd('LOAD FAILED: '+(err.message||'decode error')); }
 }
@@ -9216,6 +9277,29 @@ function drawTraxFx(){
   $('tfxPan').value=tr.pan||0; $('tfxPanV').textContent=panText(tr.pan);
   $('tfxRev').value=tr.rev||0; $('tfxRevV').textContent=sendText(tr.rev);
   $('tfxDly').value=tr.dly||0; $('tfxDlyV').textContent=sendText(tr.dly);
+  /* TO PAD names where it is going, and warns before it lands on a used pad.
+     Asked for: "prioritize an empty pad unless user selects to overwrite pad,
+     there should be a warning that you're about to overwrite pad." The button
+     said only TO PAD, so the destination was something you found out
+     afterwards — which is the wrong order for an action that can replace a
+     sound. It reads the target with a PEEK, so looking at the panel never
+     consumes a deliberate pad selection. */
+  const btn=$('tfxPad');
+  if(btn){
+    if(tr.bufId<0){
+      btn.disabled=true; btn.className='';
+      btn.innerHTML='TO PAD';
+      btn.title='This track has no take on it yet.';
+    } else {
+      const t=pickTargetPad(true), occupied=S.pads[t].bufId>=0;
+      btn.disabled=false;
+      btn.className=occupied?'warn':'';
+      btn.innerHTML='TO PAD \u2192 '+padName(t)+(occupied?' \u26a0':'');
+      btn.title=occupied
+        ? padName(t)+' already holds "'+(S.pads[t].name||'a sound')+'". You will be asked before it is replaced.'
+        : padName(t)+' is empty — the take will land there.';
+    }
+  }
 }
 $('tfxType').addEventListener('change',e=>{ S.trax[traxFxSel].ftype=e.target.value; applyTraxFx(traxFxSel); dirty();
   lcd('TRACK FILTER '+e.target.value.toUpperCase()+' — on/off takes effect on next PLAY.'); });
@@ -9235,10 +9319,14 @@ $('tfxPad').addEventListener('click',()=>{
   const tr=S.trax[traxFxSel];
   if(tr.bufId<0){ lcd('TRACK '+(traxFxSel+1)+' IS EMPTY.'); return; }
   S.editPad=pickTargetPad();   // never silently overwrite a used pad when an empty one exists
+  if(!confirmPadOverwrite(S.editPad,tr.name||'the take')){
+    lcd(padName(S.editPad)+' LEFT ALONE — the take is still on TRACK '+(traxFxSel+1)+'.');
+    return;
+  }
   const p=S.pads[S.editPad];
   const cleared=voiceWords(resetPadVoice(p));
   p.bufId=tr.bufId; p.name=(tr.name||'take').slice(0,14); p.warped=false; delete warpOrig[S.editPad];
-  drawPads(); drawEdit(); drawMixer(); dirty();
+  drawPads(); drawEdit(); drawMixer(); drawTraxFx(); dirty();
   lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad)
     +(cleared.length?' · cleared that pad\u2019s '+cleared.join(', ')+' from the last sound — UNDO puts it back'
       :' — the take plays as recorded'));
@@ -9254,6 +9342,10 @@ $('tfxEdit').addEventListener('click',()=>{
   for(let c=0;c<orig.numberOfChannels;c++) copy.copyToChannel(orig.getChannelData(c).slice(),c);
   S.buffers.push(copy); const bid=S.buffers.length-1;
   S.editPad=pickTargetPad();
+  if(!confirmPadOverwrite(S.editPad,tr.name||'the take')){
+    S.buffers.pop();            // the copy was made for a pad that is not taking it
+    lcd(padName(S.editPad)+' LEFT ALONE.'); return;
+  }
   const p=S.pads[S.editPad]; resetPadVoice(p);
   p.bufId=bid; p.name=(tr.name||'take').slice(0,14); p.warped=false; delete warpOrig[S.editPad];
   workBuf=copy; slices=[]; selSlice=-1;

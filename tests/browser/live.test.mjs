@@ -418,6 +418,10 @@ export default async function ({ browser, base }) {
 
       // every pad full, so TO PAD must fall back to the selected one
       for (let i = 0; i < NPADS; i++) if (S.pads[i].bufId < 0) S.pads[i].bufId = 0;
+      /* TO PAD asks before replacing a sound now, and an unanswered dialog is
+         a decline — so this says yes on purpose. The asking itself is covered
+         in its own section. */
+      const realConfirm = window.confirm; window.confirm = () => true;
       S.editPad = 5;
       Object.assign(S.pads[5], { gain: 0.15, ftype: 'lp', fcut: 0.12, fres: 3,
         eqLo: 9, eqMid: -12, eqHi: -12, pitch: -7, mode: 'one' });
@@ -432,6 +436,7 @@ export default async function ({ browser, base }) {
       /* placement must SURVIVE — the slot's identity is not the sound's */
       o.keptNote = p.note, o.keptChoke = p.choke;
 
+      window.confirm = realConfirm;
       S.patterns[S.pattern].steps.forEach(r => r.fill(0));
       S.patterns[S.pattern].steps[pi][0] = 1;
       S.trax.forEach(tr => { tr.mute = true; });
@@ -850,6 +855,109 @@ export default async function ({ browser, base }) {
       repick.stillPlaying && repick.contextKept && repick.outRebuilt);
     t.ok('and points at RESET OUTPUT in case the lighter rebuild did not take',
       /RESET OUTPUT/.test(repick.playingLcd), '"' + repick.playingLcd.slice(0, 90) + '"');
+
+    t.head('SAMPLES LAND ON EMPTY PADS, AND OVERWRITING ASKS FIRST');
+    /* Reported: "I want to click like ten samples from my list and have them go
+       to separate empty pads unless I select a pad to overwrite." They all went
+       to pad 1, each overwriting the last. The chooser to do it properly
+       already existed — pickTargetPad walks the bank for an empty pad — but
+       loadIntoTarget and libToPad wrote to S.editPad directly and never called
+       it, so the default was "overwrite the selection" rather than "use an
+       empty pad". */
+    const land = await page.evaluate(async () => {
+      const o = {};
+      /* These two sections empty the kit on purpose, so the session is put
+         back at the end — later sections measure real audio and a suite that
+         leaves the app gutted makes every check after it meaningless. */
+      window.__restore = structuredClone(snapshotSession());
+      S.pads.forEach(p => { p.bufId = -1; p.name = ''; });
+      S.editPad = 0; manualPad = false;
+      const mk = () => { const b = AC.createBuffer(1, 2048, AC.sampleRate);
+        const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.sin(i / 12) * 0.5;
+        return b; };
+      const landed = [];
+      for (let i = 0; i < 10; i++) { loadIntoTarget(mk(), 'sample' + i); landed.push(padName(S.editPad)); }
+      o.landed = landed;
+      o.distinct = new Set(landed).size;
+      o.loaded = S.pads.filter(p => p.bufId >= 0).length;
+
+      const real = window.confirm;
+      let asked = null;
+      window.confirm = m => { asked = m; return false; };
+      S.editPad = 3; manualPad = true;
+      const nameBefore = S.pads[3].name;
+      o.declined = loadIntoTarget(mk(), 'newsound') === false;
+      o.untouched = S.pads[3].name === nameBefore;
+      o.asked = (asked || '').split('\n')[0];
+      o.askedNamesBoth = /newsound/.test(asked || '') && /sample3/.test(asked || '');
+      window.confirm = () => true;
+      S.editPad = 3; manualPad = true;
+      loadIntoTarget(mk(), 'newsound');
+      o.overwroteOnAccept = S.pads[3].name === 'newsound';
+      /* An empty pad must never ask — ten clicks with ten dialogs is worse
+         than the bug. */
+      let askedOnEmpty = false;
+      window.confirm = () => { askedOnEmpty = true; return true; };
+      S.editPad = 40; manualPad = true;
+      loadIntoTarget(mk(), 'quiet');
+      o.silentOnEmpty = !askedOnEmpty;
+      window.confirm = real;
+      return o;
+    });
+    t.ok('ten samples land on ten DIFFERENT pads',
+      land.distinct === 10 && land.loaded >= 10, land.landed.join(' '));
+    t.ok('they fill empty pads in order', land.landed[0] === 'A01' && land.landed[9] === 'A10');
+    t.ok('choosing a full pad deliberately asks before replacing',
+      /Replace what is on A04/.test(land.asked), '"' + land.asked + '"');
+    t.ok('and the question names both the sound going and the sound arriving',
+      land.askedNamesBoth);
+    t.ok('declining leaves the pad exactly as it was', land.declined && land.untouched);
+    t.ok('accepting replaces it', land.overwroteOnAccept);
+    t.ok('AND AN EMPTY PAD IS NEVER QUESTIONED — no dialog per click',
+      land.silentOnEmpty);
+
+    t.head('TO PAD SAYS WHERE IT IS GOING BEFORE YOU TAP IT');
+    const topad = await page.evaluate(async () => {
+      const o = {};
+      S.pads.forEach(p => { p.bufId = -1; p.name = ''; });
+      S.editPad = 0; manualPad = false;
+      S.trax[0].bufId = 0; S.trax[0].name = 'take1';
+      traxFxSel = 0; drawTraxFx();
+      const btn = document.getElementById('tfxPad');
+      o.emptyTargetLabel = btn.innerHTML;
+      o.emptyTargetPlain = btn.className === '';
+      o.emptyTargetTitle = btn.title;
+      S.pads.forEach(p => { if (p.bufId < 0) { p.bufId = 0; p.name = 'held'; } });
+      drawTraxFx();
+      o.fullTargetLabel = document.getElementById('tfxPad').innerHTML;
+      o.fullTargetWarn = document.getElementById('tfxPad').className === 'warn';
+      o.fullTargetTitle = document.getElementById('tfxPad').title;
+      S.trax[1].bufId = -1; traxFxSel = 1; drawTraxFx();
+      o.emptyLaneDisabled = document.getElementById('tfxPad').disabled;
+      /* Reading the panel must not consume a deliberate pad choice — it peeks. */
+      S.editPad = 7; manualPad = true;
+      drawTraxFx(); drawTraxFx();
+      o.manualSurvivedRedraw = manualPad === true;
+      manualPad = false;
+      const snap = window.__restore;
+      applySessionDoc(structuredClone(snap), docToBuffers(structuredClone(snap)));
+      o.restoredPads = S.pads.filter(p => p.bufId >= 0).length;
+      return o;
+    });
+    t.ok('it names the empty pad it will use', /TO PAD → A\d\d/.test(topad.emptyTargetLabel),
+      topad.emptyTargetLabel);
+    t.ok('plainly, when nothing is at risk',
+      topad.emptyTargetPlain && /is empty/.test(topad.emptyTargetTitle));
+    t.ok('and marks itself when the target already holds a sound',
+      topad.fullTargetWarn && /⚠/.test(topad.fullTargetLabel), topad.fullTargetLabel);
+    t.ok('saying what is on it and that you will be asked',
+      /already holds/.test(topad.fullTargetTitle) && /asked/.test(topad.fullTargetTitle));
+    t.ok('a lane with no take disables it rather than misleading', topad.emptyLaneDisabled);
+    t.ok('and merely LOOKING at the panel does not spend a deliberate pad choice',
+      topad.manualSurvivedRedraw);
+    t.ok('the kit these two sections emptied is put back for what follows',
+      topad.restoredPads >= 8, topad.restoredPads + ' pads loaded again');
 
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
