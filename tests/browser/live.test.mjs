@@ -684,6 +684,7 @@ export default async function ({ browser, base }) {
       o.buffersKept = S.buffers.length === bufs;
       o.padsKept = S.pads.filter(p => p.bufId >= 0).length === pads;
       o.lcd = document.getElementById('lcdmsg').textContent;
+      o.log = document.getElementById('projlog').textContent.slice(0, 400);
       const b = await renderMix(null, null, { loops: 1, src: 'pat', noTail: true });
       let pk = 0; if (b) { const d = b.getChannelData(0);
         for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > pk) pk = v; } }
@@ -702,7 +703,153 @@ export default async function ({ browser, base }) {
     t.ok('without costing samples, pads, or the ability to play',
       leak.buffersKept && leak.padsKept && leak.stillPlays > 0.05,
       'peak ' + leak.stillPlays.toFixed(4));
-    t.ok('and it says what it released', /released/.test(leak.lcd), leak.lcd.slice(0, 70));
+    /* Read from the log rather than the LCD: rebuildOut can append its own
+       message on a headless browser where element playback is refused, and the
+       last line wins. The log keeps both. */
+    t.ok('and it records what it released', /OUTPUT RESET: released/.test(leak.log),
+      (leak.log.split('\n').find(l => /OUTPUT RESET/.test(l)) || leak.lcd).slice(0, 90));
+
+    t.head('THE OUTPUT CATEGORY IS A CHOICE, NOT A HARD-CODED GUESS');
+    /* Since R111 the app has forced 'playback' whenever nothing is recording —
+       an override of the browser's own routing judgement, on every touch,
+       because resumeSession is bound to touchstart. The spec default is
+       'auto'. That override is a plausible reason a paired speaker stops being
+       chosen, and it cannot be tested anywhere Chromium runs: navigator.
+       audioSession is not implemented, so the real code path is a no-op here.
+       What CAN be tested is that the choice reaches the API, that a capture
+       still overrides it, and that it survives a reload — so the person with
+       the phone is changing something real. */
+    const sess = await page.evaluate(async () => {
+      const o = {}, sel = document.getElementById('outRoute');
+      o.defaultsToPlayback = sel.value === 'playback' && sessPref === 'playback';
+      let asked = [];
+      Object.defineProperty(navigator, 'audioSession', { configurable: true,
+        value: { get type() { return this._t || 'auto'; }, set type(v) { this._t = v; asked.push(v); } } });
+      applyAudioRoute(); o.withPlayback = asked.slice();
+      asked = []; sel.value = 'auto'; sel.dispatchEvent(new Event('change'));
+      o.withAuto = asked.slice(); o.pref = sessPref;
+      o.persisted = localStorage.getItem('jbh_sess_v1');
+      asked = []; micOn = true; applyAudioRoute(); micOn = false;
+      o.whileCapturing = asked.slice();
+      asked = []; applyAudioRoute(); o.afterCapturing = asked.slice();
+      document.getElementById('btnDiag').click();
+      o.diag = document.getElementById('docText').value.split('\n')
+        .find(l => /routing pref/.test(l)) || '';
+      sel.value = 'playback'; sel.dispatchEvent(new Event('change'));
+      return o;
+    });
+    t.ok('it defaults to what the app already did, so nothing changes by surprise',
+      sess.defaultsToPlayback);
+    t.ok('choosing PLAYBACK asks for playback', sess.withPlayback.join() === 'playback');
+    t.ok('choosing AUTO hands the decision back to the browser',
+      sess.withAuto.join() === 'auto' && sess.pref === 'auto', sess.withAuto.join());
+    t.ok('and the choice is remembered on the device', sess.persisted === 'auto');
+    t.ok('but a live capture still forces record mode whatever the preference',
+      sess.whileCapturing.join() === 'play-and-record');
+    /* The falling edge also rebuilds the audio, which re-asserts the category,
+       so this can legitimately be asked for more than once. What matters is
+       that the preference is what it lands on. */
+    t.ok('and the preference returns the moment the capture ends',
+      sess.afterCapturing.length > 0
+      && sess.afterCapturing[sess.afterCapturing.length - 1] === 'auto',
+      sess.afterCapturing.join(' → '));
+    t.ok('DIAG reports the preference and whether the API exists at all',
+      /routing pref/.test(sess.diag) && /audioSession API/.test(sess.diag), sess.diag);
+
+    t.head('THE AUDIO SESSION IS NOT REWRITTEN ON EVERY TOUCH');
+    /* resumeSession is bound to touchstart, visibilitychange, pageshow and
+       focus, and ends in applyAudioRoute — so the app was asking iOS to
+       configure the audio session on EVERY TOUCH, almost always to the value
+       it already held. Configuring a session makes iOS re-evaluate the output
+       route, and the handset speaker is the fallback. Reported as a pad heard
+       on Bluetooth and a lane started moments later heard on the phone: one
+       output, re-routed in between. */
+    const writes = await page.evaluate(async () => {
+      let w = [];
+      Object.defineProperty(navigator, 'audioSession', { configurable: true,
+        value: { get type() { return this._t || 'auto'; }, set type(v) { this._t = v; w.push(v); } } });
+      forgetAudioRoute();
+      const o = {};
+      applyAudioRoute(); o.first = w.slice(); w = [];
+      for (let i = 0; i < 50; i++) resumeSession();
+      o.touches = w.length; w = [];
+      micOn = true; applyAudioRoute(); o.capture = w.slice(); w = [];
+      /* forgetAudioRoute before the release, so the falling edge does not also
+         rebuild the audio context underneath a test that is counting writes.
+         The rebuild is covered on its own further down. */
+      micOn = false; forgetAudioRoute(); applyAudioRoute(); o.release = w.slice(); w = [];
+      const sel = document.getElementById('outRoute');
+      sel.value = 'auto'; sel.dispatchEvent(new Event('change'));
+      o.prefChange = w.slice(); w = [];
+      sel.value = 'playback'; sel.dispatchEvent(new Event('change'));
+      return o;
+    });
+    t.ok('the first call does configure the session', writes.first.join() === 'playback');
+    t.ok('FIFTY TOUCHES AFTERWARDS WRITE NOTHING AT ALL',
+      writes.touches === 0, writes.touches + ' writes (was one per touch)');
+    t.ok('but opening an input still switches it', writes.capture.join() === 'play-and-record');
+    t.ok('and closing it switches back', writes.release.join() === 'playback');
+    t.ok('a deliberate preference change always reaches the OS',
+      writes.prefChange.join() === 'auto');
+
+    t.head('CLOSING THE MIC RE-PICKS THE OUTPUT, NOT JUST THE LABEL');
+    /* The reported sequence, exactly: mic on, mic used, mic off — after which
+       sound stays on the handset and a RELOAD fixes it. That is the signature
+       of a route pinned at session activation: iOS chooses the output when the
+       session activates and does not revisit it because the category changed
+       back. Confirmed from the device: "I can restore the session and it plays
+       through bt. Only sessions where I arm mic then turn it back off are
+       affected." So the last input closing has to rebuild, not relabel. */
+    const repick = await page.evaluate(async () => {
+      const o = {};
+      const ctx0 = AC;
+      const bufsBefore = S.buffers.length, padsBefore = S.pads.filter(p => p.bufId >= 0).length;
+      document.getElementById('btnMicOn').click();
+      await new Promise(r => setTimeout(r, 1600));
+      o.opened = micOn;
+      document.getElementById('btnMicOn').click();
+      await new Promise(r => setTimeout(r, 1400));
+      o.closed = !micOn;
+      o.rebuiltWhenIdle = AC !== ctx0;
+      o.idleLcd = document.getElementById('lcdmsg').textContent;
+      o.buffersKept = S.buffers.length;
+      o.padsKept = S.pads.filter(p => p.bufId >= 0).length;
+      o.buffersBefore = bufsBefore; o.padsBefore = padsBefore;
+      let pk = 0;
+      const b = await renderMix(null, null, { loops: 1, src: 'pat', noTail: true });
+      if (b) { const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > pk) pk = v; } }
+      o.playsAfter = pk;
+
+      // and the same thing mid-transport must NOT stop the music
+      startSeq();
+      await new Promise(r => setTimeout(r, 500));
+      const ctx1 = AC, msd1 = LIVE.msd;
+      document.getElementById('btnMicOn').click();
+      await new Promise(r => setTimeout(r, 1600));
+      document.getElementById('btnMicOn').click();
+      await new Promise(r => setTimeout(r, 1100));
+      o.stillPlaying = playing;
+      o.contextKept = AC === ctx1;
+      o.outRebuilt = LIVE.msd !== msd1;
+      o.playingLcd = document.getElementById('lcdmsg').textContent;
+      stopSeq();
+      return o;
+    });
+    t.ok('the microphone opened and closed', repick.opened && repick.closed);
+    t.ok('WITH THE TRANSPORT STOPPED, closing it reopens the audio — what a reload does',
+      repick.rebuiltWhenIdle, 'context replaced: ' + repick.rebuiltWhenIdle);
+    t.ok('and says so, in a message that is not immediately overwritten',
+      /reopened/.test(repick.idleLcd), '"' + repick.idleLcd + '"');
+    t.ok('without losing samples, pads, or the ability to play',
+      repick.buffersKept === repick.buffersBefore && repick.padsKept === repick.padsBefore
+      && repick.playsAfter > 0.05,
+      repick.buffersBefore + '→' + repick.buffersKept + ' buffers, '
+      + repick.padsBefore + '→' + repick.padsKept + ' pads, peak ' + repick.playsAfter.toFixed(4));
+    t.ok('WHILE PLAYING it rebuilds only the output and does not stop the music',
+      repick.stillPlaying && repick.contextKept && repick.outRebuilt);
+    t.ok('and points at RESET OUTPUT in case the lighter rebuild did not take',
+      /RESET OUTPUT/.test(repick.playingLcd), '"' + repick.playingLcd.slice(0, 90) + '"');
 
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));

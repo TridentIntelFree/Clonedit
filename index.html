@@ -1627,6 +1627,7 @@ louder, you are probably losing more than you gain.</p>
   <div class="row">
     <span class="lbl">OUTPUT</span>
     <button id="btnOutReset">RESET OUTPUT</button>
+    <select id="outRoute" aria-label="How the app asks for audio output"><option value="playback">ASK FOR PLAYBACK</option><option value="auto">LET THE BROWSER CHOOSE</option></select>
     <span style="font-size:10px;color:var(--txt-dim);flex:1">If sound comes out of the phone while a Bluetooth speaker is connected, tap this. It releases any microphone the app is holding and reopens the audio, which is what makes the phone choose an output again.</span>
   </div>
   <details class="ex"><summary>Why the phone keeps the sound</summary><div class="ex-body">
@@ -1651,6 +1652,22 @@ louder, you are probably losing more than you gain.</p>
     reason.</p>
     <p>It costs you nothing but a moment of silence &mdash; your samples,
     patterns and takes are untouched.</p>
+
+    <h4>If a connected speaker is being ignored entirely</h4>
+    <p>The app asks the phone for the <b>playback</b> audio category whenever
+    it is not recording. That is an explicit request, and on some phones and
+    some versions an explicit request is honoured less well than simply letting
+    the browser decide &mdash; which is what <b>LET THE BROWSER CHOOSE</b>
+    does.</p>
+    <p>If sound comes out of the handset while a Bluetooth speaker is paired
+    and other apps reach it fine, switch this to <b>LET THE BROWSER CHOOSE</b>,
+    then tap <b>RESET OUTPUT</b>. If that fixes it, the explicit request was
+    the problem. The setting is remembered on this device and does not travel
+    with your projects.</p>
+    <p>This one is genuinely an experiment rather than a known fix: it cannot
+    be tested anywhere except on a phone with a speaker paired to it, so if you
+    find out which setting works, that is real information and worth
+    reporting.</p>
   </div></details>
 
   <div class="row">
@@ -5314,8 +5331,57 @@ Object.assign(globalThis, __JBH_PURE);})();
      the app can be holding, then open a fresh audio context, because a context
      keeps the route it was given. Samples, pads and takes are untouched —
      verified across the reset, still rendering at 0.84.
+   - R169: THE OUTPUT CATEGORY BECOMES A CHOICE. Since R111 the app has forced
+     navigator.audioSession.type='playback' whenever nothing is recording — on
+     essentially every touch, because resumeSession is bound to touchstart.
+     That is an override of the browser's own routing judgement, and the spec's
+     default is 'auto'. Forcing a category is the unusual move and a plausible
+     reason a paired speaker stops being chosen.
+     It cannot be tested anywhere here: Chromium does not implement
+     navigator.audioSession, so that line is a no-op in every suite. So it is a
+     setting rather than a guess — LET THE BROWSER CHOOSE hands the decision
+     back, ASK FOR PLAYBACK keeps exactly what the app has always done, and the
+     default does not move without evidence. Remembered per device, since it
+     describes the hardware rather than the music. What IS tested: the choice
+     reaches the API, a live capture still overrides it, the preference returns
+     when the capture ends, and DIAG reports both it and whether the API exists
+     at all.
+     NOTE FOR THE NEXT PERSON READING THIS: "a pad plays through Bluetooth and
+     a tape lane does not, in the same session" cannot be a routing fault.
+     Both go tail → trackBus → mLo → … → softclip → MediaStreamDestination →
+     the hidden audio element. One context, one output, one route. If one is
+     heard and the other is not, the other is not producing audio — check the
+     buffer peaks line in DIAG, or preview the lane, before looking at routes.
+   - R170: CLOSING THE MIC RE-PICKS THE OUTPUT. The report narrowed itself to
+     the exact sequence: "Only sessions where I arm mic then turn it back off
+     are affected", and "I can restore the session and it plays through bt".
+     That is the whole diagnosis. iOS chooses the output route when the audio
+     session activates and does NOT revisit it because the category changed
+     back — so opening the mic moved sound to the handset, correctly, and
+     closing it set the category to playback and left the sound where it was.
+     A reload fixed it because a reload builds a new context, and a new context
+     gets a new route.
+     The falling edge — the last input closing — now rebuilds instead of
+     relabelling. Stopped, that is the full context rebuild, which is what a
+     reload does and is certain; buffers, pads and takes survive it, verified.
+     Rolling, it is the lighter output rebuild, because silently stopping
+     someone's playback to fix a routing nicety is not a trade worth making,
+     and the message points at RESET OUTPUT if the light one does not take.
+     It did not fire at first: the five capture sites set the category by hand,
+     so applyAudioRoute never saw an input open and never saw one close. One
+     claimRecordRoute() marks the state as well as making the request.
+     THE SESSION IS NO LONGER REWRITTEN ON EVERY TOUCH. resumeSession is bound
+     to touchstart and ends in applyAudioRoute, so the app was asking iOS to
+     configure the audio session under your finger, continuously, almost always
+     to the value it already held — and configuring a session is exactly what
+     makes iOS re-evaluate a route. Fifty touches now write nothing.
+     AND AudioContext.close() IS ASYNCHRONOUS. try/catch around it catches a
+     synchronous throw and nothing else, so closing an already-closed context
+     escaped as an unhandled rejection — "Cannot close a closed AudioContext",
+     surfaced by the new rebuild paths overlapping. Every close goes through
+     closeCtx() now.
    ================================================================ */
-const BUILD = 'JBH-88 · R168 · 2026-08-19 · getting the output back';
+const BUILD = 'JBH-88 · R170 · 2026-08-19 · closing the mic gives the speaker back';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -7710,8 +7776,7 @@ async function openMicStream(constraints){
     }
   }catch(e){ if(/blocked for this site/.test(e.message)) throw e; }
   // a 'playback' audio session forbids capture on iOS: the track arrives dead
-  try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
-  drawRoutePip();
+  claimRecordRoute();
   try{
     return await navigator.mediaDevices.getUserMedia(constraints||{audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
   }catch(err){
@@ -8018,7 +8083,10 @@ function micPlaceTake(buf){
   if(!silent) lcd('TAKE → TAPE LANE '+(lane+1)+' · '+dur+' — it plays with the song; FX and TO PAD are in TRAX.');
 }
 
-$('btnMicOn').addEventListener('click',()=>{ if(micOn) { micDisable(); lcd('MIC OFF.'); } else micEnable(); });
+$('btnMicOn').addEventListener('click',()=>{
+  if(micOn){ routeNote=''; micDisable(); lcd('MIC OFF.'+routeNote); routeNote=''; }
+  else micEnable();
+});
 $('btnMicMon').addEventListener('click',()=>{
   if(!micChain){ lcd('TURN THE MIC ON FIRST.'); return; }
   const on=!$('btnMicMon').classList.contains('on');
@@ -8320,6 +8388,7 @@ $('btnMByp').addEventListener('click',()=>{
   lcd(S.mByp?'MASTER CHAIN BYPASSED — hearing it raw.':'MASTER CHAIN ON.');
 });
 $('btnOutReset').addEventListener('click',resetAudioOut);
+$('outRoute').addEventListener('change',e=>{ setSessPref(e.target.value); });
 $('btnEngReset').addEventListener('click',()=>{ glitchReset();
   lcd('ENGINE COUNTER RESET — play for a while and see whether it stays green.'); });
 $('btnBBOn').addEventListener('click',()=>{
@@ -8713,8 +8782,7 @@ $('btnMic').addEventListener('click',async ()=>{
   }catch(e){}
   // a 'playback' session category forbids capture on iOS — the mic track arrives
   // dead and MediaRecorder.start() throws InvalidStateError. Ask for record rights first.
-  try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
-  drawRoutePip();
+  claimRecordRoute();
   try{
     micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});
   }catch(err){
@@ -8858,6 +8926,7 @@ function resetAudioOut(){
   try{ if(playing) stopSeq(); }catch(e){}
   try{ traxPreviewStop(); }catch(e){}
   try{ rebuildAudio(); }catch(e){ lcd('OUTPUT RESET FAILED: '+(e.message||e)); return; }
+  forgetAudioRoute();          // the session was torn down; re-assert rather than assume
   applyAudioRoute();
   const now=AC?Math.round(AC.sampleRate):0;
   plog('OUTPUT RESET: '+(held.length?'released '+held.join(', '):'no input was open')
@@ -8866,12 +8935,133 @@ function resetAudioOut(){
     ? 'OUTPUT RESET — released '+held.join(', ')+' and reopened the audio. If a speaker was connected, sound should go back to it now.'
     : 'OUTPUT RESET — no input was open, and the audio was reopened anyway. If sound still comes out of the phone, the connection is outside this app.');
 }
+/* WHICH CATEGORY TO ASK FOR WHEN NOTHING IS RECORDING.
+
+   Since R111 the app has forced 'playback' whenever no input is open — on
+   essentially every touch, because resumeSession is bound to touchstart. That
+   is an override of the browser's own routing judgement, and the Web Audio
+   Session spec's default is 'auto', where Safari decides. Forcing a category
+   is the unusual choice, and a plausible reason a connected Bluetooth speaker
+   stops being picked when it used to be.
+   I cannot test that here: Chromium does not implement navigator.audioSession
+   at all, so this code path is a no-op in every test I can run, and the only
+   evidence available is from a phone with a speaker paired to it. So it is a
+   setting rather than a guess — 'auto' hands the decision back to the browser,
+   'playback' keeps exactly what the app has been doing. It is remembered per
+   device, not per project, because it describes the hardware you are on.
+   Default stays 'playback' so nobody's behaviour changes by surprise; it moves
+   only when there is evidence to move it. */
+const SESS_KEY='jbh_sess_v1';
+let sessPref=(()=>{ try{ const v=localStorage.getItem(SESS_KEY); return v==='auto'?'auto':'playback'; }
+  catch(e){ return 'playback'; } })();
+function setSessPref(v){
+  sessPref = v==='auto' ? 'auto' : 'playback';
+  try{ localStorage.setItem(SESS_KEY,sessPref); }catch(e){}
+  forgetAudioRoute();          // a deliberate change must reach the OS even if it matches the last write
+  applyAudioRoute();
+  lcd(sessPref==='auto'
+    ? 'OUTPUT ROUTING → AUTO — the browser chooses where sound goes. Try this if a connected speaker is being ignored.'
+    : 'OUTPUT ROUTING → PLAYBACK — the app asks for the playback category explicitly.');
+}
+/* WRITE ONLY WHEN IT CHANGES.
+
+   resumeSession is bound to touchstart, visibilitychange, pageshow and focus,
+   and it ends in here — so the app was assigning navigator.audioSession.type
+   on EVERY TOUCH, almost always to the value it already held. Assigning a
+   category is not a read-modify-write of a variable: it is a request to the
+   operating system to configure the audio session, and iOS re-evaluates the
+   output route when a session is configured. Doing that under your finger,
+   continuously, while audio is playing, is a good way to have the route
+   re-picked — and the handset speaker is what it falls back to.
+   Reported as sound coming out of the phone while a paired speaker is
+   connected and other apps reach it fine, with a pad heard on Bluetooth and a
+   lane started later heard on the phone: the same output, re-routed in
+   between.
+   I cannot confirm that from here — Chromium does not implement this API, so
+   the line never executes in any test I can run. But writing a system setting
+   thousands of times to the value it already has is wrong on its own terms,
+   and the fix costs one comparison. */
+let sessLast=null, sessWasOpen=false;
+/* CLOSING THE LAST INPUT HAS TO RE-PICK THE OUTPUT, NOT JUST RELABEL IT.
+
+   iOS chooses where audio goes when the audio session becomes active, and it
+   does not revisit that choice because the category changed underneath it. So
+   turning the microphone on moved output to the handset — correctly, record
+   mode carries no A2DP — and turning it off set the category back to playback
+   and left the sound exactly where it was. Every following build was fine
+   until you touched the mic, and a RELOAD fixed it, which is the tell: a fresh
+   context gets a fresh route.
+   Confirmed by the person reporting it, from their own device: "I can restore
+   the session and it plays through bt. Only sessions where I arm mic then turn
+   it back off are affected."
+   So the falling edge — the last input closing — rebuilds the output rather
+   than assuming a relabel is enough. While nothing is playing that is the full
+   context rebuild, which is what a reload does and is certain. While the
+   transport is rolling it is the lighter output rebuild, because silently
+   killing someone's playback to fix a routing nicety is not a trade worth
+   making; RESET OUTPUT is there if the lighter one does not take. */
 function applyAudioRoute(){
   const open=capturesOpen().length>0;
-  try{ if(navigator.audioSession) navigator.audioSession.type = open?'play-and-record':'playback'; }catch(e){}
+  const want = open ? 'play-and-record' : sessPref;
+  if(want!==sessLast){
+    let applied=false;
+    try{ if(navigator.audioSession){ navigator.audioSession.type=want; applied=true; } }catch(e){}
+    if(applied) sessLast=want;
+  }
+  if(sessWasOpen && !open) routeRepick();
+  sessWasOpen=open;
   drawRoutePip();
   return open;
 }
+/* The claim side, so the release side knows there was something to release.
+   The five capture sites used to set the category directly, which meant
+   applyAudioRoute never saw the input open and never saw it close — so the
+   falling edge that re-picks the route could not fire. One helper now marks
+   the state as well as making the request. */
+/* AudioContext.close() is ASYNCHRONOUS. A try/catch around it catches a
+   synchronous throw and nothing else, so closing an already-closed context —
+   which happens the moment two teardown paths overlap — escaped as an
+   unhandled rejection: "Cannot close a closed AudioContext." Every close in
+   the app goes through here. */
+function closeCtx(c){
+  if(!c) return;
+  try{ if(c.state==='closed') return; const p=c.close(); if(p && p.catch) p.catch(()=>{}); }catch(e){}
+}
+function claimRecordRoute(){
+  try{ if(navigator.audioSession){ navigator.audioSession.type='play-and-record'; sessLast='play-and-record'; } }catch(e){}
+  sessWasOpen=true;
+  drawRoutePip();
+}
+/* Written here and read by whoever reports the action, because routeRepick
+   runs INSIDE micDisable and anything it says to the LCD is overwritten a
+   moment later by the caller's own message. */
+let routeNote='';
+let repicking=false;
+function routeRepick(){
+  if(repicking || !AC || !LIVE) return;   // rebuildAudio calls back in here through disarm/disable
+  repicking=true;
+  try{
+    if(!playing){
+      const keep=sessPref;
+      rebuildAudio();
+      sessLast=null; sessPref=keep;
+      try{ if(navigator.audioSession){ navigator.audioSession.type=sessPref; sessLast=sessPref; } }catch(e){}
+      plog('Input closed — audio reopened so the phone picks an output again '
+        +'(a category change alone does not move a route that is already running).');
+      routeNote=' Audio was reopened, so a connected speaker gets the sound back.';
+    } else {
+      rebuildOut(true);
+      plog('Input closed while the transport was rolling — the output was rebuilt without '
+        +'interrupting playback. If sound is still coming from the phone, OUT ▸ RESET OUTPUT '
+        +'does the full reopen.');
+      routeNote=' Output rebuilt without stopping playback \u2014 if sound is still on the phone, use OUT \u25b8 RESET OUTPUT.';
+    }
+  }catch(e){ plog('Route re-pick failed: '+(e.message||e)); }
+  repicking=false;
+}
+function forgetAudioRoute(){ sessLast=null; sessWasOpen=false; }
+
+try{ const sel=$('outRoute'); if(sel) sel.value=sessPref; }catch(e){}
 function drawRoutePip(){
   const pip=$('recPip'); if(!pip) return;
   const who=capturesOpen();
@@ -8894,7 +9084,7 @@ function stopMicStream(){
   cancelAnimationFrame(micRAF);
   const bar=$('miclvl').firstElementChild; bar.style.width='0%';
   if(micStream){ micStream.getTracks().forEach(t=>t.stop()); micStream=null; }
-  if(meterCtx){ try{ meterCtx.close(); }catch(e){} meterCtx=null; }
+  if(meterCtx){ closeCtx(meterCtx); meterCtx=null; }
 }
 function meterMic(){ // level meter is cosmetic — never let it break the recording
   if(!micStream || !AC) return;
@@ -11707,8 +11897,7 @@ async function traxOpenMic(){
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
     lcd('MIC unavailable on this browser — the lane cannot record it.'); return false; }
   micBusy=true;
-  try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
-  drawRoutePip();
+  claimRecordRoute();
   try{
     traxStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});
     traxStreamOwned=true; applyAudioRoute(); return true;
@@ -11855,7 +12044,7 @@ function traxCommit(){
   try{ if(cap.cap) cap.cap.stop(); else cap.tap.disconnect(); }catch(e){}
   const i=traxArm;
   disarmTrax();
-  if(cap.ctx!==AC){ try{ cap.ctx.close(); }catch(e){} }
+  if(cap.ctx!==AC) closeCtx(cap.ctx);
   if(i<0 || !cap.len){ drawTrax(); lcd('TAKE EMPTY.'); return; }
   /* The silent-take warning names the source it ACTUALLY used. It used to list
      all three and ask you to check — reported back as "visually it shows it
@@ -12350,8 +12539,7 @@ async function breathToggle(){
   ensureAudio();
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ lcd('BREATH: mic unavailable.'); return; }
   micBusy=true;
-  try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
-  drawRoutePip();
+  claimRecordRoute();
   try{ breathStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}}); }
   catch(err){ micBusy=false; applyAudioRoute(); lcd('BREATH: mic denied ('+((err&&err.name)||'error')+').'); return; }
   let src, ctx=AC;
@@ -12380,7 +12568,7 @@ async function breathToggle(){
 function breathStop(){
   breathOn=false; cancelAnimationFrame(breathRAF);
   if(breathStream){ try{ breathStream.getTracks().forEach(t=>t.stop()); }catch(e){} breathStream=null; }
-  if(breathCtx){ try{ breathCtx.close(); }catch(e){} breathCtx=null; }
+  if(breathCtx){ closeCtx(breathCtx); breathCtx=null; }
   breathAn=null; breathLvl=0; micBusy=false; applyAudioRoute(); resumeSession();
   $('instBreath').classList.remove('on');
 }
@@ -13958,8 +14146,7 @@ async function ampEnable(){
   if(ampOn){ ampDisable(); return; }
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ lcd('INPUT: getUserMedia unavailable on this browser.'); return; }
   micBusy=true;
-  try{ if(navigator.audioSession) navigator.audioSession.type='play-and-record'; }catch(e){}
-  drawRoutePip();
+  claimRecordRoute();
   const dev=$('ampIn').value;
   const con={audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}};
   if(dev&&dev!=='default') con.audio.deviceId={exact:dev};
@@ -16002,7 +16189,7 @@ function outIsDead(){
   const tr=LIVE.msd.stream.getAudioTracks()[0];
   return !tr || tr.readyState==='ended' || tr.muted;
 }
-function rebuildOut(){
+function rebuildOut(quiet){
   if(!AC || !LIVE) return;
   try{ LIVE.softclip.disconnect(); }catch(e){}   // clears msd AND any direct fallback — no doubling
   try{
@@ -16018,7 +16205,7 @@ function rebuildOut(){
     if(p && p.catch) p.catch(()=>{ try{ LIVE.softclip.connect(AC.destination); }catch(e){} });
     if(jamOn && typeof jamTap!=='undefined' && jamTap){ try{ LIVE.softclip.connect(jamTap); }catch(e){} }   // don't drop an in-flight REC OUT
     if(LIVE.bbTap){ try{ LIVE.softclip.connect(LIVE.bbTap); }catch(e){} }   // black box keeps listening
-    lcd('OUT REVIVED · '+AC.state);
+    if(!quiet) lcd('OUT REVIVED · '+AC.state);
   }catch(e){
     try{ LIVE.softclip.connect(AC.destination); }catch(e2){}
   }
@@ -16029,8 +16216,14 @@ function rebuildAudio(){ // last resort: wedged context — new context, new gra
   try{ instPanic(); }catch(e){}
   try{ if(ampOn) ampDisable(); }catch(e){}
   try{ if(LIVE && LIVE.ael){ LIVE.ael.srcObject=null; LIVE.ael.remove(); } }catch(e){}
-  try{ if(AC) AC.close(); }catch(e){}
-  AC=null; LIVE=null; bbTap=null;   // black box re-arms on the fresh context (history kept if the rate matches)
+  /* close() is ASYNCHRONOUS and returns a promise. A try/catch around it
+     catches a synchronous throw and nothing else, so closing an already-closed
+     context — which happens the moment two rebuild paths overlap, and there
+     are now several — surfaced as an unhandled rejection: "Cannot close a
+     closed AudioContext." Caught properly, and the reference is dropped first
+     so a re-entrant call has nothing to close twice. */
+  const dying=AC; AC=null; closeCtx(dying);
+  LIVE=null; bbTap=null;   // black box re-arms on the fresh context (history kept if the rate matches)
   liveVoices.clear();
   Object.keys(chokeLive).forEach(k=>delete chokeLive[k]);
   Object.keys(activeEnv).forEach(k=>delete activeEnv[k]);
@@ -16173,7 +16366,9 @@ function diagDump(tag){
               +(pk<0.004?'SILENT':pk.toFixed(3)); }).join(' ')
         : 'no audio loaded at all'),
       'input streams: '+(liveInputTracks().join(' ')||'none live')
-        +' · session '+((()=>{ try{ return (navigator.audioSession&&navigator.audioSession.type)||'n/a'; }catch(e){ return 'n/a'; } })()),
+        +' · session '+((()=>{ try{ return (navigator.audioSession&&navigator.audioSession.type)||'n/a'; }catch(e){ return 'n/a'; } })())
+        +' · routing pref '+sessPref+' · last asked '+(sessLast==null?'never':sessLast)
+        +' · audioSession API '+((()=>{ try{ return navigator.audioSession?'present':'ABSENT'; }catch(e){ return 'ABSENT'; } })()),
       'lanes: '+(S.trax.some(t=>t.bufId>=0)
         ? S.trax.map((t,i)=>t.bufId>=0?(i+1)+':buf'+t.bufId+(t.mute?' M':'')+(t.loop?' loop':''):null)
             .filter(Boolean).join(' ')
