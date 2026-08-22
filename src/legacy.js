@@ -2785,8 +2785,35 @@
      with a warning mark when that pad already holds something, says what is on
      it, and is disabled outright on a lane with no take. The target is read
      with a peek, so looking at the panel never spends a deliberate selection.
+   - R173: THE ORDER YOU TOUCH TWO CONTROLS IN SHOULD NOT MATTER.
+     "When I open the app and go to mic to record something it doesn't record
+     unless I go to trax and select mic. I shouldn't have to select where the
+     signal is coming from."
+     The MIC panel's own RECORD was fine. The broken order was arming a lane
+     FIRST and turning the microphone on afterwards — which R168 broke by
+     snapshotting the source at arm time. Turning the mic on has set TRAX
+     SOURCE to MIC since R157, but the armed lane still held the source it was
+     armed with, so PLAY recorded the PRE-MASTER bus: measured at peak 0.87,
+     which is the demo song rather than a voice. Going to TRAX and selecting
+     MIC appeared to fix it only because it made you re-arm.
+     The source is read when recording starts now, not when arming, so the lane
+     records whatever the source says at the moment it rolls. Both orders are
+     tested, because the entire bug was that one behaved differently from the
+     other. An armed lane also names what it will record, and changing the
+     source with a lane armed says what that lane will now capture.
+     AND A PREVIEW COULD BE LEFT STUCK. "Once it plays back silent because I
+     don't turn the mic off before trying to preview it never returns the
+     sound. Shows it as playing." rebuildAudio stops the jam, the tape voices,
+     the instruments and the amp — the lane preview was added after that list
+     and never joined it. A preview running when the context is replaced is
+     orphaned on a dead one: onended never arrives, traxPrev stays set, and the
+     button sits lit as PLAYING for ever. Closing the mic is now itself a thing
+     that replaces the context, which is how this surfaced.
+     It joins the teardown, it carries the context it was started on so a stale
+     one reports itself as not playing, and it has a deadline as well as an
+     onended, because an event that never arrives cannot clear anything.
    ================================================================ */
-const BUILD = 'JBH-88 · R172 · 2026-08-19 · empty pads by default';
+const BUILD = 'JBH-88 · R173 · 2026-08-19 · order should not matter';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -8937,7 +8964,7 @@ function stopSeq(){
    which is the whole price of not holding an input open while idle. */
 async function playPressed(){
   if(playing) return;
-  if(traxArm>=0 && traxArmSrc==='mic' && !traxStream){
+  if(traxArm>=0 && traxSrcNow()==='mic' && !traxStream){
     lcd('OPENING THE MICROPHONE …');
     if(!await traxOpenMic()){ drawTrax(); return; }   // it already said why
   }
@@ -9186,9 +9213,17 @@ function traxPreviewStop(){
   traxPrev=null;
   try{ drawTrax(); }catch(e){}
 }
+/* A preview belonging to a context that no longer exists is not playing,
+   whatever the button says. Checked wherever the lane list is drawn, so the
+   state cannot be left stuck by anything that replaces the context. */
+function traxPreviewAlive(){
+  if(!traxPrev) return false;
+  if(!AC || traxPrev.ctx!==AC || AC.state==='closed'){ traxPrev=null; return false; }
+  return true;
+}
 function traxPreview(i){
   const tr=S.trax[i];
-  if(traxPrev && traxPrev.i===i){ traxPreviewStop(); lcd('PREVIEW STOPPED.'); return; }
+  if(traxPreviewAlive() && traxPrev.i===i){ traxPreviewStop(); lcd('PREVIEW STOPPED.'); return; }
   traxPreviewStop();
   if(!tr || tr.bufId<0){ lcd('TRACK '+(i+1)+' IS EMPTY — nothing to preview.'); return; }
   ensureAudio();
@@ -9200,8 +9235,12 @@ function traxPreview(i){
   const g=AC.createGain(); g.gain.value=1;
   src.connect(g); g.connect(LIVE.master);
   src.onended=()=>{ if(traxPrev && traxPrev.src===src) traxPreviewStop(); };
+  /* A belt for the onended brace: if the context dies mid-preview the event
+     never arrives, so the button is also given a deadline. */
+  const dur=buf.duration;
+  setTimeout(()=>{ if(traxPrev && traxPrev.src===src) traxPreviewStop(); }, dur*1000+400);
   try{ src.start(); }catch(e){ lcd('PREVIEW FAILED: '+(e.message||e)); return; }
-  traxPrev={i,src,g};
+  traxPrev={i,src,g,ctx:AC};
   drawTrax();
   /* If it is silent, say so here rather than letting someone listen to nothing
      and wonder whether the preview itself is broken. */
@@ -9215,9 +9254,18 @@ function drawTrax(){
   S.trax.forEach((tr,i)=>{
     const row=document.createElement('div'); row.className='row';
     const num=document.createElement('span'); num.className='lbl'; num.style.minWidth='22px'; num.textContent='T'+(i+1);
+    if(traxArm===i){ num.style.color='var(--red)'; }
     const rec=document.createElement('button'); rec.className='rec'; rec.innerHTML='&#9679;';
-    rec.setAttribute('aria-label','Arm track '+(i+1)+' to record');
     rec.classList.toggle('on',traxArm===i);
+    /* An armed lane says what it will record. The source is a separate control
+       at the top of the panel, so which one is selected is easy to lose track
+       of — and a take of the wrong thing is only discovered after the fact. */
+    rec.setAttribute('aria-label', traxArm===i
+      ? 'Track '+(i+1)+' is armed and will record '+($('traxSrc')?$('traxSrc').selectedOptions[0].textContent:'')+'. Tap to disarm.'
+      : 'Arm track '+(i+1)+' to record');
+    rec.title = traxArm===i
+      ? 'Armed — will record '+($('traxSrc')?$('traxSrc').selectedOptions[0].textContent:'')
+      : 'Arm this track';
     rec.addEventListener('click',()=>armTrack(i));
     const mu=document.createElement('button'); mu.textContent='M';
     mu.setAttribute('aria-label','Mute track '+(i+1)); mu.classList.toggle('on',tr.mute);
@@ -9240,7 +9288,7 @@ function drawTrax(){
     lp.addEventListener('click',()=>{ tr.loop=!tr.loop; drawTrax(); dirty();
       lcd('TRACK '+(i+1)+(tr.loop?' LOOPS at the nearest bar':' plays once')); });
     const pv=document.createElement('button');
-    const playing=!!(traxPrev && traxPrev.i===i);
+    const playing=traxPreviewAlive() && traxPrev.i===i;
     pv.innerHTML = playing ? '&#9632;' : '&#9654;';
     pv.title = b ? 'Preview this take on its own' : 'Nothing recorded on this track yet';
     pv.setAttribute('aria-label',(playing?'Stop previewing':'Preview')+' track '+(i+1));
@@ -9389,7 +9437,6 @@ async function armTrack(i){
   if($('traxSrc').value==='mic' && (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)){
     lcd('MIC unavailable on this browser.'); drawTrax(); return;
   }
-  traxArmSrc=$('traxSrc').value;
   traxArm=i; drawTrax();
   const hasTake=S.trax[i].bufId>=0;
   if(micOn && $('traxSrc').value!=='mic')
@@ -9407,7 +9454,26 @@ async function armTrack(i){
       ? ' The microphone opens when you press PLAY and closes when the take commits, so being armed costs you nothing.'
       : ''));
 }
-let traxArmSrc='bus';      // the source chosen when the lane was armed
+/* THE SOURCE IS READ WHEN RECORDING STARTS, NOT WHEN ARMING.
+
+   R168 snapshotted it at arm time, which broke the most natural order there
+   is: arm a lane, then go and turn the microphone on. Turning the mic on sets
+   TRAX SOURCE to MIC — that has worked since R157 — but the armed lane was
+   still holding the source it had when it was armed, so PLAY recorded the
+   PRE-MASTER bus instead. Reported as "it doesn't record unless I go to trax
+   and select mic", and selecting it there worked only because it made the user
+   re-arm afterwards.
+   Reading it live means the lane records whatever the source says at the
+   moment it rolls, which is the only answer that does not depend on the order
+   two independent controls were touched in. */
+function traxSrcNow(){ const s=$('traxSrc'); return s?s.value:'bus'; }
+/* Changing the source with a lane armed changes what that lane will record, so
+   it says so rather than leaving it to be discovered in the take. */
+try{ $('traxSrc').addEventListener('change',()=>{
+  drawTrax();
+  if(traxArm>=0) lcd('TRACK '+(traxArm+1)+' IS ARMED — it will now record '
+    +$('traxSrc').selectedOptions[0].textContent+'.');
+}); }catch(e){}
 let traxStreamOwned=false; // did we open it, or are we borrowing the MIC panel's?
 /* Opened at PLAY and released at commit, so an armed lane holds nothing.
    If the MIC panel already has the microphone, its stream is BORROWED rather
@@ -9509,7 +9575,7 @@ function traxBeginCapture(when){
      recording the bus — that is how someone ends up with a take that is not
      what they asked for. It happens when the transport is started by something
      that cannot wait for getUserMedia, such as incoming MIDI clock. */
-  if(traxArmSrc==='mic' && !traxStream){
+  if(traxSrcNow()==='mic' && !traxStream){
     lcd('\u26a0 TRACK '+(traxArm+1)+' IS ARMED FOR THE MIC but the microphone is not open, '
       +'so nothing was recorded. Press PLAY here rather than starting from external clock.');
     return;
@@ -13734,6 +13800,13 @@ function rebuildOut(quiet){
 }
 function rebuildAudio(){ // last resort: wedged context — new context, new graph, same session
   try{ if(jamOn) stopJam(); }catch(e){}   // finalize the capture on the old context before it dies
+  /* The lane preview was added after this list and never joined it. A preview
+     playing when the context goes is orphaned on a dead one: its onended never
+     fires, traxPrev stays set, and the button sits lit as PLAYING for ever.
+     Reported exactly that way — "shows it as playing" and the sound never
+     comes back — after closing the mic, which is now itself a thing that
+     rebuilds the context. */
+  try{ traxPreviewStop(); }catch(e){}
   try{ stopTraxVoices(); if(traxCap) traxCommit(); }catch(e){}
   try{ instPanic(); }catch(e){}
   try{ if(ampOn) ampDisable(); }catch(e){}
