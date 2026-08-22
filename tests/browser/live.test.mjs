@@ -1079,6 +1079,76 @@ export default async function ({ browser, base }) {
     t.ok('a preview pointing at a dead context reports itself as not playing',
       stuck.healed);
 
+    t.head('MIC TAB: TURN IT ON, RECORD, AND IT FINDS ITS OWN LANE');
+    /* The flow as described: open the app, MIC tab, mic on, RECORD. No arming
+       of anything. It should land on an empty tape lane, and the TRAX source
+       should be MIC because a microphone is in use.
+       Setting the source once when the mic turns on was not enough — nothing
+       kept it there, and REC PERFORMANCE forced it to LIVE ONLY even with the
+       mic live. The claim holds for as long as the mic is on; the only thing
+       that outranks it is a hand on the control. */
+    await ctx.grantPermissions(['microphone']).catch(() => {});
+    const micFlow = await page.evaluate(async () => {
+      const pk = b => { let m = 0; const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > m) m = v; } return m; };
+      const o = {};
+      S.trax.forEach(t => { t.bufId = -1; });
+      if (micOn) { document.getElementById('btnMicOn').click(); await new Promise(r => setTimeout(r, 1100)); }
+      document.getElementById('traxSrc').value = 'bus';
+      document.querySelector('#tabs button[data-v="mic"]').click();
+
+      document.getElementById('btnMicOn').click();
+      await new Promise(r => setTimeout(r, 1600));
+      o.srcAfterOn = document.getElementById('traxSrc').value;
+      o.destNamesLane = document.getElementById('micDest').selectedOptions[0].textContent;
+
+      const rec = async () => {
+        document.getElementById('btnMicRec').click();
+        await new Promise(r => setTimeout(r, 900));
+        document.getElementById('btnMicRec').click();
+        await new Promise(r => setTimeout(r, 900));
+      };
+      await rec();
+      o.afterOne = S.trax.map((t, i) => t.bufId >= 0 ? 'T' + (i + 1) : null).filter(Boolean);
+      o.peak = S.trax[0].bufId >= 0 ? pk(S.buffers[S.trax[0].bufId]) : 0;
+      await rec(); await rec();
+      o.afterThree = S.trax.map((t, i) => t.bufId >= 0 ? 'T' + (i + 1) : null).filter(Boolean);
+
+      // REC PERFORMANCE must not take the microphone off the input list
+      document.getElementById('btnPerfRec').click();
+      await new Promise(r => setTimeout(r, 350));
+      o.srcAfterPerfRec = document.getElementById('traxSrc').value;
+      if (playing) stopSeq();
+      await new Promise(r => setTimeout(r, 700));
+
+      // a deliberate choice is kept; an app-driven one is not an override
+      traxSrcOverride = true;
+      document.getElementById('traxSrc').value = 'bus';
+      await armTrack(6);
+      o.overrideKept = document.getElementById('traxSrc').value;
+      traxSrcOverride = false;
+      await armTrack(7);
+      o.reclaimed = document.getElementById('traxSrc').value;
+      disarmTrax();
+      if (micOn) { document.getElementById('btnMicOn').click(); await new Promise(r => setTimeout(r, 1100)); }
+      o.srcAfterMicOff = document.getElementById('traxSrc').value;
+      return o;
+    });
+    t.ok('turning the mic on sets the TRAX source to MIC', micFlow.srcAfterOn === 'mic');
+    t.ok('GOES TO names the actual lane, before you record',
+      /T\d/.test(micFlow.destNamesLane), '"' + micFlow.destNamesLane + '"');
+    t.ok('RECORD with nothing armed lands on an empty lane',
+      micFlow.afterOne.length === 1 && micFlow.peak > 0.05,
+      micFlow.afterOne.join(',') + ' at peak ' + micFlow.peak.toFixed(3));
+    t.ok('AND THREE RECORDINGS FILL THREE DIFFERENT LANES',
+      micFlow.afterThree.length === 3, micFlow.afterThree.join(', '));
+    t.ok('REC PERFORMANCE does not steal the source from a live mic',
+      micFlow.srcAfterPerfRec === 'mic', 'source ' + micFlow.srcAfterPerfRec + ' (forced to "live" before)');
+    t.ok('a source you chose by hand is left alone', micFlow.overrideKept === 'bus');
+    t.ok('and without an override the mic reclaims it', micFlow.reclaimed === 'mic');
+    t.ok('turning the mic off hands the source back', micFlow.srcAfterMicOff !== 'mic',
+      'back to ' + micFlow.srcAfterMicOff);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
