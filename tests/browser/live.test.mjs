@@ -959,6 +959,126 @@ export default async function ({ browser, base }) {
     t.ok('the kit these two sections emptied is put back for what follows',
       topad.restoredPads >= 8, topad.restoredPads + ' pads loaded again');
 
+    t.head('AN ARMED LANE RECORDS WHAT THE SOURCE SAYS WHEN IT ROLLS');
+    /* Reported: "when I open the app and go to mic to record something it
+       doesn't record unless I go to trax and select mic". The MIC panel's own
+       RECORD button was fine; the broken order was arming a lane FIRST and
+       turning the microphone on afterwards.
+       R168 snapshotted the source at arm time. Turning the mic on sets TRAX
+       SOURCE to MIC — that has worked since R157 — but the armed lane still
+       held the source it was armed with, so PLAY recorded the PRE-MASTER bus:
+       measured at peak 0.87, which is the demo song, not a voice. Selecting
+       MIC in TRAX "fixed" it only because it made the user re-arm.
+       Both orders are checked, because the whole bug was that one of them
+       behaved differently from the other. */
+    await ctx.grantPermissions(['microphone']).catch(() => {});
+    const order = await page.evaluate(async () => {
+      const pk = b => { let m = 0; const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > m) m = v; } return m; };
+      const o = {};
+      const run = async (micFirst) => {
+        S.trax.forEach(t => { t.bufId = -1; });
+        if (micOn) { document.getElementById('btnMicOn').click(); await new Promise(r => setTimeout(r, 1200)); }
+        document.getElementById('traxSrc').value = 'bus';
+        if (micFirst) {
+          document.getElementById('btnMicOn').click();
+          await new Promise(r => setTimeout(r, 1600));
+          await armTrack(0);
+        } else {
+          await armTrack(0);
+          document.getElementById('btnMicOn').click();
+          await new Promise(r => setTimeout(r, 1600));
+        }
+        const src = document.getElementById('traxSrc').value;
+        await playPressed();
+        await new Promise(r => setTimeout(r, 1500));
+        const capturing = traxCap ? traxCap.srcMode : 'none';
+        stopSeq();
+        await new Promise(r => setTimeout(r, 1100));
+        const peak = S.trax[0].bufId >= 0 ? pk(S.buffers[S.trax[0].bufId]) : 0;
+        const lcd = document.getElementById('lcdmsg').textContent;
+        if (micOn) { document.getElementById('btnMicOn').click(); await new Promise(r => setTimeout(r, 1200)); }
+        return { src, capturing, peak, lcd };
+      };
+      o.micThenArm = await run(true);
+      o.armThenMic = await run(false);
+      return o;
+    });
+    t.ok('mic on THEN arm records the microphone',
+      order.micThenArm.src === 'mic' && order.micThenArm.capturing === 'mic',
+      'source ' + order.micThenArm.src + ', captured ' + order.micThenArm.capturing);
+    t.ok('ARM THEN MIC ON records the microphone TOO — the order must not matter',
+      order.armThenMic.src === 'mic' && order.armThenMic.capturing === 'mic',
+      'source ' + order.armThenMic.src + ', captured ' + order.armThenMic.capturing
+      + ' (was "bus" — it recorded the demo song instead of the voice)');
+    t.ok('and both takes say they came from MIC',
+      /from MIC/.test(order.micThenArm.lcd) && /from MIC/.test(order.armThenMic.lcd),
+      '"' + order.armThenMic.lcd.slice(0, 60) + '"');
+    t.ok('both actually captured audio',
+      order.micThenArm.peak > 0.05 && order.armThenMic.peak > 0.05,
+      order.micThenArm.peak.toFixed(3) + ' / ' + order.armThenMic.peak.toFixed(3));
+
+    t.head('A PREVIEW CANNOT BE LEFT STUCK BY THE CONTEXT GOING AWAY');
+    /* Reported: previewing without turning the mic off first plays silent, the
+       sound never comes back, and the button "shows it as playing".
+       rebuildAudio stops the jam, the tape voices, the instruments and the amp
+       — the lane preview was added after that list and never joined it. So a
+       preview running when the context is replaced is orphaned on a dead one:
+       onended never arrives, traxPrev stays set, and the button sits lit for
+       ever. Closing the mic is now itself a thing that replaces the context,
+       which is how this surfaced. */
+    const stuck = await page.evaluate(async () => {
+      const o = {};
+      document.getElementById('btnMicOn').click();
+      await new Promise(r => setTimeout(r, 1600));
+      document.getElementById('btnMicRec').click();
+      await new Promise(r => setTimeout(r, 1300));
+      document.getElementById('btnMicRec').click();
+      await new Promise(r => setTimeout(r, 1100));
+      o.gotTake = S.trax[0].bufId >= 0;
+      o.micStillOn = micOn;
+
+      const btn = () => document.querySelectorAll('#traxlist .row')[0]
+        .querySelector('button[aria-label^="Preview track 1"], button[aria-label^="Stop previewing track 1"]');
+      btn().click();
+      await new Promise(r => setTimeout(r, 250));
+      o.started = !!traxPrev;
+      o.ctxBefore = traxPrev ? traxPrev.ctx === AC : false;
+
+      document.getElementById('btnMicOn').click();       // closes the mic -> rebuilds
+      await new Promise(r => setTimeout(r, 1600));
+      o.cleared = !traxPrev;
+      o.backToPlayButton = !!document.querySelectorAll('#traxlist .row')[0]
+        .querySelector('button[aria-label^="Preview track 1"]');
+
+      let pk = 0;
+      const b = await renderMix(null, null, { loops: 1, src: 'pat', noTail: true });
+      if (b) { const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > pk) pk = v; } }
+      o.appStillPlays = pk;
+
+      btn().click();
+      await new Promise(r => setTimeout(r, 250));
+      o.worksAgain = !!traxPrev;
+      traxPreviewStop();
+
+      /* And the self-heal: a preview left pointing at a dead context is not
+         playing, whatever the flag says. */
+      traxPrev = { i: 0, src: {}, g: {}, ctx: { state: 'closed' } };
+      o.healed = traxPreviewAlive() === false && traxPrev === null;
+      return o;
+    });
+    t.ok('a take was recorded with the mic left on', stuck.gotTake && stuck.micStillOn);
+    t.ok('the preview starts on the live context', stuck.started && stuck.ctxBefore);
+    t.ok('CLOSING THE MIC MID-PREVIEW DOES NOT LEAVE IT STUCK', stuck.cleared);
+    t.ok('and the button goes back to ▶ rather than staying lit',
+      stuck.backToPlayButton);
+    t.ok('the app still makes sound afterwards', stuck.appStillPlays > 0.05,
+      'peak ' + stuck.appStillPlays.toFixed(4));
+    t.ok('and preview works again straight away', stuck.worksAgain);
+    t.ok('a preview pointing at a dead context reports itself as not playing',
+      stuck.healed);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
