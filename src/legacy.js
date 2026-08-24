@@ -2812,8 +2812,33 @@
      It joins the teardown, it carries the context it was started on so a stale
      one reports itself as not playing, and it has a deadline as well as an
      onended, because an event that never arrives cannot clear anything.
+   - R174: THE SOURCE FOLLOWS THE MICROPHONE. "I open app, click mic tab, turn
+     mic on then click record mic, I do not arm a track, I'd like it to go to
+     empty track in trax automatically" and "the trax source needs to be the
+     mic when I'm using the mic".
+     The lane part already worked — micNextLane finds the first empty one and
+     the default destination is the next empty lane — but the control only said
+     "the next empty tape lane", so WHICH one, and whether there was one left,
+     were things you learned after recording. It names the lane now, before you
+     record, and turns red when they are all full. Same lesson as TO PAD.
+     THE CLAIM WAS A ONE-SHOT. Setting the source when the mic turns on is not
+     the same as it following the mic: nothing kept it there, and REC
+     PERFORMANCE forced the source to LIVE ONLY even with a microphone open —
+     a tap on the pads screen could take the mic off the input list while you
+     were still holding one. It is re-asserted whenever a lane is armed and
+     whenever PLAY rolls, and REC PERFORMANCE leaves it alone while the mic is
+     live. The only thing that outranks it is a hand on the control:
+     event.isTrusted separates you choosing a source from the app writing one,
+     and a deliberate choice is remembered as an override until the mic goes
+     off.
+     AND THE LAST BLIND LOADER. With GOES TO set to a pad — which is saved with
+     the project, so it persists — micPlaceTake wrote to the selected pad
+     without the chooser, without clearing the previous sound's voicing, and
+     without asking. That is how a take lands somewhere you are not looking,
+     sounding like something you did not record. It follows the same rules as
+     every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R173 · 2026-08-19 · order should not matter';
+const BUILD = 'JBH-88 · R174 · 2026-08-19 · the source follows the mic';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -5334,15 +5359,30 @@ function micBuild(){
    off. Whatever you had chosen is restored, so it cannot quietly cost you a
    setting you made on purpose. */
 let traxSrcBeforeMic=null;
-function micClaimTrax(){
+/* THE SOURCE FOLLOWS THE MICROPHONE FOR AS LONG AS IT IS ON.
+
+   "The trax source needs to be the mic when I'm using the mic." Setting it
+   once when the mic turns on is not the same thing: nothing kept it there.
+   REC PERFORMANCE forces the source to LIVE ONLY, and did so even with the mic
+   live, so a tap on the pads screen could quietly take the microphone off the
+   input list while you were still holding one.
+   It is re-asserted whenever a lane is armed or a take is about to roll, and
+   the only thing that outranks it is you: choosing a source by hand while the
+   mic is on is remembered as an override and left alone. Everything the APP
+   does is not an override. */
+let traxSrcOverride=false;      // you picked a source by hand while the mic was on
+function micClaimTrax(force){
   const sel=$('traxSrc'); if(!sel) return '';
+  if(!micOn && !force) return '';
+  if(traxSrcOverride) return '';                    // you chose otherwise, on purpose
   if(sel.value==='mic') return '';
-  traxSrcBeforeMic=sel.value;
+  if(traxSrcBeforeMic==null) traxSrcBeforeMic=sel.value;
   sel.value='mic';
-  try{ drawTrax(); }catch(e){}
-  return ' TRAX SOURCE → MIC, so arming a lane records the microphone.';
+  try{ drawTrax(); drawMicDest(); }catch(e){}
+  return ' TRAX SOURCE → MIC, so a lane records the microphone.';
 }
 function micReleaseTrax(){
+  traxSrcOverride=false;                            // the override lasted as long as the mic did
   const sel=$('traxSrc'); if(!sel || traxSrcBeforeMic==null) return;
   /* Only if nothing has changed it since. Somebody who deliberately picked a
      source while the mic was live meant it. */
@@ -5430,9 +5470,9 @@ async function micEnable(){
   catch(err){ applyAudioRoute(); lcd(err.message); return; }
   try{ micChain=micBuild(); }
   catch(e){ lcd('MIC SETUP FAILED: '+e.message); micDisable(); return; }
-  micOn=true; drawRoutePip();
+  micOn=true; traxSrcOverride=false; drawRoutePip();
   $('btnMicOn').classList.add('on'); $('btnMicOn').innerHTML='&#9673; MIC IS ON — TAP TO STOP';
-  micApply(); micMeter(); micListDevices();
+  micApply(); micMeter(); micListDevices(); drawMicDest();
   lcd('MIC ON — shape the voice, then RECORD. Headphones before MONITOR.'+micClaimTrax());
 }
 function micDisable(){
@@ -5470,6 +5510,28 @@ function micNextLane(){
   for(let i=0;i<S.trax.length;i++) if(S.trax[i].bufId<0) return i;
   return -1;
 }
+/* GOES TO names the actual destination, not the category.
+
+   "I do not arm a track, I'd like it to go to empty track in trax
+   automatically" — it does, and has: the default is the next empty lane and
+   micNextLane finds it. But the control only said "the next empty tape lane",
+   so which one that was, and whether there was one at all, were things you
+   found out after recording. This is the same lesson as TO PAD: the
+   destination belongs on the control, before the action. */
+function drawMicDest(){
+  const sel=$('micDest'); if(!sel) return;
+  const lane=micNextLane(), pad=pickTargetPad(true);
+  const o=sel.options;
+  for(let i=0;i<o.length;i++){
+    if(o[i].value==='lane') o[i].textContent = lane<0
+      ? 'the next empty tape lane — ALL FULL'
+      : 'the next empty tape lane \u2014 T'+(lane+1);
+    else if(o[i].value==='pad') o[i].textContent = 'a pad \u2014 '+padName(pad)
+      +(S.pads[pad].bufId>=0?' (asks first)':' (empty)');
+  }
+  const warn = sel.value==='lane' ? lane<0 : S.pads[pad].bufId>=0;
+  sel.classList.toggle('warn',!!warn);
+}
 /* Captured with the same in-graph tap TRAX and the black box have always used,
    reading real samples out of the audio graph.
 
@@ -5485,6 +5547,7 @@ function micNextLane(){
 const MIC_MAX_S=180;
 function micRecordStart(){
   if(!micOn||!micChain){ lcd('TURN THE MIC ON FIRST.'); return; }
+  drawMicDest();
   const wet=$('micWet').checked;
   const from = wet ? micChain.out : micChain.src;
   const cap={L:[],R:[],len:0,from};
@@ -5544,10 +5607,25 @@ function micPlaceTake(buf){
   const dur=buf.duration.toFixed(1)+'s';
   const silent=micTakeSilent(buf);
   if($('micDest').value==='pad'){
-    const pad=S.editPad, p=S.pads[pad];
-    p.bufId=bid; p.start=0; p.end=1; p.warped=false; p.name=p.name||'voice';
+    /* The last loader still writing to S.editPad blind. Every other route onto
+       a pad goes through the chooser, clears the previous sound's voicing and
+       asks before replacing anything — this one overwrote the selected pad
+       silently, keeping its old filter and EQ, which is how a take lands
+       somewhere you are not looking sounding like something you did not
+       record. Same rules as everywhere else now. */
+    const pad=pickTargetPad();
+    if(!confirmPadOverwrite(pad,'the take')){
+      S.buffers.pop();
+      $('micRecInfo').textContent='kept — '+padName(pad)+' left alone';
+      lcd(padName(pad)+' LEFT ALONE — the take is still here, change GOES TO or pick another pad.');
+      return;
+    }
+    S.editPad=pad;
+    const p=S.pads[pad];
+    resetPadVoice(p);
+    p.bufId=bid; p.warped=false; p.name='voice';
     delete warpOrig[pad];
-    drawPads(); drawEdit(); dirty();
+    drawPads(); drawEdit(); drawMixer(); drawMicDest(); dirty();
     $('micRecInfo').textContent=(silent?'⚠ silent · ':'')+dur+' → '+padName(pad);
     if(!silent) lcd('TAKE → '+padName(pad)+' · '+dur+' — play the pad, or open it in SMPL to chop it.');
     return;
@@ -5557,7 +5635,7 @@ function micPlaceTake(buf){
     lcd('EVERY TAPE LANE IS FULL — clear one in TRAX, or set GOES TO: the selected pad.'); return; }
   const tr=S.trax[lane];
   tr.bufId=bid; tr.name='voice'; tr.gain=tr.gain||0.9;
-  drawTrax(); dirty();
+  drawTrax(); drawMicDest(); dirty();
   $('micRecInfo').textContent=(silent?'⚠ silent · ':'')+dur+' → T'+(lane+1);
   if(!silent) lcd('TAKE → TAPE LANE '+(lane+1)+' · '+dur+' — it plays with the song; FX and TO PAD are in TRAX.');
 }
@@ -8964,6 +9042,7 @@ function stopSeq(){
    which is the whole price of not holding an input open while idle. */
 async function playPressed(){
   if(playing) return;
+  if(traxArm>=0) micClaimTrax();
   if(traxArm>=0 && traxSrcNow()==='mic' && !traxStream){
     lcd('OPENING THE MICROPHONE …');
     if(!await traxOpenMic()){ drawTrax(); return; }   // it already said why
@@ -9437,6 +9516,7 @@ async function armTrack(i){
   if($('traxSrc').value==='mic' && (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)){
     lcd('MIC unavailable on this browser.'); drawTrax(); return;
   }
+  micClaimTrax();               // the mic is on: this lane records it unless you said otherwise
   traxArm=i; drawTrax();
   const hasTake=S.trax[i].bufId>=0;
   if(micOn && $('traxSrc').value!=='mic')
@@ -9469,8 +9549,16 @@ async function armTrack(i){
 function traxSrcNow(){ const s=$('traxSrc'); return s?s.value:'bus'; }
 /* Changing the source with a lane armed changes what that lane will record, so
    it says so rather than leaving it to be discovered in the take. */
-try{ $('traxSrc').addEventListener('change',()=>{
-  drawTrax();
+try{ $('micDest').addEventListener('change',drawMicDest); }catch(e){}
+try{ $('traxSrc').addEventListener('change',(e)=>{
+  /* isTrusted separates a hand on the control from the app writing to it.
+     Only the first counts as choosing something other than the microphone. */
+  if(e && e.isTrusted && micOn && $('traxSrc').value!=='mic'){
+    traxSrcOverride=true;
+    lcd('SOURCE → '+$('traxSrc').selectedOptions[0].textContent
+      +' — kept even though the mic is on, because you chose it. Turn the mic off and on to go back to MIC.');
+  }
+  drawTrax(); drawMicDest();
   if(traxArm>=0) lcd('TRACK '+(traxArm+1)+' IS ARMED — it will now record '
     +$('traxSrc').selectedOptions[0].textContent+'.');
 }); }catch(e){}
@@ -10355,7 +10443,12 @@ $('btnPerfRec').addEventListener('click',()=>{
   // press PLAY — that path is the deliberate overwrite.)
   let i=(traxArm>=0 && S.trax[traxArm].bufId<0) ? traxArm : S.trax.findIndex(t=>t.bufId<0);
   if(i<0){ lcd('ALL 8 TRACKS HAVE TAKES — clear one in TRAX (✕), or arm it there and PLAY to re-record.'); return; }
-  $('traxSrc').value='live';                   // REC PERFORMANCE isolates what YOU play (the live bus), not the whole mix
+  /* REC PERFORMANCE isolates what YOU play — but not at the cost of taking the
+     microphone off the input list while one is open. With the mic live, LIVE
+     ONLY captures it anyway (it is part of what you are playing), so the claim
+     stands and the source is left alone. */
+  if(!micOn) $('traxSrc').value='live';
+  else lcd('THE MIC IS ON — recording your performance with SOURCE on MIC so the voice is captured.');
   if(traxStream) disarmTrax();                 // a pending mic arm would hijack the capture source
   traxArm=i; drawTrax();
   if(playing) stopSeq();
