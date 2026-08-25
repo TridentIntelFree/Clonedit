@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R174 · 2026-08-19 · the source follows the mic';
+const BUILD = 'JBH-88 · R175 · 2026-08-25 · meter what is recorded, not what is heard';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -4770,6 +4770,26 @@ function timeStretch(buf, ratio){   // ratio = outDur/inDur (>1 slower/longer, p
   return out;
 }
 const warpOrig={};   // padIdx -> pristine pre-warp AudioBuffer (session-only, avoids compounding)
+/* THE STORED ORIGINAL ONLY MEANS ANYTHING WHILE THE PAD STILL HOLDS THE WARP.
+
+   "If you warp a pad, then later reuse that same slot for a chopped slice from
+   a different sample, pressing WARP RESET on it silently destroys the newly-
+   assigned audio and replaces it with the old, unrelated pre-warp buffer — with
+   a message ('original restored') that's actively misleading about what just
+   happened."
+
+   Exactly right, and the same hole was open in three places, because each one
+   wrote p.bufId by hand instead of going through assignBufToPad: CHOP → ASSIGN,
+   TRIM SILENCE, and NORMALIZE. The first two put a different buffer on the pad;
+   the third rewrites the samples of the one that is there. In all three the
+   thing warpOrig is the "original" OF has stopped existing, so keeping it means
+   WARP RESET is holding a restore point for audio the pad no longer has.
+
+   Dropping it makes WARP RESET say "nothing to reset", which is the truth. It
+   is the one honest answer available: there is no pristine version of what is
+   on the pad now, and quietly swapping in an unrelated one is how you lose a
+   chop you just made. */
+function dropWarpOrig(i){ delete warpOrig[i]; }
 $('epWarpBeats').addEventListener('change',e=>{ S.pads[S.editPad].warpBeats=parseInt(e.target.value,10); dirty(); });
 $('epWarp').addEventListener('click',()=>{
   const i=S.editPad, p=S.pads[i];
@@ -5246,6 +5266,7 @@ function a11yWatch(){
    without phase trouble. It is labelled for what it does rather than what it
    is not: it takes the edge off harsh S sounds at the cost of some air. ---- */
 let micOn=false, micChain=null, micStreamIn=null, micVuRAF=0, micAn=null, micPeakHold=0;
+let micAnOut=null, micOutHold=0, micDead=false;
 let micRec=null, micCap=null, micRecT0=0, micRecTimer=0;
 
 /* Character presets shape TONE. They deliberately do not touch the gate, nor
@@ -5330,6 +5351,18 @@ function micBuild(){
   M.drive.connect(M.dry); M.dry.connect(M.voice.in);
   M.drive.connect(M.dblDelay); M.dblDelay.connect(M.dblWet); M.dblWet.connect(M.voice.in);
   M.voice.out.connect(M.out);
+  /* METER WHAT IS RECORDED, NOT ONLY WHAT THE ROOM IS DOING.
+
+     M.an hangs off M.in, before the gate — "meter the room, before shaping",
+     which is genuinely useful for setting a level. But RECORD taps M.out, at
+     the far end of gate → filters → compressor → drive, so the one display you
+     watch while recording measures a different point from the one being
+     captured. A shut gate then gives exactly what was reported: the meter
+     moving, the take silent, and nothing on screen connecting the two.
+     This one sits where the recorder sits, so IN and REC can be compared and
+     the gap between them named. */
+  M.anOut=AC.createAnalyser(); M.anOut.fftSize=1024;
+  M.out.connect(M.anOut);
   /* EVERYTHING audible hangs off the MONITOR gate — including the sends.
      They used to branch from M.out, upstream of it, and REVERB ships at 10%:
      so an open microphone was permanently 10% live into the reverb, out of the
@@ -5343,6 +5376,8 @@ function micBuild(){
   M.mon.connect(M.dsend); M.dsend.connect(LIVE.dlyIn);
   if(LIVE.liveBus) M.out.connect(LIVE.liveBus);   // a recording bus, not a speaker
   micAn=new Float32Array(M.an.fftSize);
+  micAnOut=new Float32Array(M.anOut.fftSize);
+  micOutHold=0; micDead=false;
   return M;
 }
 
@@ -5450,14 +5485,34 @@ function micMeter(){
   const open = gateOff || rms>th;
   micChain.gate.gain.setTargetAtTime(open?1:0.0001, AC.currentTime, open?0.005:0.05);
   micPeakHold=Math.max(pk, micPeakHold*0.93);
+  /* What is actually reaching the recorder. */
+  let opk=0;
+  if(micChain.anOut){
+    micChain.anOut.getFloatTimeDomainData(micAnOut);
+    for(let i=0;i<micAnOut.length;i++){ const a=Math.abs(micAnOut[i]); if(a>opk) opk=a; }
+  }
+  micOutHold=Math.max(opk, micOutHold*0.93);
   const bar=$('micBar').firstElementChild;
   bar.style.width=Math.min(100,micPeakHold*140)+'%';
   bar.classList.toggle('hot', micPeakHold>0.5 && micPeakHold<=0.94);
   bar.classList.toggle('clip', micPeakHold>0.94);
   bar.classList.toggle('shut', !open && micPeakHold>0.02);
+  const recBar=$('micRecBar') && $('micRecBar').firstElementChild;
+  if(recBar){
+    recBar.style.width=Math.min(100,micOutHold*140)+'%';
+    recBar.classList.toggle('clip', micOutHold>0.94);
+  }
   const db = micPeakHold>0.0005 ? (20*Math.log10(micPeakHold)).toFixed(0)+' dB' : '—';
+  /* HEARING SOMETHING AND RECORDING NOTHING is the state worth naming, because
+     it is the one that looks like everything is working. */
+  micDead = micPeakHold>0.02 && micOutHold<0.002;
   $('micPeakV').textContent = micPeakHold>0.94 ? 'CLIP'
     : (!open && micPeakHold>0.02) ? 'GATE SHUT' : db;
+  const rv=$('micRecV');
+  if(rv) rv.textContent = micDead ? (open?'NOTHING GETTING THROUGH':'GATE SHUT')
+    : micOutHold>0.94 ? 'CLIP'
+    : micOutHold>0.0005 ? (20*Math.log10(micOutHold)).toFixed(0)+' dB' : '—';
+  if(rv) rv.classList.toggle('warn', !!micDead);
 }
 
 async function micEnable(){
@@ -5593,13 +5648,24 @@ function micTakeSilent(buf){
   for(let ch=0;ch<buf.numberOfChannels;ch++){ const d=buf.getChannelData(ch);
     for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>pk) pk=a; } }
   if(pk>=0.004) return false;
-  const gated=parseFloat($('micGate').value)>0;
-  plog('SILENT MIC TAKE: peak '+pk.toFixed(5)+'. '+(gated
-    ? 'GATE is at '+Math.round(parseFloat($('micGate').value)*100)+'% — it was probably never opening.'
-    : 'Nothing reached the microphone.')+' Kept anyway.');
-  lcd('⚠ THAT TAKE IS SILENT — '+(gated
-    ? 'turn GATE down to off and watch the meter, then record again.'
-    : 'check the meter moves while you talk, and raise GAIN if it barely does.'));
+  const gv=parseFloat($('micGate').value)||0, gated=gv>0;
+  /* The mic HEARING you and the recorder GETTING something are different
+     facts, and the meter only ever showed the first. When the input meter was
+     moving and the take came back empty, say that, because "check the meter"
+     is useless advice to someone who was watching it move. */
+  const heard = micPeakHold>0.02;
+  const why = heard && gated
+      ? 'the microphone was hearing you — the meter was moving — but the GATE at '
+        +Math.round(gv*100)+'% never opened, so nothing reached the recorder. Turn GATE to off.'
+    : heard
+      ? 'the microphone was hearing you, but nothing came out the far end of the mic chain. '
+        +'Check GAIN, and the REC meter beside the input meter.'
+    : gated
+      ? 'GATE is at '+Math.round(gv*100)+'% and nothing got past it.'
+      : 'nothing reached the microphone at all — check GAIN and that the right input is selected.';
+  plog('SILENT MIC TAKE: peak '+pk.toFixed(5)+' · input meter held '+micPeakHold.toFixed(3)
+    +' · recorder meter held '+micOutHold.toFixed(3)+'. '+why+' Kept anyway.');
+  lcd('\u26a0 THAT TAKE IS SILENT — '+why);
   return true;
 }
 function micPlaceTake(buf){
@@ -5615,9 +5681,26 @@ function micPlaceTake(buf){
        record. Same rules as everywhere else now. */
     const pad=pickTargetPad();
     if(!confirmPadOverwrite(pad,'the take')){
-      S.buffers.pop();
-      $('micRecInfo').textContent='kept — '+padName(pad)+' left alone';
-      lcd(padName(pad)+' LEFT ALONE — the take is still here, change GOES TO or pick another pad.');
+      /* A DECLINE MUST NEVER THROW THE RECORDING AWAY.
+         It used to pop the buffer, which is fine for a sample you can click
+         again and wrong for a performance you just gave. Worse, confirm() can
+         be suppressed outright — some installed PWAs and in-app browsers
+         return false without showing anything — and then every take would
+         vanish silently with no dialog to explain it. Falling back to a lane
+         keeps the audio whatever the answer was, and whatever the browser did
+         with the question. */
+      const alt=micNextLane();
+      if(alt>=0){
+        const tr2=S.trax[alt];
+        tr2.bufId=bid; tr2.name='voice'; tr2.gain=tr2.gain||0.9;
+        drawTrax(); drawMicDest(); dirty();
+        $('micRecInfo').textContent=(silent?'⚠ silent · ':'')+dur+' → T'+(alt+1);
+        lcd(padName(pad)+' LEFT ALONE — the take went to TAPE LANE '+(alt+1)+' instead, so nothing was lost.');
+      }else{
+        $('micRecInfo').textContent=dur+' · kept, nowhere to put it';
+        lcd(padName(pad)+' LEFT ALONE and every lane is full — the take is still in memory. '
+          +'Clear a lane or a pad, then record again.');
+      }
       return;
     }
     S.editPad=pad;
@@ -7151,6 +7234,7 @@ $('btnNorm').addEventListener('click',()=>{
   }
   const bid=S.buffers.indexOf(workBuf);
   if(bid>=0) delete revCache[bid];   // reversed copies now stale
+  dropWarpOrig(S.editPad);           // the pre-warp copy is not this audio any more
   drawWave(); dirty(); lcd('NORMALIZED ×'+k.toFixed(2));
 });
 $('btnTrim').addEventListener('click',()=>{
@@ -7171,6 +7255,7 @@ $('btnTrim').addEventListener('click',()=>{
   workBuf=nb; slices=[]; selSlice=-1;
   const p=S.pads[S.editPad];
   p.bufId=bid; p.start=0; p.end=1;
+  dropWarpOrig(S.editPad);           // a trim of the warped audio has no pre-warp twin
   drawPads(); drawWave(); dirty();
   lcd('TRIMMED → '+nb.duration.toFixed(2)+'s (new buffer on '+padName(S.editPad)+')');
 });
@@ -7215,14 +7300,28 @@ $('btnAssign').addEventListener('click',()=>{
   let bid=S.buffers.indexOf(workBuf);
   if(bid<0){ S.buffers.push(workBuf); bid=S.buffers.length-1; }
   const from=parseInt($('assignFrom').value,10);
-  let n=0;
+  let n=0; const cleared=[];
   slices.forEach((sl,i)=>{
     const idx=from+i; if(idx>=NPADS) return;
     const p=S.pads[idx];
-    p.bufId=bid; p.start=sl.s; p.end=sl.e; p.name='slc'+String(i+1).padStart(2,'0');
+    /* THE SAME RULES AS EVERY OTHER WAY OF PUTTING A SOUND ON A PAD.
+
+       This wrote bufId/start/end and nothing else, so a slice landed in a slot
+       still carrying the last sound's reverse, speed, filter and warp — playing
+       something other than the waveform on screen — and left warpOrig behind,
+       which is what made WARP RESET swap a chop for an unrelated old buffer.
+       assignBufToPad is not reusable here (it pushes a new buffer per pad and
+       these all share one), so it is the same sequence, spelled out. */
+    try{ stopPadVoices(idx); }catch(e){}
+    voiceWords(resetPadVoice(p)).forEach(w=>{ if(cleared.indexOf(w)<0) cleared.push(w); });
+    p.bufId=bid; p.start=sl.s; p.end=sl.e; p.warped=false;
+    dropWarpOrig(idx); delete p.srcPreset; delete p.srcNote;
+    p.name='slc'+String(i+1).padStart(2,'0');
     n++;
   });
-  drawPads(); dirty(); lcd(n+' SLICES → '+padName(from)+'…');
+  drawPads(); drawEdit(); drawMixer(); dirty();
+  lcd(n+' SLICES → '+padName(from)+'…'
+    +(cleared.length?' · cleared the old '+cleared.join(', ')+' off those pads — UNDO puts it back':''));
 });
 
 /* ---------------- presets — synth-rendered instrument library ----------------

@@ -1149,6 +1149,84 @@ export default async function ({ browser, base }) {
     t.ok('turning the mic off hands the source back', micFlow.srcAfterMicOff !== 'mic',
       'back to ' + micFlow.srcAfterMicOff);
 
+    t.head('THE METER MOVES AND THE TAKE IS SILENT');
+    /* "When I record using the mic it's silent and no playback." — "It shows in
+       eq as recording something."
+
+       Both true at once, and the topology says why: the level meter hangs off
+       M.in, before the gate, while RECORD taps M.out at the far end of the
+       chain. A shut gate gives a dancing bar and an empty buffer, and until now
+       there was nothing on screen measuring the point that actually matters.
+
+       So the claim under test is that the two ends can be told apart: with the
+       gate closing on real signal the INPUT meter still reads, the REC meter
+       reads nothing and says why, and the take's own message names the gate
+       rather than telling you to watch the meter you were already watching. */
+    const deaf = await page.evaluate(async () => {
+      const o = {};
+      const set = (id, v) => { const e = document.getElementById(id); e.value = v;
+        e.dispatchEvent(new Event('input', { bubbles: true })); };
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      S.trax.forEach(t => { t.bufId = -1; });
+      document.querySelector('#tabs button[data-v="mic"]').click();
+      if (!micOn) { document.getElementById('btnMicOn').click(); await wait(1600); }
+      document.getElementById('micDest').value = 'lane';
+
+      /* Quiet enough that the gate's threshold is above it, loud enough that
+         the input meter is unambiguously moving — the exact pairing reported. */
+      set('micGain', 0.1); set('micGate', 1);
+      await wait(1600);
+      o.shut = { inHold: +micPeakHold.toFixed(4), recHold: +micOutHold.toFixed(4),
+        dead: micDead, inV: document.getElementById('micPeakV').textContent,
+        recV: document.getElementById('micRecV').textContent,
+        recWarn: document.getElementById('micRecV').classList.contains('warn'),
+        recBarW: document.getElementById('micRecBar').firstElementChild.style.width,
+        inBarW: document.getElementById('micBar').firstElementChild.style.width };
+
+      const rec = async () => { document.getElementById('btnMicRec').click(); await wait(900);
+        document.getElementById('btnMicRec').click(); await wait(700); };
+      const before = S.buffers.length;
+      await rec();
+      o.silentLcd = document.getElementById('lcdmsg').textContent;
+      o.silentInfo = document.getElementById('micRecInfo').textContent;
+      o.kept = S.buffers.length - before;                 // a silent take is still yours
+
+      /* Open the gate and the same input is suddenly recorded. Nothing else
+         changes — this is the control for the measurement above. */
+      set('micGate', 0); set('micGain', 1);
+      await wait(1400);
+      o.open = { recHold: +micOutHold.toFixed(4), dead: micDead,
+        recV: document.getElementById('micRecV').textContent };
+      await rec();
+      o.openLcd = document.getElementById('lcdmsg').textContent;
+      const pk = b => { let m = 0; const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > m) m = v; } return m; };
+      o.openPeak = +pk(S.buffers[S.buffers.length - 1]).toFixed(4);
+
+      if (micOn) { document.getElementById('btnMicOn').click(); await wait(1100); }
+      return o;
+    });
+    t.ok('with the gate closing, the INPUT meter still shows signal',
+      deaf.shut.inHold > 0.02, 'held ' + deaf.shut.inHold + ' — reads "' + deaf.shut.inV + '"');
+    t.ok('AND THE REC METER SHOWS THERE IS NOTHING TO RECORD',
+      deaf.shut.recHold < 0.002 && deaf.shut.dead,
+      'held ' + deaf.shut.recHold + ' · dead=' + deaf.shut.dead);
+    t.ok('it says so in words, in red, beside the level',
+      /GATE SHUT|NOTHING GETTING THROUGH/.test(deaf.shut.recV) && deaf.shut.recWarn,
+      '"' + deaf.shut.recV + '"');
+    t.ok('the two bars disagree, which is the whole point',
+      parseFloat(deaf.shut.inBarW) > 5 && parseFloat(deaf.shut.recBarW) < 1,
+      'IN ' + deaf.shut.inBarW + ' vs REC ' + deaf.shut.recBarW);
+    t.ok('the silent take names the gate rather than the meter',
+      /SILENT/.test(deaf.silentLcd) && /GATE/.test(deaf.silentLcd),
+      '"' + deaf.silentLcd + '"');
+    t.ok('and the recording is kept, not thrown away', deaf.kept === 1,
+      deaf.kept + ' buffer(s) · "' + deaf.silentInfo + '"');
+    t.ok('opening the gate clears the warning', !deaf.open.dead && deaf.open.recHold > 0.02,
+      'REC held ' + deaf.open.recHold + ' · reads "' + deaf.open.recV + '"');
+    t.ok('AND THE SAME INPUT NOW RECORDS', deaf.openPeak > 0.05 && !/SILENT/.test(deaf.openLcd),
+      'peak ' + deaf.openPeak);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
