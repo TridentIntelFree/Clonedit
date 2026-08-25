@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R176 · 2026-08-25 · nothing filters the master in secret';
+const BUILD = 'JBH-88 · R177 · 2026-08-25 · a take lands at a level you can use';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -5671,9 +5671,63 @@ function micTakeSilent(buf){
   lcd('\u26a0 THAT TAKE IS SILENT — '+why);
   return true;
 }
+/* "It's unusually quiet considering a decent level when recording."
+
+   Measured, and the playback path is innocent: identical buffers at 0.36 and
+   0.92 on identical pads come out 8.18dB apart against a predicted 8.18dB, and
+   the master chain is within a decibel of unity at both. Nothing is losing the
+   level. The take simply IS that quiet, and every sound it sits next to is not:
+   the bundled kits and the rendered presets all peak around 0.92, so a voice
+   captured at -19dBFS plays nineteen decibels under the drums it is supposed to
+   sit on top of.
+
+   The meter is what makes it feel like a contradiction. It reads PEAK, and a
+   voice peaks a long way above where it lives — "-4 dB" on a transient over an
+   average nearer -20 is a decent recording and a quiet one at the same time,
+   and both of those readings are true.
+
+   The lane fader cannot fix it: it stops at 1.2, which is 2.5dB. So the take
+   gets lifted where it lands, in float, which costs nothing measurable, and the
+   message says the number it came in at and the number it left at. It is a
+   checkbox because takes meant to be balanced against each other — three
+   passes at the same part, soft and loud — must be able to stay that way, and
+   the boost is capped so a near-silent take is not blown up into room noise. */
+const LIFT_TARGET=0.89, LIFT_MAX=8, LIFT_FLOOR=0.7;
+function micLift(buf){
+  let pk=0;
+  for(let ch=0;ch<buf.numberOfChannels;ch++){ const d=buf.getChannelData(ch);
+    for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>pk) pk=a; } }
+  const el=$('micLift');
+  const want = el ? el.checked : true;
+  if(!want || pk<0.004 || pk>=LIFT_FLOOR) return { pk, k:1 };
+  const k=Math.min(LIFT_TARGET/pk, LIFT_MAX);
+  if(k<=1.02) return { pk, k:1 };
+  for(let ch=0;ch<buf.numberOfChannels;ch++){ const d=buf.getChannelData(ch);
+    for(let i=0;i<d.length;i++) d[i]*=k; }
+  return { pk, k };
+}
+const dbs = v => (v>0 ? (20*Math.log10(v)).toFixed(0) : '-∞')+' dB';
 function micPlaceTake(buf){
+  const lift=micLift(buf);
   S.buffers.push(buf); const bid=S.buffers.length-1;
   const dur=buf.duration.toFixed(1)+'s';
+  /* Said every time, lifted or not: the gap between what the meter showed and
+     what the take is worth was the whole confusion. */
+  const clipped = lift.pk>=0.999;
+  const level = clipped
+    ? ' — it hit the ceiling and is clipped; bring GAIN down and take it again'
+    : lift.k>1
+    ? ' — recorded at '+dbs(lift.pk)+', lifted to '+dbs(lift.pk*lift.k)
+    : ' — it peaks at '+dbs(lift.pk);
+  /* Capped: 18dB is as far as a lift can go before it is amplifying the room
+     rather than the take, so say when the ceiling is what stopped it. */
+  const capped = lift.k>1 && lift.pk*lift.k < LIFT_TARGET*0.98;
+  const tail = capped
+    ? ' That is as far as LIFT goes — it was very quiet, so turn GAIN up before the next one.'
+    : lift.k>1
+    ? ' Turn LIFT off to keep takes at the level you played them.'
+    : !clipped && lift.pk<LIFT_FLOOR && $('micLift') && !$('micLift').checked
+      ? ' LIFT is off, so it stays where you recorded it.' : '';
   const silent=micTakeSilent(buf);
   if($('micDest').value==='pad'){
     /* The last loader still writing to S.editPad blind. Every other route onto
@@ -5712,8 +5766,8 @@ function micPlaceTake(buf){
     p.bufId=bid; p.warped=false; p.name='voice';
     delete warpOrig[pad];
     drawPads(); drawEdit(); drawMixer(); drawMicDest(); dirty();
-    $('micRecInfo').textContent=(silent?'⚠ silent · ':'')+dur+' → '+padName(pad);
-    if(!silent) lcd('TAKE → '+padName(pad)+' · '+dur+' — play the pad, or open it in SMPL to chop it.');
+    $('micRecInfo').textContent=(silent?'⚠ silent · ':'')+dur+' '+dbs(lift.pk*lift.k)+' → '+padName(pad);
+    if(!silent) lcd('TAKE → '+padName(pad)+' · '+dur+level+'. Play the pad, or open it in SMPL to chop it.'+tail);
     return;
   }
   const lane=micNextLane();
@@ -5722,8 +5776,8 @@ function micPlaceTake(buf){
   const tr=S.trax[lane];
   tr.bufId=bid; tr.name='voice'; tr.gain=tr.gain||0.9;
   drawTrax(); drawMicDest(); dirty();
-  $('micRecInfo').textContent=(silent?'⚠ silent · ':'')+dur+' → T'+(lane+1);
-  if(!silent) lcd('TAKE → TAPE LANE '+(lane+1)+' · '+dur+' — it plays with the song; FX and TO PAD are in TRAX.');
+  $('micRecInfo').textContent=(silent?'⚠ silent · ':'')+dur+' '+dbs(lift.pk*lift.k)+' → T'+(lane+1);
+  if(!silent) lcd('TAKE → TAPE LANE '+(lane+1)+' · '+dur+level+'. It plays with the song; FX and TO PAD are in TRAX.'+tail);
 }
 
 $('btnMicOn').addEventListener('click',()=>{
@@ -5802,6 +5856,7 @@ function ampLabels(){
 function micSettings(){
   const o=readCtrls(MIC_CTRLS);
   o.wet=$('micWet')?!!$('micWet').checked:true;
+  o.lift=$('micLift')?!!$('micLift').checked:true;
   return o;
 }
 function ampSettings(){
@@ -5814,6 +5869,7 @@ function applyMicSettings(v){
   if(!v) return;
   writeCtrls(MIC_CTRLS,v);
   if($('micWet') && 'wet' in v) $('micWet').checked=!!v.wet;
+  if($('micLift') && 'lift' in v) $('micLift').checked=!!v.lift;
   try{ micLabels(); }catch(e){}
   if(micChain){ try{ micApply(); }catch(e){} }      // only touches audio if the mic is open
 }
@@ -5826,7 +5882,7 @@ function applyAmpSettings(v){
   if(ampNodes){ try{ ampApplyModel(); ampApplyTone(); ampApplyFx(); }catch(e){} }
 }
 /* touching any of them marks the project dirty, so they autosave like the rest */
-MIC_CTRLS.concat(AMP_CTRLS,['micWet']).forEach(id=>{
+MIC_CTRLS.concat(AMP_CTRLS,['micWet','micLift']).forEach(id=>{
   const e=$(id); if(e) e.addEventListener('change',()=>dirty());
 });
 ['ampCab','ampChorus'].forEach(id=>{ const e=$(id); if(e) e.addEventListener('click',()=>dirty()); });
