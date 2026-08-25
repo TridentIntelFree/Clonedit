@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R175 · 2026-08-25 · meter what is recorded, not what is heard';
+const BUILD = 'JBH-88 · R176 · 2026-08-25 · nothing filters the master in secret';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -4104,7 +4104,7 @@ function fitCanvas(cv){
 }
 
 /* ---------------- master level meter (feels-solid feedback) ---------------- */
-let meterRAF=0, mClipHold=0, _mbufL=null, _mbufR=null;
+let meterRAF=0, mClipHold=0, _mbufL=null, _mbufR=null, perfPipT=0;
 /* The output cannot clip — the soft-clip stage forbids it — so a mix driven far
    too hard does not announce itself as clipping. It announces itself as the
    limiter working flat out and the soft-clipper saturating on nearly a third of
@@ -4151,6 +4151,9 @@ function meterLoop(){
   if(pk>=0.895) mClipHold=now;
   $('mClip').classList.toggle('on', now-mClipHold<800);
   markPolyHead();          // the poly lane runs on its own clock, not the grid's
+  /* Four times a second is plenty for a badge, and keeps two AudioParam reads
+     and a string compare off the other fifty-six frames. */
+  if(now-perfPipT>250){ perfPipT=now; try{ drawPerfPip(); }catch(e){} }
   // once a second, and only while OUT is open: a health readout must not itself
   // be a cost on the machine it is reporting about
   if(now-engDrawT>1000 && $('v-out') && $('v-out').classList.contains('on')){
@@ -6755,6 +6758,84 @@ document.addEventListener('DOMContentLoaded',()=>{
     lcd('RELEASING '+who.join(' and ')+' — iOS will not send audio to Bluetooth while an input is open.');
     resetAudioOut();
   });
+});
+/* THE MASTER PERFORMANCE SECTION LEAVES MARKS, AND NOTHING SAID SO.
+
+   "My volume in playback is different depending on if my phone is landscape or
+   regular — same speaker producing sound, not a stereo thing."
+
+   There is exactly one thing in this app that ties the angle of the phone to
+   how loud it is, and it is TILT WAH. gamma sweeps LIVE.perfFilt from 180Hz to
+   14.4kHz across everything you hear; measured on a 1kHz tone the two ways up
+   are 30dB apart. It latches on, it lives on one button on the LIVE tab, and
+   from any other tab there is nothing whatsoever on screen saying the master
+   bus is being filtered. Turn the phone sideways and the app gets quieter for
+   no visible reason — which is exactly the report.
+
+   TILT is not the only way to park that filter. The mfilt automation lane
+   drives the same node, and stopping the transport mid-sweep leaves it wherever
+   it happened to be. TAPE STOP and STUTTER hold perfGain down and both restore
+   it on release, but a release that never arrives leaves the entire bus turned
+   down with every fader still reading full.
+
+   So it gets a badge in the strip that is on screen from every tab, beside the
+   one that says the route is on the phone. It names the cause and tapping it
+   opens the bus back up, because otherwise the only cure is a control you would
+   have to already suspect to go and find. */
+function perfState(){
+  if(!LIVE||!LIVE.perfFilt||!LIVE.perfGain) return null;
+  const f=LIVE.perfFilt.frequency.value, q=LIVE.perfFilt.Q.value, g=LIVE.perfGain.gain.value;
+  const held = tapeOn || !!stutTimer;              // a finger is on the button; that is not a fault
+  const pat = S.patterns && S.patterns[S.pattern];
+  const laneDriving = !!(playing && pat && pat.autom && pat.autom.mfilt && pat.autom.mfilt.length);
+  const filtered = f<15000 || q>1.2;
+  const turnedDown = g<0.98 && !held;
+  if(!filtered && !turnedDown) return null;
+  if(laneDriving && !turnedDown) return null;      // AUTO is doing it on purpose, and shows it there
+  return { f, q, g, turnedDown,
+    why: turnedDown ? 'BUS DOWN' : tiltOn ? 'TILT WAH' : 'MASTER FILTER' };
+}
+function perfPipLabel(st){
+  if(st.turnedDown) return '◉ BUS DOWN';
+  return '◐ '+(st.f>=1000 ? (st.f/1000).toFixed(1)+'k' : Math.round(st.f)+'Hz');
+}
+function drawPerfPip(){
+  const pip=$('fxPip'); if(!pip) return;
+  const st=perfState();
+  pip.hidden=!st;
+  if(!st) return;
+  const label=perfPipLabel(st);
+  if(pip.textContent!==label) pip.textContent=label;
+  pip.title = st.turnedDown
+    ? 'The master bus is turned right down and no performance control is being held. '
+      +'Tap to open it.'
+    : st.why==='TILT WAH'
+    ? 'TILT WAH is on, so the angle of the phone is sweeping a filter across everything you '
+      +'hear — turning it sideways changes how loud and how bright the app is. Tap to switch it off.'
+    : 'A filter is across the master bus at '+Math.round(st.f)+'Hz, so everything sounds darker '
+      +'and quieter than it is. Tap to open it.';
+}
+function perfOpen(){
+  if(!LIVE) return '';
+  const st=perfState();
+  const wasTilt = tiltOn;
+  if(tiltOn){ tiltOn=false; const b=$('btnTilt'); if(b) b.classList.remove('on'); }
+  tiltReset();
+  const t=AC.currentTime;
+  try{ LIVE.perfGain.gain.cancelScheduledValues(t);
+       LIVE.perfGain.gain.setTargetAtTime(1,t,0.02); }catch(e){}
+  drawPerfPip();
+  if(!st) return 'The master bus is already open — nothing is filtering or turning down what you hear.';
+  return wasTilt
+    ? 'TILT WAH OFF — the angle of the phone is no longer filtering the master bus, so turning it '
+      +'sideways will not change the volume any more.'
+    : st.turnedDown
+    ? 'MASTER BUS OPEN — it was turned down to '+Math.round(st.g*100)+'% with nothing holding it there.'
+    : 'MASTER BUS OPEN — the filter was parked at '+Math.round(st.f)+'Hz and is back to full range.';
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  const pip=$('fxPip'); if(!pip) return;
+  pip.addEventListener('click',()=>{ lcd(perfOpen()); });
 });
 function stopMicStream(){
   cancelAnimationFrame(micRAF);
@@ -10574,9 +10655,16 @@ $('percTapA').addEventListener('click',()=>hitPerc(0.9));
 $('percTapG').addEventListener('click',()=>hitPerc(0.45));
 $('instBreath').addEventListener('click',breathToggle);
 $('btnTilt').addEventListener('click',async ()=>{
-  if(tiltOn){ tiltOn=false; $('btnTilt').classList.remove('on'); tiltReset(); lcd('TILT WAH OFF.'); return; }
+  if(tiltOn){ tiltOn=false; $('btnTilt').classList.remove('on'); tiltReset(); drawPerfPip();
+    lcd('TILT WAH OFF.'); return; }
   ensureAudio();
-  if(await enableMotion()){ tiltOn=true; $('btnTilt').classList.add('on'); lcd('TILT WAH — tilt left/right sweeps the filter, forward/back adds resonance.'); }
+  /* Say that it stays on. It latches, it filters everything, and it is one
+     button on one tab — leaving it armed and walking to PADS is how a phone
+     turned sideways ends up quieter with nothing on screen admitting to it.
+     The badge in the strip is the other half of that answer. */
+  if(await enableMotion()){ tiltOn=true; $('btnTilt').classList.add('on'); drawPerfPip();
+    lcd('TILT WAH — tilt left/right sweeps the filter, forward/back adds resonance. '
+      +'It stays on across every tab until you switch it off; the ◐ badge by the message line says so.'); }
 });
 (function(){
   const hold=(id,on,off)=>{ const b=$(id);
@@ -14163,6 +14251,13 @@ function diagDump(tag){
         +' · source '+($('traxSrc')?$('traxSrc').value:'?')
         +' · inputs open: '+(capturesOpen().join(', ')||'none'),
       'gates — perf:'+(LIVE?g(LIVE.perfGain):'-')+' duck:'+(LIVE?g(LIVE.duckBus):'-')+' master:'+(LIVE?g(LIVE.master):'-')+' silGate:'+silGateDown,
+      /* A master lowpass parked at 300Hz makes the whole app quiet and dull
+         with every fader still reading full, so a report that does not carry it
+         cannot explain the one symptom it causes. */
+      'perf filter: '+(LIVE?Math.round(LIVE.perfFilt.frequency.value)+'Hz Q'+LIVE.perfFilt.Q.value.toFixed(2):'-')
+        +' · tilt:'+(tiltOn?'ON — the phone’s angle is sweeping it':'off')
+        +' · tape:'+(tapeOn?'held':'off')+' · stutter:'+(stutTimer?'held':'off')
+        +' · badge:'+(()=>{ const st=perfState(); return st?perfPipLabel(st)+' ('+st.why+')':'clear'; })(),
       'selPad '+padName(S.editPad)+' — bufId:'+(p0?S.pads[S.editPad].bufId:'-')+' ch:'+(p0?g(p0.ch):'-')+' mute:'+(p0?g(p0.mute):'-')+' solo:'+S.pads.filter(x=>x.solo).length+' muted:'+S.pads.filter(x=>x.mute).length,
       'padGains: '+S.pads.map((pd,i)=>pd.bufId>=0?padName(i)+':'+pd.gain.toFixed(2)+'/'+(LIVE&&LIVE.pads[i]?g(LIVE.pads[i].ch):'-'):null).filter(Boolean).join(' '),
       'ccMaps: '+(Object.keys(S.ccMaps).length?JSON.stringify(S.ccMaps):'none')+' · midiIn:'+(midiAccess?'on':'off'),

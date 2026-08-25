@@ -1227,6 +1227,96 @@ export default async function ({ browser, base }) {
     t.ok('AND THE SAME INPUT NOW RECORDS', deaf.openPeak > 0.05 && !/SILENT/.test(deaf.openLcd),
       'peak ' + deaf.openPeak);
 
+    t.head('THE ANGLE OF THE PHONE CANNOT CHANGE THE VOLUME IN SECRET');
+    /* "My volume in playback is different depending on if my phone is landscape
+       or regular — same speaker producing sound, not a stereo thing."
+
+       TILT WAH maps gamma onto a lowpass across the whole master bus. Held one
+       way it is 180Hz, the other way 14.4kHz, and the app has no other link at
+       all between orientation and sound. The swing is measured here rather than
+       asserted, because "a filter moves" and "the app gets quieter when you turn
+       the phone" are different claims and only the second one is the report.
+
+       What was missing was not the effect — it is a deliberate feature — but
+       any way to know it was on. One latching button, on one tab, driving
+       everything you hear. So the second claim is that the state is legible and
+       curable from a tab that does not contain the button. */
+    const tilt = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(200);
+      const an = AC.createAnalyser(); an.fftSize = 8192;
+      LIVE.perfGain.connect(an);
+      const buf = new Float32Array(8192);
+      const level = async () => { let m = 0;
+        for (let k = 0; k < 20; k++) { an.getFloatTimeDomainData(buf);
+          let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+          m = Math.max(m, Math.sqrt(s / buf.length)); await wait(25); }
+        return m; };
+      /* A steady 1kHz tone into the master, so the only thing between it and
+         the measurement is the performance filter. */
+      const osc = AC.createOscillator(); osc.frequency.value = 1000;
+      const g = AC.createGain(); g.gain.value = 0.3;
+      osc.connect(g); g.connect(LIVE.master); osc.start(); await wait(300);
+
+      const pip = document.getElementById('fxPip');
+      const shown = () => !pip.hidden && !!pip.offsetParent;
+      o.quietAtRest = !shown();
+      o.open = +(await level()).toFixed(5);
+
+      tiltOn = true;
+      onTilt({ gamma: -90, beta: 0 }); await wait(600); drawPerfPip();
+      o.sideA = +(await level()).toFixed(5);
+      o.pip = { shown: shown(), text: pip.textContent, why: (perfState() || {}).why };
+      onTilt({ gamma: 90, beta: 0 }); await wait(600);
+      o.sideB = +(await level()).toFixed(5);
+      o.swingDb = +(20 * Math.log10(o.sideB / o.sideA)).toFixed(1);
+
+      /* Now stand somewhere the TILT button does not exist. */
+      document.querySelector('#tabs button[data-v="pads"]').click();
+      await wait(120); drawPerfPip();
+      o.buttonReachable = !!document.getElementById('btnTilt').offsetParent;
+      o.pipFromPads = shown();
+      o.said = perfOpen(); await wait(400);
+      o.cleared = { tiltOn, freq: Math.round(LIVE.perfFilt.frequency.value), shown: shown() };
+      o.recovered = +(await level()).toFixed(5);
+
+      /* The other way the bus goes quiet: a hold that never got released. */
+      LIVE.perfGain.gain.setValueAtTime(0.2, AC.currentTime); await wait(150); drawPerfPip();
+      o.down = { shown: shown(), text: pip.textContent };
+      perfOpen(); await wait(300); drawPerfPip();
+      o.downCleared = !shown();
+
+      /* And a filter parked by something that is not TILT — an automation lane
+         stopped mid-sweep leaves exactly this. */
+      tiltOn = false;
+      LIVE.perfFilt.frequency.setValueAtTime(400, AC.currentTime); await wait(150); drawPerfPip();
+      o.parked = { shown: shown(), text: pip.textContent, why: (perfState() || {}).why };
+      perfOpen(); await wait(200);
+
+      o.diagLine = diagDump('test').split('\n').filter(l => /perf filter/.test(l))[0] || '';
+      osc.stop();
+      return o;
+    });
+    t.ok('with nothing armed, the strip says nothing', tilt.quietAtRest);
+    t.ok('TILT WAH really does make the app quieter one way up than the other',
+      tilt.swingDb > 12, tilt.swingDb + ' dB between the two landscape directions'
+      + ' (' + tilt.sideA + ' vs ' + tilt.sideB + ')');
+    t.ok('AND THE STRIP NOW SAYS SO, NAMING THE CAUSE',
+      tilt.pip.shown && tilt.pip.why === 'TILT WAH', '"' + tilt.pip.text + '"');
+    t.ok('from a tab that has no TILT button on it',
+      tilt.pipFromPads && !tilt.buttonReachable);
+    t.ok('tapping it disarms the tilt and reopens the bus',
+      tilt.cleared.tiltOn === false && tilt.cleared.freq >= 15000 && !tilt.cleared.shown,
+      '"' + tilt.said + '"');
+    t.ok('AND THE LEVEL COMES BACK', Math.abs(tilt.recovered - tilt.open) / tilt.open < 0.02,
+      tilt.recovered + ' vs ' + tilt.open + ' before');
+    t.ok('a bus left turned down is named too, and cleared',
+      tilt.down.shown && /BUS DOWN/.test(tilt.down.text) && tilt.downCleared);
+    t.ok('so is a filter parked by something other than tilt',
+      tilt.parked.shown && tilt.parked.why === 'MASTER FILTER', '"' + tilt.parked.text + '"');
+    t.ok('and DIAG carries the state, so a report can explain the symptom',
+      /perf filter: \d+Hz/.test(tilt.diagLine), tilt.diagLine);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
