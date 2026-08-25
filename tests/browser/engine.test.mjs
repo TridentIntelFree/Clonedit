@@ -408,6 +408,107 @@ export default async function ({ browser, base }) {
     t.ok('and a 120-event drag while playing costs no dropouts',
       fx.glitchMs < 20, fx.glitchMs.toFixed(1) + 'ms lost');
 
+    t.head('WARP RESET CANNOT RESTORE A SAMPLE THE PAD NO LONGER HAS');
+    /* "If you warp a pad, then later reuse that same slot for a chopped slice
+       from a different sample, pressing WARP RESET on it silently destroys the
+       newly-assigned audio and replaces it with the old, unrelated pre-warp
+       buffer — with a message ('original restored') that's actively misleading
+       about what just happened."
+
+       warpOrig[i] is a restore point for the audio that was warped. The moment
+       something else lands on that pad the restore point is for a sample that
+       is not there, and offering it is worse than having none: the message says
+       "original" about audio the pad never held. Three editor paths wrote
+       p.bufId without dropping it — ASSIGN, TRIM and NORMALIZE — so all three
+       are checked, along with the rest of the pad-replacement contract ASSIGN
+       was skipping. */
+    const warp = await page.evaluate(async () => {
+      const o = {};
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const sig = b => { const d = b.getChannelData(0); let s = 0;
+        for (let i = 0; i < d.length; i += 97) s += Math.abs(d[i]); return +(s / d.length).toFixed(8); };
+      const tone = (hz, sec) => { const b = AC.createBuffer(1, Math.round(AC.sampleRate * sec), AC.sampleRate);
+        const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.sin(2 * Math.PI * hz * i / AC.sampleRate) * 0.8;
+        S.buffers.push(b); return S.buffers.length - 1; };
+
+      document.querySelector('#tabs button[data-v="smpl"]').click();
+      const PAD = 3;
+
+      /* Warp pad 3, holding sample A. */
+      S.editPad = PAD;
+      const A = tone(220, 1.7);
+      S.pads[PAD].bufId = A; S.pads[PAD].warped = false; delete warpOrig[PAD];
+      workBuf = S.buffers[A];
+      drawEdit(); drawWave();
+      document.getElementById('epWarp').click();
+      await wait(200);
+      o.warped = S.pads[PAD].warped === true && !!warpOrig[PAD];
+      o.origSig = sig(warpOrig[PAD] || S.buffers[S.pads[PAD].bufId]);
+
+      /* Now put an unrelated sample in the editor, chop it, and ASSIGN from
+         pad 3 — the exact sequence reported. Give the pad some voicing first,
+         so the rest of the replacement contract is measurable too. */
+      const B = tone(1500, 1.4);
+      workBuf = S.buffers[B]; slices = []; selSlice = -1;
+      Object.assign(S.pads[PAD], { reverse: true, speed: 0.5, fcut: 400, ftype: 'lowpass' });
+      document.getElementById('chopN').value = '4';
+      document.getElementById('btnEqual').click();
+      document.getElementById('assignFrom').value = String(PAD);
+      document.getElementById('btnAssign').click();
+      await wait(120);
+      const assigned = S.pads[PAD].bufId;
+      o.assignedSig = sig(S.buffers[assigned]);
+      o.assignLcd = document.getElementById('lcdmsg').textContent;
+      o.stillWarped = S.pads[PAD].warped;
+      o.voicing = { reverse: S.pads[PAD].reverse, speed: S.pads[PAD].speed, fcut: S.pads[PAD].fcut };
+
+      /* THE PRESS THAT USED TO EAT THE CHOP. */
+      document.getElementById('epWarpReset').click();
+      await wait(120);
+      o.afterResetSig = sig(S.buffers[S.pads[PAD].bufId]);
+      o.resetLcd = document.getElementById('lcdmsg').textContent;
+      o.chopSurvived = o.afterResetSig === o.assignedSig;
+
+      /* TRIM and NORMALIZE stand on the same ground: both leave the pad holding
+         audio the stored original is not a copy of. */
+      const check = async (btn, prep) => {
+        S.editPad = PAD;
+        const id = tone(330, 1.6);
+        S.pads[PAD].bufId = id; S.pads[PAD].warped = false; delete warpOrig[PAD];
+        workBuf = S.buffers[id]; drawEdit(); drawWave();
+        document.getElementById('epWarp').click(); await wait(200);
+        if (prep) prep();
+        document.getElementById(btn).click(); await wait(120);
+        const edited = sig(S.buffers[S.pads[PAD].bufId]);
+        document.getElementById('epWarpReset').click(); await wait(120);
+        return { held: sig(S.buffers[S.pads[PAD].bufId]) === edited,
+          said: document.getElementById('lcdmsg').textContent };
+      };
+      /* TRIM needs silence to remove; the warped tone has none, so pad the tail. */
+      o.trim = await check('btnTrim', () => {
+        const d = workBuf.getChannelData(0);
+        for (let i = Math.floor(d.length * 0.6); i < d.length; i++) d[i] = 0;
+      });
+      o.norm = await check('btnNorm');
+      return o;
+    });
+    t.ok('a pad warps and keeps a pre-warp original to go back to', warp.warped);
+    t.ok('ASSIGN puts the chopped slice on the pad', warp.assignedSig !== warp.origSig);
+    t.ok('AND WARP RESET NO LONGER SWAPS IT FOR THE OLD SAMPLE', warp.chopSurvived,
+      'signature ' + warp.afterResetSig + ' vs chop ' + warp.assignedSig
+      + ' / pre-warp ' + warp.origSig);
+    t.ok('it says there is nothing to reset, which is the truth',
+      /nothing to reset/i.test(warp.resetLcd), '"' + warp.resetLcd + '"');
+    t.ok('ASSIGN also clears the warp flag it invalidated', warp.stillWarped === false);
+    t.ok('AND THE LAST SOUND’S VOICING, like every other way onto a pad',
+      warp.voicing.reverse === false && warp.voicing.speed === 1 && warp.voicing.fcut !== 400,
+      JSON.stringify(warp.voicing));
+    t.ok('and it says what it cleared', /cleared the old/.test(warp.assignLcd),
+      '"' + warp.assignLcd + '"');
+    t.ok('TRIM SILENCE survives a WARP RESET too', warp.trim.held, '"' + warp.trim.said + '"');
+    t.ok('and so does NORMALIZE', warp.norm.held, '"' + warp.norm.said + '"');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

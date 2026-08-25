@@ -835,3 +835,13 @@ button.warn{border-color:var(--red);color:var(--red)}
 button.warn:not(:disabled):active{background:var(--red);color:#fff}
 
 select.warn{border-color:var(--red);color:var(--red)}
+
+/* The recorder's own meter. IN measures the room before the gate and the
+   shaping; this measures what RECORD will actually capture. When the two
+   disagree — meter moving, nothing being recorded — that is the fault worth
+   seeing, and it is the one the input meter alone can never show. */
+#micRecBar{flex:1;height:8px;min-width:60px;background:var(--panel2);
+  border:1px solid var(--line);border-radius:4px;overflow:hidden}
+#micRecBar>div{height:100%;width:0;background:var(--send);transition:width .05s linear}
+#micRecBar>div.clip{background:var(--red)}
+#micRecV.warn{color:var(--red);font-weight:700}
