@@ -509,6 +509,267 @@ export default async function ({ browser, base }) {
     t.ok('TRIM SILENCE survives a WARP RESET too', warp.trim.held, '"' + warp.trim.said + '"');
     t.ok('and so does NORMALIZE', warp.norm.held, '"' + warp.norm.said + '"');
 
+    t.head('THE FILTER MOVES ON EVERY HIT, NOT JUST WHERE YOU LEFT IT');
+    /* "Why do I feel limited with the quality of the sounds I can create? It
+       doesn't feel like a full palette."
+
+       Because the cutoff was a number. It sat where you put it and the only
+       thing that ever moved it was a free-running LFO, so a pad could be bright
+       or dark but never a pluck, a wow, or a note that opens as it lands.
+
+       What is measured is the sound, not the parameter: a filter envelope that
+       automates an AudioParam nobody can hear is worth nothing. So this reads
+       the SPECTRAL CENTROID of the pad's own output over the length of a hit —
+       where the energy sits — and asks whether it travels. The static case is
+       measured alongside as the control, because "the centroid moved" only
+       means something next to a case where it does not. */
+    const feg = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(200);
+      const PAD = 5;
+      const keep = JSON.parse(JSON.stringify(S.pads[PAD]));
+      /* Broadband noise, so a filter anywhere in the band has something to
+         take away and the centroid can travel across most of the spectrum. */
+      /* mulberry32, the app's own generator, rather than a hand-rolled LCG:
+         s * 1103515245 leaves the 53-bit safe range as soon as s is large, so
+         the low bits are lost and the sequence degenerates into a short cycle.
+         It is not noise, it is a tone — and the first version of this test
+         measured a centroid pinned at 12kHz whatever the filter was doing. */
+      const n = Math.round(AC.sampleRate * 1.1);
+      const b = AC.createBuffer(2, n, AC.sampleRate);
+      const rnd = mulberry32(9137);
+      for (let i = 0; i < n; i++) { const v = (rnd() * 2 - 1) * 0.6;
+        b.getChannelData(0)[i] = v; b.getChannelData(1)[i] = v; }
+      S.buffers.push(b);
+      S.pads[PAD] = newPad(PAD); const p = S.pads[PAD];
+      p.bufId = S.buffers.length - 1; p.gain = 0.9; p.att = 0.001; p.rel = 0.05;
+      p.ftype = 'lowpass'; p.fcut = 0.18; p.fres = 2;
+      S.editPad = PAD; liveFx();
+
+      const an = AC.createAnalyser(); an.fftSize = 2048; an.smoothingTimeConstant = 0;
+      LIVE.pads[PAD].mute.connect(an);
+      const bins = new Float32Array(an.frequencyBinCount);
+      const hzPer = (AC.sampleRate / 2) / bins.length;
+      /* Weighted by amplitude, but only over bins that carry signal. Counting
+         every bin lets a thousand cells sitting on the analyser's -100dB floor
+         outvote the fifty that have the sound in them, and the centroid parks
+         near the middle of the spectrum whatever the filter does — which is
+         exactly what the first version of this measured. */
+      const centroid = () => { an.getFloatFrequencyData(bins);
+        let top = -Infinity;
+        for (let i = 1; i < bins.length; i++) if (bins[i] > top) top = bins[i];
+        if (!isFinite(top) || top < -95) return 0;
+        let num = 0, den = 0;
+        for (let i = 1; i < bins.length; i++) {
+          if (bins[i] < top - 45) continue;
+          const a = Math.pow(10, bins[i] / 20);
+          num += a * i * hzPer; den += a; }
+        return den > 0 ? Math.round(num / den) : 0; };
+      const flt = LIVE.pads[PAD].flt;
+      /* Only while the note is actually sounding. Once the amp envelope has let
+         go there is nothing but the floor left, and the centroid of a floor is
+         meaningless — it was reading 2kHz of "movement" out of the silence
+         after a static hit. */
+      const td = new Float32Array(an.fftSize);
+      const loud = () => { an.getFloatTimeDomainData(td); let s = 0;
+        for (let i = 0; i < td.length; i++) s += td[i] * td[i];
+        return Math.sqrt(s / td.length) > 0.01; };
+      const run = async () => { const c = [], d = [];
+        for (let k = 0; k < 16; k++) { const on = loud(), v = centroid();
+          if (on && v > 0) { c.push(v); d.push(Math.round(flt.detune.value)); }
+          await wait(35); }
+        return { c, d, n: c.length, lo: Math.min(...c), hi: Math.max(...c) }; };
+
+      /* One throwaway hit and a settle first. applyPadFx ramps the cutoff with
+         a time constant and ducks the channel for 4ms around a type change, so
+         a measurement taken the instant after switching the filter on catches
+         the filter still travelling — which reads as the static control moving
+         further than the envelope does. */
+      p.fegAmt = 0; liveFx();
+      hitLive(PAD, 1); await wait(700);
+      hitLive(PAD, 1); o.still = await run(); await wait(500);
+
+      p.fegAmt = 0.9; p.fegA = 0.004; p.fegD = 0.5; p.fegS = 0; p.fegR = 0.1;
+      liveFx();
+      hitLive(PAD, 1); o.up = await run(); await wait(500);
+
+      p.fegAmt = -0.9; p.fcut = 0.62; liveFx();
+      hitLive(PAD, 1); o.down = await run(); await wait(500);
+      p.fcut = 0.18;
+
+      /* The cutoff LFO writes to the SAME detune. An AudioParam sums its
+         automation with what is connected to it, so both must survive together
+         — the envelope was put on the intrinsic value precisely so the LFO did
+         not have to move or be given up. */
+      p.fegAmt = 0.9; p.lfoOn = true; p.lfoTgt = 'cutoff'; p.lfoSync = 'free';
+      p.lfoRate = 9; p.lfoDepth = 0.6; liveFx();
+      hitLive(PAD, 1); const both = await run();
+      /* Measured in the sound, not in the parameter: AudioParam.value reports
+         the intrinsic automation only and never includes what is connected to
+         it, so the LFO's contribution is invisible from JS by construction. */
+      o.lfoRides = { swept: both.hi - both.lo > 400,
+        wobbles: (() => { let turns = 0;
+          for (let i = 2; i < both.c.length; i++) {
+            const a = both.c[i - 1] - both.c[i - 2], c2 = both.c[i] - both.c[i - 1];
+            if ((a > 0) !== (c2 > 0)) turns++; }
+          return turns >= 3; })(), cen: both.c };
+      p.lfoOn = false; liveFx(); await wait(400);
+
+      /* Raising AMOUNT with the filter switched off modulates nothing. */
+      p.fegAmt = 0; p.ftype = 'off'; liveFx(); drawEdit();
+      const amt = document.getElementById('epFegAmt');
+      amt.value = '0.7'; amt.dispatchEvent(new Event('input', { bubbles: true }));
+      o.trap = { ftype: S.pads[PAD].ftype, said: document.getElementById('lcdmsg').textContent };
+
+      /* And with no amount at all, the detune must be left at rest — a pad
+         whose envelope was just turned off cannot keep the last sweep. */
+      p.fegAmt = 0; p.ftype = 'lowpass'; liveFx();
+      hitLive(PAD, 1); await wait(300);
+      o.restsAtZero = Math.abs(flt.detune.value) < 1;
+
+      /* IT HAS TO BOUNCE. triggerPad is handed its ctx and graph, so the same
+         code runs offline — but that is a claim, and this is a file. */
+      p.fegAmt = 0.9; p.fegD = 0.5; p.ftype = 'lowpass'; p.fcut = 0.18;
+      S.patterns[S.pattern].steps.forEach(row => row.fill(0));
+      S.patterns[S.pattern].steps[PAD][0] = 1;
+      /* Zero crossings per second, not a hand-rolled DFT. For noise through a
+         lowpass the rate tracks the cutoff directly, it needs no windowing, and
+         it cannot be quietly wrong the way a strided transform can — the first
+         version of this decimated by 4 inside the sum and returned sampleRate/4
+         for every input it was given. */
+      const bounceZcr = async amtVal => {
+        S.pads[PAD].fegAmt = amtVal;
+        const r = await renderMix(null, null, { loops: 1, src: 'pat', noTail: true });
+        const d = r.getChannelData(0);
+        const seg = (t0, t1) => { const a = Math.round(r.sampleRate * t0),
+          b2 = Math.min(d.length - 1, Math.round(r.sampleRate * t1));
+          let z = 0; for (let i = a + 1; i <= b2; i++) if ((d[i] >= 0) !== (d[i - 1] >= 0)) z++;
+          return Math.round(z / ((b2 - a) / r.sampleRate)); };
+        return { early: seg(0.08, 0.16), late: seg(0.40, 0.50), n: d.length };
+      };
+      o.bounceSwept = await bounceZcr(0.9);
+      o.bounceStill = await bounceZcr(0);
+
+      /* PLAYING HARDER HAS TO CHANGE THE SOUND, NOT ONLY THE LEVEL.
+         The centroid is level-independent by construction — it says WHERE the
+         energy is, not how much — so a difference in it between a soft hit and
+         a hard one is a difference in timbre and cannot be the volume. */
+      S.pads[PAD] = newPad(PAD); const q = S.pads[PAD];
+      q.bufId = S.buffers.length - 1; q.gain = 0.9; q.att = 0.002; q.rel = 0.05;
+      q.ftype = 'lowpass'; q.fcut = 0.14; q.fres = 2; q.fegAmt = 0;
+      S.editPad = PAD; liveFx();
+      hitLive(PAD, 1); await wait(700);
+
+      const atVel = async v => { hitLive(PAD, v); await wait(120);
+        const r2 = await run(); return r2.n ? Math.round(r2.c.reduce((a, x) => a + x, 0) / r2.n) : 0; };
+
+      q.velFlt = 0; liveFx(); await wait(200);
+      o.velOff = { soft: await atVel(0.2), hard: await atVel(1.0) };
+      q.velFlt = 0.9; liveFx(); await wait(200);
+      o.velOn = { soft: await atVel(0.2), hard: await atVel(1.0) };
+
+      /* VEL→ENV scales the sweep rather than the cutoff, so the thing that
+         changes is how FAR the filter travels on the note, not where it sits. */
+      q.velFlt = 0; q.fegAmt = 0.9; q.fegA = 0.004; q.fegD = 0.5; q.fegS = 0;
+      q.velEnv = 1; liveFx(); await wait(200);
+      /* Travel is read acoustically AND off the parameter. The acoustic figure
+         is the one that matters, but it is not fair between velocities on its
+         own: a soft hit falls under the level gate sooner, so fewer frames of
+         its sweep are seen and it measures short even when the automation is
+         identical. The peak detune says what was actually scheduled. */
+      const travel = async v => { hitLive(PAD, v); await wait(80);
+        let top = 0; const t0 = performance.now();
+        const poll = setInterval(() => { const a = Math.abs(flt.detune.value);
+          if (a > top) top = a; }, 8);
+        const r2 = await run(); clearInterval(poll); void t0;
+        return { heard: r2.n ? r2.hi - r2.lo : 0, peakDet: Math.round(top) }; };
+      o.envTravel = { soft: await travel(0.2), hard: await travel(1.0) };
+      q.velEnv = 0; liveFx(); await wait(200);
+      o.envTravelFlat = { soft: await travel(0.2), hard: await travel(1.0) };
+
+      /* Same trap as the envelope: velocity cannot open a filter that is off. */
+      q.velFlt = 0; q.fegAmt = 0; q.ftype = 'off'; liveFx(); drawEdit();
+      const vf = document.getElementById('epVelFlt');
+      vf.value = '0.8'; vf.dispatchEvent(new Event('input', { bubbles: true }));
+      o.velTrap = { ftype: S.pads[PAD].ftype, said: document.getElementById('lcdmsg').textContent };
+
+      /* The four voices that exist only because of this. Each must actually
+         set an amount — a preset table is easy to add a name to and easy to
+         forget to wire — and choosing a static voice afterwards has to clear
+         it, or the last envelope haunts the next sound. */
+      S.pads[PAD] = newPad(PAD); S.pads[PAD].bufId = S.buffers.length - 1;
+      o.voices = {};
+      for (const id of ['zap', 'acid', 'bloom', 'shut', 'touch']) {
+        applyPadVoice(id);
+        o.voices[id] = { amt: S.pads[PAD].fegAmt, ftype: S.pads[PAD].ftype,
+          vel: S.pads[PAD].velFlt, venv: S.pads[PAD].velEnv,
+          shownAmt: document.getElementById('epFegAmtV').textContent };
+      }
+      applyPadVoice('clean');
+      o.cleanClears = S.pads[PAD].fegAmt === 0 && S.pads[PAD].velFlt === 0
+        && S.pads[PAD].velEnv === 0;
+
+      S.pads[PAD] = keep; liveFx();
+      return o;
+    });
+    t.ok('a static filter keeps the sound in one place — the control',
+      feg.still.n >= 4 && feg.still.hi - feg.still.lo < 400,
+      'centroid moved ' + (feg.still.hi - feg.still.lo) + ' Hz across '
+      + feg.still.n + ' frames of the hit');
+    t.ok('AN ENVELOPE OPENING UPWARD ACTUALLY SWEEPS THE SOUND',
+      feg.up.hi - feg.up.lo > 600,
+      'centroid travelled ' + (feg.up.hi - feg.up.lo) + ' Hz (' + feg.up.lo + '→' + feg.up.hi + ')');
+    t.ok('and it starts open and closes, not the other way round',
+      feg.up.c[1] > feg.up.c[feg.up.c.length - 1],
+      feg.up.c.slice(0, 8).join(' → '));
+    t.ok('a negative amount closes downward instead',
+      feg.down.d.some(v => v < -1000) && feg.down.hi - feg.down.lo > 400,
+      'detune reached ' + Math.min(...feg.down.d) + ' cents');
+    t.ok('THE CUTOFF LFO STILL RIDES ON TOP OF THE ENVELOPE',
+      feg.lfoRides.swept && feg.lfoRides.wobbles,
+      'centroid: ' + feg.lfoRides.cen.slice(0, 8).join(' '));
+    t.ok('raising AMOUNT with no filter opens one rather than doing nothing',
+      feg.trap.ftype === 'lowpass' && /FILTER . LP/.test(feg.trap.said),
+      '"' + feg.trap.said + '"');
+    t.ok('and with no amount the cutoff is left where you set it',
+      feg.restsAtZero);
+    t.ok('THE SWEEP IS IN THE EXPORTED FILE, not only in the speaker',
+      feg.bounceSwept.early > feg.bounceSwept.late * 1.4,
+      'zero crossings ' + feg.bounceSwept.early + '/s → ' + feg.bounceSwept.late + '/s');
+    t.ok('and a bounce with the envelope off does not move',
+      feg.bounceStill.early < feg.bounceStill.late * 1.4,
+      feg.bounceStill.early + '/s → ' + feg.bounceStill.late + '/s');
+
+    t.ok('with VEL→CUT off, a soft hit and a hard one are the same sound',
+      Math.abs(feg.velOff.hard - feg.velOff.soft) < 120,
+      feg.velOff.soft + ' Hz vs ' + feg.velOff.hard + ' Hz — the control');
+    t.ok('WITH IT ON, PLAYING HARDER IS AUDIBLY BRIGHTER',
+      feg.velOn.hard > feg.velOn.soft * 1.8,
+      feg.velOn.soft + ' Hz at velocity 0.2 → ' + feg.velOn.hard + ' Hz at 1.0');
+    t.ok('and it is the timbre, not the level — the centroid cannot hear volume',
+      feg.velOn.soft > 0 && feg.velOff.soft > 0);
+    t.ok('VEL→ENV makes a soft note sweep less far than a hard one',
+      feg.envTravel.hard.heard > feg.envTravel.soft.heard + 300
+      && feg.envTravel.hard.peakDet > feg.envTravel.soft.peakDet * 2,
+      'heard ' + feg.envTravel.soft.heard + ' Hz vs ' + feg.envTravel.hard.heard
+      + ' Hz · scheduled ' + feg.envTravel.soft.peakDet + ' vs '
+      + feg.envTravel.hard.peakDet + ' cents');
+    t.ok('and with it off both notes are given the same sweep',
+      Math.abs(feg.envTravelFlat.hard.peakDet - feg.envTravelFlat.soft.peakDet) < 200,
+      feg.envTravelFlat.soft.peakDet + ' vs ' + feg.envTravelFlat.hard.peakDet + ' cents');
+    t.ok('VEL→CUT with no filter opens one too, rather than doing nothing',
+      feg.velTrap.ftype === 'lowpass' && /softest hit/.test(feg.velTrap.said),
+      '"' + feg.velTrap.said + '"');
+    t.ok('the four envelope voices all actually set one',
+      ['zap', 'acid', 'bloom', 'shut'].every(k => feg.voices[k].amt !== 0
+        && feg.voices[k].ftype !== 'off'),
+      Object.entries(feg.voices).map(([k, v]) => k + ' ' + v.shownAmt).join(' · '));
+    t.ok('and TOUCH is velocity alone, so the two halves can be heard apart',
+      feg.voices.touch.amt === 0 && feg.voices.touch.vel > 0.5
+      && feg.voices.touch.ftype === 'lowpass');
+    t.ok('a static voice afterwards clears the envelope AND the velocity',
+      feg.cleanClears);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

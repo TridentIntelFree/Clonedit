@@ -1227,6 +1227,121 @@ export default async function ({ browser, base }) {
     t.ok('AND THE SAME INPUT NOW RECORDS', deaf.openPeak > 0.05 && !/SILENT/.test(deaf.openLcd),
       'peak ' + deaf.openPeak);
 
+    t.head('A TAKE THAT METERED WELL AND PLAYS BACK QUIET');
+    /* "It's unusually quiet considering a decent level when recording."
+
+       First measured the accusation, because it is the kind that is usually
+       true and was not: identical buffers at 0.36 and 0.92, on pads with
+       identical settings, come out 8.18dB apart against a predicted 8.18dB.
+       The playback path is linear to a hundredth of a decibel and the master
+       chain is within 1dB of unity at both. Nothing is losing the level.
+
+       The take is simply that quiet, and nothing it sits beside is: the bundled
+       material peaks around 0.92. The meter reads PEAK, which for a voice sits
+       a long way above where it actually lives, so "decent level" and "quiet
+       playback" are both honest readings of the same recording.
+
+       The lane fader tops out at 1.2 — 2.5dB — so the fix has to be in the
+       samples. What is checked here is that the lift lands where it says, that
+       it can be switched off for takes meant to be balanced against each other,
+       that it refuses to blow up near-silence, and that the message always
+       carries the number. */
+    const quiet = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      const pk = b => { let m = 0; for (let c = 0; c < b.numberOfChannels; c++) {
+        const d = b.getChannelData(c);
+        for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > m) m = v; } }
+        return +m.toFixed(4); };
+      ensureAudio(); await wait(200);
+
+      /* THE ACCUSATION, MEASURED. Identical content, two amplitudes, one path. */
+      const an = AC.createAnalyser(); an.fftSize = 8192; LIVE.master.connect(an);
+      const b8 = new Float32Array(8192);
+      const lvl = async ms => { let m = 0; for (let k = 0; k < ms / 20; k++) {
+        an.getFloatTimeDomainData(b8); let s = 0;
+        for (let i = 0; i < b8.length; i++) s += b8[i] * b8[i];
+        m = Math.max(m, Math.sqrt(s / b8.length)); await wait(20); } return m; };
+      const tone = amp => { const n = Math.round(AC.sampleRate * 1.2);
+        const b = AC.createBuffer(2, n, AC.sampleRate);
+        for (let c = 0; c < 2; c++) { const d = b.getChannelData(c);
+          for (let i = 0; i < n; i++) d[i] = Math.sin(2*Math.PI*440*i/AC.sampleRate) * amp; }
+        S.buffers.push(b); return S.buffers.length - 1; };
+      const amps = [0.3586, 0.92];
+      /* Two slots of our own, whatever the earlier sections left behind, put
+         back exactly as they were afterwards. */
+      const slots = [NPADS - 2, NPADS - 1];
+      const keep = slots.map(i => JSON.parse(JSON.stringify(S.pads[i])));
+      o.refPeak = (() => { const i = S.pads.findIndex((x, j) => x.bufId >= 0 && slots.indexOf(j) < 0);
+        return i >= 0 ? pk(S.buffers[S.pads[i].bufId]) : 0; })();
+      const got = [];
+      for (let k = 0; k < 2; k++) { S.pads[slots[k]] = newPad(slots[k]);
+        const p = S.pads[slots[k]]; p.bufId = tone(amps[k]); p.gain = 0.9; }
+      for (let k = 0; k < 2; k++) { hitLive(slots[k], 1); got.push(await lvl(800)); await wait(500); }
+      o.predictedDb = +(20*Math.log10(amps[0]/amps[1])).toFixed(2);
+      o.measuredDb = +(20*Math.log10(got[0]/got[1])).toFixed(2);
+      slots.forEach((i, k) => { S.pads[i] = keep[k]; });
+
+      /* NOW THE TAKE ITSELF. */
+      S.trax.forEach(x => { x.bufId = -1; });
+      document.querySelector('#tabs button[data-v="mic"]').click();
+      if (!micOn) { document.getElementById('btnMicOn').click(); await wait(1600); }
+      document.getElementById('micDest').value = 'lane';
+      const set = (id, v) => { const e = document.getElementById(id); e.value = v;
+        e.dispatchEvent(new Event('input', { bubbles: true })); };
+      const rec = async () => { document.getElementById('btnMicRec').click(); await wait(1000);
+        document.getElementById('btnMicRec').click(); await wait(700);
+        return { peak: pk(S.buffers[S.buffers.length - 1]),
+          lcd: document.getElementById('lcdmsg').textContent,
+          info: document.getElementById('micRecInfo').textContent }; };
+
+      set('micGain', 0.25); await wait(900);
+      o.meterSaid = document.getElementById('micRecV').textContent;
+      o.lifted = await rec();
+
+      document.getElementById('micLift').checked = false;
+      o.raw = await rec();
+      document.getElementById('micLift').checked = true;
+
+      set('micGain', 1); await wait(900);
+      o.loud = await rec();
+
+      /* Far enough down that the cap, not the target, decides. */
+      set('micGain', 0.05); await wait(900);
+      o.veryQuiet = await rec();
+
+      /* The setting has to survive a session, like every other mic control. */
+      document.getElementById('micLift').checked = false;
+      const saved = micSettings();
+      document.getElementById('micLift').checked = true;
+      applyMicSettings(saved);
+      o.settingPersists = document.getElementById('micLift').checked === false;
+      document.getElementById('micLift').checked = true;
+
+      if (micOn) { document.getElementById('btnMicOn').click(); await wait(1400); }
+      return o;
+    });
+    t.ok('the playback path is not losing the level — measured, not assumed',
+      Math.abs(quiet.measuredDb - quiet.predictedDb) < 0.3,
+      'predicted ' + quiet.predictedDb + ' dB, measured ' + quiet.measuredDb + ' dB');
+    t.ok('so the gap is real: bundled material peaks near full scale',
+      quiet.refPeak > 0.85, 'reference sample peaks at ' + quiet.refPeak);
+    t.ok('A QUIET TAKE IS LIFTED TO SIT WITH IT',
+      quiet.lifted.peak > 0.85 && quiet.lifted.peak <= 0.9,
+      'landed at ' + quiet.lifted.peak + ' (meter had said "' + quiet.meterSaid + '")');
+    t.ok('and the message carries both numbers, not just the outcome',
+      /recorded at -\d+ dB, lifted to -\d+ dB/.test(quiet.lifted.lcd), '"' + quiet.lifted.lcd + '"');
+    t.ok('the level is on the take line too', /-?\d+ dB/.test(quiet.lifted.info),
+      '"' + quiet.lifted.info + '"');
+    t.ok('LIFT OFF LEAVES THE TAKE WHERE YOU PLAYED IT',
+      quiet.raw.peak < 0.5 && /LIFT is off/.test(quiet.raw.lcd),
+      'landed at ' + quiet.raw.peak);
+    t.ok('a take that is already loud is not touched', quiet.loud.peak >= 0.9,
+      'landed at ' + quiet.loud.peak + ' · "' + quiet.loud.lcd + '"');
+    t.ok('and near-silence is not blown up into room noise',
+      quiet.veryQuiet.peak < 0.85, 'landed at ' + quiet.veryQuiet.peak
+      + ' · "' + quiet.veryQuiet.lcd + '"');
+    t.ok('the choice rides with the session', quiet.settingPersists);
+
     t.head('THE ANGLE OF THE PHONE CANNOT CHANGE THE VOLUME IN SECRET');
     /* "My volume in playback is different depending on if my phone is landscape
        or regular — same speaker producing sound, not a stereo thing."

@@ -256,6 +256,19 @@ it, filter it, resample it. Nothing stays attached to the preset it came from.</
     </div>
     <div class="pslider"><span class="lbl">CUTOFF</span><input type="range" id="epFCut" min="0" max="1" step="0.005"><span class="val" id="epFCutV"></span></div>
     <div class="pslider"><span class="lbl">RESO</span><input type="range" id="epFRes" min="0.5" max="18" step="0.1"><span class="val" id="epFResV"></span></div>
+    <div id="fegPanel" style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px;margin:4px 0">
+      <div style="font-size:10px;color:var(--lcd);margin-bottom:4px">&#9663; FILTER ENVELOPE &mdash; moves CUTOFF on every hit. This is what makes a pluck a pluck.</div>
+      <div class="pslider"><span class="lbl">AMOUNT</span><input type="range" id="epFegAmt" min="-1" max="1" step="0.01"><span class="val" id="epFegAmtV">off</span></div>
+      <div class="pslider"><span class="lbl">ATTACK</span><input type="range" id="epFegA" min="0" max="1" step="0.002"><span class="val" id="epFegAV"></span></div>
+      <div class="pslider"><span class="lbl">DECAY</span><input type="range" id="epFegD" min="0.005" max="2" step="0.005"><span class="val" id="epFegDV"></span></div>
+      <div class="pslider"><span class="lbl">SUSTAIN</span><input type="range" id="epFegS" min="0" max="1" step="0.01"><span class="val" id="epFegSV"></span></div>
+      <div class="pslider"><span class="lbl">RELEASE</span><input type="range" id="epFegR" min="0.005" max="2" step="0.005"><span class="val" id="epFegRV"></span></div>
+      <div id="fegHint" style="font-size:10px;color:var(--txt-dim);margin-top:2px">Positive opens upward from CUTOFF, negative closes downward. &plusmn;4 octaves at full travel.</div>
+      <div style="font-size:10px;color:var(--lcd);margin:6px 0 2px">&#9651; HOW HARD YOU PLAY &mdash; so a soft hit and a hard one are different sounds, not just different volumes.</div>
+      <div class="pslider"><span class="lbl">VEL&rarr;CUT</span><input type="range" id="epVelFlt" min="0" max="1" step="0.01"><span class="val" id="epVelFltV">off</span></div>
+      <div class="pslider"><span class="lbl">VEL&rarr;ENV</span><input type="range" id="epVelEnv" min="0" max="1" step="0.01"><span class="val" id="epVelEnvV">off</span></div>
+      <div style="font-size:10px;color:var(--txt-dim);margin-top:2px">VEL&rarr;CUT makes CUTOFF the softest setting and opens up from there. VEL&rarr;ENV scales the sweep above by how hard the note lands. DRIVE already responds to velocity on its own.</div>
+    </div>
     <div class="pslider"><span class="lbl">DRIVE</span><input type="range" id="epDrv" min="0" max="1" step="0.01"><span class="val" id="epDrvV"></span></div>
     <div class="pslider"><span class="lbl">CRUSH</span><input type="range" id="epCrush" min="4" max="16" step="1"><span class="val" id="epCrushV"></span></div>
     <h3>CHANNEL EQ <span style="color:var(--txt-dim);letter-spacing:0">— low shelf 200 · mid 1k · high shelf 4k</span></h3>
@@ -1169,6 +1182,11 @@ missing pitch itself. Weight without bass the speaker would swallow.</p>
   <div class="row">
     <label style="font-size:11px;display:flex;align-items:center;gap:6px">
       <input type="checkbox" id="micWet" checked> record the shaping too (off = the raw mic)
+    </label>
+  </div>
+  <div class="row">
+    <label style="font-size:11px;display:flex;align-items:center;gap:6px">
+      <input type="checkbox" id="micLift" checked> lift quiet takes to a usable level (says how much)
     </label>
   </div>
   <details class="ex"><summary>After you press stop</summary><div class="ex-body">
