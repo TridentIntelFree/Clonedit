@@ -650,19 +650,64 @@ export default async function ({ browser, base }) {
       o.bounceSwept = await bounceZcr(0.9);
       o.bounceStill = await bounceZcr(0);
 
+      /* PLAYING HARDER HAS TO CHANGE THE SOUND, NOT ONLY THE LEVEL.
+         The centroid is level-independent by construction — it says WHERE the
+         energy is, not how much — so a difference in it between a soft hit and
+         a hard one is a difference in timbre and cannot be the volume. */
+      S.pads[PAD] = newPad(PAD); const q = S.pads[PAD];
+      q.bufId = S.buffers.length - 1; q.gain = 0.9; q.att = 0.002; q.rel = 0.05;
+      q.ftype = 'lowpass'; q.fcut = 0.14; q.fres = 2; q.fegAmt = 0;
+      S.editPad = PAD; liveFx();
+      hitLive(PAD, 1); await wait(700);
+
+      const atVel = async v => { hitLive(PAD, v); await wait(120);
+        const r2 = await run(); return r2.n ? Math.round(r2.c.reduce((a, x) => a + x, 0) / r2.n) : 0; };
+
+      q.velFlt = 0; liveFx(); await wait(200);
+      o.velOff = { soft: await atVel(0.2), hard: await atVel(1.0) };
+      q.velFlt = 0.9; liveFx(); await wait(200);
+      o.velOn = { soft: await atVel(0.2), hard: await atVel(1.0) };
+
+      /* VEL→ENV scales the sweep rather than the cutoff, so the thing that
+         changes is how FAR the filter travels on the note, not where it sits. */
+      q.velFlt = 0; q.fegAmt = 0.9; q.fegA = 0.004; q.fegD = 0.5; q.fegS = 0;
+      q.velEnv = 1; liveFx(); await wait(200);
+      /* Travel is read acoustically AND off the parameter. The acoustic figure
+         is the one that matters, but it is not fair between velocities on its
+         own: a soft hit falls under the level gate sooner, so fewer frames of
+         its sweep are seen and it measures short even when the automation is
+         identical. The peak detune says what was actually scheduled. */
+      const travel = async v => { hitLive(PAD, v); await wait(80);
+        let top = 0; const t0 = performance.now();
+        const poll = setInterval(() => { const a = Math.abs(flt.detune.value);
+          if (a > top) top = a; }, 8);
+        const r2 = await run(); clearInterval(poll); void t0;
+        return { heard: r2.n ? r2.hi - r2.lo : 0, peakDet: Math.round(top) }; };
+      o.envTravel = { soft: await travel(0.2), hard: await travel(1.0) };
+      q.velEnv = 0; liveFx(); await wait(200);
+      o.envTravelFlat = { soft: await travel(0.2), hard: await travel(1.0) };
+
+      /* Same trap as the envelope: velocity cannot open a filter that is off. */
+      q.velFlt = 0; q.fegAmt = 0; q.ftype = 'off'; liveFx(); drawEdit();
+      const vf = document.getElementById('epVelFlt');
+      vf.value = '0.8'; vf.dispatchEvent(new Event('input', { bubbles: true }));
+      o.velTrap = { ftype: S.pads[PAD].ftype, said: document.getElementById('lcdmsg').textContent };
+
       /* The four voices that exist only because of this. Each must actually
          set an amount — a preset table is easy to add a name to and easy to
          forget to wire — and choosing a static voice afterwards has to clear
          it, or the last envelope haunts the next sound. */
       S.pads[PAD] = newPad(PAD); S.pads[PAD].bufId = S.buffers.length - 1;
       o.voices = {};
-      for (const id of ['zap', 'acid', 'bloom', 'shut']) {
+      for (const id of ['zap', 'acid', 'bloom', 'shut', 'touch']) {
         applyPadVoice(id);
         o.voices[id] = { amt: S.pads[PAD].fegAmt, ftype: S.pads[PAD].ftype,
+          vel: S.pads[PAD].velFlt, venv: S.pads[PAD].velEnv,
           shownAmt: document.getElementById('epFegAmtV').textContent };
       }
       applyPadVoice('clean');
-      o.cleanClears = S.pads[PAD].fegAmt === 0;
+      o.cleanClears = S.pads[PAD].fegAmt === 0 && S.pads[PAD].velFlt === 0
+        && S.pads[PAD].velEnv === 0;
 
       S.pads[PAD] = keep; liveFx();
       return o;
@@ -695,11 +740,35 @@ export default async function ({ browser, base }) {
       feg.bounceStill.early < feg.bounceStill.late * 1.4,
       feg.bounceStill.early + '/s → ' + feg.bounceStill.late + '/s');
 
+    t.ok('with VEL→CUT off, a soft hit and a hard one are the same sound',
+      Math.abs(feg.velOff.hard - feg.velOff.soft) < 120,
+      feg.velOff.soft + ' Hz vs ' + feg.velOff.hard + ' Hz — the control');
+    t.ok('WITH IT ON, PLAYING HARDER IS AUDIBLY BRIGHTER',
+      feg.velOn.hard > feg.velOn.soft * 1.8,
+      feg.velOn.soft + ' Hz at velocity 0.2 → ' + feg.velOn.hard + ' Hz at 1.0');
+    t.ok('and it is the timbre, not the level — the centroid cannot hear volume',
+      feg.velOn.soft > 0 && feg.velOff.soft > 0);
+    t.ok('VEL→ENV makes a soft note sweep less far than a hard one',
+      feg.envTravel.hard.heard > feg.envTravel.soft.heard + 300
+      && feg.envTravel.hard.peakDet > feg.envTravel.soft.peakDet * 2,
+      'heard ' + feg.envTravel.soft.heard + ' Hz vs ' + feg.envTravel.hard.heard
+      + ' Hz · scheduled ' + feg.envTravel.soft.peakDet + ' vs '
+      + feg.envTravel.hard.peakDet + ' cents');
+    t.ok('and with it off both notes are given the same sweep',
+      Math.abs(feg.envTravelFlat.hard.peakDet - feg.envTravelFlat.soft.peakDet) < 200,
+      feg.envTravelFlat.soft.peakDet + ' vs ' + feg.envTravelFlat.hard.peakDet + ' cents');
+    t.ok('VEL→CUT with no filter opens one too, rather than doing nothing',
+      feg.velTrap.ftype === 'lowpass' && /softest hit/.test(feg.velTrap.said),
+      '"' + feg.velTrap.said + '"');
     t.ok('the four envelope voices all actually set one',
       ['zap', 'acid', 'bloom', 'shut'].every(k => feg.voices[k].amt !== 0
         && feg.voices[k].ftype !== 'off'),
       Object.entries(feg.voices).map(([k, v]) => k + ' ' + v.shownAmt).join(' · '));
-    t.ok('and a static voice afterwards clears it', feg.cleanClears);
+    t.ok('and TOUCH is velocity alone, so the two halves can be heard apart',
+      feg.voices.touch.amt === 0 && feg.voices.touch.vel > 0.5
+      && feg.voices.touch.ftype === 'lowpass');
+    t.ok('a static voice afterwards clears the envelope AND the velocity',
+      feg.cleanClears);
 
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));

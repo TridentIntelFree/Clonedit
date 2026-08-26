@@ -280,6 +280,10 @@ it, filter it, resample it. Nothing stays attached to the preset it came from.</
       <div class="pslider"><span class="lbl">SUSTAIN</span><input type="range" id="epFegS" min="0" max="1" step="0.01"><span class="val" id="epFegSV"></span></div>
       <div class="pslider"><span class="lbl">RELEASE</span><input type="range" id="epFegR" min="0.005" max="2" step="0.005"><span class="val" id="epFegRV"></span></div>
       <div id="fegHint" style="font-size:10px;color:var(--txt-dim);margin-top:2px">Positive opens upward from CUTOFF, negative closes downward. &plusmn;4 octaves at full travel.</div>
+      <div style="font-size:10px;color:var(--lcd);margin:6px 0 2px">&#9651; HOW HARD YOU PLAY &mdash; so a soft hit and a hard one are different sounds, not just different volumes.</div>
+      <div class="pslider"><span class="lbl">VEL&rarr;CUT</span><input type="range" id="epVelFlt" min="0" max="1" step="0.01"><span class="val" id="epVelFltV">off</span></div>
+      <div class="pslider"><span class="lbl">VEL&rarr;ENV</span><input type="range" id="epVelEnv" min="0" max="1" step="0.01"><span class="val" id="epVelEnvV">off</span></div>
+      <div style="font-size:10px;color:var(--txt-dim);margin-top:2px">VEL&rarr;CUT makes CUTOFF the softest setting and opens up from there. VEL&rarr;ENV scales the sweep above by how hard the note lands. DRIVE already responds to velocity on its own.</div>
     </div>
     <div class="pslider"><span class="lbl">DRIVE</span><input type="range" id="epDrv" min="0" max="1" step="0.01"><span class="val" id="epDrvV"></span></div>
     <div class="pslider"><span class="lbl">CRUSH</span><input type="range" id="epCrush" min="4" max="16" step="1"><span class="val" id="epCrushV"></span></div>
@@ -5501,7 +5505,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R178 · 2026-08-26 · the filter moves on every hit';
+const BUILD = 'JBH-88 · R179 · 2026-08-26 · how hard you play changes the sound';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -5560,7 +5564,7 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grPos:0, grBurst:0.45,
   choke:0, note:36+i, reverse:false, mode:'one',
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
-  fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12,
+  fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12, velFlt:0, velEnv:0,
   eqLo:0, eqMid:0, eqHi:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
   warpBeats:4, warpBpm:0, mute:false, solo:false }; }
@@ -6180,30 +6184,65 @@ function updatePerf(){
    time the lookahead runs, and re-triggering an envelope at the grain rate is a
    buzz, not a filter sweep. */
 const FEG_CENTS=4800;     // ±4 octaves at full travel
+/* PLAYING HARDER HAS TO CHANGE THE SOUND, NOT ONLY THE LEVEL.
+
+   Velocity reached exactly one thing: env.gain. So a velocity lane, humanize,
+   probability and NOTES all fed a voice whose only available answer was "the
+   same again, louder" — which is why a programmed part stayed flat however much
+   life was written into it. On any real instrument the hard notes are BRIGHTER,
+   and that is the difference the ear reads as playing rather than triggering.
+
+   Two knobs, each with one job, because rolling them together is how a velocity
+   control ends up impossible to predict:
+     VEL→CUT lifts the cutoff itself, up to two octaves at full force. It works
+       whether or not there is an envelope, so CUTOFF becomes where a whisper
+       sits and this is how far a hard hit opens past it.
+     VEL→ENV scales the envelope's own depth, so a soft note gets a small sweep
+       and a hard one the whole thing.
+
+   DRIVE deliberately has no such control. Measured on a 220Hz tone through the
+   pad's own shaper, harmonic content already runs -5.8dB at velocity 0.25 and
+   -3.1dB at 1.0, because the amp envelope sits upstream of the WaveShaper and a
+   harder hit genuinely does push it harder. A knob for what the graph already
+   does would only be a second control fighting the first. */
+const VEL_CUT_CENTS=2400;   // two octaves of lift at full velocity
 function padFegAmt(p){ return clamp(+p.fegAmt||0,-1,1)*FEG_CENTS; }
-function scheduleFilterEnv(ctx, n, p, when, outDur){
+function velCutCents(p,v){ return clamp(+p.velFlt||0,0,1)*clamp(v,0,1)*VEL_CUT_CENTS; }
+function scheduleFilterEnv(ctx, n, p, when, outDur, vel){
   if(!n||!n.flt) return;
-  const amt=padFegAmt(p);
+  const v=clamp(vel==null?1:vel,0,1);
+  const base=velCutCents(p,v);
+  /* At VEL→ENV 0 the envelope is the depth you dialled whatever you play; at 1
+     it is that depth scaled by how hard the note was hit. */
+  const scale=1-clamp(+p.velEnv||0,0,1)*(1-v);
+  const amt=padFegAmt(p)*scale;
   const d=n.flt.detune;
-  if(!amt || p.ftype==='off'){
+  if((!amt && !base) || p.ftype==='off'){
     /* Still has to be written: a pad whose envelope was just turned off, or
        whose filter was, must not be left holding the last sweep's offset. */
     try{ d.cancelScheduledValues(when); d.setValueAtTime(0,when); }catch(e){}
     return;
   }
+  if(!amt){
+    /* Velocity alone — a step, not a sweep. Ramped over the amp's attack so a
+       hard hit landing on a soft one's tail does not click the cutoff. */
+    try{ d.cancelScheduledValues(when); d.setValueAtTime(d.value,when);
+         d.linearRampToValueAtTime(base, when+Math.max(0.002,p.att||0.002)); }catch(e){}
+    return;
+  }
   const a=clamp(+p.fegA||0,0,1), dec=clamp(+p.fegD||0,0.001,2);
   const sus=clamp(p.fegS==null?0:+p.fegS,0,1), rel=clamp(+p.fegR||0,0.001,2);
-  const sustainAt=amt*sus;
+  const sustainAt=base+amt*sus;
   /* Release starts where the amp's does, so the two envelopes describe the
      same note rather than two overlapping ones. */
   const relStart=Math.max(when+a+dec, when+Math.max(0.01,outDur-rel));
   try{
     d.cancelScheduledValues(when);
-    d.setValueAtTime(0,when);
-    d.linearRampToValueAtTime(amt, when+Math.max(0.001,a));
+    d.setValueAtTime(base,when);
+    d.linearRampToValueAtTime(base+amt, when+Math.max(0.001,a));
     d.linearRampToValueAtTime(sustainAt, when+Math.max(0.001,a)+dec);
     d.setValueAtTime(sustainAt, relStart);
-    d.linearRampToValueAtTime(0, relStart+rel);
+    d.linearRampToValueAtTime(base, relStart+rel);
   }catch(e){}
 }
 function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
@@ -6257,7 +6296,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
   env.gain.setValueAtTime(v,relStart);
   env.gain.linearRampToValueAtTime(0.0001,relStart+p.rel);
   src.connect(env); env.connect(g.pads[idx].in);
-  scheduleFilterEnv(ctx, g.pads[idx], p, when, outDur);
+  scheduleFilterEnv(ctx, g.pads[idx], p, when, outDur, v);
   let ltg=null;
   if(liveTap && g.liveBus){   // per-voice tap: ONLY this manual voice reaches the LIVE-ONLY record bus
     ltg=ctx.createGain(); ltg.gain.value=p.gain;
@@ -7386,23 +7425,29 @@ const PAD_VOICES={
      the difference between them and the static voices above IS the envelope. */
   zap:    {label:'ZAP — opens and slams shut',
     att:0.001, rel:0.14, ftype:'lowpass', fcut:0.10, fres:6,
-    fegAmt:0.85, fegA:0.002, fegD:0.10, fegS:0, fegR:0.06},
+    fegAmt:0.85, fegA:0.002, fegD:0.10, fegS:0, fegR:0.06, velEnv:0.5},
   acid:   {label:'ACID — squelchy, resonant, alive',
     att:0.001, rel:0.22, ftype:'lowpass', fcut:0.08, fres:14, drv:0.35,
-    fegAmt:0.62, fegA:0.003, fegD:0.28, fegS:0.10, fegR:0.10},
+    fegAmt:0.62, fegA:0.003, fegD:0.28, fegS:0.10, fegR:0.10, velFlt:0.35, velEnv:0.7},
   bloom:  {label:'BLOOM — arrives dark, opens up',
     att:0.02, rel:0.7, ftype:'lowpass', fcut:0.12, fres:2, rev:0.30,
-    fegAmt:0.75, fegA:0.45, fegD:0.60, fegS:0.85, fegR:0.50},
+    fegAmt:0.75, fegA:0.45, fegD:0.60, fegS:0.85, fegR:0.50, velEnv:0.4},
   shut:   {label:'SHUT — bright, then the door closes',
     att:0.001, rel:0.35, ftype:'lowpass', fcut:0.72, fres:4,
     fegAmt:-0.8, fegA:0.05, fegD:0.35, fegS:0, fegR:0.20},
+  /* Nothing but velocity — no envelope at all — so the two halves of this can
+     be heard apart. It is also the setting most sampled material wants: the
+     sample already has its own shape, and what it is missing is a soft hit
+     sounding softer rather than merely quieter. */
+  touch:  {label:'TOUCH — soft is darker, hard is brighter',
+    att:0.001, rel:0.18, ftype:'lowpass', fcut:0.30, fres:1.4, velFlt:0.8},
 };
 /* Every character field a voice can carry, with the value a voice that does not
    mention it resets to. Listing the neutral here rather than in each preset is
    what stops one voice leaving the previous voice's settings behind. */
 const VOICE_NEUTRAL={ pitch:0, fine:0, speed:1, reverse:false, mode:'one',
   att:0.002, rel:0.06, ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
-  fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12,
+  fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12, velFlt:0, velEnv:0,
   eqLo:0, eqMid:0, eqHi:0, rev:0, dly:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
   grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grBurst:0.45 };
@@ -7459,6 +7504,7 @@ $('epFType').addEventListener('change',e=>{
   if(p.ftype==='lowpass' && p.fcut>0.85) p.fcut=0.45;
   if(p.ftype==='highpass' && p.fcut<0.15) p.fcut=0.45;
   if(p.ftype==='bandpass') p.fcut=clamp(p.fcut,0.25,0.75);
+  drawFeg(p);                       // switching the filter off strands the envelope; say so
   liveFx(); trigSel();
 });
 function trigSel(){ if(S.pads[S.editPad].bufId>=0) hitLive(S.editPad,0.85); }
@@ -7481,9 +7527,14 @@ function drawFeg(p){
   $('epFegSV').textContent=Math.round((p.fegS==null?0:p.fegS)*100)+'%';
   $('epFegR').value=p.fegR==null?0.12:p.fegR;
   $('epFegRV').textContent=(p.fegR==null?0.12:p.fegR).toFixed(2)+'s';
+  const vf=+p.velFlt||0, ve=+p.velEnv||0;
+  $('epVelFlt').value=vf;
+  $('epVelFltV').textContent=vf?'+'+(vf*VEL_CUT_CENTS/1200).toFixed(1)+' oct':'off';
+  $('epVelEnv').value=ve;
+  $('epVelEnvV').textContent=ve?Math.round(ve*100)+'%':'off';
   /* THE ONE TRAP WORTH GUARDING: an envelope on a filter that is switched off
      modulates nothing, and the panel would sit there looking like it worked. */
-  const dead=(+p.fegAmt||0)!==0 && p.ftype==='off';
+  const dead=((+p.fegAmt||0)!==0 || (+p.velFlt||0)!==0) && p.ftype==='off';
   const h=$('fegHint');
   if(h){ h.textContent = dead
     ? 'The FILTER is OFF, so this is moving nothing — set it to LP, HP or BP above.'
@@ -7509,7 +7560,24 @@ $('epFegAmt').addEventListener('input',e=>{
   drawFeg(p); dirty();
 });
 $('epFegAmt').addEventListener('change',trigSel);
-[['epFegA','fegA'],['epFegD','fegD'],['epFegS','fegS'],['epFegR','fegR']].forEach(([id,key])=>{
+/* VEL→CUT is the one that works with no envelope at all, so it needs the same
+   guard: a filter switched off cannot be opened by playing harder either. */
+$('epVelFlt').addEventListener('input',e=>{
+  const p=S.pads[S.editPad];
+  p.velFlt=parseFloat(e.target.value);
+  if(p.velFlt!==0 && p.ftype==='off'){
+    p.ftype='lowpass';
+    if(p.fcut>0.85) p.fcut=0.35;
+    $('epFType').value='lowpass'; $('epFCut').value=p.fcut;
+    $('epFCutV').textContent=Math.round(cutHz(p.fcut))+'Hz';
+    liveFx();
+    lcd('FILTER → LP so playing harder has something to open. CUTOFF is now the softest hit.');
+  }
+  drawFeg(p); dirty();
+});
+$('epVelFlt').addEventListener('change',trigSel);
+[['epFegA','fegA'],['epFegD','fegD'],['epFegS','fegS'],['epFegR','fegR'],
+ ['epVelEnv','velEnv']].forEach(([id,key])=>{
   $(id).addEventListener('input',e=>{
     const p=S.pads[S.editPad]; p[key]=parseFloat(e.target.value); drawFeg(p); dirty(); });
   $(id).addEventListener('change',trigSel);
@@ -10763,6 +10831,7 @@ function voiceWords(ch){
     att:'envelope',rel:'envelope',ftype:'filter',fcut:'filter',fres:'filter',drv:'drive',crush:'drive',
     fegAmt:'filter envelope',fegA:'filter envelope',fegD:'filter envelope',
     fegS:'filter envelope',fegR:'filter envelope',
+    velFlt:'velocity response',velEnv:'velocity response',
     eqLo:'EQ',eqMid:'EQ',eqHi:'EQ',reverse:'direction',mode:'play mode',start:'trim',end:'trim',
     lfoOn:'LFO',lfoTgt:'LFO',lfoShape:'LFO',lfoSync:'LFO',lfoRate:'LFO',lfoDepth:'LFO',
     grSize:'grain',grDens:'grain',grSpread:'grain',grPitch:'grain',grPos:'grain',grBurst:'grain',
@@ -15620,7 +15689,13 @@ function applySessionDoc(doc, bufs){
     if(p.speed==null)p.speed=1; if(p.keepPitch==null)p.keepPitch=false;
     if(p.grSize==null)p.grSize=0.12; if(p.grDens==null)p.grDens=18; if(p.grSpread==null)p.grSpread=0.05;
     if(p.grPitch==null)p.grPitch=0; if(p.grPos==null)p.grPos=0; if(p.grBurst==null)p.grBurst=0.45;
-    if(p.eqLo==null)p.eqLo=0; if(p.eqMid==null)p.eqMid=0; if(p.eqHi==null)p.eqHi=0; });
+    if(p.eqLo==null)p.eqLo=0; if(p.eqMid==null)p.eqMid=0; if(p.eqHi==null)p.eqHi=0;
+    /* Documents from before the filter envelope and the velocity response have
+       neither. Zero for both amounts is the only safe default: anything else
+       would re-voice every pad in a project made before they existed. */
+    if(p.fegAmt==null)p.fegAmt=0; if(p.fegA==null)p.fegA=0.004; if(p.fegD==null)p.fegD=0.18;
+    if(p.fegS==null)p.fegS=0; if(p.fegR==null)p.fegR=0.12;
+    if(p.velFlt==null)p.velFlt=0; if(p.velEnv==null)p.velEnv=0; });
   { // LOAD FAILSAFE: every loaded pad at ~0 volume = a poisoned save (a real
     // field failure wrote gain 0 into state and autosave kept it). One pad at
     // 0 is legit mixing; ALL of them is never intentional — repair silently.
