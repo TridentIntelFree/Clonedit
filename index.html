@@ -1655,6 +1655,16 @@ louder, you are probably losing more than you gain.</p>
     <span class="lbl">OUTPUT</span>
     <button id="btnOutReset">RESET OUTPUT</button>
     <select id="outRoute" aria-label="How the app asks for audio output"><option value="playback">ASK FOR PLAYBACK</option><option value="auto">LET THE BROWSER CHOOSE</option></select>
+  </div>
+  <div class="row">
+    <span class="lbl">OUT PATH</span>
+    <select id="outPath" aria-label="Which path the audio leaves the app by">
+      <option value="element">PLAYS ON SILENT</option>
+      <option value="direct">LOUDEST + BLUETOOTH</option>
+    </select>
+  </div>
+  <div id="outPathHint" style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">&mdash;</div>
+  <div class="row">
     <span style="font-size:10px;color:var(--txt-dim);flex:1">If sound comes out of the phone while a Bluetooth speaker is connected, tap this. It releases any microphone the app is holding and reopens the audio, which is what makes the phone choose an output again.</span>
   </div>
   <details class="ex"><summary>Why the phone keeps the sound</summary><div class="ex-body">
@@ -5508,7 +5518,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R180 · 2026-08-26 · an envelope with all four stages';
+const BUILD = 'JBH-88 · R181 · 2026-08-26 · two ways out of the app';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -6782,6 +6792,9 @@ function ensureAudio(){
       LIVE.softclip.connect(AC.destination);
       lcd('OUT: direct (element path refused)');
     });
+    /* A device preference, so it has to survive the app being closed and the
+       graph being rebuilt — applied here rather than only from the control. */
+    if(outPath==='direct') applyOutPath(null,true);
   }catch(e){
     try{ LIVE.softclip.connect(AC.destination); }catch(e2){}
   }
@@ -9003,6 +9016,7 @@ $('btnMByp').addEventListener('click',()=>{
 });
 $('btnOutReset').addEventListener('click',resetAudioOut);
 $('outRoute').addEventListener('change',e=>{ setSessPref(e.target.value); });
+$('outPath').addEventListener('change',e=>{ applyOutPath(e.target.value); });
 $('btnEngReset').addEventListener('click',()=>{ glitchReset();
   lcd('ENGINE COUNTER RESET — play for a while and see whether it stays green.'); });
 $('btnBBOn').addEventListener('click',()=>{
@@ -9604,6 +9618,78 @@ function resetAudioOut(){
 const SESS_KEY='jbh_sess_v1';
 let sessPref=(()=>{ try{ const v=localStorage.getItem(SESS_KEY); return v==='auto'?'auto':'playback'; }
   catch(e){ return 'playback'; } })();
+/* WHICH WAY THE SOUND ACTUALLY LEAVES THE APP.
+
+   "Sound still louder when phone is upright vs on its side… it's not as loud
+   as it should be by orders of magnitude."
+
+   Everything inside the app measures clean. The playback path is linear to a
+   hundredth of a decibel, a tape lane and a pad are within 1dB of each other on
+   the same buffer, a mic take lands at the peak its meter showed, and a centred
+   mono source comes out of the master chain with the two channels dead level.
+   So whatever is being lost is lost after the last node, and there is exactly
+   one thing there: HOW the audio leaves.
+
+   It leaves through a MediaStreamAudioDestinationNode into a hidden <audio>
+   element. That is deliberate — an element ignores the ring/silent switch,
+   where AudioContext.destination does not, and a groovebox that goes silent
+   because a switch on the side of the phone is flipped is a bad instrument.
+   But WebKit treats an element playing a MediaStream as a communications
+   stream rather than a media one, and a communications stream is quieter, is
+   tied to the call volume rather than the media volume, can involve the
+   earpiece — which is why the balance changes when the phone is turned — and
+   does not carry A2DP Bluetooth. Three separate reports across this project,
+   one shape.
+
+   Both paths are worth having and neither is right for everyone, so it is a
+   choice with its cost written next to it rather than a guess made for you.
+   DIRECT is softclip → destination: the loudest path, the one Bluetooth
+   speakers get, and the one the silent switch can mute. ELEMENT is what the app
+   has always done. Nothing else in the graph moves — the recording taps hang
+   off softclip either way, so a bounce and the black box are identical. */
+const OUTP_KEY='jbh_outpath_v1';
+let outPath=(()=>{ try{ return localStorage.getItem(OUTP_KEY)==='direct'?'direct':'element'; }
+  catch(e){ return 'element'; } })();
+function outPathWords(){
+  return outPath==='direct'
+    ? 'DIRECT — the loudest path, and the one Bluetooth speakers get. The phone\u2019s silent switch can mute it.'
+    : 'ELEMENT — plays even with the silent switch on. Quieter on some phones, and iOS will not send it to Bluetooth.';
+}
+/* Rewires only where softclip's audio GOES, by disconnecting the two
+   destinations this function owns BY NAME. disconnect() with no argument would
+   be shorter and would also take down the black box, an in-flight REC OUT and
+   the meters — everything else hanging off softclip — and silently losing a
+   recording to a routing change would be a worse bug than the one being fixed.
+   The named form throws when the edge is not there, which is the normal case
+   for whichever path is not currently in use, so both are wrapped. */
+function applyOutPath(mode,quiet){
+  if(mode) outPath = mode==='direct' ? 'direct' : 'element';
+  try{ localStorage.setItem(OUTP_KEY,outPath); }catch(e){}
+  const sel=$('outPath'); if(sel) sel.value=outPath;
+  const h=$('outPathHint'); if(h) h.textContent=outPathWords();
+  if(!AC||!LIVE||!LIVE.softclip) return outPath;
+  if(LIVE.msd){ try{ LIVE.softclip.disconnect(LIVE.msd); }catch(e){} }
+  try{ LIVE.softclip.disconnect(AC.destination); }catch(e){}
+  if(outPath==='direct'){
+    try{ if(LIVE.ael){ LIVE.ael.pause(); LIVE.ael.srcObject=null; } }catch(e){}
+    try{ LIVE.softclip.connect(AC.destination); }catch(e){}
+  }else{
+    try{
+      if(!LIVE.msd) LIVE.msd=AC.createMediaStreamDestination();
+      LIVE.softclip.connect(LIVE.msd);
+      if(!LIVE.ael){
+        const ael=document.createElement('audio');
+        ael.setAttribute('playsinline',''); ael.style.display='none';
+        document.body.appendChild(ael); LIVE.ael=ael;
+      }
+      LIVE.ael.srcObject=LIVE.msd.stream;
+      const p=LIVE.ael.play();
+      if(p && p.catch) p.catch(()=>{ try{ LIVE.softclip.connect(AC.destination); }catch(e){} });
+    }catch(e){ try{ LIVE.softclip.connect(AC.destination); }catch(e2){} }
+  }
+  if(!quiet) lcd('OUTPUT PATH \u2192 '+outPathWords());
+  return outPath;
+}
 function setSessPref(v){
   sessPref = v==='auto' ? 'auto' : 'playback';
   try{ localStorage.setItem(SESS_KEY,sessPref); }catch(e){}
@@ -9712,6 +9798,10 @@ function routeRepick(){
 function forgetAudioRoute(){ sessLast=null; sessWasOpen=false; }
 
 try{ const sel=$('outRoute'); if(sel) sel.value=sessPref; }catch(e){}
+/* Reflect the stored choice on the control at startup even before audio
+   exists, so the panel is never showing a path the app is not on. */
+try{ const sel=$('outPath'); if(sel) sel.value=outPath;
+     const h=$('outPathHint'); if(h) h.textContent=outPathWords(); }catch(e){}
 function drawRoutePip(){
   const pip=$('recPip'); if(!pip) return;
   const who=capturesOpen();
@@ -17036,12 +17126,17 @@ $('btnStems').addEventListener('click',async ()=>{
    resume() and element .play() are only reliable inside a user gesture,
    so revival is wired to visibility, pageshow, focus, AND every touch. */
 function outIsDead(){
+  /* DIRECT has no MediaStream to go stale, so the health check that watches for
+     one has nothing to report. Without this the watchdog reads a perfectly good
+     direct path as dead and rebuilds the output every time it fires. */
+  if(outPath==='direct') return false;
   if(!LIVE || !LIVE.msd) return false;
   const tr=LIVE.msd.stream.getAudioTracks()[0];
   return !tr || tr.readyState==='ended' || tr.muted;
 }
 function rebuildOut(quiet){
   if(!AC || !LIVE) return;
+  if(outPath==='direct'){ applyOutPath(null,quiet); if(!quiet) lcd('OUT REVIVED · direct · '+AC.state); return; }
   try{ LIVE.softclip.disconnect(); }catch(e){}   // clears msd AND any direct fallback — no doubling
   try{
     LIVE.msd=AC.createMediaStreamDestination();
@@ -17237,6 +17332,11 @@ function diagDump(tag){
       /* A master lowpass parked at 300Hz makes the whole app quiet and dull
          with every fader still reading full, so a report that does not carry it
          cannot explain the one symptom it causes. */
+      'out path: '+outPath+(outPath==='element'
+        ? ' (MediaStream → <audio>: silent-switch proof, no A2DP)'
+        : ' (softclip → destination: loudest, silent switch can mute it)')
+        +' · element '+(LIVE&&LIVE.ael?(LIVE.ael.paused?'PAUSED':'playing'):'none')
+        +' · stream '+(LIVE&&LIVE.msd?(LIVE.msd.stream.getAudioTracks()[0]||{}).readyState||'none':'none'),
       'perf filter: '+(LIVE?Math.round(LIVE.perfFilt.frequency.value)+'Hz Q'+LIVE.perfFilt.Q.value.toFixed(2):'-')
         +' · tilt:'+(tiltOn?'ON — the phone’s angle is sweeping it':'off')
         +' · tape:'+(tapeOn?'held':'off')+' · stutter:'+(stutTimer?'held':'off')

@@ -1432,6 +1432,90 @@ export default async function ({ browser, base }) {
     t.ok('and DIAG carries the state, so a report can explain the symptom',
       /perf filter: \d+Hz/.test(tilt.diagLine), tilt.diagLine);
 
+    t.head('TWO WAYS OUT, AND THE COST OF EACH SAID OUT LOUD');
+    /* "Sound still louder when phone is upright vs on its side… it's not as
+       loud as it should be by orders of magnitude."
+
+       Everything inside the app measures clean: the playback path is linear, a
+       lane and a pad are within 1dB on the same buffer, a take lands at the
+       peak its meter showed, and a centred mono source leaves the master chain
+       with the channels dead level. So what is left is HOW the audio leaves —
+       a MediaStream into a hidden <audio> element, which WebKit treats as a
+       communications stream: quieter, tied to the call volume, able to involve
+       the earpiece, and carrying no A2DP.
+
+       DIRECT is the other path. What is guarded here is that both actually
+       make sound, that switching does not double them up or leave silence, and
+       above all that nothing else hanging off softclip is taken down with the
+       rewire — losing the black box to a routing change would be worse than
+       the problem. */
+    const outp = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(400);
+      const an = AC.createAnalyser(); an.fftSize = 2048; an.smoothingTimeConstant = 0;
+      LIVE.softclip.connect(an);
+      const bf = new Float32Array(2048);
+      const rms = () => { an.getFloatTimeDomainData(bf); let s = 0;
+        for (let i = 0; i < bf.length; i++) s += bf[i] * bf[i];
+        return Math.sqrt(s / bf.length); };
+      const pad = S.pads.findIndex(p => p.bufId >= 0);
+      const hit = async () => { hitLive(pad, 1); let m = 0;
+        for (let k = 0; k < 30; k++) { m = Math.max(m, rms()); await wait(20); }
+        await wait(450); return +m.toFixed(4); };
+
+      document.querySelector('#tabs button[data-v="out"]').click();
+      const sel = document.getElementById('outPath');
+      o.startsOnElement = outPath === 'element';
+      o.element = { level: await hit(), stream: !!(LIVE.ael && LIVE.ael.srcObject),
+        dead: outIsDead() };
+
+      /* This analyser is the stand-in for every other consumer of softclip.
+         If a rewire takes it down, it took the black box down too. */
+      sel.value = 'direct'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(300);
+      o.said = document.getElementById('lcdmsg').textContent;
+      o.direct = { level: await hit(), stream: !!(LIVE.ael && LIVE.ael.srcObject),
+        dead: outIsDead() };
+
+      bbStop(); bbStart(); await wait(250);
+      const bbBefore = bbFilled;
+      await hit();
+      o.blackBoxKeptListening = bbFilled > bbBefore;
+
+      /* The health watchdog looks for a stale MediaStream. Direct has none, and
+         must not be read as broken and rebuilt on every check. */
+      resumeSession(); await wait(800);
+      o.afterWatchdog = { path: outPath, level: await hit() };
+
+      sel.value = 'element'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(400);
+      o.back = { level: await hit(), stream: !!(LIVE.ael && LIVE.ael.srcObject) };
+      o.remembered = localStorage.getItem('jbh_outpath_v1');
+      o.diag = diagDump('t').split('\n').filter(l => /out path/.test(l))[0] || '';
+      return o;
+    });
+    t.ok('the app starts on the path it has always used', outp.startsOnElement);
+    t.ok('which makes sound', outp.element.level > 0.05, 'level ' + outp.element.level);
+    t.ok('AND THE DIRECT PATH MAKES THE SAME SOUND',
+      outp.direct.level > 0.05
+      && Math.abs(outp.direct.level - outp.element.level) / outp.element.level < 0.1,
+      outp.element.level + ' → ' + outp.direct.level);
+    t.ok('with the element released rather than left playing underneath',
+      outp.element.stream && !outp.direct.stream);
+    t.ok('and it says which one you are on, and what it costs',
+      /DIRECT/.test(outp.said) && /silent switch/.test(outp.said), '"' + outp.said + '"');
+    t.ok('NOTHING ELSE HANGING OFF THE OUTPUT IS TAKEN DOWN WITH THE REWIRE',
+      outp.blackBoxKeptListening && outp.direct.level > 0.05);
+    t.ok('the watchdog does not read a healthy direct path as dead',
+      !outp.element.dead && !outp.direct.dead
+      && outp.afterWatchdog.path === 'direct' && outp.afterWatchdog.level > 0.05,
+      'still ' + outp.afterWatchdog.path + ' at ' + outp.afterWatchdog.level);
+    t.ok('switching back restores the element path', outp.back.level > 0.05 && outp.back.stream,
+      'level ' + outp.back.level);
+    t.ok('the choice is remembered across sessions', outp.remembered === 'element');
+    t.ok('and DIAG names the path, so a report can say which one was in use',
+      /out path: (element|direct)/.test(outp.diag), outp.diag);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

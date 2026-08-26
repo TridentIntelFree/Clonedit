@@ -1639,6 +1639,16 @@ louder, you are probably losing more than you gain.</p>
     <span class="lbl">OUTPUT</span>
     <button id="btnOutReset">RESET OUTPUT</button>
     <select id="outRoute" aria-label="How the app asks for audio output"><option value="playback">ASK FOR PLAYBACK</option><option value="auto">LET THE BROWSER CHOOSE</option></select>
+  </div>
+  <div class="row">
+    <span class="lbl">OUT PATH</span>
+    <select id="outPath" aria-label="Which path the audio leaves the app by">
+      <option value="element">PLAYS ON SILENT</option>
+      <option value="direct">LOUDEST + BLUETOOTH</option>
+    </select>
+  </div>
+  <div id="outPathHint" style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">&mdash;</div>
+  <div class="row">
     <span style="font-size:10px;color:var(--txt-dim);flex:1">If sound comes out of the phone while a Bluetooth speaker is connected, tap this. It releases any microphone the app is holding and reopens the audio, which is what makes the phone choose an output again.</span>
   </div>
   <details class="ex"><summary>Why the phone keeps the sound</summary><div class="ex-body">
