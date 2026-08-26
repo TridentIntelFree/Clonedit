@@ -1409,6 +1409,62 @@ export default async function ({ browser, base }) {
       gain.atDefault.peak + ' at ' + gain.defaultGain + '× vs ' + gain.atMax.peak
       + ' at ' + gain.maxSetting + '× — nearly three times the gain, same ceiling');
 
+    t.head('WHAT THE BROWSER ACTUALLY GAVE US, NOT WHAT WE ASKED FOR');
+    /* "I just know I made loud noise into the microphone and its playback was
+       very quiet."
+
+       The constraints already ask for automatic gain control, noise
+       suppression and echo cancellation to be OFF. But a constraint is a
+       request, and iOS Safari has shipped for years honouring the call and
+       keeping its voice-processing chain anyway — which turns the level down,
+       high-passes the bottom out, and ducks the input while the app is making
+       sound. A loud voice arrives quiet and nothing downstream did it.
+
+       getSettings() is the only place that difference is visible and it was
+       never read. Whether this particular browser overrides anything is not
+       the point: what is guarded is that the app now LOOKS, reports it in
+       DIAG, and says so on screen when the answer is not what it asked for. */
+    const got = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      document.querySelector('#tabs button[data-v="mic"]').click();
+      if (!micOn) { document.getElementById('btnMicOn').click(); await wait(1600); }
+      o.read = !!micGot;
+      o.keys = micGot ? ['autoGainControl', 'noiseSuppression', 'echoCancellation']
+        .filter(k => k in micGot) : [];
+      o.values = micGot ? { agc: micGot.autoGainControl, ns: micGot.noiseSuppression,
+        aec: micGot.echoCancellation } : null;
+      o.diagOn = diagDump('t').split('\n').filter(l => /mic input/.test(l))[0] || '';
+      const banner = document.getElementById('micGot');
+      o.quietWhenHonoured = banner.hidden;
+
+      /* The banner has to appear when something IS overridden, and this is the
+         only way to see that on a browser that honours the request. */
+      const real = micGot;
+      micGot = Object.assign({}, real || {}, { autoGainControl: true, noiseSuppression: true });
+      drawMicGot();
+      o.warned = !banner.hidden && /AUTOMATIC GAIN CONTROL/.test(banner.textContent)
+        && /NOISE SUPPRESSION/.test(banner.textContent);
+      o.warnText = banner.textContent.slice(0, 90);
+      micGot = real; drawMicGot();
+      o.clearsAgain = banner.hidden === o.quietWhenHonoured;
+
+      if (micOn) { document.getElementById('btnMicOn').click(); await wait(1500); }
+      o.diagOff = diagDump('t').split('\n').filter(l => /mic input/.test(l))[0] || '';
+      o.bannerAfterOff = document.getElementById('micGot').hidden;
+      return o;
+    });
+    t.ok('the app reads back what the microphone was actually opened with',
+      got.read && got.keys.length >= 2, 'reported ' + got.keys.join(', '));
+    t.ok('and DIAG carries it, so a report says what the phone did',
+      /asked AGC\/NS\/AEC all off, got/.test(got.diagOn), got.diagOn.slice(0, 130));
+    t.ok('nothing is said when the request was honoured',
+      got.quietWhenHonoured, JSON.stringify(got.values));
+    t.ok('BUT AN OVERRIDE IS NAMED ON SCREEN, in the panel where you are recording',
+      got.warned, '"' + got.warnText + '…"');
+    t.ok('and the warning clears when it no longer applies', got.clearsAgain);
+    t.ok('turning the mic off clears the reading rather than leaving it stale',
+      got.bannerAfterOff && /mic off/.test(got.diagOff));
+
     t.head('THE ANGLE OF THE PHONE CANNOT CHANGE THE VOLUME IN SECRET');
     /* "My volume in playback is different depending on if my phone is landscape
        or regular — same speaker producing sound, not a stereo thing."

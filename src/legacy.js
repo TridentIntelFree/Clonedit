@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R183 · 2026-08-26 · loud enough to use out of the box';
+const BUILD = 'JBH-88 · R184 · 2026-08-26 · what the browser actually gave us';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -5687,7 +5687,26 @@ function a11yWatch(){
    without phase trouble. It is labelled for what it does rather than what it
    is not: it takes the edge off harsh S sounds at the cost of some air. ---- */
 let micOn=false, micChain=null, micStreamIn=null, micVuRAF=0, micAn=null, micPeakHold=0;
-let micAnOut=null, micOutHold=0, micDead=false;
+let micAnOut=null, micOutHold=0, micDead=false, micGot=null;
+function micGotWords(){
+  if(!micGot) return '';
+  const on=v=>v===true, off=v=>v===false;
+  const bits=[];
+  if(on(micGot.autoGainControl))  bits.push('automatic gain control');
+  if(on(micGot.noiseSuppression)) bits.push('noise suppression');
+  if(on(micGot.echoCancellation)) bits.push('echo cancellation');
+  void off;
+  return bits.join(', ');
+}
+function drawMicGot(){
+  const el=$('micGot'); if(!el) return;
+  const forced=micGotWords();
+  el.hidden=!forced;
+  if(!forced) return;
+  el.textContent='⚠ THIS BROWSER KEPT '+forced.toUpperCase()+' ON — the app asked for it off. '
+    +'It turns the level down for you, so a loud voice can arrive quiet and thin, and nothing '
+    +'in the app can undo it. GAIN and LIFT still work on whatever it hands over.';
+}
 let micRec=null, micCap=null, micRecT0=0, micRecTimer=0;
 
 /* Character presets shape TONE. They deliberately do not touch the gate, nor
@@ -5987,6 +6006,25 @@ async function micEnable(){
   try{ micChain=micBuild(); }
   catch(e){ lcd('MIC SETUP FAILED: '+e.message); micDisable(); return; }
   micOn=true; traxSrcOverride=false; drawRoutePip();
+  /* WHAT THE BROWSER ACTUALLY GAVE US, not what we asked for.
+
+     "I just know I made loud noise into the microphone and its playback was
+     very quiet." Everything downstream measures clean, and the constraints
+     above already ask for automatic gain control, noise suppression and echo
+     cancellation to be OFF — but a constraint is a request. iOS Safari has
+     shipped for years honouring the getUserMedia call and quietly keeping its
+     voice-processing chain, which applies its own gain reduction, high-passes
+     the bottom out, and ducks the input whenever the app is making sound. A
+     loud voice arrives quiet and thin and nothing in the app did it.
+
+     getSettings() is the only place that difference is visible, and it was
+     never read. Now it is: on screen when it disagrees with what was asked
+     for, and in DIAG either way, so the next report carries the answer. */
+  try{
+    const tr=micStreamIn.getAudioTracks()[0];
+    micGot = (tr && tr.getSettings) ? tr.getSettings() : null;
+  }catch(e){ micGot=null; }
+  drawMicGot();
   $('btnMicOn').classList.add('on'); $('btnMicOn').innerHTML='&#9673; MIC IS ON — TAP TO STOP';
   micApply(); micMeter(); micListDevices(); drawMicDest();
   lcd('MIC ON — shape the voice, then RECORD. Headphones before MONITOR.'+micClaimTrax());
@@ -6004,6 +6042,7 @@ function micDisable(){
   micReleaseTrax();
   const bar=$('micBar'); if(bar&&bar.firstElementChild) bar.firstElementChild.style.width='0%';
   $('micPeakV').textContent='\u2014';
+  micGot=null; try{ drawMicGot(); }catch(e){}
   applyAudioRoute(); resumeSession();
 }
 async function micListDevices(){
@@ -14895,6 +14934,16 @@ function diagDump(tag){
       /* A master lowpass parked at 300Hz makes the whole app quiet and dull
          with every fader still reading full, so a report that does not carry it
          cannot explain the one symptom it causes. */
+      'mic input: '+(micOn?((micGot&&micGot.deviceId?'device '+String(micGot.deviceId).slice(0,8):'device ?')
+        +' · '+(micGot&&micGot.sampleRate?micGot.sampleRate+'Hz':'?')
+        +' · ch '+((micGot&&micGot.channelCount)||'?')
+        +' · asked AGC/NS/AEC all off, got '
+        +(micGot?('AGC '+(micGot.autoGainControl===true?'ON':micGot.autoGainControl===false?'off':'?')
+          +' / NS '+(micGot.noiseSuppression===true?'ON':micGot.noiseSuppression===false?'off':'?')
+          +' / AEC '+(micGot.echoCancellation===true?'ON':micGot.echoCancellation===false?'off':'?'))
+         :'no settings reported')
+        +' · in meter '+micPeakHold.toFixed(3)+' rec meter '+micOutHold.toFixed(3))
+        :'mic off'),
       'out path: '+outPath+(outPath==='element'
         ? ' (MediaStream → <audio>: silent-switch proof, no A2DP)'
         : ' (softclip → destination: loudest, silent switch can mute it)')
