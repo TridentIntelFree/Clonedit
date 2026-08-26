@@ -1342,6 +1342,73 @@ export default async function ({ browser, base }) {
       + ' · "' + quiet.veryQuiet.lcd + '"');
     t.ok('the choice rides with the session', quiet.settingPersists);
 
+    t.head('LOUD ENOUGH TO USE WITH NOBODY TOUCHING ANYTHING');
+    /* "Can the default be switched to a higher gain setting — I imagine a use
+       case where the app's opened and recording is started immediately with
+       the user not messing with any settings. The natural setting is too quiet
+       to use."
+
+       Unity was honest and useless: a phone microphone with automatic gain
+       control off, which this app asks for on purpose, hands over something
+       like -25dBFS for ordinary speech. What stopped the default being raised
+       was that the compressor sits mid-chain with the EQ and DRIVE after it, so
+       a hot source could be pushed back over full scale downstream of the only
+       thing watching — and clipping is the one damage a take cannot come back
+       from, where quiet can be lifted afterwards.
+
+       So the claim is two-sided and both halves are measured: quiet input is
+       genuinely multiplied, and no amount of gain can reach full scale. */
+    const gain = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      const stat = b => { let m = 0, flat = 0; const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]);
+          if (v > m) m = v; if (v >= 0.999) flat++; }
+        return { peak: +m.toFixed(4), atFull: flat }; };
+      ensureAudio(); await wait(200);
+      S.trax.forEach(x => { x.bufId = -1; });
+      document.querySelector('#tabs button[data-v="mic"]').click();
+      /* The AUTHORED default, off the attribute — .value is wherever the last
+         section of this suite left the control, and reading that measured the
+         previous test's setting instead of what a person opening the app gets. */
+      o.defaultGain = +document.getElementById('micGain').getAttribute('value');
+      o.presetNatural = MIC_PRESETS.natural.gain;
+      if (!micOn) { document.getElementById('btnMicOn').click(); await wait(1600); }
+      document.getElementById('micDest').value = 'lane';
+      document.getElementById('micLift').checked = false;   // the chain, not the rescue
+      const set = (id, v) => { const e = document.getElementById(id); e.value = v;
+        e.dispatchEvent(new Event('input', { bubbles: true })); };
+      const rec = async g => { set('micGain', g); await wait(700);
+        document.getElementById('btnMicRec').click(); await wait(900);
+        document.getElementById('btnMicRec').click(); await wait(700);
+        return stat(S.buffers[S.buffers.length - 1]); };
+      o.q10 = await rec(0.1);
+      o.q25 = await rec(0.25);
+      o.atDefault = await rec(o.defaultGain);
+      o.atMax = await rec(+document.getElementById('micGain').max);
+      o.maxSetting = +document.getElementById('micGain').max;
+      document.getElementById('micLift').checked = true;
+      if (micOn) { document.getElementById('btnMicOn').click(); await wait(1400); }
+      return o;
+    });
+    t.ok('the default is well above unity now', gain.defaultGain >= 2.5
+      && gain.presetNatural === gain.defaultGain,
+      'slider ' + gain.defaultGain + '× · NATURAL preset ' + gain.presetNatural + '×');
+    t.ok('and the quiet end of the range is linear, so it really does multiply',
+      Math.abs(gain.q25.peak / gain.q10.peak - 2.5) < 0.4,
+      gain.q10.peak + ' at 0.1× → ' + gain.q25.peak + ' at 0.25× (ratio '
+      + (gain.q25.peak / gain.q10.peak).toFixed(2) + ')');
+    t.ok('A HOT SOURCE AT THE NEW DEFAULT CANNOT REACH FULL SCALE',
+      gain.atDefault.atFull === 0 && gain.atDefault.peak < 0.96,
+      'peak ' + gain.atDefault.peak + ', ' + gain.atDefault.atFull + ' samples at full scale');
+    t.ok('AND NEITHER CAN IT AT THE TOP OF THE SLIDER',
+      gain.atMax.atFull === 0 && gain.atMax.peak < 0.96,
+      'at ' + gain.maxSetting + '×: peak ' + gain.atMax.peak + ', '
+      + gain.atMax.atFull + ' at full scale');
+    t.ok('the ceiling holds rather than merely delaying the problem',
+      Math.abs(gain.atMax.peak - gain.atDefault.peak) < 0.02,
+      gain.atDefault.peak + ' at ' + gain.defaultGain + '× vs ' + gain.atMax.peak
+      + ' at ' + gain.maxSetting + '× — nearly three times the gain, same ceiling');
+
     t.head('THE ANGLE OF THE PHONE CANNOT CHANGE THE VOLUME IN SECRET');
     /* "My volume in playback is different depending on if my phone is landscape
        or regular — same speaker producing sound, not a stereo thing."

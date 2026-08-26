@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R182 · 2026-08-26 · a pad that is not one waveform';
+const BUILD = 'JBH-88 · R183 · 2026-08-26 · loud enough to use out of the box';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -5697,15 +5697,24 @@ let micRec=null, micCap=null, micRecT0=0, micRecTimer=0;
    all used to set it between .05 and .2, so the MIC recipe told you to pick a
    preset and that put back the very thing that had just been defaulted off —
    a silent take, twice over. A gate is opt-in, and only ever from its slider. */
+/* +9.5dB over unity. Chosen against what a phone actually hands over rather
+   than against a full-scale test signal: with AGC off, ordinary speech at
+   arm's length arrives around -25dBFS, and this puts it near -15 — loud enough
+   to be worth keeping, with the ceiling above catching anything that arrives
+   hotter and LIFT catching anything that arrives quieter. */
+const MIC_DEF_GAIN=3;
 const MIC_PRESETS={
-  natural:{gain:1,  hp:80,  lp:18000, gate:0,    comp:.35, sib:0,  lo:0,  mid:0,   hi:1,  drive:0,   dbl:0,  rev:.10, dly:0},
-  warm:   {gain:1.2,hp:70,  lp:12000, gate:0,    comp:.45, sib:.2, lo:3,  mid:-1,  hi:-1, drive:.10, dbl:0,  rev:.14, dly:0},
-  bright: {gain:1.1,hp:95,  lp:18000, gate:0,    comp:.35, sib:.3, lo:-1, mid:1,   hi:4,  drive:0,   dbl:0,  rev:.12, dly:0},
-  radio:  {gain:1.6,hp:120, lp:14000, gate:0,    comp:.85, sib:.35,lo:2,  mid:2,   hi:3,  drive:.25, dbl:0,  rev:.04, dly:0},
-  phone:  {gain:1.4,hp:400, lp:3000,  gate:0,    comp:.7,  sib:0,  lo:-8, mid:6,   hi:-6, drive:.15, dbl:0,  rev:0,   dly:0},
-  mega:   {gain:1.8,hp:350, lp:4000,  gate:0,     comp:.8,  sib:0,  lo:-6, mid:8,   hi:-4, drive:.75, dbl:0,  rev:.05, dly:0},
-  whisper:{gain:2.2,hp:110, lp:18000, gate:0,    comp:.75, sib:.4, lo:-2, mid:0,   hi:5,  drive:0,   dbl:.2, rev:.35, dly:.08},
-  huge:   {gain:1.2,hp:75,  lp:18000, gate:0,    comp:.5,  sib:.25,lo:2,  mid:0,   hi:2,  drive:.08, dbl:.55,rev:.5,  dly:.22},
+  /* Every one of these is a multiplier on the same quiet input, so they all
+     move together by the same factor — the relationships between them were
+     chosen by ear and are worth keeping. MIC_DEF_GAIN is the one number. */
+  natural:{gain:MIC_DEF_GAIN,      hp:80,  lp:18000, gate:0, comp:.35, sib:0,  lo:0,  mid:0,   hi:1,  drive:0,   dbl:0,  rev:.10, dly:0},
+  warm:   {gain:MIC_DEF_GAIN*1.2,  hp:70,  lp:12000, gate:0, comp:.45, sib:.2, lo:3,  mid:-1,  hi:-1, drive:.10, dbl:0,  rev:.14, dly:0},
+  bright: {gain:MIC_DEF_GAIN*1.1,  hp:95,  lp:18000, gate:0, comp:.35, sib:.3, lo:-1, mid:1,   hi:4,  drive:0,   dbl:0,  rev:.12, dly:0},
+  radio:  {gain:MIC_DEF_GAIN*1.6,  hp:120, lp:14000, gate:0, comp:.85, sib:.35,lo:2,  mid:2,   hi:3,  drive:.25, dbl:0,  rev:.04, dly:0},
+  phone:  {gain:MIC_DEF_GAIN*1.4,  hp:400, lp:3000,  gate:0, comp:.7,  sib:0,  lo:-8, mid:6,   hi:-6, drive:.15, dbl:0,  rev:0,   dly:0},
+  mega:   {gain:MIC_DEF_GAIN*1.8,  hp:350, lp:4000,  gate:0, comp:.8,  sib:0,  lo:-6, mid:8,   hi:-4, drive:.75, dbl:0,  rev:.05, dly:0},
+  whisper:{gain:MIC_DEF_GAIN*2.2,  hp:110, lp:18000, gate:0, comp:.75, sib:.4, lo:-2, mid:0,   hi:5,  drive:0,   dbl:.2, rev:.35, dly:.08},
+  huge:   {gain:MIC_DEF_GAIN*1.2,  hp:75,  lp:18000, gate:0, comp:.5,  sib:.25,lo:2,  mid:0,   hi:2,  drive:.08, dbl:.55,rev:.5,  dly:.22},
 };
 
 /* Opening a microphone on iOS has more failure modes than it has successes, and
@@ -5771,7 +5780,38 @@ function micBuild(){
   M.sib.connect(M.lo); M.lo.connect(M.mid); M.mid.connect(M.hi); M.hi.connect(M.drive);
   M.drive.connect(M.dry); M.dry.connect(M.voice.in);
   M.drive.connect(M.dblDelay); M.dblDelay.connect(M.dblWet); M.dblWet.connect(M.voice.in);
-  M.voice.out.connect(M.out);
+  /* A CEILING, SO THE GAIN CAN BE SET WHERE IT IS ACTUALLY USEFUL.
+
+     "Can the default be switched to a higher gain setting — I imagine a use
+     case where the app's opened and recording is started immediately with the
+     user not messing with any settings. The natural setting is too quiet to
+     use."
+
+     Right, and the reason it was left at unity is the wrong one: a phone
+     microphone with automatic gain control off — which this app asks for,
+     deliberately, so it is not fighting the OS for the level — delivers
+     something like -25dBFS for ordinary speech. Unity is honest and useless.
+
+     What stopped it being raised is that the compressor sits in the middle of
+     the chain, with the three EQ bands and DRIVE after it, so a hot source
+     could be pushed back over full scale downstream of the only thing watching
+     the level. Digital clipping is the one damage a take cannot be recovered
+     from, and it is worse than being quiet, which LIFT can fix afterwards.
+
+     So the chain gets a ceiling at the very end, on the tap RECORD reads:
+     identity below 0.7 and a tanh knee to about 0.93, the same curve the master
+     bus has always used. A loud source now saturates instead of clipping, which
+     is a sound rather than a fault, and the gain is free to default somewhere
+     that works with no one touching it. */
+  /* oversample stays OFF here, which is the opposite of the usual advice and is
+     deliberate. 2x upsamples, shapes, and downsamples, and the downsampling
+     filter RINGS: measured, a curve that cannot output above 0.93 produced
+     peaks of 1.0134 with samples sitting at full scale. For a safety ceiling
+     predictability beats the small amount of aliasing a smooth tanh generates,
+     and the whole reason this node exists is that the take must not reach the
+     one number it cannot come back from. */
+  M.clip=AC.createWaveShaper(); M.clip.curve=makeSoftClip(); M.clip.oversample='none';
+  M.voice.out.connect(M.clip); M.clip.connect(M.out);
   /* METER WHAT IS RECORDED, NOT ONLY WHAT THE ROOM IS DOING.
 
      M.an hangs off M.in, before the gate — "meter the room, before shaping",
@@ -6131,9 +6171,15 @@ function micPlaceTake(buf){
   const dur=buf.duration.toFixed(1)+'s';
   /* Said every time, lifted or not: the gap between what the meter showed and
      what the take is worth was the whole confusion. */
-  const clipped = lift.pk>=0.999;
+  /* Below full scale, not at it: the mic chain now ends in a ceiling, so a take
+     can no longer reach 0.999 and a check for that would never fire again. What
+     is worth saying is that the ceiling was DOING something — the take is
+     saturated, which is a colour rather than damage, and is only a problem if
+     it was not wanted. */
+  const clipped = lift.pk>=0.92;
   const level = clipped
-    ? ' — it hit the ceiling and is clipped; bring GAIN down and take it again'
+    ? ' — it is sitting on the ceiling, so the loud parts are saturated. Lovely on a shout, '
+      +'muddy on a whisper; bring GAIN down if you did not want it'
     : lift.k>1
     ? ' — recorded at '+dbs(lift.pk)+', lifted to '+dbs(lift.pk*lift.k)
     : ' — it peaks at '+dbs(lift.pk);
