@@ -853,3 +853,7 @@ select.warn{border-color:var(--red);color:var(--red)}
 /* An envelope pointed at a filter that is switched off is doing nothing, and a
    panel of five live-looking sliders is a convincing way to say otherwise. */
 #fegPanel.warn{border-color:var(--red)}
+/* A stage that cannot act. DECAY with SUSTAIN at full has nowhere to travel,
+   so the slider is dimmed rather than removed: it is still yours to set up
+   before you lower the sustain, but it is not pretending to be doing anything. */
+input[type=range].inert{opacity:.4}

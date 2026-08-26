@@ -699,10 +699,11 @@ export default async function ({ browser, base }) {
          it, or the last envelope haunts the next sound. */
       S.pads[PAD] = newPad(PAD); S.pads[PAD].bufId = S.buffers.length - 1;
       o.voices = {};
-      for (const id of ['zap', 'acid', 'bloom', 'shut', 'touch']) {
+      for (const id of ['zap', 'acid', 'bloom', 'shut', 'touch', 'pluck', 'bell', 'organ']) {
         applyPadVoice(id);
         o.voices[id] = { amt: S.pads[PAD].fegAmt, ftype: S.pads[PAD].ftype,
           vel: S.pads[PAD].velFlt, venv: S.pads[PAD].velEnv,
+          sus: S.pads[PAD].sus, dec: S.pads[PAD].dec,
           shownAmt: document.getElementById('epFegAmtV').textContent };
       }
       applyPadVoice('clean');
@@ -769,6 +770,87 @@ export default async function ({ browser, base }) {
       && feg.voices.touch.ftype === 'lowpass');
     t.ok('a static voice afterwards clears the envelope AND the velocity',
       feg.cleanClears);
+    t.ok('PLUCK and BELL are shapes that needed the decay stage to exist',
+      feg.voices.pluck.sus === 0 && feg.voices.bell.sus === 0 && feg.voices.bell.dec > 1,
+      'pluck sus ' + feg.voices.pluck.sus + ' · bell decay ' + feg.voices.bell.dec + 's');
+    t.ok('and ORGAN holds, which is the same stage set the other way',
+      feg.voices.organ.sus === 1);
+
+    t.head('AN ENVELOPE WITH ALL FOUR STAGES');
+    /* The amp envelope was attack and release: up to velocity, hold there for
+       the whole slice, down. Two thirds of an envelope, and the missing third
+       is the one that decides whether a sustained sample is a pad or a pluck.
+
+       Measured on the pad's OWN output rather than the master, because the
+       master compressor would flatten exactly the difference being tested. */
+    const adsr = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(200);
+      const PAD = 7;
+      const keep = JSON.parse(JSON.stringify(S.pads[PAD]));
+      const n = Math.round(AC.sampleRate * 2.0);
+      const b = AC.createBuffer(2, n, AC.sampleRate);
+      for (let c = 0; c < 2; c++) { const d = b.getChannelData(c);
+        for (let i = 0; i < n; i++) d[i] = Math.sin(2 * Math.PI * 330 * i / AC.sampleRate) * 0.8; }
+      S.buffers.push(b);
+      S.pads[PAD] = newPad(PAD); const p = S.pads[PAD];
+      p.bufId = S.buffers.length - 1; p.gain = 0.9; p.att = 0.002; p.rel = 0.05;
+      S.editPad = PAD; liveFx(); await wait(300);
+
+      const an = AC.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0;
+      LIVE.pads[PAD].mute.connect(an);
+      const td = new Float32Array(an.fftSize);
+      const rms = () => { an.getFloatTimeDomainData(td); let s = 0;
+        for (let i = 0; i < td.length; i++) s += td[i] * td[i];
+        return Math.sqrt(s / td.length); };
+      /* One trace per hit, sampled through the first second of a two-second
+         sample — well inside the hold, so nothing here is the release. */
+      const trace = async () => { hitLive(PAD, 1); const out = [];
+        for (let k = 0; k < 30; k++) { await wait(25); out.push(+rms().toFixed(4)); }
+        await wait(1400); return out; };
+      const at = (tr, ms) => tr[Math.min(tr.length - 1, Math.round(ms / 25) - 1)];
+
+      p.dec = 0.12; p.sus = 1; liveFx();
+      await trace();                                   // warm-up, ignored
+      o.held = await trace();
+
+      p.dec = 0.25; p.sus = 0.15; liveFx();
+      o.plucked = await trace();
+
+      p.dec = 0.25; p.sus = 0.55; liveFx();
+      o.half = await trace();
+
+      const peak = tr => Math.max(...tr);
+      o.heldRatio = +(at(o.held, 600) / peak(o.held)).toFixed(3);
+      o.pluckRatio = +(at(o.plucked, 600) / peak(o.plucked)).toFixed(3);
+      o.halfRatio = +(at(o.half, 600) / peak(o.half)).toFixed(3);
+
+      /* A SLICE THAT ENDS MID-DECAY must follow the slope you set, not a
+         steeper one squeezed to fit. With a 1s decay and a 0.35s slice the
+         level where the release begins should be about a third of the way
+         down, not all the way to sustain. */
+      p.dec = 1.0; p.sus = 0.0; p.end = 0.175;         // 0.35s of a 2s sample
+      liveFx();
+      const shortTr = await trace();
+      const pk = peak(shortTr);
+      o.shortEnd = +(at(shortTr, 300) / pk).toFixed(3);
+      p.end = 1;
+
+      S.pads[PAD] = keep; liveFx();
+      return o;
+    });
+    t.ok('SUSTAIN at full holds the note — the old two-stage envelope, unchanged',
+      adsr.heldRatio > 0.9, 'still at ' + Math.round(adsr.heldRatio * 100) + '% after 600ms');
+    t.ok('AND LOWERING IT TURNS THE SAME SAMPLE INTO A PLUCK',
+      adsr.pluckRatio < 0.3, 'fallen to ' + Math.round(adsr.pluckRatio * 100) + '% after 600ms');
+    t.ok('with the level in between landing in between',
+      adsr.halfRatio > adsr.pluckRatio + 0.15 && adsr.halfRatio < adsr.heldRatio - 0.15,
+      Math.round(adsr.pluckRatio * 100) + '% · ' + Math.round(adsr.halfRatio * 100)
+      + '% · ' + Math.round(adsr.heldRatio * 100) + '%');
+    t.ok('a slice that ends mid-decay keeps the slope you set',
+      adsr.shortEnd > 0.4 && adsr.shortEnd < 0.9,
+      'at ' + Math.round(adsr.shortEnd * 100) + '% when the release begins — a decay '
+      + 'squeezed to fit would already be near zero');
 
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
