@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R177 · 2026-08-25 · a take lands at a level you can use';
+const BUILD = 'JBH-88 · R178 · 2026-08-26 · the filter moves on every hit';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2897,6 +2897,7 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grPos:0, grBurst:0.45,
   choke:0, note:36+i, reverse:false, mode:'one',
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
+  fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12,
   eqLo:0, eqMid:0, eqHi:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
   warpBeats:4, warpBpm:0, mute:false, solo:false }; }
@@ -3486,6 +3487,62 @@ function updatePerf(){
   const t=AC.currentTime, f=perfFactor();
   liveVoices.forEach(src=>{ try{ src.playbackRate.setTargetAtTime(src._base*f,t,0.02); }catch(e){} });
 }
+/* ---------------- THE FILTER ENVELOPE ------------------------------------
+   "Why do I feel limited with the quality of the sounds I can create? It
+   doesn't feel like a full palette."
+
+   Because until now the cutoff was a number. It sat wherever you left it and
+   the only thing that ever moved it was a free-running LFO — so a pad could be
+   bright or dark, but never a pluck, a wow, an acid line, or a note that opens
+   as it lands. Nearly everything anybody recognises as synth CHARACTER is the
+   cutoff following an envelope on each hit, and the app had no way to say that.
+
+   IT MOVES DETUNE, NOT FREQUENCY, for two reasons. Detune is in cents, so a
+   straight line in it is an exponential sweep in hertz — which is what the ear
+   calls even, and what a linear ramp on .frequency conspicuously is not.
+   And an AudioParam sums its automation with whatever is connected to it, so
+   putting the envelope on the intrinsic value leaves the cutoff LFO — which
+   connects to the same detune — free to ride on top of it instead of fighting
+   for the node. Both work at once, and neither needed changing.
+
+   ONE FILTER PER PAD, NOT PER VOICE. The biquad lives in the pad's channel,
+   shared by every voice on it, so a second hit while the first is still ringing
+   re-triggers the envelope for both. That is what a hardware sampler's per-part
+   filter does, and moving the filter into the voice would mean an extra biquad
+   per note and a different chain for the bounce to reproduce. What matters is
+   that it is the same code offline: triggerPad is handed its ctx and graph, so
+   an exported file has the sweeps that were played.
+
+   Grain mode is deliberately left out. scheduleGrains is called again every
+   time the lookahead runs, and re-triggering an envelope at the grain rate is a
+   buzz, not a filter sweep. */
+const FEG_CENTS=4800;     // ±4 octaves at full travel
+function padFegAmt(p){ return clamp(+p.fegAmt||0,-1,1)*FEG_CENTS; }
+function scheduleFilterEnv(ctx, n, p, when, outDur){
+  if(!n||!n.flt) return;
+  const amt=padFegAmt(p);
+  const d=n.flt.detune;
+  if(!amt || p.ftype==='off'){
+    /* Still has to be written: a pad whose envelope was just turned off, or
+       whose filter was, must not be left holding the last sweep's offset. */
+    try{ d.cancelScheduledValues(when); d.setValueAtTime(0,when); }catch(e){}
+    return;
+  }
+  const a=clamp(+p.fegA||0,0,1), dec=clamp(+p.fegD||0,0.001,2);
+  const sus=clamp(p.fegS==null?0:+p.fegS,0,1), rel=clamp(+p.fegR||0,0.001,2);
+  const sustainAt=amt*sus;
+  /* Release starts where the amp's does, so the two envelopes describe the
+     same note rather than two overlapping ones. */
+  const relStart=Math.max(when+a+dec, when+Math.max(0.01,outDur-rel));
+  try{
+    d.cancelScheduledValues(when);
+    d.setValueAtTime(0,when);
+    d.linearRampToValueAtTime(amt, when+Math.max(0.001,a));
+    d.linearRampToValueAtTime(sustainAt, when+Math.max(0.001,a)+dec);
+    d.setValueAtTime(sustainAt, relStart);
+    d.linearRampToValueAtTime(0, relStart+rel);
+  }catch(e){}
+}
 function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
   const p=S.pads[idx]; if(p.bufId<0) return null;
   if(p.mode==='grain'){   // GRAIN pads spray a cloud instead of playing the sample
@@ -3537,6 +3594,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
   env.gain.setValueAtTime(v,relStart);
   env.gain.linearRampToValueAtTime(0.0001,relStart+p.rel);
   src.connect(env); env.connect(g.pads[idx].in);
+  scheduleFilterEnv(ctx, g.pads[idx], p, when, outDur);
   let ltg=null;
   if(liveTap && g.liveBus){   // per-voice tap: ONLY this manual voice reaches the LIVE-ONLY record bus
     ltg=ctx.createGain(); ltg.gain.value=p.gain;
@@ -4516,6 +4574,7 @@ function drawEdit(){
   $('epFType').value=p.ftype;
   $('epFCut').value=p.fcut; $('epFCutV').textContent=Math.round(cutHz(p.fcut))+'Hz';
   $('epFRes').value=p.fres; $('epFResV').textContent='Q '+p.fres.toFixed(1);
+  drawFeg(p);
   $('epDrv').value=p.drv; $('epDrvV').textContent=Math.round(p.drv*100)+'%';
   $('epCrush').value=p.crush; $('epCrushV').textContent=p.crush>=16?'OFF':p.crush+' bit';
   $('epEqLo').value=p.eqLo||0; $('epEqLoV').textContent=eqFmt(p.eqLo||0);
@@ -4658,12 +4717,29 @@ const PAD_VOICES={
   cloud:  {label:'CLOUD — a grain wash you hold',
     mode:'grain', grSize:0.14, grDens:26, grSpread:0.12, grPitch:0, grBurst:0.7,
     att:0.02, rel:0.4, rev:0.35},
+  /* THE FOUR THAT COULD NOT EXIST BEFORE. A parameter nobody finds is not a
+     feature, and the envelope is the kind you have to hear once to want. Each
+     of these is the same sample as CLEAN with nothing but a moving cutoff, so
+     the difference between them and the static voices above IS the envelope. */
+  zap:    {label:'ZAP — opens and slams shut',
+    att:0.001, rel:0.14, ftype:'lowpass', fcut:0.10, fres:6,
+    fegAmt:0.85, fegA:0.002, fegD:0.10, fegS:0, fegR:0.06},
+  acid:   {label:'ACID — squelchy, resonant, alive',
+    att:0.001, rel:0.22, ftype:'lowpass', fcut:0.08, fres:14, drv:0.35,
+    fegAmt:0.62, fegA:0.003, fegD:0.28, fegS:0.10, fegR:0.10},
+  bloom:  {label:'BLOOM — arrives dark, opens up',
+    att:0.02, rel:0.7, ftype:'lowpass', fcut:0.12, fres:2, rev:0.30,
+    fegAmt:0.75, fegA:0.45, fegD:0.60, fegS:0.85, fegR:0.50},
+  shut:   {label:'SHUT — bright, then the door closes',
+    att:0.001, rel:0.35, ftype:'lowpass', fcut:0.72, fres:4,
+    fegAmt:-0.8, fegA:0.05, fegD:0.35, fegS:0, fegR:0.20},
 };
 /* Every character field a voice can carry, with the value a voice that does not
    mention it resets to. Listing the neutral here rather than in each preset is
    what stops one voice leaving the previous voice's settings behind. */
 const VOICE_NEUTRAL={ pitch:0, fine:0, speed:1, reverse:false, mode:'one',
   att:0.002, rel:0.06, ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
+  fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12,
   eqLo:0, eqMid:0, eqHi:0, rev:0, dly:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
   grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grBurst:0.45 };
@@ -4723,6 +4799,58 @@ $('epFType').addEventListener('change',e=>{
   liveFx(); trigSel();
 });
 function trigSel(){ if(S.pads[S.editPad].bufId>=0) hitLive(S.editPad,0.85); }
+/* Said in octaves rather than in cents or in percent, because octaves are the
+   unit the result is heard in — "up 2.5 oct" tells you where the sweep goes. */
+function fegWords(p){
+  const amt=+p.fegAmt||0;
+  if(!amt) return 'off';
+  const oct=(Math.abs(amt)*FEG_CENTS/1200).toFixed(1);
+  return (amt>0?'up ':'down ')+oct+' oct';
+}
+function drawFeg(p){
+  if(!$('epFegAmt')) return;
+  $('epFegAmt').value=p.fegAmt||0; $('epFegAmtV').textContent=fegWords(p);
+  $('epFegA').value=p.fegA==null?0.004:p.fegA;
+  $('epFegAV').textContent=Math.round((p.fegA==null?0.004:p.fegA)*1000)+'ms';
+  $('epFegD').value=p.fegD==null?0.18:p.fegD;
+  $('epFegDV').textContent=(p.fegD==null?0.18:p.fegD).toFixed(2)+'s';
+  $('epFegS').value=p.fegS==null?0:p.fegS;
+  $('epFegSV').textContent=Math.round((p.fegS==null?0:p.fegS)*100)+'%';
+  $('epFegR').value=p.fegR==null?0.12:p.fegR;
+  $('epFegRV').textContent=(p.fegR==null?0.12:p.fegR).toFixed(2)+'s';
+  /* THE ONE TRAP WORTH GUARDING: an envelope on a filter that is switched off
+     modulates nothing, and the panel would sit there looking like it worked. */
+  const dead=(+p.fegAmt||0)!==0 && p.ftype==='off';
+  const h=$('fegHint');
+  if(h){ h.textContent = dead
+    ? 'The FILTER is OFF, so this is moving nothing — set it to LP, HP or BP above.'
+    : 'Positive opens upward from CUTOFF, negative closes downward. ±4 octaves at full travel.';
+    h.style.color = dead ? 'var(--red)' : 'var(--txt-dim)'; }
+  const pan=$('fegPanel'); if(pan) pan.classList.toggle('warn',dead);
+}
+/* Raising AMOUNT with no filter to move is the commonest way to conclude a
+   feature is broken, so the app opens one and says it did. A lowpass at the
+   cutoff already showing is the answer nine times in ten, and it is one tap to
+   put back. */
+$('epFegAmt').addEventListener('input',e=>{
+  const p=S.pads[S.editPad];
+  p.fegAmt=parseFloat(e.target.value);
+  if(p.fegAmt!==0 && p.ftype==='off'){
+    p.ftype='lowpass';
+    if(p.fcut>0.85) p.fcut=0.45;
+    $('epFType').value='lowpass'; $('epFCut').value=p.fcut;
+    $('epFCutV').textContent=Math.round(cutHz(p.fcut))+'Hz';
+    liveFx();
+    lcd('FILTER → LP so the envelope has something to move. CUTOFF is where the sweep starts.');
+  }
+  drawFeg(p); dirty();
+});
+$('epFegAmt').addEventListener('change',trigSel);
+[['epFegA','fegA'],['epFegD','fegD'],['epFegS','fegS'],['epFegR','fegR']].forEach(([id,key])=>{
+  $(id).addEventListener('input',e=>{
+    const p=S.pads[S.editPad]; p[key]=parseFloat(e.target.value); drawFeg(p); dirty(); });
+  $(id).addEventListener('change',trigSel);
+});
 $('epFCut').addEventListener('input',e=>{ S.pads[S.editPad].fcut=parseFloat(e.target.value); liveFx(); });
 $('epFCut').addEventListener('change',trigSel);
 $('epFRes').addEventListener('input',e=>{ S.pads[S.editPad].fres=parseFloat(e.target.value); liveFx(); });
@@ -7970,6 +8098,8 @@ function resetPadVoice(p){
 function voiceWords(ch){
   const g={gain:'level',pitch:'pitch',fine:'pitch',speed:'speed',keepPitch:'speed',keepTime:'speed',
     att:'envelope',rel:'envelope',ftype:'filter',fcut:'filter',fres:'filter',drv:'drive',crush:'drive',
+    fegAmt:'filter envelope',fegA:'filter envelope',fegD:'filter envelope',
+    fegS:'filter envelope',fegR:'filter envelope',
     eqLo:'EQ',eqMid:'EQ',eqHi:'EQ',reverse:'direction',mode:'play mode',start:'trim',end:'trim',
     lfoOn:'LFO',lfoTgt:'LFO',lfoShape:'LFO',lfoSync:'LFO',lfoRate:'LFO',lfoDepth:'LFO',
     grSize:'grain',grDens:'grain',grSpread:'grain',grPitch:'grain',grPos:'grain',grBurst:'grain',

@@ -850,3 +850,6 @@ select.warn{border-color:var(--red);color:var(--red)}
 #micRecBar>div{height:100%;width:0;background:var(--send);transition:width .05s linear}
 #micRecBar>div.clip{background:var(--red)}
 #micRecV.warn{color:var(--red);font-weight:700}
+/* An envelope pointed at a filter that is switched off is doing nothing, and a
+   panel of five live-looking sliders is a convincing way to say otherwise. */
+#fegPanel.warn{border-color:var(--red)}
