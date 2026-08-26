@@ -857,3 +857,7 @@ select.warn{border-color:var(--red);color:var(--red)}
    so the slider is dimmed rather than removed: it is still yours to set up
    before you lower the sustain, but it is not pretending to be doing anything. */
 input[type=range].inert{opacity:.4}
+/* How many sounds a pad holds. Teal, like the other "this is more than the
+   channel you are looking at" marks, and small enough that a pad with one
+   sample looks exactly as it always did. */
+.pname .laytag{font-style:normal;color:var(--send);margin-left:4px;font-size:9px;letter-spacing:0}
