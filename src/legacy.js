@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R179 · 2026-08-26 · how hard you play changes the sound';
+const BUILD = 'JBH-88 · R180 · 2026-08-26 · an envelope with all four stages';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2893,7 +2893,8 @@ function panText(v){
 /* NPADS/NSTEPS/NPAT/MAXSTEPS/PATLENS, patLen → src/pure/pattern.js */
 function curPatLen(){ return patLen(typeof curPat==='function' ? curPat() : S.patterns[S.pattern]); }
 function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
-  gain:0.9, pitch:0, fine:0, speed:1, keepPitch:false, keepTime:true, pan:0, rev:0, dly:0, att:0.002, rel:0.06,
+  gain:0.9, pitch:0, fine:0, speed:1, keepPitch:false, keepTime:true, pan:0, rev:0, dly:0,
+  att:0.002, dec:0.12, sus:1, rel:0.06,
   grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grPos:0, grBurst:0.45,
   choke:0, note:36+i, reverse:false, mode:'one',
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
@@ -3621,12 +3622,43 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
     liveVoices.add(src);
     if(LIVE.warbGain){ try{ LIVE.warbGain.connect(src.playbackRate); }catch(e){} }
   }
+  /* THE AMP ENVELOPE, WITH THE TWO STAGES IT WAS MISSING.
+
+     It was attack and release: ramp up to the velocity, hold there for the
+     whole slice, ramp down. Two thirds of an envelope. There was no way to say
+     "hit hard and fall back", which is the difference between a pluck and a
+     pad, so a sustained sample could be made to start late or end early but
+     never to have a SHAPE — and the shape is most of what an instrument is.
+
+     DECAY and SUSTAIN default to 0.12s and 1. Sustain at 1 means the decay has
+     nowhere to travel, which is exactly the old behaviour, so every project
+     made before this sounds the same as it did. */
   const env=ctx.createGain();
   const v=clamp(vel,0,1);
+  const att=Math.max(0.001,p.att);
+  const decT=Math.max(0.001, p.dec==null?0.12:+p.dec);
+  const sus=clamp(p.sus==null?1:+p.sus,0,1);
+  const attEnd=when+att;
+  const relStart=when+Math.max(att+0.002,outDur-p.rel);
   env.gain.setValueAtTime(0,when);
-  env.gain.linearRampToValueAtTime(v,when+Math.max(0.001,p.att));
-  const relStart=when+Math.max(p.att+0.002,outDur-p.rel);
-  env.gain.setValueAtTime(v,relStart);
+  env.gain.linearRampToValueAtTime(v,attEnd);
+  let holdLvl=v;
+  if(sus<1){
+    const decEnd=attEnd+decT;
+    if(decEnd<=relStart){
+      env.gain.linearRampToValueAtTime(v*sus,decEnd);
+      holdLvl=v*sus;
+    }else{
+      /* The note ends before the decay does. Ramping to v*sus at relStart would
+         steepen the decay to fit — a short slice would fall further than a long
+         one from the same settings. Ramp instead to the level the decay would
+         genuinely have reached by then, so the slope is the one you set and the
+         release picks up from a continuous value rather than a step. */
+      holdLvl=v*(1-(1-sus)*((relStart-attEnd)/decT));
+      env.gain.linearRampToValueAtTime(holdLvl,relStart);
+    }
+  }
+  env.gain.setValueAtTime(holdLvl,relStart);
   env.gain.linearRampToValueAtTime(0.0001,relStart+p.rel);
   src.connect(env); env.connect(g.pads[idx].in);
   scheduleFilterEnv(ctx, g.pads[idx], p, when, outDur, v);
@@ -4591,6 +4623,15 @@ function drawEdit(){
   $('epRev').value=p.rev; $('epRevV').textContent=sendText(p.rev);
   $('epDly').value=p.dly; $('epDlyV').textContent=sendText(p.dly);
   $('epAtt').value=p.att; $('epAttV').textContent=Math.round(p.att*1000)+'ms';
+  { const dv=p.dec==null?0.12:p.dec, sv=p.sus==null?1:p.sus;
+    $('epDec').value=dv; $('epSus').value=sv;
+    $('epSusV').textContent=sv>=1?'held':Math.round(sv*100)+'%';
+    /* Named for what it does rather than for its number: with sustain at full
+       the decay has nowhere to travel, and a live-looking millisecond readout
+       on a stage that cannot act is the same trap as the envelope on a filter
+       that is switched off. */
+    $('epDecV').textContent=sv>=1?'—':Math.round(dv*1000)+'ms';
+    $('epDec').classList.toggle('inert',sv>=1); }
   $('epRel').value=p.rel; $('epRelV').textContent=Math.round(p.rel*1000)+'ms';
   $('epChoke').value=String(p.choke);
   $('epRevrs').classList.toggle('on',p.reverse);
@@ -4685,7 +4726,12 @@ bindEdit('epPan','pan',null,(n,p)=>{ if(n.pan) n.pan.pan.setTargetAtTime(p.pan,A
 bindEdit('epRev','rev',null,(n,p)=>{ n.rev.gain.setTargetAtTime(p.rev,AC.currentTime,0.01); });
 bindEdit('epDly','dly',null,(n,p)=>{ n.dly.gain.setTargetAtTime(p.dly,AC.currentTime,0.01); });
 bindEdit('epAtt','att',null,null);
+bindEdit('epDec','dec',null,null);
+bindEdit('epSus','sus',null,null);
 bindEdit('epRel','rel',null,null);
+/* An envelope is the one thing you cannot judge by looking at, so every stage
+   plays the pad when you let go of it — the same as the filter controls do. */
+['epAtt','epDec','epSus','epRel'].forEach(id=>$(id).addEventListener('change',trigSel));
 /* grain cloud params — live while the pad is held */
 [['grPos','grPos',v=>Math.round(v*100)+'%'],['grSize','grSize',v=>Math.round(v*1000)+'ms'],
  ['grDens','grDens',v=>Math.round(v)+'/s'],['grSpread','grSpread',v=>Math.round(v*100)+'%'],
@@ -4725,9 +4771,9 @@ $('epMode').addEventListener('click',()=>{ const p=S.pads[S.editPad];
 const PAD_VOICES={
   clean:  {label:'CLEAN — as recorded'},
   pluck:  {label:'PLUCK — short and pointed',
-    att:0.001, rel:0.09, ftype:'lowpass', fcut:0.55, fres:3.5, drv:0.12},
+    att:0.001, dec:0.16, sus:0, rel:0.09, ftype:'lowpass', fcut:0.55, fres:3.5, drv:0.12},
   stab:   {label:'STAB — tight and forward',
-    att:0.001, rel:0.05, ftype:'bandpass', fcut:0.5, fres:5, drv:0.3, eqMid:4},
+    att:0.001, dec:0.07, sus:0, rel:0.05, ftype:'bandpass', fcut:0.5, fres:5, drv:0.3, eqMid:4},
   swell:  {label:'SWELL — slow in, long out',
     att:0.35, rel:1.6, ftype:'lowpass', fcut:0.45, fres:1, rev:0.4},
   wobble: {label:'WOBBLE — filter moving in time',
@@ -4774,12 +4820,19 @@ const PAD_VOICES={
      sounding softer rather than merely quieter. */
   touch:  {label:'TOUCH — soft is darker, hard is brighter',
     att:0.001, rel:0.18, ftype:'lowpass', fcut:0.30, fres:1.4, velFlt:0.8},
+  /* Two that need the decay stage and nothing else — a long fall to silence on
+     a sample that would otherwise hold flat until its own end. */
+  bell:   {label:'BELL — struck, ringing away',
+    att:0.001, dec:1.4, sus:0, rel:0.7, ftype:'lowpass', fcut:0.68, fres:1.6,
+    fegAmt:0.35, fegA:0.002, fegD:1.0, fegS:0, fegR:0.5, rev:0.35, velEnv:0.5},
+  organ:  {label:'ORGAN — on the whole time you hold it',
+    mode:'gate', att:0.012, dec:0.05, sus:1, rel:0.10, ftype:'lowpass', fcut:0.62, eqMid:2},
 };
 /* Every character field a voice can carry, with the value a voice that does not
    mention it resets to. Listing the neutral here rather than in each preset is
    what stops one voice leaving the previous voice's settings behind. */
 const VOICE_NEUTRAL={ pitch:0, fine:0, speed:1, reverse:false, mode:'one',
-  att:0.002, rel:0.06, ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
+  att:0.002, dec:0.12, sus:1, rel:0.06, ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
   fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12, velFlt:0, velEnv:0,
   eqLo:0, eqMid:0, eqHi:0, rev:0, dly:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
@@ -8161,7 +8214,7 @@ function resetPadVoice(p){
 /* Named for the message, so it reads as something rather than as a field list. */
 function voiceWords(ch){
   const g={gain:'level',pitch:'pitch',fine:'pitch',speed:'speed',keepPitch:'speed',keepTime:'speed',
-    att:'envelope',rel:'envelope',ftype:'filter',fcut:'filter',fres:'filter',drv:'drive',crush:'drive',
+    att:'envelope',rel:'envelope',dec:'envelope',sus:'envelope',ftype:'filter',fcut:'filter',fres:'filter',drv:'drive',crush:'drive',
     fegAmt:'filter envelope',fegA:'filter envelope',fegD:'filter envelope',
     fegS:'filter envelope',fegR:'filter envelope',
     velFlt:'velocity response',velEnv:'velocity response',
@@ -13028,7 +13081,10 @@ function applySessionDoc(doc, bufs){
        would re-voice every pad in a project made before they existed. */
     if(p.fegAmt==null)p.fegAmt=0; if(p.fegA==null)p.fegA=0.004; if(p.fegD==null)p.fegD=0.18;
     if(p.fegS==null)p.fegS=0; if(p.fegR==null)p.fegR=0.12;
-    if(p.velFlt==null)p.velFlt=0; if(p.velEnv==null)p.velEnv=0; });
+    if(p.velFlt==null)p.velFlt=0; if(p.velEnv==null)p.velEnv=0;
+    /* Sustain 1 is the old two-stage envelope exactly, so an older project is
+       not re-shaped by gaining two stages it was never written for. */
+    if(p.dec==null)p.dec=0.12; if(p.sus==null)p.sus=1; });
   { // LOAD FAILSAFE: every loaded pad at ~0 volume = a poisoned save (a real
     // field failure wrote gain 0 into state and autosave kept it). One pad at
     // 0 is legit mixing; ALL of them is never intentional — repair silently.
