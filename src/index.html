@@ -274,6 +274,24 @@ it, filter it, resample it. Nothing stays attached to the preset it came from.</
     </div>
     <div class="pslider"><span class="lbl">DRIVE</span><input type="range" id="epDrv" min="0" max="1" step="0.01"><span class="val" id="epDrvV"></span></div>
     <div class="pslider"><span class="lbl">CRUSH</span><input type="range" id="epCrush" min="4" max="16" step="1"><span class="val" id="epCrushV"></span></div>
+    <h3>LAYERS <span style="color:var(--txt-dim);letter-spacing:0">&mdash; so the same pad is not the same waveform every time</span></h3>
+    <div class="row">
+      <span class="lbl">USE THEM</span>
+      <select id="epLayMode" aria-label="How the pad uses its layers">
+        <option value="rr">ROUND ROBIN &mdash; take turns</option>
+        <option value="vel">BY VELOCITY &mdash; soft to hard</option>
+        <option value="stack">ALL AT ONCE &mdash; one thick hit</option>
+        <option value="off">OFF &mdash; only the pad&rsquo;s own sound</option>
+      </select>
+    </div>
+    <div class="pslider"><span class="lbl">VARY</span><input type="range" id="epVary" min="0" max="1" step="0.01"><span class="val" id="epVaryV">off</span></div>
+    <div id="layList" style="font-size:11px;margin:2px 0"></div>
+    <div class="row">
+      <span class="lbl">ADD</span>
+      <select id="layAdd" aria-label="Add another pad&rsquo;s sample as a layer"></select>
+      <button id="btnLayAdd">ADD LAYER</button>
+    </div>
+    <div id="layHint" style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">VARY works on its own &mdash; a little random pitch and level on every hit, which is most of what stops a repeated sample sounding like a machine gun.</div>
     <h3>CHANNEL EQ <span style="color:var(--txt-dim);letter-spacing:0">— low shelf 200 · mid 1k · high shelf 4k</span></h3>
     <div class="pslider"><span class="lbl">LOW</span><input type="range" id="epEqLo" min="-12" max="12" step="0.5"><span class="val" id="epEqLoV"></span></div>
     <div class="pslider"><span class="lbl">MID</span><input type="range" id="epEqMid" min="-12" max="12" step="0.5"><span class="val" id="epEqMidV"></span></div>

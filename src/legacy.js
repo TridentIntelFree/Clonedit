@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R181 · 2026-08-26 · two ways out of the app';
+const BUILD = 'JBH-88 · R182 · 2026-08-26 · a pad that is not one waveform';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2899,6 +2899,7 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   choke:0, note:36+i, reverse:false, mode:'one',
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
   fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12, velFlt:0, velEnv:0,
+  layers:[], layMode:'rr', vary:0,
   eqLo:0, eqMid:0, eqHi:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
   warpBeats:4, warpBpm:0, mute:false, solo:false }; }
@@ -3579,23 +3580,80 @@ function scheduleFilterEnv(ctx, n, p, when, outDur, vel){
     d.linearRampToValueAtTime(base, relStart+rel);
   }catch(e){}
 }
-function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
+/* ---------------- LAYERS — a pad that is not one waveform ------------------
+   Sixteen hits of a snare were sixteen copies of the identical file. Nothing in
+   the app could make the second hit differ from the first, so however much
+   velocity, humanize and probability were written into a part, the machine gun
+   was still there underneath: a real drummer never plays the same sample twice
+   because there is no sample, there is a drum.
+
+   A pad keeps its own sound exactly where it always was — bufId, start, end —
+   and gains a list of EXTRA layers beside it. Everything that already reads
+   p.bufId (the waveform on the pad face, WARP, the editor, the reverse and
+   stretch caches, TO PAD, CHOP) keeps working on the pad's own sample and never
+   has to learn about layers. Only the trigger picks between them.
+
+   ROUND ROBIN cycles: hit, hit, hit walks the list and wraps. The counter lives
+   on the GRAPH rather than in a global, which is what makes a bounce
+   reproducible — an offline render builds a fresh graph, so its counters start
+   at zero every time and the exported file is the same file twice.
+   BY VELOCITY splits the range into as many zones as there are layers, so soft
+   and hard are different recordings rather than the same one at two levels.
+   ALL AT ONCE stacks them into one composite hit.
+
+   VARY is the other half, and it works with no layers at all: a little random
+   pitch and level per hit. It draws from takeRnd, the same seeded generator
+   humanize uses, so it is random live and identical for a given take seed when
+   rendering — otherwise no two bounces of the same project would match. */
+const LAY_MAX=7;
+function padLayerCount(p){ return 1+(Array.isArray(p.layers)?Math.min(p.layers.length,LAY_MAX):0); }
+function padLayer(p,li){
+  if(li<=0) return { bufId:p.bufId, start:p.start, end:p.end, gain:1, pitch:0 };
+  const L=(p.layers||[])[li-1]; if(!L) return null;
+  return { bufId:L.bufId|0, start:L.start!=null?L.start:0, end:L.end!=null?L.end:1,
+           gain:L.gain!=null?+L.gain:1, pitch:L.pitch!=null?+L.pitch:0 };
+}
+function pickLayerIdx(g,p,idx,v){
+  const n=padLayerCount(p);
+  if(n<2 || p.layMode==='off' || p.layMode==='stack') return 0;
+  if(p.layMode==='vel') return Math.min(n-1, Math.floor(clamp(v,0,0.9999)*n));
+  const rr=g.rr||(g.rr={});
+  const k=(rr[idx]||0)%n; rr[idx]=k+1; return k;
+}
+function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLayer){
   const p=S.pads[idx]; if(p.bufId<0) return null;
   if(p.mode==='grain'){   // GRAIN pads spray a cloud instead of playing the sample
     scheduleGrains(ctx,g,idx,clamp(vel,0,1),when,clamp(p.grBurst||0.45,0.05,4),pitchOff||0);
     return null;
   }
-  let buf=S.buffers[p.bufId]; if(!buf) return null;
-  let s0=p.start, e0=p.end;
-  if(p.reverse){ buf=getReversed(p.bufId); s0=1-p.end; e0=1-p.start; }
-  const baseRate=Math.pow(2,(p.pitch+(pitchOff||0)+p.fine/100)/12);
+  /* ALL AT ONCE is the one mode that is more than a choice of source, so it is
+     the one place this recurses: the extra layers come back through here with
+     their index forced, and with no choke register, because a stack is one hit
+     and must not choke itself. */
+  if(forceLayer==null && p.layMode==='stack' && padLayerCount(p)>1){
+    for(let li=1;li<padLayerCount(p);li++)
+      triggerPad(ctx,g,idx,vel,when,null,pitchOff,liveTap,li);
+  }
+  const li = forceLayer!=null ? forceLayer : pickLayerIdx(g,p,idx,clamp(vel,0,1));
+  const lay = padLayer(p,li) || padLayer(p,0);
+  if(lay.bufId<0) return null;
+  let buf=S.buffers[lay.bufId]; if(!buf) return null;
+  let s0=lay.start, e0=lay.end;
+  if(p.reverse){ const rv=getReversed(lay.bufId); if(rv) buf=rv; s0=1-lay.end; e0=1-lay.start; }
+  /* Down only for level, so VARY can never turn a mixed pad into a clipping
+     one; pitch is symmetrical because a drum that is only ever flat is worse
+     than one that is not varying at all. */
+  const vary=clamp(+p.vary||0,0,1);
+  const varyCents = vary>0 ? (takeRnd()*2-1)*vary*40 : 0;
+  const varyGain  = vary>0 ? 1-takeRnd()*vary*0.25 : 1;
+  const baseRate=Math.pow(2,(p.pitch+(pitchOff||0)+(p.fine+varyCents)/100+lay.pitch)/12);
   // SPEED: varispeed multiplies the rate; keepPitch swaps in a pre-stretched
   // buffer (pitch preserved) and plays at base pitch. If the stretch isn't
   // cached yet, fall back to varispeed for this one hit.
   const spd=padSpeed(p);
   let speedMul=spd;
   if(p.keepPitch && Math.abs(spd-1)>0.001){
-    const sb=speedCache[speedKey(p.bufId,!!p.reverse,spd)];
+    const sb=speedCache[speedKey(lay.bufId,!!p.reverse,spd)];
     if(sb){ buf=sb; speedMul=1; }
   }
   /* KEEP TIME: swap in a source pre-stretched by the pitch ratio, so playing it
@@ -3605,7 +3663,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
   if(p.keepTime && !p.keepPitch){
     const pr=pitchRatio(p);
     if(Math.abs(pr-1)>0.001){
-      const pb=speedCache['p|'+p.bufId+'|'+(p.reverse?'r':'f')+'|'+pr.toFixed(3)];
+      const pb=speedCache['p|'+lay.bufId+'|'+(p.reverse?'r':'f')+'|'+pr.toFixed(3)];
       if(pb){ buf=pb; ktSlice=1; }
     }
   }
@@ -3634,7 +3692,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
      nowhere to travel, which is exactly the old behaviour, so every project
      made before this sounds the same as it did. */
   const env=ctx.createGain();
-  const v=clamp(vel,0,1);
+  const v=clamp(vel,0,1)*clamp(lay.gain,0,2)*varyGain;
   const att=Math.max(0.001,p.att);
   const decT=Math.max(0.001, p.dec==null?0.12:+p.dec);
   const sus=clamp(p.sus==null?1:+p.sus,0,1);
@@ -3661,7 +3719,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap){
   env.gain.setValueAtTime(holdLvl,relStart);
   env.gain.linearRampToValueAtTime(0.0001,relStart+p.rel);
   src.connect(env); env.connect(g.pads[idx].in);
-  scheduleFilterEnv(ctx, g.pads[idx], p, when, outDur, v);
+  scheduleFilterEnv(ctx, g.pads[idx], p, when, outDur, clamp(vel,0,1));
   let ltg=null;
   if(liveTap && g.liveBus){   // per-voice tap: ONLY this manual voice reaches the LIVE-ONLY record bus
     ltg=ctx.createGain(); ltg.gain.value=p.gain;
@@ -4579,7 +4637,25 @@ function drawPads(){
     el.classList.toggle('revd',revd);
     el.querySelector('.rvs').title=revd?'Plays backwards (REVERSE is on)':'';
     el.querySelector('.pn').textContent=padName(idx);
-    el.querySelector('.pname').textContent=p.name||'';
+    const nm=el.querySelector('.pname');
+    nm.textContent=p.name||'';
+    /* A LAYERED PAD LOOKS LIKE ANY OTHER ONE, and the waveform on its face is
+       only its first sound — so the count goes beside the name. Without it the
+       most surprising thing a pad can do, playing something different next
+       time, has nothing on screen behind it.
+       AFTER the name is written, not before: setting textContent replaces every
+       child, so a badge appended earlier in this function is destroyed by the
+       line above it on the very next redraw. */
+    const nLay=p.bufId>=0?padLayerCount(p):1;
+    if(nLay>1){
+      const tag=document.createElement('i');
+      tag.className='laytag'; tag.textContent='\u00d7'+nLay;
+      tag.title=nLay+' sounds on this pad \u2014 '
+        +(p.layMode==='vel'?'chosen by how hard you play'
+         :p.layMode==='stack'?'played together'
+         :p.layMode==='off'?'layers switched off':'taking turns');
+      nm.appendChild(tag);
+    }
     drawPadWave(el,p);
     el.setAttribute('aria-label', 'Pad '+padName(idx)
       + (p.name?', '+p.name:', empty')
@@ -4654,6 +4730,7 @@ function drawEdit(){
   $('epFCut').value=p.fcut; $('epFCutV').textContent=Math.round(cutHz(p.fcut))+'Hz';
   $('epFRes').value=p.fres; $('epFResV').textContent='Q '+p.fres.toFixed(1);
   drawFeg(p);
+  try{ drawLayers(); }catch(e){}
   $('epDrv').value=p.drv; $('epDrvV').textContent=Math.round(p.drv*100)+'%';
   $('epCrush').value=p.crush; $('epCrushV').textContent=p.crush>=16?'OFF':p.crush+' bit';
   $('epEqLo').value=p.eqLo||0; $('epEqLoV').textContent=eqFmt(p.eqLo||0);
@@ -4836,7 +4913,7 @@ const PAD_VOICES={
    what stops one voice leaving the previous voice's settings behind. */
 const VOICE_NEUTRAL={ pitch:0, fine:0, speed:1, reverse:false, mode:'one',
   att:0.002, dec:0.12, sus:1, rel:0.06, ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
-  fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12, velFlt:0, velEnv:0,
+  fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12, velFlt:0, velEnv:0, vary:0,
   eqLo:0, eqMid:0, eqHi:0, rev:0, dly:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
   grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grBurst:0.45 };
@@ -4949,6 +5026,99 @@ $('epFegAmt').addEventListener('input',e=>{
   drawFeg(p); dirty();
 });
 $('epFegAmt').addEventListener('change',trigSel);
+/* ---------------- the LAYERS panel ---------------------------------------- */
+function layName(L){
+  const b=S.buffers[L.bufId];
+  return (L.name||'layer')+(b?' '+b.duration.toFixed(2)+'s':' — missing');
+}
+function drawLayers(){
+  const p=S.pads[S.editPad], list=$('layList'); if(!list) return;
+  $('epLayMode').value=p.layMode||'rr';
+  const vy=+p.vary||0;
+  $('epVary').value=vy; $('epVaryV').textContent=vy?Math.round(vy*100)+'%':'off';
+  const L=Array.isArray(p.layers)?p.layers:[];
+  list.innerHTML='';
+  if(!L.length){
+    const d=document.createElement('div');
+    d.style.cssText='color:var(--txt-dim)';
+    d.textContent=p.bufId<0 ? 'This pad has no sound yet.'
+      : 'Just the pad\u2019s own sound. Add another and they take turns.';
+    list.appendChild(d);
+  }
+  L.forEach((lay,i)=>{
+    const row=document.createElement('div');
+    row.className='row'; row.style.margin='2px 0';
+    const n=document.createElement('span');
+    n.style.cssText='flex:1;color:var(--lcd);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    /* Named for what it will DO, not for its position in an array: under BY
+       VELOCITY the second entry is not "layer 2", it is the band of the
+       velocity range it answers to, and that is the thing you are setting. */
+    const total=L.length+1, band=Math.round(100/total);
+    n.textContent=(p.layMode==='vel'
+      ? (band*(i+1))+'\u2013'+(band*(i+2)>100?100:band*(i+2))+'%  '
+      : (i+2)+'.  ')+layName(lay);
+    const rm=document.createElement('button');
+    rm.textContent='\u2212'; rm.setAttribute('aria-label','Remove layer '+(i+2));
+    rm.style.flex='none';
+    rm.addEventListener('click',()=>{
+      const gone=layName(lay);
+      p.layers.splice(i,1); drawLayers(); drawPads(); dirty();
+      lcd('LAYER REMOVED \u2014 '+gone+'. The sample itself is still in the project.');
+    });
+    row.appendChild(n); row.appendChild(rm); list.appendChild(row);
+  });
+  const sel=$('layAdd'); if(!sel) return;
+  const prev=sel.value;
+  sel.innerHTML='';
+  let n=0;
+  for(let i=0;i<NPADS;i++){
+    if(i===S.editPad || S.pads[i].bufId<0) continue;
+    const o=document.createElement('option'); o.value=String(i);
+    o.textContent=padName(i)+' \u2014 '+(S.pads[i].name||'sample');
+    sel.appendChild(o); n++;
+  }
+  if(!n){ const o=document.createElement('option'); o.value='';
+    o.textContent='no other pad has a sound yet'; sel.appendChild(o); }
+  if(prev) sel.value=prev;
+  $('btnLayAdd').disabled = !n || p.bufId<0 || (p.layers||[]).length>=LAY_MAX;
+  const h=$('layHint');
+  if(h) h.textContent = p.bufId<0
+    ? 'Load a sound onto this pad first \u2014 layers sit beside the pad\u2019s own sample, not instead of it.'
+    : (p.layers||[]).length>=LAY_MAX
+    ? 'That is the most layers a pad takes ('+(LAY_MAX+1)+' sounds counting its own).'
+    : 'VARY works on its own \u2014 a little random pitch and level on every hit, which is '
+      +'most of what stops a repeated sample sounding like a machine gun.';
+}
+$('epLayMode').addEventListener('change',e=>{
+  const p=S.pads[S.editPad]; p.layMode=e.target.value;
+  drawLayers(); dirty();
+  lcd(p.layMode==='rr' ? 'ROUND ROBIN \u2014 each hit takes the next sound in the list, then wraps.'
+    : p.layMode==='vel' ? 'BY VELOCITY \u2014 the harder you play, the further down the list it reaches.'
+    : p.layMode==='stack' ? 'ALL AT ONCE \u2014 every layer sounds together as one hit.'
+    : 'LAYERS OFF \u2014 only the pad\u2019s own sound plays. They are kept, not deleted.');
+});
+bindEdit('epVary','vary',null,null);
+$('epVary').addEventListener('change',trigSel);
+$('btnLayAdd').addEventListener('click',()=>{
+  const p=S.pads[S.editPad], v=$('layAdd').value;
+  if(v==='') return;
+  if(p.bufId<0){ lcd('LOAD A SOUND ONTO THIS PAD FIRST — a layer sits beside it, not instead of it.'); return; }
+  const src=S.pads[parseInt(v,10)];
+  if(!src || src.bufId<0) return;
+  p.layers=Array.isArray(p.layers)?p.layers:[];
+  if(p.layers.length>=LAY_MAX) return;
+  /* A COPY OF THE REFERENCE, not of the audio. Two pads sharing one buffer is
+     how every other path in the app works, and gcBuffers counts layers now, so
+     clearing the pad it came from cannot take the layer with it. */
+  p.layers.push({ bufId:src.bufId, start:src.start, end:src.end, gain:1, pitch:0,
+    name:(src.name||'layer').slice(0,14) });
+  if(p.layMode==='off') p.layMode='rr';
+  drawLayers(); drawPads(); dirty();
+  lcd(padName(S.editPad)+' NOW HAS '+padLayerCount(p)+' SOUNDS \u2014 '
+    +(p.layMode==='vel'?'the harder you play, the further down the list it reaches.'
+     :p.layMode==='stack'?'they sound together as one hit.'
+     :'each hit takes the next one, so no two in a row are identical.'));
+});
 /* VEL→CUT is the one that works with no envelope at all, so it needs the same
    guard: a filter switched off cannot be opened by playing harder either. */
 $('epVelFlt').addEventListener('input',e=>{
@@ -8283,7 +8453,11 @@ const KITS=[
    The old voicing is one UNDO away, and the caller says what it cleared rather
    than doing it silently. */
 function resetPadVoice(p){
-  const d=newPad(0), keep={bufId:1,name:1,note:1,choke:1,pan:1,rev:1,dly:1,mute:1,solo:1};
+  /* layers and layMode ride with bufId, because they are the pad's CONTENT.
+     Clearing the voicing when a new sound lands is right; throwing away the
+     other seven recordings that make up the sound is not. */
+  const d=newPad(0), keep={bufId:1,name:1,note:1,choke:1,pan:1,rev:1,dly:1,mute:1,solo:1,
+    layers:1,layMode:1};
   const changed=[];
   for(const k in d){
     if(keep[k]) continue;
@@ -8297,7 +8471,7 @@ function voiceWords(ch){
     att:'envelope',rel:'envelope',dec:'envelope',sus:'envelope',ftype:'filter',fcut:'filter',fres:'filter',drv:'drive',crush:'drive',
     fegAmt:'filter envelope',fegA:'filter envelope',fegD:'filter envelope',
     fegS:'filter envelope',fegR:'filter envelope',
-    velFlt:'velocity response',velEnv:'velocity response',
+    velFlt:'velocity response',velEnv:'velocity response',vary:'variation',
     eqLo:'EQ',eqMid:'EQ',eqHi:'EQ',reverse:'direction',mode:'play mode',start:'trim',end:'trim',
     lfoOn:'LFO',lfoTgt:'LFO',lfoShape:'LFO',lfoSync:'LFO',lfoRate:'LFO',lfoDepth:'LFO',
     grSize:'grain',grDens:'grain',grSpread:'grain',grPitch:'grain',grPos:'grain',grBurst:'grain',
@@ -13164,7 +13338,20 @@ function applySessionDoc(doc, bufs){
     if(p.velFlt==null)p.velFlt=0; if(p.velEnv==null)p.velEnv=0;
     /* Sustain 1 is the old two-stage envelope exactly, so an older project is
        not re-shaped by gaining two stages it was never written for. */
-    if(p.dec==null)p.dec=0.12; if(p.sus==null)p.sus=1; });
+    if(p.dec==null)p.dec=0.12; if(p.sus==null)p.sus=1;
+    /* Layers arrive from a file, so they are rebuilt rather than trusted: a
+       string where an array belongs, or a layer holding a bufId that is not a
+       number, would reach a BufferSource and throw part way through a load. */
+    p.layers = Array.isArray(p.layers) ? p.layers.slice(0,LAY_MAX).map(L=>({
+      bufId: (L && isFinite(L.bufId)) ? (L.bufId|0) : -1,
+      start: (L && isFinite(L.start)) ? clamp(+L.start,0,1) : 0,
+      end:   (L && isFinite(L.end))   ? clamp(+L.end,0,1)   : 1,
+      gain:  (L && isFinite(L.gain))  ? clamp(+L.gain,0,2)  : 1,
+      pitch: (L && isFinite(L.pitch)) ? clamp(+L.pitch,-24,24) : 0,
+      name:  (L && typeof L.name==='string') ? L.name.slice(0,14) : ''
+    })).filter(L=>L.bufId>=0) : [];
+    if(['off','rr','vel','stack'].indexOf(p.layMode)<0) p.layMode='rr';
+    if(!isFinite(p.vary)) p.vary=0; else p.vary=clamp(+p.vary,0,1); });
   { // LOAD FAILSAFE: every loaded pad at ~0 volume = a poisoned save (a real
     // field failure wrote gain 0 into state and autosave kept it). One pad at
     // 0 is legit mixing; ALL of them is never intentional — repair silently.
@@ -13300,16 +13487,24 @@ function idbGet(key){ return idbGetS(IDB_STORE,key); }
 
 function gcBuffers(){ // drop orphaned samples (every re-render leaves one) so the vault doesn't bloat past iOS IDB limits
   const used=new Set();
-  S.pads.forEach(p=>{ if(p.bufId>=0) used.add(p.bufId); });
-  S.trax.forEach(tr=>{ if(tr.bufId>=0) used.add(tr.bufId); });
+  /* LAYERS COUNT AS USED. A layer's sample is referenced from p.layers and
+     nowhere else, so leaving it out here would have this function collect the
+     audio a pad is actively playing and then renumber the survivors underneath
+     the surviving references — on an autosave, silently, with no error. It is
+     the single most destructive thing layering could have done. */
+  const eachRef=(fn)=>{
+    S.pads.forEach(p=>{ if(p.bufId>=0) fn(p,'bufId');
+      if(Array.isArray(p.layers)) p.layers.forEach(L=>{ if(L && L.bufId>=0) fn(L,'bufId'); }); });
+    S.trax.forEach(tr=>{ if(tr.bufId>=0) fn(tr,'bufId'); });
+  };
+  eachRef(o=>used.add(o.bufId));
   const wi=workBuf?S.buffers.indexOf(workBuf):-1;
   if(wi>=0) used.add(wi);
   if(used.size>=S.buffers.length) return;
   try{ commitUndo(); }catch(e){}   // flush pending edits so _committed matches live state before renumbering
   const map={}, nb=[];
   S.buffers.forEach((b,i)=>{ if(used.has(i)){ map[i]=nb.length; nb.push(b); } });
-  S.pads.forEach(p=>{ if(p.bufId>=0) p.bufId=map[p.bufId]; });
-  S.trax.forEach(tr=>{ if(tr.bufId>=0) tr.bufId=map[tr.bufId]; });
+  eachRef(o=>{ o.bufId=map[o.bufId]; });
   Object.keys(revCache).forEach(k=>delete revCache[k]);   // keyed by old ids
   Object.keys(speedCache).forEach(k=>delete speedCache[k]);   // keyed by old ids
   S.buffers=nb;
@@ -13317,7 +13512,9 @@ function gcBuffers(){ // drop orphaned samples (every re-render leaves one) so t
   // commitUndo sees a phantom "change" and undo needs pressing twice.
   // Stack entries stay untouched — each carries its own buffers array.
   if(_committed){
-    const remap=arr=>{ (arr||[]).forEach(o=>{ if(o.bufId>=0) o.bufId=(map[o.bufId]!=null?map[o.bufId]:-1); }); };
+    const one=o=>{ if(o && o.bufId>=0) o.bufId=(map[o.bufId]!=null?map[o.bufId]:-1); };
+    const remap=arr=>{ (arr||[]).forEach(o=>{ one(o);
+      if(o && Array.isArray(o.layers)) o.layers.forEach(one); }); };
     remap(_committed.doc.pads); remap(_committed.doc.trax);
     _committed.bufs=nb.slice();
   }

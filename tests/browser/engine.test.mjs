@@ -607,12 +607,13 @@ export default async function ({ browser, base }) {
       /* Measured in the sound, not in the parameter: AudioParam.value reports
          the intrinsic automation only and never includes what is connected to
          it, so the LFO's contribution is invisible from JS by construction. */
-      o.lfoRides = { swept: both.hi - both.lo > 400,
-        wobbles: (() => { let turns = 0;
-          for (let i = 2; i < both.c.length; i++) {
-            const a = both.c[i - 1] - both.c[i - 2], c2 = both.c[i] - both.c[i - 1];
-            if ((a > 0) !== (c2 > 0)) turns++; }
-          return turns >= 3; })(), cen: both.c };
+      /* Counting direction changes in the trace was phase-dependent: the LFO
+         free-runs, so how many of its turning points land on a 35ms sample is
+         luck, and the check passed or failed by the run. The claim that does
+         not depend on phase is that the LFO takes the cutoff somewhere the
+         envelope alone never reaches — its depth adds on top, so the peak of
+         the combined trace has to clear the peak of the envelope-only one. */
+      o.lfoRides = { swept: both.hi - both.lo > 400, hi: both.hi, cen: both.c };
       p.lfoOn = false; liveFx(); await wait(400);
 
       /* Raising AMOUNT with the filter switched off modulates nothing. */
@@ -727,8 +728,8 @@ export default async function ({ browser, base }) {
       feg.down.d.some(v => v < -1000) && feg.down.hi - feg.down.lo > 400,
       'detune reached ' + Math.min(...feg.down.d) + ' cents');
     t.ok('THE CUTOFF LFO STILL RIDES ON TOP OF THE ENVELOPE',
-      feg.lfoRides.swept && feg.lfoRides.wobbles,
-      'centroid: ' + feg.lfoRides.cen.slice(0, 8).join(' '));
+      feg.lfoRides.swept && feg.lfoRides.hi > feg.up.hi * 1.3,
+      'reached ' + feg.lfoRides.hi + ' Hz against ' + feg.up.hi + ' Hz from the envelope alone');
     t.ok('raising AMOUNT with no filter opens one rather than doing nothing',
       feg.trap.ftype === 'lowpass' && /FILTER . LP/.test(feg.trap.said),
       '"' + feg.trap.said + '"');
@@ -851,6 +852,180 @@ export default async function ({ browser, base }) {
       adsr.shortEnd > 0.4 && adsr.shortEnd < 0.9,
       'at ' + Math.round(adsr.shortEnd * 100) + '% when the release begins — a decay '
       + 'squeezed to fit would already be near zero');
+
+    t.head('A PAD THAT IS NOT ONE WAVEFORM');
+    /* Sixteen hits of a snare were sixteen copies of the identical file, and
+       nothing in the app could make the second differ from the first. A pad
+       keeps its own sound where it always was and gains a list of extra layers
+       beside it; only the trigger picks between them.
+
+       Each layer here is a tone at a distinct frequency, so WHICH one played is
+       read out of the spectrum rather than inferred from a variable. */
+    const lay = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(200);
+      const PAD = 11, F = [300, 900, 2700];
+      const keep = JSON.parse(JSON.stringify(S.pads[PAD]));
+      const tone = hz => { const n = Math.round(AC.sampleRate * 0.5);
+        const b = AC.createBuffer(2, n, AC.sampleRate);
+        for (let c = 0; c < 2; c++) { const d = b.getChannelData(c);
+          for (let i = 0; i < n; i++) d[i] = Math.sin(2 * Math.PI * hz * i / AC.sampleRate) * 0.8; }
+        S.buffers.push(b); return S.buffers.length - 1; };
+      /* An orphan FIRST, so collection has something to remove and the layer
+         indices after it genuinely have to move. A remap that is never
+         exercised is a remap that is never tested. */
+      const orphan = tone(60);
+      const ids = F.map(tone);
+
+      S.pads[PAD] = newPad(PAD); const p = S.pads[PAD];
+      p.bufId = ids[0]; p.name = 'L1'; p.gain = 0.9;
+      p.layers = [{ bufId: ids[1], start: 0, end: 1, gain: 1, pitch: 0, name: 'L2' },
+                  { bufId: ids[2], start: 0, end: 1, gain: 1, pitch: 0, name: 'L3' }];
+      S.editPad = PAD; reapplyLivePads(); drawEdit();
+
+      const an = AC.createAnalyser(); an.fftSize = 8192; an.smoothingTimeConstant = 0;
+      LIVE.pads[PAD].mute.connect(an);
+      const bins = new Float32Array(an.frequencyBinCount);
+      const hzPer = (AC.sampleRate / 2) / bins.length;
+      const amp = hz => { const i = Math.round(hz / hzPer); let m = -Infinity;
+        for (let k = i - 2; k <= i + 2; k++) if (bins[k] > m) m = bins[k];
+        return Math.pow(10, m / 20); };
+      const which = async vel => { hitLive(PAD, vel == null ? 1 : vel); await wait(90);
+        let best = [0, 0, 0];
+        for (let k = 0; k < 8; k++) { an.getFloatFrequencyData(bins);
+          const a = F.map(amp);
+          if (a.reduce((x, y) => x + y) > best.reduce((x, y) => x + y)) best = a;
+          await wait(25); }
+        await wait(400);
+        return { top: best.indexOf(Math.max(...best)), a: best.map(x => +x.toFixed(4)) }; };
+
+      p.layMode = 'rr';
+      o.rr = []; for (let k = 0; k < 6; k++) o.rr.push((await which()).top);
+      p.layMode = 'vel';
+      o.vel = [(await which(0.15)).top, (await which(0.5)).top, (await which(0.95)).top];
+      p.layMode = 'stack';
+      o.stack = (await which()).a;
+      p.layMode = 'off';
+      o.off = []; for (let k = 0; k < 3; k++) o.off.push((await which()).top);
+      p.layMode = 'rr';
+
+      /* COLLECTION AND RENUMBERING — the one that could destroy work. */
+      o.orphanWasThere = !!S.buffers[orphan];
+      const before = S.buffers.length;
+      gcBuffers();
+      o.gc = { before, after: S.buffers.length,
+        moved: S.pads[PAD].layers.map(L => L.bufId).join(',') !== ids.slice(1).join(','),
+        resolves: S.pads[PAD].layers.every(L => !!S.buffers[L.bufId]) };
+      reapplyLivePads();
+      o.rrAfterGc = []; for (let k = 0; k < 4; k++) o.rrAfterGc.push((await which()).top);
+
+      /* PERSISTENCE — structuredClone, not JSON: a session doc holds raw
+         AudioBuffers and JSON.stringify turns them into {}. */
+      const doc = structuredClone(snapshotSession());
+      S.pads[PAD] = newPad(PAD);
+      o.loaded = applySessionDoc(doc.doc || doc, (doc.doc ? doc.bufs : null) || S.buffers);
+      o.afterLoad = { n: padLayerCount(S.pads[PAD]),
+        mode: S.pads[PAD].layMode,
+        resolves: (S.pads[PAD].layers || []).every(L => !!S.buffers[L.bufId]) };
+
+      /* A HOSTILE FIELD must be repaired, not fatal. */
+      const bad = structuredClone(doc);
+      const bd = bad.doc || bad;
+      bd.pads[PAD].layers = 'not an array';
+      bd.pads[12] = Object.assign({}, bd.pads[12],
+        { layers: [{ bufId: 'x' }, { bufId: 4, start: 99, gain: 1e9 }] });
+      o.hostileLoaded = applySessionDoc(bd, (bad.doc ? bad.bufs : null) || S.buffers);
+      o.repaired = { p11: Array.isArray(S.pads[PAD].layers) ? S.pads[PAD].layers.length : 'not an array',
+        p12: JSON.stringify(S.pads[12].layers) };
+      o.stillPlays = (() => { try { hitLive(12, 1); return true; } catch (e) { return String(e); } })();
+
+      /* VARY — the half that works with no layers at all. Measured as the
+         fundamental the analyser actually reports, hit to hit. */
+      S.pads[PAD] = newPad(PAD); const q = S.pads[PAD];
+      q.bufId = ids[0]; q.gain = 0.9; q.att = 0.001; q.rel = 0.05;
+      reapplyLivePads();
+      const fund = async () => { hitLive(PAD, 1); await wait(80);
+        let bi = 0, bv = -Infinity;
+        for (let k = 0; k < 6; k++) { an.getFloatFrequencyData(bins);
+          for (let i = 2; i < bins.length / 4; i++) if (bins[i] > bv) { bv = bins[i]; bi = i; }
+          await wait(20); }
+        await wait(400); return +(bi * hzPer).toFixed(1); };
+      q.vary = 0;
+      const flat = []; for (let k = 0; k < 5; k++) flat.push(await fund());
+      q.vary = 1;
+      const varied = []; for (let k = 0; k < 5; k++) varied.push(await fund());
+      const spread = a => +(Math.max(...a) - Math.min(...a)).toFixed(1);
+      o.vary = { flat, varied, flatSpread: spread(flat), variedSpread: spread(varied) };
+
+      /* AND IT HAS TO BE REPRODUCIBLE. takeRnd is Math.random live and a seeded
+         generator inside a render, so two bounces of one project must match
+         sample for sample — otherwise VARY would make every export different. */
+      S.patterns[S.pattern].steps.forEach(row => row.fill(0));
+      S.patterns[S.pattern].steps[PAD][0] = 1;
+      S.patterns[S.pattern].steps[PAD][4] = 1;
+      S.patterns[S.pattern].steps[PAD][8] = 1;
+      q.layers = [{ bufId: ids[1], start: 0, end: 1, gain: 1, pitch: 0, name: 'L2' },
+                  { bufId: ids[2], start: 0, end: 1, gain: 1, pitch: 0, name: 'L3' }];
+      q.layMode = 'rr'; q.vary = 0.6;
+      const bounce = async () => { const r2 = await renderMix(null, null,
+        { loops: 1, src: 'pat', noTail: true }); return r2.getChannelData(0); };
+      const b1 = await bounce(), b2 = await bounce();
+      let worst = 0; const nn = Math.min(b1.length, b2.length);
+      for (let i = 0; i < nn; i += 7) worst = Math.max(worst, Math.abs(b1[i] - b2[i]));
+      o.bounceRepeatable = { worst: +worst.toExponential(2), len: nn };
+
+      /* And a person can see that this pad is not like the others. The grid
+         shows one bank of sixteen, so the DOM index only matches the pad index
+         while that bank is the one on screen. */
+      S.bank = Math.floor(PAD / 16); S.editPad = PAD;
+      document.querySelector('#tabs button[data-v="pads"]').click();
+      drawPads(); await wait(120);
+      const face = document.querySelectorAll('.pad')[PAD % 16];
+      o.badge = face ? (face.querySelector('.laytag') || {}).textContent || '' : 'no pad';
+      S.pads[PAD].layers = []; drawPads(); await wait(80);
+      o.badgeGone = face ? !face.querySelector('.laytag') : false;
+
+      S.pads[PAD] = keep; reapplyLivePads();
+      return o;
+    });
+    t.ok('ROUND ROBIN WALKS THE LIST AND WRAPS', lay.rr.join('') === '012012',
+      'played ' + lay.rr.join(' → '));
+    t.ok('BY VELOCITY reaches further down the list the harder you play',
+      lay.vel.join('') === '012', 'soft/mid/hard → ' + lay.vel.join(' '));
+    t.ok('ALL AT ONCE sounds every layer together', Math.min(...lay.stack) > 0.05,
+      lay.stack.join(' / '));
+    t.ok('and OFF plays only the pad’s own sound', lay.off.join('') === '000');
+    /* Not "it removed exactly one": an autosave elsewhere in the suite can
+       collect the orphan before this runs, and asserting the count made this
+       fail on the app behaving correctly. The claim that matters is that
+       running collection with layers present leaves every one of them
+       pointing at real audio. */
+    t.ok('collection with layers present leaves them all resolving',
+      lay.gc.after <= lay.gc.before && lay.gc.resolves,
+      lay.gc.before + ' buffers → ' + lay.gc.after);
+    t.ok('THE LAYER IDS WERE RENUMBERED, so the remap was actually exercised', lay.gc.moved);
+    t.ok('AND THE PAD STILL PLAYS THE SAME THREE SOUNDS IN ORDER',
+      lay.rrAfterGc.join('') === '0120', 'played ' + lay.rrAfterGc.join(' → '));
+    t.ok('layers survive a save and reload', lay.loaded && lay.afterLoad.n === 3
+      && lay.afterLoad.mode === 'rr' && lay.afterLoad.resolves,
+      lay.afterLoad.n + ' sounds, mode ' + lay.afterLoad.mode);
+    t.ok('a damaged layers field is repaired rather than fatal',
+      lay.hostileLoaded && lay.repaired.p11 === 0, 'pad 11 → ' + lay.repaired.p11
+      + ' · pad 12 → ' + lay.repaired.p12);
+    t.ok('and the pad it was on can still be played', lay.stillPlays === true,
+      String(lay.stillPlays));
+    t.ok('with VARY off, every hit is the same pitch — the control',
+      lay.vary.flatSpread < 5, 'spread ' + lay.vary.flatSpread + ' Hz over five hits');
+    t.ok('AND WITH IT UP, NO TWO HITS ARE QUITE THE SAME',
+      lay.vary.variedSpread > lay.vary.flatSpread + 3,
+      'spread ' + lay.vary.variedSpread + ' Hz: ' + lay.vary.varied.join(', '));
+    t.ok('the pad face says how many sounds it holds', lay.badge === '×3',
+      '"' + lay.badge + '"');
+    t.ok('and stops saying it when they are removed', lay.badgeGone);
+    t.ok('YET TWO BOUNCES OF THE SAME PROJECT ARE IDENTICAL',
+      lay.bounceRepeatable.worst < 1e-6,
+      'worst sample difference ' + lay.bounceRepeatable.worst
+      + ' across ' + lay.bounceRepeatable.len + ' samples');
 
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
