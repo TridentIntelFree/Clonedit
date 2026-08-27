@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R185 · 2026-08-27 · one tap that says which silence it is';
+const BUILD = 'JBH-88 · R186 · 2026-08-27 · a take sent to a pad stops playing from its lane';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -10379,10 +10379,31 @@ $('tfxPad').addEventListener('click',()=>{
   const p=S.pads[S.editPad];
   const cleared=voiceWords(resetPadVoice(p));
   p.bufId=tr.bufId; p.name=(tr.name||'take').slice(0,14); p.warped=false; delete warpOrig[S.editPad];
-  drawPads(); drawEdit(); drawMixer(); drawTraxFx(); dirty();
+  /* THE LANE HAS TO STOP, OR YOU HEAR THE TAKE TWICE.
+
+     "When I click play on the sequence with hit in there it plays the raw
+     sample and the sample that has effects from the pad at the same time."
+
+     Exactly what this did. The lane keeps the same buffer and tape lanes roll
+     with the transport, so PLAY gave you the take from the lane — through the
+     lane's own chain, which is flat by default, so it sounds raw — AND the same
+     take from the pad with the pad's filter, drive and EQ on it. Two copies a
+     few milliseconds apart, and worse, the pad's FX appear to do nothing
+     because the untouched copy is sitting on top of them.
+
+     Sending a take to a pad means you want to play it from the pad. So the lane
+     is muted rather than left running, and the message says so, because a mix
+     that changes without being mentioned is its own bug. One tap in TRAX puts
+     it back if you did want both. */
+  const wasAudible = !tr.mute;
+  if(wasAudible){ tr.mute=true; try{ applyTraxMix(); }catch(e){} }
+  drawPads(); drawEdit(); drawMixer(); drawTrax(); drawTraxFx(); dirty();
   lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad)
-    +(cleared.length?' · cleared that pad\u2019s '+cleared.join(', ')+' from the last sound — UNDO puts it back'
-      :' — the take plays as recorded'));
+    +(cleared.length?' · cleared that pad\u2019s '+cleared.join(', ')+' from the last sound'
+      :' — the take plays as recorded')
+    +(wasAudible?'. TRACK '+(traxFxSel+1)+' IS MUTED so you do not hear it twice — '
+      +'unmute it in TRAX if you want the lane as well.':'')
+    +' UNDO puts it all back.');
 });
 $('tfxEdit').addEventListener('click',()=>{
   const tr=S.trax[traxFxSel];
@@ -10402,10 +10423,18 @@ $('tfxEdit').addEventListener('click',()=>{
   const p=S.pads[S.editPad]; resetPadVoice(p);
   p.bufId=bid; p.name=(tr.name||'take').slice(0,14); p.warped=false; delete warpOrig[S.editPad];
   workBuf=copy; slices=[]; selSlice=-1;
-  drawPads(); drawEdit(); dirty();
+  /* Same reason as TO PAD: the lane still holds the original and rolls with the
+     transport, so leaving it audible means editing a copy while the untouched
+     version plays over the top of it. The AUDIO is untouched, which is what
+     this button promises; the mute is a mix change and is announced. */
+  const wasAudible = !tr.mute;
+  if(wasAudible){ tr.mute=true; try{ applyTraxMix(); }catch(e){} }
+  drawPads(); drawEdit(); drawTrax(); dirty();
   const b=document.querySelector('#tabs button[data-v="smpl"]'); if(b) b.click();
   drawWave();
-  lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad)+' (a copy) \u2014 edit in SMPL: TRIM / CHOP / TRANSIENT / REVERSE / NORM. The lane\u2019s take is untouched.');
+  lcd('TRACK '+(traxFxSel+1)+' \u2192 '+padName(S.editPad)+' (a copy) \u2014 edit in SMPL: TRIM / CHOP / '
+    +'TRANSIENT / REVERSE / NORM. The lane\u2019s take is untouched'
+    +(wasAudible?', and muted so you are not editing under a copy of itself.':'.'));
 });
 function clearTrack(i){
   if(traxPrev && traxPrev.i===i) traxPreviewStop();   // do not leave a source playing a cleared take
@@ -15047,6 +15076,19 @@ function diagDump(tag){
          :'no settings reported')
         +' · in meter '+micPeakHold.toFixed(3)+' rec meter '+micOutHold.toFixed(3))
         :'mic off'),
+      /* A pad and an unmuted lane holding the SAME buffer is heard as one sound
+         with the pad's FX apparently doing nothing, because an untouched copy
+         is playing over the top. Projects made before TO PAD started muting the
+         lane can be in this state already, and nothing else would name it. */
+      'doubled: '+(()=>{
+        const pat=S.patterns&&S.patterns[S.pattern], hits=new Set();
+        if(pat&&pat.steps) for(let i=0;i<NPADS;i++) if(pat.steps[i]&&pat.steps[i].some(v=>v>0)) hits.add(i);
+        const out=[];
+        S.trax.forEach((tr,li)=>{ if(tr.bufId<0||tr.mute) return;
+          for(const i of hits) if(S.pads[i].bufId===tr.bufId)
+            out.push('T'+(li+1)+' and '+padName(i)+' both play buf'+tr.bufId); });
+        return out.length?out.join(' · ')+' — the lane copy has no pad FX on it':'none';
+      })(),
       'out path: '+outPath+(outPath==='element'
         ? ' (MediaStream → <audio>: silent-switch proof, no A2DP)'
         : ' (softclip → destination: loudest, silent switch can mute it)')

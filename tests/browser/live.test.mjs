@@ -1541,6 +1541,101 @@ export default async function ({ browser, base }) {
     t.ok('and the check leaves the app making sound afterwards',
       sil.stillPlays > 0.05, 'level ' + sil.stillPlays);
 
+    t.head('A TAKE SENT TO A PAD IS NOT ALSO STILL PLAYING FROM ITS LANE');
+    /* "When I click play on the sequence with hit in there it plays the raw
+       sample and the sample that has effects from the pad at the same time."
+
+       TO PAD copied the take's buffer onto a pad and left the lane holding it.
+       Tape lanes roll with the transport, so PLAY gave you the take from the
+       lane — through the lane's own chain, flat by default, so it sounds raw —
+       AND the same take from the pad with the pad's filter on it. Worse than
+       merely doubled: the pad's FX look broken, because an untouched copy is
+       sitting on top of them.
+
+       Measured through a heavy lowpass on the pad. Anything left above 3kHz
+       while the pattern plays is a copy that did not go through it. */
+    const dbl = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(300);
+      if (playing) stopSeq();
+      const PAD = 4;
+      const n = Math.round(AC.sampleRate * 0.6);
+      const b = AC.createBuffer(2, n, AC.sampleRate);
+      const rnd = mulberry32(4242);
+      for (let i = 0; i < n; i++) { const v = (rnd() * 2 - 1) * 0.7;
+        b.getChannelData(0)[i] = v; b.getChannelData(1)[i] = v; }
+      S.buffers.push(b); const BID = S.buffers.indexOf(b);
+      /* Snapshot before soloing a pad and clearing the pattern, because the
+         sections after this one play the kit and the sequencer. */
+      const keepPads = S.pads.map(x => JSON.parse(JSON.stringify(x)));
+      const keepSteps = S.patterns[S.pattern].steps.map(r => r.slice());
+      S.pads.forEach((p, i) => { p.mute = i !== PAD; });
+      S.pads[PAD] = newPad(PAD); S.pads[PAD].mute = false;
+      S.trax.forEach(x => { x.bufId = -1; x.mute = false; });
+      S.trax[0].bufId = BID; S.trax[0].gain = 0.9;
+      S.patterns[S.pattern].steps.forEach(row => row.fill(0));
+      S.chainOn = false; S.songOn = false;
+      traxSolo = -1; traxArm = -1; traxFxSel = 0;
+      drawTrax(); drawTraxFx();
+
+      const an = AC.createAnalyser(); an.fftSize = 8192; an.smoothingTimeConstant = 0;
+      LIVE.softclip.connect(an);
+      const bins = new Float32Array(an.frequencyBinCount);
+      const hzPer = (AC.sampleRate / 2) / bins.length;
+      const band = (lo, hi) => { let s = 0, k = 0;
+        for (let i = Math.round(lo / hzPer); i < Math.round(hi / hzPer) && i < bins.length; i++) {
+          s += Math.pow(10, bins[i] / 20); k++; }
+        return k ? s / k : 0; };
+      const play = async () => { startSeq(); await wait(200);
+        let low = 0, high = 0;
+        for (let q = 0; q < 28; q++) { an.getFloatFrequencyData(bins);
+          low = Math.max(low, band(60, 200)); high = Math.max(high, band(3000, 9000));
+          await wait(25); }
+        stopSeq(); await wait(500);
+        return { leakDb: low > 0 ? +(20 * Math.log10(high / low)).toFixed(1) : null }; };
+
+      /* Send it to a pad the way a person does, then put a step in and play. */
+      manualPad = false; S.editPad = PAD; S.pads[PAD].bufId = -1;
+      document.getElementById('tfxPad').click();
+      await wait(200);
+      o.landedOn = S.pads.findIndex(p => p.bufId === BID);
+      o.laneMuted = S.trax[0].mute;
+      o.said = document.getElementById('lcdmsg').textContent;
+      const tgt = o.landedOn;
+      S.pads[tgt].ftype = 'lowpass'; S.pads[tgt].fcut = 0.12; S.pads[tgt].fres = 1;
+      S.pads[tgt].mute = false;
+      S.patterns[S.pattern].steps[tgt][0] = 1;
+      reapplyLivePads(); await wait(250);
+      o.withFix = await play();
+
+      /* And the old behaviour, to prove the measurement can see the fault. */
+      S.trax[0].mute = false; applyTraxMix(); await wait(200);
+      o.withLaneBack = await play();
+
+      o.diag = diagDump('t').split('\n').filter(l => /doubled:/.test(l))[0] || '';
+      /* Put it ALL back and push it to the graph. Restoring S.pads without
+         reapplyLivePads leaves the state saying unmuted and the graph still
+         muted, and the next section measures silence on a healthy app — which
+         is exactly what the first version of this did. */
+      S.trax[0].bufId = -1; S.trax[0].mute = false;
+      S.pads.length = 0; keepPads.forEach(x => S.pads.push(x));
+      S.patterns[S.pattern].steps = keepSteps;
+      reapplyLivePads(); applyTraxMix();
+      drawPads(); drawTrax(); drawSeq();
+      await wait(250);
+      return o;
+    });
+    t.ok('TO PAD mutes the lane it copied from', dbl.laneMuted, dbl.said.slice(0, 120));
+    t.ok('and says so, because a mix that changes unmentioned is its own bug',
+      /MUTED/.test(dbl.said) && /unmute it in TRAX/.test(dbl.said));
+    t.ok('THE MEASUREMENT CAN SEE THE FAULT — with the lane back, unfiltered '
+      + 'audio is there', dbl.withLaneBack.leakDb > dbl.withFix.leakDb + 15,
+      'leak ' + dbl.withLaneBack.leakDb + ' dB with the lane audible');
+    t.ok('AND WITH THE FIX ONLY THE PAD IS HEARD, through its filter',
+      dbl.withFix.leakDb < -30, 'leak ' + dbl.withFix.leakDb + ' dB');
+    t.ok('DIAG names the state, so a project already in it can be diagnosed',
+      /doubled: T1 and .* both play buf/.test(dbl.diag), dbl.diag.slice(0, 120));
+
     t.head('THE ANGLE OF THE PHONE CANNOT CHANGE THE VOLUME IN SECRET');
     /* "My volume in playback is different depending on if my phone is landscape
        or regular — same speaker producing sound, not a stereo thing."
