@@ -1465,6 +1465,82 @@ export default async function ({ browser, base }) {
     t.ok('turning the mic off clears the reading rather than leaving it stale',
       got.bannerAfterOff && /mic off/.test(got.diagOff));
 
+    t.head('ONE TAP THAT SAYS WHICH KIND OF SILENCE IT IS');
+    /* "I restored a session and it's silent."
+
+       Every piece of this was already reported somewhere — the route pip, the
+       master filter badge, DIAG's gate line, the OUT meters — which is the
+       problem: reported in six places, answered in none. Silence is really two
+       unrelated faults with no shared remedy, and until you know which one you
+       have, every suggestion is a guess. So: play a tone into the master,
+       measure at the last node before the audio leaves, and say which half you
+       are in — then name only the causes that apply to that half. */
+    const sil = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(300);
+      document.querySelector('#tabs button[data-v="out"]').click();
+      if (playing) stopSeq();
+
+      o.healthy = await silentCheck();
+      await wait(400);
+
+      /* A bus left down by a hold that never released — the app IS at fault
+         here, and the answer must not be about the phone. */
+      LIVE.perfGain.gain.setValueAtTime(0.001, AC.currentTime); await wait(150);
+      o.busDown = await silentCheck();
+      LIVE.perfGain.gain.setValueAtTime(1, AC.currentTime); await wait(300);
+
+      /* A master filter parked somewhere it eats everything. */
+      LIVE.perfFilt.frequency.setValueAtTime(120, AC.currentTime); await wait(200);
+      o.parked = await silentCheck();
+      LIVE.perfFilt.frequency.setValueAtTime(18500, AC.currentTime); await wait(300);
+
+      /* And the master fader at zero. */
+      const mv = S.masterVol;
+      S.masterVol = 0; LIVE.master.gain.setValueAtTime(0, AC.currentTime); await wait(150);
+      o.muted = await silentCheck();
+      S.masterVol = mv; LIVE.master.gain.setValueAtTime(mv, AC.currentTime); await wait(300);
+
+      /* On the DIRECT path a healthy chain has to point at the silent switch,
+         and on the element path it must NOT — that is the whole point of
+         naming only the causes that apply. */
+      const selp = document.getElementById('outPath');
+      selp.value = 'direct'; selp.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(350);
+      o.direct = await silentCheck();
+      selp.value = 'element'; selp.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(350);
+      o.element = await silentCheck();
+      o.stillPlays = await (async () => {
+        const an = AC.createAnalyser(); an.fftSize = 2048; LIVE.softclip.connect(an);
+        const bf = new Float32Array(2048);
+        const pad = S.pads.findIndex(p => p.bufId >= 0);
+        hitLive(pad, 1); let m = 0;
+        for (let k = 0; k < 30; k++) { an.getFloatTimeDomainData(bf); let sm = 0;
+          for (let i = 0; i < bf.length; i++) sm += bf[i] * bf[i];
+          m = Math.max(m, Math.sqrt(sm / bf.length)); await wait(20); }
+        return +m.toFixed(4); })();
+      return o;
+    });
+    t.ok('a healthy chain is reported as healthy, not as a list of suspects',
+      /THE APP IS MAKING SOUND/.test(sil.healthy), '"' + sil.healthy.slice(0, 100) + '…"');
+    t.ok('AND A BUS LEFT DOWN IS BLAMED ON THE APP, not on the phone',
+      /NO SOUND IS REACHING/.test(sil.busDown) && /performance gain/.test(sil.busDown)
+      && !/silent switch/.test(sil.busDown), '"' + sil.busDown.slice(0, 120) + '…"');
+    t.ok('AND SO IS A FILTER THAT ONLY MOSTLY SILENCES IT',
+      /dB DOWN/.test(sil.parked) && /master filter is parked at 1\d\dHz/.test(sil.parked),
+      '"' + sil.parked.slice(0, 130) + '…"');
+    t.ok('and a master fader at zero is named as itself',
+      /MASTER VOLUME is at zero/.test(sil.muted), '"' + sil.muted.slice(0, 110) + '…"');
+    t.ok('ON THE DIRECT PATH IT POINTS AT THE SILENT SWITCH',
+      /THE APP IS MAKING SOUND/.test(sil.direct) && /ring\/silent switch/.test(sil.direct),
+      '"' + sil.direct.slice(0, 130) + '…"');
+    t.ok('and on the element path it says plainly that the switch is not it',
+      /THE APP IS MAKING SOUND/.test(sil.element) && /silent switch is not it/.test(sil.element),
+      '"' + sil.element.slice(0, 130) + '…"');
+    t.ok('and the check leaves the app making sound afterwards',
+      sil.stillPlays > 0.05, 'level ' + sil.stillPlays);
+
     t.head('THE ANGLE OF THE PHONE CANNOT CHANGE THE VOLUME IN SECRET');
     /* "My volume in playback is different depending on if my phone is landscape
        or regular — same speaker producing sound, not a stereo thing."

@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R184 · 2026-08-26 · what the browser actually gave us';
+const BUILD = 'JBH-88 · R185 · 2026-08-27 · one tap that says which silence it is';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -6592,6 +6592,109 @@ $('btnMByp').addEventListener('click',()=>{
 $('btnOutReset').addEventListener('click',resetAudioOut);
 $('outRoute').addEventListener('change',e=>{ setSessPref(e.target.value); });
 $('outPath').addEventListener('change',e=>{ applyOutPath(e.target.value); });
+/* ---------------- WHY IS IT SILENT? --------------------------------------
+   "I restored a session and it's silent."
+
+   Every part of this is already reported somewhere — the route pip, the master
+   filter badge, DIAG's gate line, the OUT meters — and that is the problem: it
+   is reported in six places and answered in none. Silence has one question
+   behind it, and it is not "which of these readings is wrong", it is IS THE APP
+   MAKING SOUND AT ALL. Those are two completely different faults with no
+   overlapping remedies, and until you know which one you have, every suggestion
+   is a guess.
+
+   So: play a known tone into the master bus, measure at the very last node
+   before the audio leaves, and say which half of the problem you are in. If the
+   chain is passing signal then the app is fine and what is left is the phone —
+   the silent switch, the volume, the route — and the answer names the ones that
+   apply to the output path actually in use. If the chain is NOT passing signal
+   then something in here is holding it, and every gate that could be is checked
+   by value rather than guessed at.
+
+   It is deliberately not clever. A tone, a measurement, and a sentence. */
+let silChkBusy=false;
+async function silentCheck(){
+  if(silChkBusy) return '';
+  ensureAudio();
+  silChkBusy=true;
+  const btn=$('btnSilent'); if(btn){ btn.disabled=true; btn.textContent='LISTENING …'; }
+  const g=LIVE, t=AC.currentTime;
+  const val=n=>{ try{ return +n.gain.value; }catch(e){ return null; } };
+  const before={
+    state:AC.state,
+    master:val(g.master), perfGain:val(g.perfGain), duck:val(g.duckBus),
+    trim:val(g.mTrim), masterVol:S.masterVol,
+    filt:Math.round(g.perfFilt.frequency.value),
+    inputs:capturesOpen(), path:outPath,
+    element:g.ael?(g.ael.paused?'paused':'playing'):'none',
+    stream:(g.msd&&g.msd.stream.getAudioTracks()[0])?g.msd.stream.getAudioTracks()[0].readyState:'none',
+    silGate:silGateDown, byp:!!S.mByp
+  };
+  let lvl=0;
+  try{
+    const an=AC.createAnalyser(); an.fftSize=2048; an.smoothingTimeConstant=0;
+    g.softclip.connect(an);
+    const osc=AC.createOscillator(); osc.frequency.value=440;
+    const amp=AC.createGain(); amp.gain.value=0.0001;
+    osc.connect(amp); amp.connect(g.master); osc.start();
+    amp.gain.setTargetAtTime(0.25,t,0.03);
+    const buf=new Float32Array(2048);
+    for(let i=0;i<26;i++){
+      await new Promise(r=>setTimeout(r,25));
+      an.getFloatTimeDomainData(buf);
+      let sm=0; for(let k=0;k<buf.length;k++) sm+=buf[k]*buf[k];
+      lvl=Math.max(lvl,Math.sqrt(sm/buf.length));
+    }
+    amp.gain.setTargetAtTime(0.0001,AC.currentTime,0.02);
+    setTimeout(()=>{ try{ osc.stop(); osc.disconnect(); amp.disconnect(); g.softclip.disconnect(an); }catch(e){} },250);
+  }catch(e){}
+  if(btn){ btn.disabled=false; btn.textContent='WHY IS IT SILENT?'; }
+  silChkBusy=false;
+  const dbTxt = lvl>0.0005 ? (20*Math.log10(lvl)).toFixed(0)+' dB' : 'nothing';
+  /* GRADED, NOT DETECTED. A first version asked only whether anything at all
+     came through, and a master filter parked at 120Hz passes a 440Hz tone at
+     -37dB — so it answered "the app is making sound, go and look at your
+     phone" about a fault that was squarely the app's. What the tone is WORTH
+     is known (its RMS times the master fader), so the question is how far
+     under that the measurement lands. More than ten decibels down is something
+     in here eating it, whatever is still getting through. */
+  const expect = 0.1768*clamp(S.masterVol,0,2);
+  const shortDb = (expect>0.001 && lvl>1e-6) ? 20*Math.log10(lvl/expect) : -99;
+  const dead = lvl<0.002 || expect<=0.001;
+  const weak = !dead && shortDb<-10;
+  let msg;
+  if(dead||weak){
+    /* Named by value, in the order they actually bite. */
+    const why=[];
+    if(before.state!=='running') why.push('the audio engine is '+before.state+' — tap the screen once to wake it');
+    if(before.masterVol<0.02 || before.master<0.02) why.push('MASTER VOLUME is at zero');
+    if(before.perfGain<0.5) why.push('the performance gain is down at '+before.perfGain.toFixed(2)
+      +' — TAPE STOP or STUTTER was held and never released. The ◉ badge by the message line clears it');
+    if(before.duck<0.5) why.push('the sidechain duck is holding the mix down at '+before.duck.toFixed(2));
+    if(before.silGate) why.push('a SILENCE step is holding the gate down — it lifts on the next hit');
+    if(before.filt<15000) why.push('the master filter is parked at '+before.filt
+      +'Hz — TILT WAH or an automation lane left it there, and the ◐ badge by the message line clears it');
+    msg=(dead?'NO SOUND IS REACHING THE OUTPUT ('+dbTxt+'). '
+              :'SOUND IS REACHING THE OUTPUT BUT IT IS '+Math.abs(Math.round(shortDb))
+               +' dB DOWN ('+dbTxt+') — something in here is eating it. ')
+      +(why.length?why.join('. ')+'.':'Nothing obvious is holding it — send the DIAG report.');
+  }else{
+    const bits=[];
+    if(before.inputs.length) bits.push('An input is open ('+before.inputs.join(', ')
+      +'), so iOS is keeping output on the phone and Bluetooth gets nothing — the ● badge releases it');
+    if(before.path==='direct') bits.push('You are on the DIRECT output path, which the phone\u2019s '
+      +'ring/silent switch CAN mute — check the switch on the side, then the volume');
+    else bits.push('You are on the PLAYS ON SILENT path, so the silent switch is not it — '
+      +'check the volume, and try OUT PATH \u2192 LOUDEST + BLUETOOTH if a speaker is being ignored');
+    if(before.element==='paused') bits.push('the output element is PAUSED, which RESET OUTPUT fixes');
+    msg='THE APP IS MAKING SOUND — '+dbTxt+' at the last node before it leaves. '
+      +'So this is between the phone and your ears, not in the mix. '+bits.join('. ')+'.';
+  }
+  plog('SILENT CHECK: level '+lvl.toFixed(4)+' ('+dbTxt+') · '+JSON.stringify(before));
+  lcd(msg);
+  return msg;
+}
+$('btnSilent').addEventListener('click',()=>{ silentCheck(); });
 $('btnEngReset').addEventListener('click',()=>{ glitchReset();
   lcd('ENGINE COUNTER RESET — play for a while and see whether it stays green.'); });
 $('btnBBOn').addEventListener('click',()=>{
