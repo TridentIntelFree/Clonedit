@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R186 · 2026-08-27 · a take sent to a pad stops playing from its lane';
+const BUILD = 'JBH-88 · R187 · 2026-08-27 · one action that gets the speaker back';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -4167,6 +4167,12 @@ function ensureAudio(){
     LIVE.ael=ael;
     const pr=ael.play();
     if(pr && pr.catch) pr.catch(()=>{ // element playback refused — add direct out, keep msd for recording
+      /* Not if we have already left this path. play() rejects ASYNCHRONOUSLY,
+         so on a device set to DIRECT this fires after applyOutPath below has
+         torn the element down and wired the destination — and then reports a
+         failure that no longer applies, over whatever the app was actually
+         saying. Reconnecting is harmless; the message is not. */
+      if(outPath==='direct') return;
       LIVE.softclip.connect(AC.destination);
       lcd('OUT: direct (element path refused)');
     });
@@ -6695,6 +6701,7 @@ async function silentCheck(){
   return msg;
 }
 $('btnSilent').addEventListener('click',()=>{ silentCheck(); });
+$('btnBt').addEventListener('click',()=>{ sendToBluetooth(); });
 $('btnEngReset').addEventListener('click',()=>{ glitchReset();
   lcd('ENGINE COUNTER RESET — play for a while and see whether it stays green.'); });
 $('btnBBOn').addEventListener('click',()=>{
@@ -7262,6 +7269,48 @@ function releaseAllInputs(){
    session was in record mode keeps the route it was given. A fresh context is
    what makes the system choose again — which is why this does what the
    low-rate RETRY does, for the same underlying reason. */
+/* ---------------- GET IT BACK ON THE BLUETOOTH SPEAKER --------------------
+   "It's not playing out of Bluetooth connection, it's playing from phone
+   again."
+
+   There are three levers for this and they are in three places: release
+   whatever input is holding the session in play-and-record, move off the
+   output path that WebKit treats as a communications stream and therefore
+   never sends to A2DP, and tear the context down so iOS picks a route again
+   rather than keeping the one it chose when the session went active. Any one of
+   them alone can fail to fix it. Knowing that, and knowing the order, is not
+   something an instrument should ask of the person playing it.
+
+   So it is one action that does all three and then says what it did. The cost
+   is stated rather than hidden: DIRECT is the path a Bluetooth speaker can
+   receive, and it is also the one the phone's ring/silent switch can mute. */
+function isWebKitAudio(){
+  /* Feature detection, not a user-agent string: navigator.audioSession is a
+     WebKit API that Chromium does not implement, and WebKit is exactly the
+     engine the element-path limitation belongs to. */
+  try{ return !!navigator.audioSession; }catch(e){ return false; }
+}
+function sendToBluetooth(){
+  const held=releaseAllInputs();
+  const movedPath = outPath!=='direct';
+  if(movedPath) applyOutPath('direct',true);
+  try{ if(playing) stopSeq(); }catch(e){}
+  try{ traxPreviewStop(); }catch(e){}
+  try{ rebuildAudio(); }catch(e){ lcd('COULD NOT REOPEN THE AUDIO: '+(e.message||e)); return ''; }
+  forgetAudioRoute();
+  applyAudioRoute();
+  const did=[];
+  if(held.length) did.push('released '+held.join(' and '));
+  if(movedPath) did.push('moved OUT PATH to DIRECT, which is the one a Bluetooth speaker can receive');
+  did.push('reopened the audio so the phone picks an output again');
+  const msg='SENT TO BLUETOOTH — '+did.join(', ')+'. Play something now. '
+    +'If it still comes out of the phone, the speaker is not connected as a media device — check it in '
+    +'the phone\u2019s own Bluetooth settings. And note DIRECT can be muted by the ring/silent switch.';
+  plog('SEND TO BLUETOOTH: '+JSON.stringify({held,movedPath,path:outPath,webkit:isWebKitAudio()}));
+  lcd(msg);
+  try{ drawRoutePip(); }catch(e){}
+  return msg;
+}
 function resetAudioOut(){
   const held=releaseAllInputs();
   const wasRate=AC?Math.round(AC.sampleRate):0;
@@ -7345,6 +7394,7 @@ function applyOutPath(mode,quiet){
   try{ localStorage.setItem(OUTP_KEY,outPath); }catch(e){}
   const sel=$('outPath'); if(sel) sel.value=outPath;
   const h=$('outPathHint'); if(h) h.textContent=outPathWords();
+  try{ drawRoutePip(); }catch(e){}
   if(!AC||!LIVE||!LIVE.softclip) return outPath;
   if(LIVE.msd){ try{ LIVE.softclip.disconnect(LIVE.msd); }catch(e){} }
   try{ LIVE.softclip.disconnect(AC.destination); }catch(e){}
@@ -7483,19 +7533,29 @@ try{ const sel=$('outPath'); if(sel) sel.value=outPath;
 function drawRoutePip(){
   const pip=$('recPip'); if(!pip) return;
   const who=capturesOpen();
-  pip.hidden=!who.length;
+  /* TWO REASONS OUTPUT SITS ON THE PHONE, and only one of them was ever shown.
+     An open input is the loud one. The quiet one is the output path itself:
+     WebKit treats an <audio> element playing a MediaStream as a communications
+     stream, which carries no A2DP at all, so on that engine the element path
+     cannot reach a Bluetooth speaker however many inputs are closed. That is a
+     permanent condition of the path rather than a fault, so it is only claimed
+     on the engine it belongs to. */
+  const pathBlocks = isWebKitAudio() && outPath==='element';
+  pip.hidden = !who.length && !pathBlocks;
   if(who.length) pip.title='An input is open ('+who.join(', ')+'). While it is, iOS keeps output '
-    +'on the phone and Bluetooth speakers get nothing. Turn the input off to get Bluetooth back.';
+    +'on the phone and Bluetooth speakers get nothing. Tap to release it and get Bluetooth back.';
+  else if(pathBlocks) pip.title='OUT PATH is PLAYS ON SILENT, which this browser sends as a '
+    +'communications stream — it carries no Bluetooth. Tap to move to DIRECT and reopen the audio. '
+    +'DIRECT can be muted by the ring/silent switch.';
 }
 /* Tapping it says what is holding the route, because a badge that only has a
    tooltip has nothing on a touch screen. */
 document.addEventListener('DOMContentLoaded',()=>{
   const pip=$('recPip'); if(!pip) return;
   pip.addEventListener('click',()=>{
-    const who=capturesOpen();
-    if(!who.length){ lcd('No input is open — audio should be going wherever the phone normally sends it.'); return; }
-    lcd('RELEASING '+who.join(' and ')+' — iOS will not send audio to Bluetooth while an input is open.');
-    resetAudioOut();
+    /* One action, whichever of the two reasons lit it — the person tapping it
+       wants their speaker back, not a lesson in which cause applied. */
+    sendToBluetooth();
   });
 });
 /* THE MASTER PERFORMANCE SECTION LEAVES MARKS, AND NOTHING SAID SO.

@@ -487,8 +487,19 @@ export default async function ({ browser, base }) {
       const mid = document.elementFromPoint(bb.left + bb.width / 2, bb.top + bb.height / 2);
       o.visible = { onScreen: bb.left >= 0 && bb.right <= window.innerWidth && bb.width > 20,
         topmost: mid ? (mid.id || mid.tagName) : 'none' };
+      const pathBefore = outPath;
       pip.click();
       o.tapLcd = document.getElementById('lcdmsg').textContent;
+      /* The tap now moves a DEVICE preference that lives in localStorage, so
+         leaving it changed would follow the rest of this suite around — and it
+         did: three later checks failed on a setting this section had made. */
+      await new Promise(r => setTimeout(r, 800));
+      if (outPath !== pathBefore) {
+        const sp = document.getElementById('outPath');
+        sp.value = pathBefore; sp.dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise(r => setTimeout(r, 400));
+      }
+      o.pathRestored = outPath === pathBefore;
       micOn = false; drawRoutePip();
       o.afterMic = { open: capturesOpen(), shown: !pip.hidden };
 
@@ -527,8 +538,14 @@ export default async function ({ browser, base }) {
        when the answer is "release the input and reopen the audio", so it now
        does that — a tooltip is nothing on a touch screen and neither is a
        paragraph you cannot act on. */
-    t.ok('tapping it resets the output rather than only describing the problem',
-      /OUTPUT RESET|RELEASING/i.test(route.tapLcd), route.tapLcd.slice(0, 90));
+    /* It used to explain the situation, then it released the input and reopened
+       the audio, and now it does the whole job — releases the input, moves onto
+       the path a Bluetooth speaker can actually receive, and reopens. The claim
+       has never changed: a badge you can tap has to DO something. */
+    t.ok('tapping it does the whole job rather than only describing the problem',
+      /SENT TO BLUETOOTH/i.test(route.tapLcd), route.tapLcd.slice(0, 100));
+    t.ok('and puts the device preference back rather than following the suite around',
+      route.pathRestored);
     t.ok('the MIC panel raises it, and the tooltip names the feature',
       route.withMic.shown && route.withMic.open.includes('MIC')
       && /MIC/.test(route.withMic.title) && /Bluetooth/i.test(route.withMic.title),
@@ -1635,6 +1652,71 @@ export default async function ({ browser, base }) {
       dbl.withFix.leakDb < -30, 'leak ' + dbl.withFix.leakDb + ' dB');
     t.ok('DIAG names the state, so a project already in it can be diagnosed',
       /doubled: T1 and .* both play buf/.test(dbl.diag), dbl.diag.slice(0, 120));
+
+    t.head('ONE ACTION THAT GETS THE SPEAKER BACK');
+    /* "It's not playing out of Bluetooth connection, it's playing from phone
+       again."
+
+       Three levers, in three places, and any one alone can fail: release the
+       input holding the session in play-and-record, move off the output path
+       WebKit sends as a communications stream (which carries no A2DP at all),
+       and tear the context down so iOS picks a route again instead of keeping
+       the one it chose when the session went active. Knowing that, and the
+       order, is not something an instrument should ask of the player. */
+    const bt = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(300);
+      if (playing) stopSeq();
+      const sel = document.getElementById('outPath');
+      sel.value = 'element'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(350);
+      o.before = { path: outPath, inputs: capturesOpen().length };
+
+      o.said = sendToBluetooth();
+      await wait(1200);
+      o.after = { path: outPath, state: AC.state };
+
+      /* It must leave the app audible, not merely rerouted — a rebuild that
+         forgets to reconnect anything is the classic way this kind of fix
+         "works" and silences everything. */
+      const an = AC.createAnalyser(); an.fftSize = 2048; an.smoothingTimeConstant = 0;
+      LIVE.softclip.connect(an);
+      const bf = new Float32Array(2048);
+      const pad = S.pads.findIndex(p => p.bufId >= 0);
+      hitLive(pad, 1); let m = 0;
+      for (let k = 0; k < 30; k++) { an.getFloatTimeDomainData(bf); let sm = 0;
+        for (let i = 0; i < bf.length; i++) sm += bf[i] * bf[i];
+        m = Math.max(m, Math.sqrt(sm / bf.length)); await wait(20); }
+      o.stillPlays = +m.toFixed(4);
+
+      /* The badge claims the path blocks Bluetooth only on the engine where
+         that is true — it is feature-detected off navigator.audioSession,
+         which Chromium does not implement. */
+      o.webkit = isWebKitAudio();
+      sel.value = 'element'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(300);
+      const pip = document.getElementById('recPip');
+      o.pipOnElement = !pip.hidden;
+      o.pipTitle = pip.title.slice(0, 80);
+      sel.value = 'direct'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(300);
+      o.pipOnDirect = !pip.hidden;
+      sel.value = 'element'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(300);
+      return o;
+    });
+    t.ok('it moves the output onto the path a speaker can receive',
+      bt.before.path === 'element' && bt.after.path === 'direct');
+    t.ok('and says everything it did, with the cost of it',
+      /SENT TO BLUETOOTH/.test(bt.said) && /DIRECT/.test(bt.said)
+      && /ring\/silent switch/.test(bt.said), '"' + bt.said.slice(0, 140) + '…"');
+    t.ok('AND LEAVES THE APP AUDIBLE, which a rebuild is the classic way to break',
+      bt.stillPlays > 0.05 && bt.after.state === 'running', 'level ' + bt.stillPlays);
+    t.ok('the badge claims the path blocks Bluetooth only on the engine where it does',
+      bt.webkit ? bt.pipOnElement : !bt.pipOnElement,
+      'audioSession API ' + (bt.webkit ? 'present' : 'absent') + ', badge '
+      + (bt.pipOnElement ? 'shown' : 'hidden') + ' on the element path');
+    t.ok('and never claims it about the direct path', !bt.pipOnDirect);
 
     t.head('THE ANGLE OF THE PHONE CANNOT CHANGE THE VOLUME IN SECRET');
     /* "My volume in playback is different depending on if my phone is landscape
