@@ -475,11 +475,14 @@ export default async function ({ browser, base }) {
       o.hasPip = !!pip;
       o.hiddenAtRest = pip ? pip.hidden : null;
       o.openAtRest = capturesOpen();
+      drawRoutePip();
+      o.restLabel = pip.textContent;
+      o.restQuiet = pip.classList.contains('ok');
 
       /* Drive the state the way each feature does, without a real getUserMedia:
          the question is whether capturesOpen() and the badge follow it. */
       micOn = true; drawRoutePip();
-      o.withMic = { open: capturesOpen(), shown: !pip.hidden, title: pip.title };
+      o.withMic = { open: capturesOpen(), shown: !pip.classList.contains('ok'), title: pip.title };
       /* Shown is not the same as seen. The first version of this badge lived in
          the header, whose left column is clipped where the transport begins,
          and at 320px it rendered underneath the tour button. */
@@ -501,16 +504,16 @@ export default async function ({ browser, base }) {
       }
       o.pathRestored = outPath === pathBefore;
       micOn = false; drawRoutePip();
-      o.afterMic = { open: capturesOpen(), shown: !pip.hidden };
+      o.afterMic = { open: capturesOpen(), shown: !pip.classList.contains('ok') };
 
       ampOn = true; drawRoutePip();
-      o.withAmp = { open: capturesOpen(), shown: !pip.hidden, title: pip.title };
+      o.withAmp = { open: capturesOpen(), shown: !pip.classList.contains('ok'), title: pip.title };
       ampOn = false; drawRoutePip();
 
       traxStream = { getTracks: () => [] }; drawRoutePip();
-      o.withTrax = { open: capturesOpen(), shown: !pip.hidden };
+      o.withTrax = { open: capturesOpen(), shown: !pip.classList.contains('ok') };
       traxStream = null; drawRoutePip();
-      o.afterAll = { open: capturesOpen(), shown: !pip.hidden };
+      o.afterAll = { open: capturesOpen(), shown: !pip.classList.contains('ok') };
 
       /* And the guard that used to yank the route out from under a live
          capture: resumeSession must NOT reclaim playback while an input is
@@ -526,11 +529,19 @@ export default async function ({ browser, base }) {
       resumeSession();
       o.releasedAfterClose = capturesOpen().length === 0;
       drawRoutePip();
-      o.pipHiddenAtEnd = pip.hidden;
+      o.pipHiddenAtEnd = pip.classList.contains('ok');   // quiet, not gone
       return o;
     });
-    t.ok('the badge exists and is hidden while nothing is capturing',
-      route.hasPip && route.hiddenAtRest && route.openAtRest.length === 0);
+    /* It used to hide when the app had no complaint, and the case with no
+       nameable complaint — direct path, no input open, sound still coming out
+       of the handset — is exactly the one where you are stuck with nothing to
+       tap. No browser reports which speaker is actually receiving audio, so
+       "everything is fine" was never something this app could know. */
+    t.ok('the badge is ALWAYS there, because a quiet state is not an absent one',
+      route.hasPip && !route.hiddenAtRest && route.openAtRest.length === 0);
+    t.ok('and reads as quiet rather than as an alarm when nothing is wrong',
+      route.restLabel === '◎ OUT' && route.restQuiet,
+      '"' + route.restLabel + '" quiet-styled: ' + route.restQuiet);
     t.ok('AND IT IS ACTUALLY VISIBLE — not underneath another control',
       route.visible && route.visible.onScreen && route.visible.topmost === 'recPip',
       JSON.stringify(route.visible) + ' (it sat under the tour button in the header at 320px)');
@@ -644,18 +655,18 @@ export default async function ({ browser, base }) {
       await armTrack(0);
       o.armed = traxArm === 0;
       o.openAfterArm = capturesOpen();
-      o.pipAfterArm = !document.getElementById('recPip').hidden;
+      o.pipAfterArm = !document.getElementById('recPip').classList.contains('ok');
       o.armLcd = document.getElementById('lcdmsg').textContent;
 
       await playPressed();
       await new Promise(r => setTimeout(r, 1800));
       o.openWhileRolling = capturesOpen();
-      o.pipWhileRolling = !document.getElementById('recPip').hidden;
+      o.pipWhileRolling = !document.getElementById('recPip').classList.contains('ok');
 
       stopSeq();
       await new Promise(r => setTimeout(r, 1200));
       o.openAfterStop = capturesOpen();
-      o.pipAfterStop = !document.getElementById('recPip').hidden;
+      o.pipAfterStop = !document.getElementById('recPip').classList.contains('ok');
       o.tookIt = S.trax[0].bufId >= 0;
       o.peak = S.trax[0].bufId >= 0 ? pk(S.buffers[S.trax[0].bufId]) : 0;
       o.commitLcd = document.getElementById('lcdmsg').textContent;
@@ -689,7 +700,7 @@ export default async function ({ browser, base }) {
       micOn = false;                       // the leak: flag cleared, track still live
       drawRoutePip();
       o.stillLive = liveInputTracks();
-      o.badgeShown = !document.getElementById('recPip').hidden;
+      o.badgeShown = !document.getElementById('recPip').classList.contains('ok');
       o.capturesSeesIt = capturesOpen().join(', ');
       document.getElementById('btnDiag').click();
       o.diag = (document.getElementById('docText').value.split('\n')
@@ -1696,11 +1707,13 @@ export default async function ({ browser, base }) {
       sel.value = 'element'; sel.dispatchEvent(new Event('change', { bubbles: true }));
       await wait(300);
       const pip = document.getElementById('recPip');
-      o.pipOnElement = !pip.hidden;
+      o.pipOnElement = !pip.classList.contains('ok');
       o.pipTitle = pip.title.slice(0, 80);
       sel.value = 'direct'; sel.dispatchEvent(new Event('change', { bubbles: true }));
       await wait(300);
-      o.pipOnDirect = !pip.hidden;
+      o.pipOnDirectWarn = !pip.classList.contains('ok');
+      o.pipOnDirectShown = !pip.hidden;
+      o.pipOnDirectTitle = pip.title;
       sel.value = 'element'; sel.dispatchEvent(new Event('change', { bubbles: true }));
       await wait(300);
       return o;
@@ -1716,7 +1729,10 @@ export default async function ({ browser, base }) {
       bt.webkit ? bt.pipOnElement : !bt.pipOnElement,
       'audioSession API ' + (bt.webkit ? 'present' : 'absent') + ', badge '
       + (bt.pipOnElement ? 'shown' : 'hidden') + ' on the element path');
-    t.ok('and never claims it about the direct path', !bt.pipOnDirect);
+    t.ok('and never claims it about the direct path', !bt.pipOnDirectWarn);
+    t.ok('BUT STILL OFFERS THE ACTION THERE — the case with no nameable reason '
+      + 'is the one you are stuck in', bt.pipOnDirectShown && /tap to release any input/i.test(bt.pipOnDirectTitle),
+      '"' + bt.pipOnDirectTitle.slice(0, 90) + '…"');
 
     t.head('THE ANGLE OF THE PHONE CANNOT CHANGE THE VOLUME IN SECRET');
     /* "My volume in playback is different depending on if my phone is landscape
