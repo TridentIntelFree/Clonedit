@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R187 · 2026-08-27 · one action that gets the speaker back';
+const BUILD = 'JBH-88 · R188 · 2026-08-27 · the option is always there';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -7285,10 +7285,19 @@ function releaseAllInputs(){
    is stated rather than hidden: DIRECT is the path a Bluetooth speaker can
    receive, and it is also the one the phone's ring/silent switch can mute. */
 function isWebKitAudio(){
-  /* Feature detection, not a user-agent string: navigator.audioSession is a
-     WebKit API that Chromium does not implement, and WebKit is exactly the
-     engine the element-path limitation belongs to. */
-  try{ return !!navigator.audioSession; }catch(e){ return false; }
+  /* navigator.audioSession alone was too narrow. It is a WebKit API, so a
+     positive is conclusive — but it only shipped in Safari 17, and the
+     element-path limitation is older than the API by years. On an iPhone a
+     version or two behind, the detection said "not WebKit", the badge never
+     lit for the path, and the app offered nothing about the one problem it
+     could actually explain.
+     So: the API when it is there, and otherwise the standard Safari test —
+     WebKit in the UA with none of the engines that also put it there. A UA
+     string is the wrong tool for a capability and the right one for "which
+     engine's known behaviour am I standing in". */
+  try{ if(navigator.audioSession) return true; }catch(e){}
+  try{ return /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent||''); }
+  catch(e){ return false; }
 }
 function sendToBluetooth(){
   const held=releaseAllInputs();
@@ -7541,12 +7550,37 @@ function drawRoutePip(){
      permanent condition of the path rather than a fault, so it is only claimed
      on the engine it belongs to. */
   const pathBlocks = isWebKitAudio() && outPath==='element';
-  pip.hidden = !who.length && !pathBlocks;
-  if(who.length) pip.title='An input is open ('+who.join(', ')+'). While it is, iOS keeps output '
-    +'on the phone and Bluetooth speakers get nothing. Tap to release it and get Bluetooth back.';
-  else if(pathBlocks) pip.title='OUT PATH is PLAYS ON SILENT, which this browser sends as a '
-    +'communications stream — it carries no Bluetooth. Tap to move to DIRECT and reopen the audio. '
-    +'DIRECT can be muted by the ring/silent switch.';
+  const warn = who.length>0 || pathBlocks;
+  /* IT IS NEVER HIDDEN NOW.
+
+     "Last time it didn't play over Bluetooth it gave me an option to turn it
+      back over to Bluetooth. It didn't play through BT this time and didn't
+      give me an option."
+
+     Because the badge only existed while the app could NAME a reason, and the
+     case with no nameable reason is exactly the one where you are stuck: on the
+     direct path, no input open, and the sound still coming out of the phone.
+     The app decided everything was fine and offered nothing.
+
+     Nothing in any browser reports which speaker audio is actually reaching, so
+     "everything is fine" was never a thing this app could know — only a thing
+     it had no complaint about. The control is always there now, in two states:
+     red and named when there IS a reason, and quiet otherwise. Quiet is not the
+     same as absent, and the tap does the same job either way. */
+  pip.hidden=false;
+  pip.classList.toggle('ok',!warn);
+  const label = warn ? '\u25cf PHONE OUT' : '\u25ce OUT';
+  if(pip.textContent!==label) pip.textContent=label;
+  pip.title = who.length
+    ? 'An input is open ('+who.join(', ')+'). While it is, iOS keeps output '
+      +'on the phone and Bluetooth speakers get nothing. Tap to release it and get Bluetooth back.'
+    : pathBlocks
+    ? 'OUT PATH is PLAYS ON SILENT, which this browser sends as a communications stream — it '
+      +'carries no Bluetooth. Tap to move to DIRECT and reopen the audio. DIRECT can be muted by '
+      +'the ring/silent switch.'
+    : 'Nothing in here is holding the output on the phone, but no browser will say which speaker '
+      +'is actually getting the sound. If it is coming out of the handset, tap to release any '
+      +'input, move to the DIRECT path and reopen the audio.';
 }
 /* Tapping it says what is holding the route, because a badge that only has a
    tooltip has nothing on a touch screen. */
