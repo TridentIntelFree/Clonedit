@@ -1027,6 +1027,95 @@ export default async function ({ browser, base }) {
       'worst sample difference ' + lay.bounceRepeatable.worst
       + ' across ' + lay.bounceRepeatable.len + ' samples');
 
+    t.head('HOW A PAD ANSWERS A FINGER, AND WHAT IT COSTS');
+    /* "Any way to improve like haptic or feel of the app?"
+
+       The flash moved background, border-colour and box-shadow, and set a
+       setTimeout per hit to undo them. Three of those four are PAINT — the
+       browser re-rasterises the pad — on the main thread, which is the thread
+       the scheduler runs on, sixteen pads at a time on a dense pattern.
+
+       Opacity and transform are the two properties a compositor can animate
+       without repainting anything, so the glow is its own layer and the press
+       is a transform, decayed from the meter's existing rAF rather than from a
+       timer each. The claim is not "it looks nicer" — that is not testable —
+       it is that it is velocity-shaped and that it costs the audio nothing. */
+    const feel = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(400);
+      document.querySelector('#tabs button[data-v="pads"]').click();
+      S.bank = 0; drawPads(); await wait(200);
+      const pad = S.pads.findIndex((p, i) => p.bufId >= 0 && i < 16);
+      const el = document.querySelectorAll('.pad')[pad];
+      const glow = () => +(el.querySelector('.glow').style.opacity || 0);
+      o.hasGlow = !!el.querySelector('.glow');
+
+      flashPad(pad, 1.0); await wait(16);
+      o.hard = { op: glow(), tf: el.style.transform };
+      await wait(500);
+      o.rest = { op: glow(), tf: el.style.transform };
+      flashPad(pad, 0.2); await wait(16);
+      o.soft = { op: glow() };
+      await wait(500);
+
+      /* A soft hit fades faster as well as glowing dimmer, so the grid reads
+         as dynamics rather than as on and off. */
+      const decayOf = async v => { flashPad(pad, v); const t0 = performance.now();
+        for (let k = 0; k < 60; k++) { await wait(12);
+          if (glow() === 0) return Math.round(performance.now() - t0); }
+        return -1; };
+      o.softDecay = await decayOf(0.15); await wait(200);
+      o.hardDecay = await decayOf(1.0); await wait(300);
+
+      /* THE ONE THAT MATTERS. */
+      glitchReset(); glitchArm(); await wait(1800);
+      const before = glitchEvents;
+      startSeq(); await wait(300);
+      const t0 = performance.now();
+      for (let k = 0; k < 240; k++) { flashPad(pad, 0.3 + (k % 7) / 10); await wait(4); }
+      o.mainThreadMs = +(performance.now() - t0 - 240 * 4).toFixed(1);
+      await wait(600);
+      o.dropouts = glitchEvents - before;
+      stopSeq(); await wait(300);
+      /* Structural, not stylistic: the old one armed a timer per hit. */
+      o.timers = (() => { let n = 0; const real = window.setTimeout;
+        window.setTimeout = function (...a) { n++; return real.apply(window, a); };
+        for (let k = 0; k < 20; k++) flashPad(pad, 0.8);
+        window.setTimeout = real; return n; })();
+      await wait(400);
+
+      o.hap = { way: hapticWay(), fired: haptic('tap'),
+        disabled: document.getElementById('hapOn').disabled,
+        what: document.getElementById('hapWhat').textContent };
+      o.hapSafe = (() => { try { ['tap', 'firm', 'step', 'warn', 'nope']
+        .forEach(k => haptic(k)); return true; } catch (e) { return String(e); } })();
+      return o;
+    });
+    t.ok('a pad hit lights its own compositor layer', feel.hasGlow && feel.hard.op > 0.8
+      && /scale/.test(feel.hard.tf), feel.hard.op + ' opacity, ' + feel.hard.tf);
+    t.ok('AND A SOFT HIT LOOKS SOFT', feel.soft.op < feel.hard.op * 0.4,
+      feel.soft.op + ' against ' + feel.hard.op);
+    t.ok('and fades faster too, so the grid shows dynamics',
+      feel.softDecay > 0 && feel.hardDecay > feel.softDecay * 1.4,
+      feel.softDecay + 'ms soft vs ' + feel.hardDecay + 'ms hard');
+    t.ok('everything is put back when it is over — no stuck glow or transform',
+      feel.rest.op === 0 && feel.rest.tf === '');
+    t.ok('IT COSTS THE AUDIO THREAD NOTHING', feel.dropouts === 0,
+      feel.dropouts + ' dropouts across 240 hits while playing');
+    t.ok('and next to nothing on the main one',
+      feel.mainThreadMs < 240, feel.mainThreadMs + 'ms for 240 hits ('
+      + (feel.mainThreadMs / 240).toFixed(2) + 'ms each)');
+    t.ok('with no timer armed per hit, which is what it replaced',
+      feel.timers === 0, feel.timers + ' timers for 20 hits');
+    t.ok('haptics report the route they actually have, or none',
+      ['vibrate', 'switch', 'none'].includes(feel.hap.way)
+      && /Feedback comes from/.test(feel.hap.what), feel.hap.what);
+    t.ok('the switch is disabled when there is no haptic to give',
+      feel.hap.way === 'none' ? feel.hap.disabled : !feel.hap.disabled,
+      'route ' + feel.hap.way + ', control ' + (feel.hap.disabled ? 'disabled' : 'live'));
+    t.ok('and asking for one never throws, whatever the platform', feel.hapSafe === true,
+      String(feel.hapSafe));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
