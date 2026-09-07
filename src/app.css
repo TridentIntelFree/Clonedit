@@ -325,8 +325,7 @@ h3 span{font-weight:400}
    read the grid row alone, so a pad running from its lane went dark while you
    could hear it — and the colour is what tells you where to go and turn it off. */
 .pad.polyonly .led{background:var(--send);border-color:#3c6f65;box-shadow:0 0 6px rgba(127,212,194,.9)}
-.pad.hit{background:var(--amber-soft);border-color:var(--amber)}
-.pad.hit .pn,.pad.hit .pname{color:#120d04}
+/* moved to the compositor — see "HOW A PAD ANSWERS A FINGER" at the end */
 /* SELECTED pad — blue, distinct from the green/amber status LEDs, so it reads
    on an empty pad too. A blue "SEL" tag names it; the ring shows where audio
    (KEEP / take → PAD / JAM) will land. */
@@ -865,3 +864,26 @@ input[type=range].inert{opacity:.4}
    channel you are looking at" marks, and small enough that a pad with one
    sample looks exactly as it always did. */
 .pname .laytag{font-style:normal;color:var(--send);margin-left:4px;font-size:9px;letter-spacing:0}
+
+/* ---- HOW A PAD ANSWERS A FINGER ------------------------------------------
+   The flash used to move background, border-colour and box-shadow, all of
+   which make the browser re-rasterise the pad — sixteen of them, on the main
+   thread, on a dense pattern. Opacity and transform are the two properties a
+   compositor can animate without repainting anything, so the glow is its own
+   layer and the press is a transform. */
+.pad .glow{position:absolute;inset:0;border-radius:9px;pointer-events:none;z-index:0;opacity:0;
+  background:radial-gradient(circle at 50% 55%,
+    rgba(255,140,46,.95) 0%, rgba(255,140,46,.34) 58%, rgba(255,140,46,0) 78%);
+  will-change:opacity}
+.pad{will-change:transform}
+/* The labels have to stay on top of it and stay legible — the old flash turned
+   the pad amber and the text dark, which is a repaint and a readability cliff
+   at the same moment you most want to read the pad. */
+.pad .pname{position:relative;z-index:1}
+/* .hit no longer paints anything. It is kept because it is what says "this pad
+   is sounding" to anything reading the DOM, and it now costs nothing to set. */
+.pad.hit{border-color:var(--amber)}
+@media (prefers-reduced-motion:reduce){
+  .pad{will-change:auto}
+  .pad .glow{transition:none}
+}

@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R189 · 2026-09-07 · arm mid-pass, and a short CC cannot poison a save';
+const BUILD = 'JBH-88 · R190 · 2026-09-07 · how a pad answers a finger';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -4346,6 +4346,7 @@ function meterLoop(){
   /* Four times a second is plenty for a badge, and keeps two AudioParam reads
      and a string compare off the other fifty-six frames. */
   if(now-perfPipT>250){ perfPipT=now; try{ drawPerfPip(); }catch(e){} }
+  padGlowTick(now);        // pad flashes decay here rather than on a timer each
   // once a second, and only while OUT is open: a health readout must not itself
   // be a cost on the machine it is reporting about
   if(now-engDrawT>1000 && $('v-out') && $('v-out').classList.contains('on')){
@@ -4481,7 +4482,8 @@ function buildPads(){
   for(let i=0;i<16;i++){
     const el=document.createElement('div'); el.className='pad';
     el.setAttribute('role','button'); el.tabIndex=0;
-    el.innerHTML='<canvas class="pwave" width="120" height="48" aria-hidden="true"></canvas>'
+    el.innerHTML='<div class="glow" aria-hidden="true"></div>'
+      +'<canvas class="pwave" width="120" height="48" aria-hidden="true"></canvas>'
       +'<div class="pn"></div><div class="led"></div><div class="rvs">◀</div><div class="snd"></div><div class="pname"></div>';
     el.addEventListener('keydown',e=>{
       if(e.key!==' ' && e.key!=='Enter' && e.key!=='Spacebar') return;
@@ -4580,6 +4582,7 @@ function repStop(idx){ const h=repHold[idx]; if(h){ clearInterval(h.timer); dele
 function repStopAll(){ Object.keys(repHold).forEach(k=>repStop(k)); }
 function padPress(slot,vel){
   const idx=padIndex(slot);
+  haptic(vel!=null && vel>0.75 ? 'firm' : 'tap');
   // The tapped pad is THE current pad everywhere: EDIT target, blue SEL, AND the
   // sequencer row. Before, seqPad only followed in EDIT mode, so selecting a pad
   // then "removing it from the sequence" edited a DIFFERENT row — the pad kept
@@ -4671,13 +4674,126 @@ function drawPads(){
       + (snd?', sending to '+(p.dly>0.02?'delay':'')+(p.dly>0.02&&p.rev>0.02?' and ':'')+(p.rev>0.02?'reverb':''):''));
   }
 }
+/* ---------------- HAPTICS ------------------------------------------------
+   An instrument you hit with your fingers should push back, and this one never
+   did — there was not a single call to any haptic API in the file.
+
+   The awkward part is that the obvious one does not work where this app is
+   used. navigator.vibrate is unimplemented in Safari on iOS and always has
+   been, so shipping it alone would have been a feature that did nothing on the
+   only device anybody has played this on. WebKit's one web-exposed haptic is
+   the switch control: iOS 17.4 gave <input type="checkbox" switch> the system
+   toggle feedback, and toggling one off-screen is the way to ask for it.
+
+   Both are wired, the right one is chosen by feature detection, and when
+   neither exists the app SAYS so rather than offering a switch that quietly
+   does nothing — the same rule as everywhere else here.
+
+   It fires on things YOU do: a pad under your finger, a step going on or off,
+   the transport. Never on playback. A buzz on every sequenced hit is not feel,
+   it is a phone crawling across a table. */
+const HAP_KEY='jbh_hap_v1';
+let hapPref=(()=>{ try{ return localStorage.getItem(HAP_KEY)!=='off'; }catch(e){ return true; } })();
+let hapEl=null, hapWay=null;
+function hapticWay(){
+  if(hapWay!=null) return hapWay;
+  try{ if(typeof navigator.vibrate==='function') return (hapWay='vibrate'); }catch(e){}
+  try{ if('switch' in document.createElement('input')) return (hapWay='switch'); }catch(e){}
+  return (hapWay='none');
+}
+function hapticWords(){
+  const w=hapticWay();
+  return w==='vibrate' ? 'the vibration motor'
+    : w==='switch' ? 'the system toggle haptic'
+    : 'nothing — this browser exposes no haptic at all, so the switch above is off and greyed';
+}
+/* Durations in the units the platform actually takes: milliseconds for a motor,
+   and for the switch route nothing at all, because iOS picks the feel itself. */
+const HAP_MS={tap:8,firm:14,step:6,warn:22};
+function haptic(kind){
+  if(!hapPref) return false;
+  const w=hapticWay();
+  if(w==='vibrate'){ try{ navigator.vibrate(HAP_MS[kind]||8); return true; }catch(e){ return false; } }
+  if(w==='switch'){
+    try{
+      if(!hapEl){
+        const lab=document.createElement('label');
+        lab.style.cssText='position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden';
+        lab.setAttribute('aria-hidden','true');
+        const inp=document.createElement('input');
+        inp.type='checkbox'; inp.setAttribute('switch',''); inp.tabIndex=-1;
+        lab.appendChild(inp); document.body.appendChild(lab);
+        hapEl=inp;
+      }
+      hapEl.checked=!hapEl.checked;
+      hapEl.dispatchEvent(new Event('change',{bubbles:false}));
+      return true;
+    }catch(e){ return false; }
+  }
+  return false;
+}
+function setHaptics(on){
+  hapPref=!!on && hapticWay()!=='none';
+  try{ localStorage.setItem(HAP_KEY,hapPref?'on':'off'); }catch(e){}
+  const c=$('hapOn'); if(c){ c.checked=hapPref; c.disabled=hapticWay()==='none'; }
+  const h=$('hapWhat'); if(h) h.textContent='Feedback comes from '+hapticWords()+'.';
+  if(hapPref) haptic('firm');
+  return hapPref;
+}
+/* ---------------- HOW A PAD ANSWERS A FINGER ------------------------------
+   The old flash changed background, border-colour and box-shadow, and set a
+   setTimeout per hit to undo them. Three of those four are PAINT — the browser
+   re-rasterises the pad — and on a dense pattern that is sixteen pads
+   repainting on the main thread, the same thread the scheduler runs on, plus a
+   timer per hit.
+
+   This does the same job on the compositor only: a glow layer whose OPACITY
+   moves and a TRANSFORM on the pad, which are the two properties a browser can
+   animate without repainting anything. The decay is driven from the meter's
+   existing requestAnimationFrame rather than from timers, so a hundred hits
+   cost one loop that was already running.
+
+   And it is velocity-shaped, which the old one nearly was: a soft hit now
+   decays faster as well as glowing dimmer, so the grid reads as dynamics
+   rather than as on and off. */
+/* The OS preference, read once and kept current — it is a property of the
+   device, not of the project, so it does not belong in S. The CSS honours it
+   for transitions already; the transform is scripted, so it has to be asked
+   here too or a reduced-motion setting would be half obeyed. */
+let reduceMotion=(()=>{ try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }
+  catch(e){ return false; } })();
+try{ const mq=matchMedia('(prefers-reduced-motion: reduce)');
+  const upd=e=>{ reduceMotion=e.matches; };
+  if(mq.addEventListener) mq.addEventListener('change',upd); else if(mq.addListener) mq.addListener(upd);
+}catch(e){}
+const padGlow=new Map();      // padEl -> {v, t0, ms}
 function flashPad(idx,vel){
   if(Math.floor(idx/16)!==S.bank) return;
-  const el=padEls[idx%16]; el.classList.add('hit');
+  const el=padEls[idx%16]; if(!el) return;
   const v=vel==null?0.9:clamp(vel,0.1,1);
-  el.style.boxShadow='0 0 '+(3+v*15).toFixed(0)+'px rgba(255,140,46,'+(0.35+v*0.55).toFixed(2)+')';
-  clearTimeout(el._hitT);
-  el._hitT=setTimeout(()=>{ el.classList.remove('hit'); el.style.boxShadow=''; },100);
+  el.classList.add('hit');
+  padGlow.set(el,{v,t0:(typeof performance!=='undefined'?performance.now():Date.now()),
+    ms:70+v*150});
+  const g=el._glow||(el._glow=el.querySelector('.glow'));
+  if(g) g.style.opacity=String(v);
+  if(!reduceMotion) el.style.transform='scale('+(1-0.035*v).toFixed(3)+')';
+}
+function padGlowTick(now){
+  if(!padGlow.size) return;
+  for(const [el,st] of padGlow){
+    const k=(now-st.t0)/st.ms;
+    if(k>=1){
+      const g=el._glow||(el._glow=el.querySelector('.glow'));
+      if(g) g.style.opacity='0';
+      el.style.transform=''; el.classList.remove('hit');
+      padGlow.delete(el);
+      continue;
+    }
+    const e=(1-k)*(1-k);                       // ease out, so the tail is soft
+    const g=el._glow||(el._glow=el.querySelector('.glow'));
+    if(g) g.style.opacity=(st.v*e).toFixed(3);
+    if(!reduceMotion) el.style.transform='scale('+(1-0.035*st.v*e).toFixed(4)+')';
+  }
 }
 
 /* edit panel */
@@ -6702,6 +6818,21 @@ async function silentCheck(){
 }
 $('btnSilent').addEventListener('click',()=>{ silentCheck(); });
 $('btnBt').addEventListener('click',()=>{ sendToBluetooth(); });
+/* Reflect what the device can actually do, rather than a checkbox that toggles
+   a preference nothing reads. If there is no haptic route the box is disabled
+   and the line under it says so. */
+document.addEventListener('DOMContentLoaded',()=>{
+  const c=$('hapOn'); if(!c) return;
+  const none=hapticWay()==='none';
+  c.checked=hapPref && !none; c.disabled=none;
+  if(none) hapPref=false;
+  const h=$('hapWhat'); if(h) h.textContent='Feedback comes from '+hapticWords()+'.';
+  c.addEventListener('change',e=>{
+    setHaptics(e.target.checked);
+    lcd(hapPref?'HAPTICS ON \u2014 a nudge on pads, steps and the transport. Never on playback.'
+      :'HAPTICS OFF.');
+  });
+});
 $('btnEngReset').addEventListener('click',()=>{ glitchReset();
   lcd('ENGINE COUNTER RESET — play for a while and see whether it stays green.'); });
 $('btnBBOn').addEventListener('click',()=>{
@@ -10079,8 +10210,8 @@ async function playPressed(){
   }
   startSeq();
 }
-$('btnPlay').addEventListener('click',()=>{ playPressed(); });
-$('btnStop').addEventListener('click',stopSeq);
+$('btnPlay').addEventListener('click',()=>{ haptic('firm'); playPressed(); });
+$('btnStop').addEventListener('click',()=>{ haptic('step'); stopSeq(); });
 $('btnRec').addEventListener('click',()=>{ S.liveRec=!S.liveRec; $('btnRec').classList.toggle('on',S.liveRec); $('btnLiveRec').classList.toggle('on',S.liveRec); drawPadRec(); lcd(S.liveRec?'STEP REC ARMED — pad hits write steps, not audio. For audio: \u25cf AUDIO \u2192 TRACK.':'STEP REC OFF'); });
 $('btnLiveRec').addEventListener('click',()=>$('btnRec').click());
 
@@ -11746,6 +11877,7 @@ function drawSteps(){
       else {
         holdForEdit();                                 // stop the grid moving between taps
         const wasOn=row[i]>0;
+        haptic(wasOn?'step':'tap');                    // going off is a lighter nudge than going on
         const editedPat=S.pattern;                     // capture BEFORE the arrangement can move on
         row[i]=wasOn?0:parseFloat($('stepVel').value);
         if(wasOn && playing) stopPadVoices(S.seqPad);   // removing a step cuts its still-ringing voice — no ghost
