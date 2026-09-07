@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R188 · 2026-08-27 · the option is always there';
+const BUILD = 'JBH-88 · R189 · 2026-09-07 · arm mid-pass, and a short CC cannot poison a save';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -10055,6 +10055,16 @@ function stopSeq(){
   $('btnPlay').classList.remove('on');
   document.querySelectorAll('#stepgrid .step').forEach(el=>el.classList.remove('cur'));
   lcd('STOP.');
+  /* An armed lane with no capture behind it used to end in a bare "STOP." with
+     the lane still lit, which reads as a take that was made. It cannot happen
+     from arming any more, but external clock and a refused microphone can both
+     still get here, and the one thing that must never be reported as success is
+     a pass that recorded nothing. */
+  if(!traxCap && traxArm>=0){
+    const n=traxArm+1; disarmTrax(); drawTrax();
+    lcd('STOP \u2014 TRACK '+n+' WAS ARMED BUT NEVER ROLLED, so nothing was recorded. '
+      +'Arm it again and it starts straight away, whether or not the transport is running.');
+  }
   if(traxCap) traxCommit();      // last, so a take message (incl. the silent-take warning) isn't clobbered by "STOP."
 }
 /* PLAY opens the microphone first when a mic lane is armed, then rolls. The
@@ -10568,6 +10578,39 @@ async function armTrack(i){
   micClaimTrax();               // the mic is on: this lane records it unless you said otherwise
   traxArm=i; drawTrax();
   const hasTake=S.trax[i].bufId>=0;
+  /* ARMING WHILE THE TRANSPORT IS ALREADY ROLLING.
+
+     "Arming a tape lane while the transport is already rolling records nothing
+     — and the message says 'press PLAY to roll', which does nothing because
+     PLAY is already down."
+
+     The capture was only ever built by startTrax, which only startSeq calls. So
+     arming mid-pass armed the lane and nothing else: no capture, an instruction
+     to press a key that was already held, and on STOP a bare "STOP." over a
+     pass that had gone nowhere. Arm-then-PLAY worked, PLAY-then-arm silently
+     did not, and the second is the live-jam order — you hear the loop, you
+     decide to overdub, you arm.
+
+     It rolls from here instead. Where the take LANDS matters as much as that it
+     exists: a lane always starts at the top of the transport, so a take
+     captured from the middle of a pass would play back shifted early by exactly
+     however long you waited. traxBeginCapture is told how far into the current
+     cycle it is, and the commit pads that much silence onto the front, so an
+     overdub comes back where you played it. */
+  if(playing){
+    if(traxSrcNow()==='mic' && !traxStream){
+      lcd('TRACK '+(i+1)+' ARMED \u2014 opening the microphone \u2026');
+      if(!await traxOpenMic()){ drawTrax(); return; }   // it already said why
+      if(traxArm!==i || !playing) return;               // disarmed or stopped while we waited
+    }
+    const lead=AC.currentTime+0.02;
+    traxBeginCapture(lead, cycleOffset(lead));
+    drawTrax();
+    lcd('TRACK '+(i+1)+' IS RECORDING NOW \u00b7 '+$('traxSrc').selectedOptions[0].textContent
+      +' \u2014 the transport was already rolling, so it caught the rest of this pass. '
+      +'STOP commits it'+(hasTake?', replacing the take that was there.':'.'));
+    return;
+  }
   if(micOn && $('traxSrc').value!=='mic')
     lcd('\u26a0 THE MIC IS ON but SOURCE is '+$('traxSrc').selectedOptions[0].textContent
       +' — this lane will record that, not the microphone. Set SOURCE to MIC.');
@@ -10707,7 +10750,15 @@ function applyTraxMix(){
   });
 }
 function stopTraxVoices(){ traxVoices.forEach(v=>{ try{v.src.stop();}catch(e){} }); traxVoices=[]; }
-function traxBeginCapture(when){
+/* How far into the current pattern cycle a moment is. Used only by a mid-roll
+   arm: everything else starts at the top and has an offset of zero. */
+function cycleOffset(t){
+  if(!playing || !seqT0) return 0;
+  const cyc=Math.max(0.05, curPatLen()*stepDur());
+  const d=(t-seqT0)%cyc;
+  return d<0 ? d+cyc : d;
+}
+function traxBeginCapture(when, offset){
   /* A lane armed for the mic with no stream must NOT quietly fall through to
      recording the bus — that is how someone ends up with a take that is not
      what they asked for. It happens when the transport is started by something
@@ -10727,7 +10778,7 @@ function traxBeginCapture(when){
         ctx=new Ctor(); srcNode=ctx.createMediaStreamSource(traxStream);
       }
     }
-    const cap={ctx,srcNode,L:[],R:[],len:0,first:-1,
+    const cap={ctx,srcNode,L:[],R:[],len:0,first:-1, midRoll:+offset||0,
       seqStartCap: ctx===AC ? when : ctx.currentTime+(when-AC.currentTime)};
     const ct=makeCaptureTap(ctx,(l,r,frames,when)=>{
       if(cap.first<0) cap.first=(when!=null?when:ctx.currentTime);
@@ -10748,7 +10799,13 @@ function traxBeginCapture(when){
     // sample-accurate alignment, then scrubbed from the take head.
     // callback timestamps proved unreliable (cold vs warm starts differ by a
     // whole buffer), so we align in the audio domain instead.
-    try{
+    /* NOT ON A MID-ROLL ARM. The marker exists to find bar 1 inside the audio,
+       and a capture that starts mid-pass knows its own offset exactly — so
+       there is nothing for it to locate. Fired anyway it lands at sample 0 of
+       the take, where the commit's mid-roll branch has no reason to look for it
+       and therefore never scrubs it: measured, a 3.78 peak of pure click on the
+       front of every overdub. */
+    if(!cap.midRoll) try{
       const mb=ctx.createBuffer(1,80,ctx.sampleRate), md=mb.getChannelData(0);
       md[0]=4; md[64]=-4;
       const ms=ctx.createBufferSource(); ms.buffer=mb;
@@ -10784,10 +10841,17 @@ function traxCommit(){
   o=0; for(const c of cap.R){ R.set(c,o); o+=c.length; }
   // align sample 0 with bar 1: find the sync marker in the raw capture
   let mi=-1;
-  const lim=Math.min(L.length-65, sr*2);
+  /* A mid-roll arm started after bar 1, so the marker is not in this capture and
+     looking for it can only find a false one in the audio. Its alignment is
+     known exactly instead — pad the front by how far into the cycle it began. */
+  const lim=cap.midRoll>0 ? 0 : Math.min(L.length-65, sr*2);
   for(let i=0;i<lim;i++){ if(L[i]>2.5 && L[i+64]<-2.5){ mi=i; break; } }
   let dl,dr;
-  if(mi>=0){
+  if(cap.midRoll>0){
+    const pad=Math.round(cap.midRoll*sr);
+    dl=new Float32Array(L.length+pad); dl.set(L,pad);
+    dr=new Float32Array(R.length+pad); dr.set(R,pad);
+  }else if(mi>=0){
     dl=L.subarray(mi); dr=R.subarray(mi);
     for(let k=0;k<128 && k<dl.length;k++){ dl[k]=0; dr[k]=0; }   // scrub the marker
   }else{
@@ -13116,6 +13180,34 @@ function velCurve(v){
   if(S.vcurve==='fixed') return 1;
   return x;
 }
+/* HOW MANY BYTES A CHANNEL MESSAGE OWES YOU.
+
+   "A short MIDI CC poisons the mix and the damage survives a save."
+
+   A Control Change is three bytes and this file read the third without ever
+   asking whether it arrived. A two-byte CC — a device using running status, a
+   truncated USB packet, a controller that simply gets it wrong — gave
+   d[2] === undefined, and undefined/127 is NaN. That NaN went straight into
+   S.masterVol or a pad's gain, and from there into an AudioParam, which throws
+   on a non-finite value and abandoned the rest of the handler.
+
+   The saving part is the worse half. JSON.stringify writes NaN as null, so the
+   autosave a moment later stored a null gain, and the load gate skips null
+   because its numeric check reads `x != null` — which is false for null, the
+   exact value it needed to catch. A single malformed message could therefore
+   silence a pad permanently, across saves, with nothing anywhere saying why.
+
+   So: a channel message is dropped unless it carries the bytes its status
+   requires, and it is logged rather than swallowed, because a controller that
+   sends short messages is a thing worth knowing about. */
+const MIDI_LEN={0x80:3,0x90:3,0xA0:3,0xB0:3,0xC0:2,0xD0:2,0xE0:3};
+function midiShort(d,st){
+  const need=MIDI_LEN[st];
+  if(!need) return false;
+  if(!d || d.length<need) return true;
+  for(let i=1;i<need;i++){ const v=d[i]; if(typeof v!=='number' || !isFinite(v)) return true; }
+  return false;
+}
 function onMidi(ev){
   const d=ev.data, st=d[0]&0xF0, ch=d[0]&0x0F;
   // realtime first — never channel-filtered
@@ -13124,6 +13216,11 @@ function onMidi(ev){
   if(d[0]===0xFC){ if(S.extClk) stopSeq(); return; }
   if(d[0]===0xFB){ if(S.extClk && !playing) startSeq(); return; }
   if(S.midiCh>=0 && ch!==S.midiCh) return;
+  if(midiShort(d,st)){
+    mlog('SHORT '+st.toString(16).toUpperCase()+' ch'+(ch+1)+' — '+d.length
+      +' byte'+(d.length===1?'':'s')+', needs '+MIDI_LEN[st]+'. Ignored.');
+    return;
+  }
   if((st===0x90 && d[2]>0)||st===0xB0||st===0xC0) midiActivity();
   if(st===0x90 && d[2]>0){
     mlog('NOTE ON  ch'+(ch+1)+' n'+d[1]+' v'+d[2]);
@@ -13171,7 +13268,12 @@ function onClockTick(){
 }
 function applyCc(cc,val){
   const t=S.ccMaps[cc]; if(!t) return;
-  const x=val/127;
+  /* Belt as well as braces. onMidi drops short messages, but this is the single
+     point every CC write passes through and it is reachable from anywhere — a
+     value that is not a number here becomes a NaN in the project. */
+  const v=+val;
+  if(!isFinite(v)) return;
+  const x=clamp(v,0,127)/127;
   if(t==='m:vol'){ S.masterVol=x*2; if(LIVE) LIVE.master.gain.setTargetAtTime(S.masterVol,AC.currentTime,0.02); }
   else if(t==='m:bpm'){ setBpm(40+x*200); }
   else if(t==='m:swing'){ S.swing=x*0.6; $('swing').value=S.swing; $('swingV').textContent=Math.round(S.swing*100)+'%'; }
@@ -13663,6 +13765,39 @@ function applySessionDoc(doc, bufs){
     })).filter(L=>L.bufId>=0) : [];
     if(['off','rr','vel','stack'].indexOf(p.layMode)<0) p.layMode='rr';
     if(!isFinite(p.vary)) p.vary=0; else p.vary=clamp(+p.vary,0,1); });
+  /* ANY NUMBER THAT IS NOT A NUMBER, WHATEVER PUT IT THERE.
+
+     The per-field lines above default fields that are ABSENT, which is the
+     normal shape of an older document. They do not help with a field that is
+     present and poisoned, and the load gate does not catch it either: its
+     numeric check reads `x != null`, which is false for null — and null is
+     exactly what JSON.stringify writes when a NaN reaches state and autosave
+     runs. A single malformed MIDI CC could therefore silence a pad for good,
+     across every save from then on.
+
+     Rather than adding gain and pan and the other dozen to a list that has
+     already had to be corrected twice, this walks the shape itself: every
+     numeric field of newPad and newTrack, healed to that default when what
+     arrived is null, missing, or not finite. It says what it repaired, because
+     silently changing someone's mix is how the last one went unnoticed. */
+  const healed=[];
+  const heal=(o,ref,what,idx)=>{
+    for(const k in ref){
+      if(typeof ref[k]!=='number') continue;
+      const v=o[k];
+      if(v==null || typeof v!=='number' || !isFinite(v)){ o[k]=ref[k]; healed.push(what+(idx+1)+'.'+k); }
+    }
+  };
+  S.pads.forEach((p,i)=>heal(p,newPad(i),'pad ',i));
+  S.trax.forEach((tr,i)=>heal(tr,newTrack(),'track ',i));
+  if(healed.length){
+    plog('REPAIRED ON LOAD: '+healed.length+' field'+(healed.length===1?'':'s')
+      +' held no usable number and were set back to their defaults — '
+      +healed.slice(0,12).join(', ')+(healed.length>12?' …':'')
+      +'. A NaN reaching state is saved as null, so this is what a poisoned save looks like coming back.');
+    lcd('\u26a0 '+healed.length+' SETTING'+(healed.length===1?'':'S')+' IN THAT PROJECT WERE UNUSABLE '
+      +'and have been reset to default \u2014 see the report in PROJ for which.');
+  }
   { // LOAD FAILSAFE: every loaded pad at ~0 volume = a poisoned save (a real
     // field failure wrote gain 0 into state and autosave kept it). One pad at
     // 0 is legit mixing; ALL of them is never intentional — repair silently.
