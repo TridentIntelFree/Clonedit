@@ -1734,6 +1734,132 @@ export default async function ({ browser, base }) {
       + 'is the one you are stuck in', bt.pipOnDirectShown && /tap to release any input/i.test(bt.pipOnDirectTitle),
       '"' + bt.pipOnDirectTitle.slice(0, 90) + '…"');
 
+    t.head('ARMING A LANE WHILE THE TRANSPORT IS ALREADY ROLLING');
+    /* "Arming a tape lane while the transport is already rolling records
+       nothing — and the message says 'press PLAY to roll', which does nothing
+       because PLAY is already down. STOP then says only 'STOP.', the lane still
+       looks armed, and your pass is gone."
+
+       The capture was only ever built by startTrax, which only startSeq calls.
+       Arm-then-PLAY worked; PLAY-then-arm silently did not — and the second is
+       the live-jam order: you hear the loop, you decide to overdub, you arm.
+
+       Where the take LANDS matters as much as that it exists. A lane always
+       starts at the top of the transport, so a take captured from the middle of
+       a pass would play back shifted early by however long you waited. */
+    const mid = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      const pk = b => { let m = 0; const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > m) m = v; } return +m.toFixed(4); };
+      ensureAudio(); await wait(300);
+      if (playing) stopSeq();
+      S.trax.forEach(x => { x.bufId = -1; x.mute = false; });
+      document.getElementById('traxSrc').value = 'bus';
+      traxSolo = -1; traxArm = -1; S.chainOn = false; S.songOn = false;
+      traxSrcOverride = true;                      // keep the source off MIC for this
+
+      startSeq(); await wait(1500);
+      await armTrack(2);
+      o.armLcd = document.getElementById('lcdmsg').textContent;
+      o.capturing = !!traxCap;
+      o.offset = traxCap ? +traxCap.midRoll.toFixed(3) : null;
+      await wait(1800);
+      stopSeq(); await wait(600);
+      o.took = S.trax[2].bufId >= 0;
+      const b = o.took ? S.buffers[S.trax[2].bufId] : null;
+      o.peak = b ? pk(b) : 0;
+      o.dur = b ? +b.duration.toFixed(2) : 0;
+      o.disarmed = traxArm < 0;
+      if (b) { const d = b.getChannelData(0);
+        let first = -1;
+        for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > 0.01) { first = i; break; }
+        o.silentLead = first < 0 ? null : +(first / b.sampleRate).toFixed(3); }
+
+      /* Armed but never rolled must not be reported as a take. */
+      S.trax[3].bufId = -1; traxArm = 3; drawTrax();
+      startSeq(); await wait(300);
+      traxCap = null;                              // a capture that never began
+      stopSeq(); await wait(400);
+      o.neverRolled = { lcd: document.getElementById('lcdmsg').textContent, armed: traxArm >= 0 };
+      S.trax.forEach(x => { x.bufId = -1; }); traxSrcOverride = false;
+      return o;
+    });
+    t.ok('IT STARTS RECORDING THERE AND THEN, instead of asking for a key that is down',
+      mid.capturing && !/press PLAY/.test(mid.armLcd),
+      '"' + mid.armLcd.slice(0, 110) + '…"');
+    /* Peak is low because earlier sections leave this suite's mix quiet — what
+       matters is that it is not ZERO, or "a take arrived" would pass over a
+       capture of silence, which is the failure being fixed. */
+    t.ok('and a take actually arrives, with audio in it',
+      mid.took && mid.dur > 1 && mid.peak > 0.005,
+      mid.dur + 's, peak ' + mid.peak);
+    t.ok('THE OVERDUB LANDS WHERE IT WAS PLAYED, not at the top of the bar',
+      mid.silentLead != null && Math.abs(mid.silentLead - mid.offset) < 0.05,
+      'armed ' + mid.offset + 's into the cycle, take has ' + mid.silentLead + 's of silence in front');
+    t.ok('with no sync marker left clicking on the front of it',
+      mid.peak < 1.2, 'peak ' + mid.peak + ' (the marker is a ±4 impulse)');
+    t.ok('the lane disarms rather than staying lit over a finished take', mid.disarmed);
+    t.ok('AND A PASS THAT RECORDED NOTHING IS NEVER REPORTED AS A TAKE',
+      /NEVER ROLLED/.test(mid.neverRolled.lcd) && !mid.neverRolled.armed,
+      '"' + mid.neverRolled.lcd.slice(0, 110) + '…"');
+
+    t.head('A SHORT MIDI CC CANNOT POISON THE PROJECT');
+    /* "A short MIDI CC poisons the mix and the damage survives a save."
+
+       A Control Change is three bytes and this file read the third without
+       asking whether it arrived. Two bytes gave undefined/127 = NaN, straight
+       into S.masterVol or a pad gain, and from there into an AudioParam, which
+       throws on a non-finite value and abandoned the rest of the handler.
+
+       The saving half is worse: JSON.stringify writes NaN as null, and the load
+       gate's numeric check reads `x != null` — false for null, the exact value
+       it needed to catch. One malformed message could silence a pad for good,
+       across every save from then on. Both ends are checked. */
+    const poison = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(200);
+      S.ccMaps[7] = 'm:vol'; S.ccMaps[8] = 'p:gain';
+      const chBefore = S.midiCh; S.midiCh = -1; S.editPad = 0;
+      const vol0 = S.masterVol, gain0 = S.pads[0].gain;
+      onMidi({ data: new Uint8Array([0xB0, 7]) });
+      onMidi({ data: new Uint8Array([0xB0, 8]) });
+      onMidi({ data: new Uint8Array([0x90, 60]) });        // short note-on too
+      o.shortIgnored = S.masterVol === vol0 && S.pads[0].gain === gain0
+        && isFinite(S.masterVol) && isFinite(S.pads[0].gain);
+      o.after = { vol: S.masterVol, gain: S.pads[0].gain };
+      onMidi({ data: new Uint8Array([0xB0, 7, 100]) });    // a full one still works
+      o.fullWorks = isFinite(S.masterVol) && S.masterVol !== vol0;
+      S.masterVol = vol0; LIVE.master.gain.value = vol0;
+      delete S.ccMaps[7]; delete S.ccMaps[8]; S.midiCh = chBefore;
+
+      /* Now the save that already went bad. */
+      const snap = structuredClone(snapshotSession());
+      const dd = snap.doc || snap;
+      dd.pads[0].gain = null; dd.pads[1].pan = null; dd.pads[2].att = null;
+      o.loaded = applySessionDoc(dd, (snap.doc ? snap.bufs : null) || S.buffers);
+      o.healed = { gain: S.pads[0].gain, pan: S.pads[1].pan, att: S.pads[2].att };
+      o.allFinite = [S.pads[0].gain, S.pads[1].pan, S.pads[2].att].every(v => typeof v === 'number' && isFinite(v));
+      o.said = document.getElementById('lcdmsg').textContent;
+      const an = AC.createAnalyser(); an.fftSize = 2048; an.smoothingTimeConstant = 0;
+      LIVE.softclip.connect(an);
+      const bf = new Float32Array(2048);
+      const pad = S.pads.findIndex(p => p.bufId >= 0);
+      hitLive(pad, 1); let m = 0;
+      for (let k = 0; k < 30; k++) { an.getFloatTimeDomainData(bf); let s = 0;
+        for (let i = 0; i < bf.length; i++) s += bf[i] * bf[i];
+        m = Math.max(m, Math.sqrt(s / bf.length)); await wait(20); }
+      o.plays = +m.toFixed(4);
+      return o;
+    });
+    t.ok('A TWO-BYTE CC CHANGES NOTHING, rather than writing NaN into the mix',
+      poison.shortIgnored, JSON.stringify(poison.after));
+    t.ok('and a full one still does its job', poison.fullWorks);
+    t.ok('A PROJECT ALREADY POISONED IS REPAIRED ON LOAD, not refused and not kept',
+      poison.loaded && poison.allFinite, JSON.stringify(poison.healed));
+    t.ok('and it says how many settings it had to reset',
+      /WERE UNUSABLE|WAS UNUSABLE/.test(poison.said), '"' + poison.said.slice(0, 110) + '…"');
+    t.ok('AND THE APP STILL PLAYS AFTERWARDS', poison.plays > 0.05, 'level ' + poison.plays);
+
     t.head('THE ANGLE OF THE PHONE CANNOT CHANGE THE VOLUME IN SECRET');
     /* "My volume in playback is different depending on if my phone is landscape
        or regular — same speaker producing sound, not a stereo thing."
