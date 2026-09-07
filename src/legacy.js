@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R190 · 2026-09-07 · how a pad answers a finger';
+const BUILD = 'JBH-88 · R191 · 2026-09-07 · the label is the thing that has to be clicked';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -4694,7 +4694,7 @@ function drawPads(){
    it is a phone crawling across a table. */
 const HAP_KEY='jbh_hap_v1';
 let hapPref=(()=>{ try{ return localStorage.getItem(HAP_KEY)!=='off'; }catch(e){ return true; } })();
-let hapEl=null, hapWay=null;
+let hapEl=null, hapLab=null, hapWay=null;
 function hapticWay(){
   if(hapWay!=null) return hapWay;
   try{ if(typeof navigator.vibrate==='function') return (hapWay='vibrate'); }catch(e){}
@@ -4717,16 +4717,32 @@ function haptic(kind){
   if(w==='switch'){
     try{
       if(!hapEl){
+        /* THE LABEL IS THE THING THAT HAS TO BE CLICKED.
+
+           The first version set input.checked and dispatched a change event.
+           That flips the property and fires a listener, and it is not an
+           interaction — WebKit plays the toggle haptic for a real activation of
+           the control, which a scripted property write is not. Clicking the
+           LABEL is an activation, and it is the form every working example of
+           this uses. Reported as "I don't detect any haptics", which is exactly
+           what that mistake produces: detection says the route exists, the call
+           reports success, and nothing happens.
+
+           It is also rendered rather than parked at left:-9999px. A browser is
+           free to skip work for something entirely outside the viewport, and a
+           haptic is work. One transparent pixel in the corner, out of the way
+           of everything and unable to take a tap. */
         const lab=document.createElement('label');
-        lab.style.cssText='position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden';
+        lab.style.cssText='position:fixed;bottom:0;left:0;width:1px;height:1px;'
+          +'opacity:0;pointer-events:none;z-index:-1;overflow:hidden';
         lab.setAttribute('aria-hidden','true');
         const inp=document.createElement('input');
         inp.type='checkbox'; inp.setAttribute('switch',''); inp.tabIndex=-1;
+        inp.id='jbhHapSw'; lab.htmlFor='jbhHapSw';
         lab.appendChild(inp); document.body.appendChild(lab);
-        hapEl=inp;
+        hapEl=inp; hapLab=lab;
       }
-      hapEl.checked=!hapEl.checked;
-      hapEl.dispatchEvent(new Event('change',{bubbles:false}));
+      hapLab.click();
       return true;
     }catch(e){ return false; }
   }
@@ -6831,6 +6847,24 @@ document.addEventListener('DOMContentLoaded',()=>{
     setHaptics(e.target.checked);
     lcd(hapPref?'HAPTICS ON \u2014 a nudge on pads, steps and the transport. Never on playback.'
       :'HAPTICS OFF.');
+  });
+  /* A haptic cannot be seen, so "is it working" is otherwise unanswerable from
+     the outside — and the first version of this shipped broken precisely
+     because success was assumed rather than felt. Three in a row is
+     unmistakable if it is working and unmistakable if it is not. */
+  const b=$('btnHapTest');
+  if(b) b.addEventListener('click',()=>{
+    if(hapticWay()==='none'){
+      lcd('NO HAPTIC ON THIS BROWSER \u2014 nothing to test. iOS only exposes one from 17.4, '
+        +'and Safari has never implemented the vibration motor.');
+      return;
+    }
+    const was=hapPref; hapPref=true;
+    haptic('firm');
+    setTimeout(()=>haptic('firm'),160);
+    setTimeout(()=>{ haptic('firm'); hapPref=was; },320);
+    lcd('THREE NUDGES, VIA '+hapticWords().toUpperCase()+' \u2014 if you felt nothing, '
+      +'say so and it comes out rather than sitting there claiming to work.');
   });
 });
 $('btnEngReset').addEventListener('click',()=>{ glitchReset();
@@ -15450,6 +15484,10 @@ function diagDump(tag){
             out.push('T'+(li+1)+' and '+padName(i)+' both play buf'+tr.bufId); });
         return out.length?out.join(' · ')+' — the lane copy has no pad FX on it':'none';
       })(),
+      'haptics: route '+hapticWay()+' · preference '+(hapPref?'on':'off')
+        +' · vibrate '+(typeof navigator.vibrate==='function'?'present':'absent')
+        +' · switch attr '+((()=>{ try{ return ('switch' in document.createElement('input'))?'supported':'no'; }
+          catch(e){ return '?'; } })()),
       'out path: '+outPath+(outPath==='element'
         ? ' (MediaStream → <audio>: silent-switch proof, no A2DP)'
         : ' (softclip → destination: loudest, silent switch can mute it)')

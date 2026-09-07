@@ -1116,6 +1116,66 @@ export default async function ({ browser, base }) {
     t.ok('and asking for one never throws, whatever the platform', feel.hapSafe === true,
       String(feel.hapSafe));
 
+    /* "I don't detect any haptics."
+
+       The first version set input.checked and dispatched a change event. That
+       flips a property and fires a listener, and it is not an INTERACTION —
+       WebKit plays the toggle haptic for a real activation of the control,
+       which a scripted property write is not. So detection said the route
+       existed, the call returned true, and nothing happened: the worst shape a
+       feature can have.
+
+       Chromium picks the motor, so the switch route is never taken here on its
+       own. It is forced, and what the code actually does is watched, because
+       "it returned true" is exactly the evidence that was wrong last time. */
+    const hap = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      hapWay = 'switch'; hapEl = null; hapLab = null; hapPref = true;
+      let labelClicks = 0, propWrites = 0;
+      const proto = HTMLLabelElement.prototype, realClick = proto.click;
+      proto.click = function (...a) { if (this.htmlFor === 'jbhHapSw') labelClicks++;
+        return realClick.apply(this, a); };
+      const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
+      Object.defineProperty(HTMLInputElement.prototype, 'checked', { configurable: true,
+        get: desc.get, set(v) { if (this.id === 'jbhHapSw') propWrites++; return desc.set.call(this, v); } });
+
+      haptic('tap'); haptic('firm'); haptic('step');
+      await wait(30);
+      o.clicks = labelClicks; o.propWrites = propWrites;
+      const el = document.getElementById('jbhHapSw');
+      o.inDom = !!el; o.isSwitch = el ? el.hasAttribute('switch') : false;
+      if (el) { const lab = el.parentElement, bb = lab.getBoundingClientRect(), cs = getComputedStyle(lab);
+        o.labelFor = lab.htmlFor;
+        o.rendered = bb.bottom > 0 && bb.right > 0 && bb.top < innerHeight + 2
+          && bb.left < innerWidth + 2 && cs.display !== 'none' && cs.visibility !== 'hidden';
+        o.inert = cs.pointerEvents === 'none'; }
+      hapPref = false; const before = labelClicks; haptic('tap');
+      o.silentWhenOff = labelClicks === before;
+
+      proto.click = realClick;
+      Object.defineProperty(HTMLInputElement.prototype, 'checked', desc);
+      hapWay = null; hapPref = true;
+      o.diag = diagDump('t').split('\n').filter(l => /haptics:/.test(l))[0] || '';
+      o.hasTest = !!document.getElementById('btnHapTest');
+      document.getElementById('btnHapTest').click();
+      await wait(600);
+      o.testSaid = document.getElementById('lcdmsg').textContent;
+      return o;
+    });
+    t.ok('THE SWITCH ROUTE ACTIVATES THE CONTROL rather than writing its property',
+      hap.clicks === 3 && hap.propWrites === 0,
+      hap.clicks + ' label clicks, ' + hap.propWrites + ' property writes for three haptics');
+    t.ok('through a real switch input the browser will act on',
+      hap.inDom && hap.isSwitch && hap.labelFor === 'jbhHapSw');
+    t.ok('and one that is rendered, since a browser may skip work it cannot see',
+      hap.rendered && hap.inert, 'on screen and pointer-events:none');
+    t.ok('off means off, whatever route is available', hap.silentWhenOff);
+    t.ok('there is a way to settle it by hand, because a haptic cannot be seen',
+      hap.hasTest && /felt nothing|nothing to test/.test(hap.testSaid),
+      '"' + hap.testSaid.slice(0, 100) + '…"');
+    t.ok('and DIAG carries the route and both detections',
+      /haptics: route \w+ .* switch attr/.test(hap.diag), hap.diag);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {
