@@ -1286,14 +1286,34 @@ bars of anything, and send the best two to a pad.</p>
       <option value="padkeys">PAD KEYS &mdash; play a pad's own sound</option>
       <option value="flute">BREATH FLUTE</option>
       <option value="perc">SHAKE PERC</option>
+      <option value="tomb">TOMBOLA &mdash; notes bounce in a spinning shape</option>
     </select>
     <select aria-label="Instrument voice" id="instVoiceSel">
       <option value="glass">GLASS</option>
       <option value="saw">SAW PAD</option>
       <option value="ep">FM KEYS</option>
       <option value="pluck">PLUCK</option>
+      <option value="phase">PHASE SWEEP</option>
+      <option value="pulse">PULSE</option>
+      <option value="cluster">CLUSTER</option>
     </select>
   </div>
+  <div id="tombwrap" style="display:none">
+    <canvas id="tombola" width="320" height="220" data-fluid
+      style="width:100%;height:auto;aspect-ratio:1.45;background:var(--lcd-bg);border:1px solid var(--edge);border-radius:8px;display:block"
+      aria-label="Tombola: notes bouncing inside a spinning shape"></canvas>
+    <div class="row" style="margin-top:4px">
+      <span id="tombCount" style="font-size:11px;color:var(--lcd);flex:1">0 notes</span>
+      <button id="tombClear">CLEAR</button>
+    </div>
+    <div class="pslider"><span class="lbl">SIDES</span><input type="range" id="tSides" min="3" max="9" step="1"><span class="val" id="tSidesV">5 sides</span></div>
+    <div class="pslider"><span class="lbl">SPIN</span><input type="range" id="tSpin" min="-1" max="1" step="0.01"><span class="val" id="tSpinV">+35%</span></div>
+    <div class="pslider"><span class="lbl">GRAVITY</span><input type="range" id="tGrav" min="0" max="1" step="0.01"><span class="val" id="tGravV">55%</span></div>
+    <div class="pslider"><span class="lbl">BOUNCE</span><input type="range" id="tBounce" min="0.2" max="0.99" step="0.01"><span class="val" id="tBounceV">82%</span></div>
+    <div style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">Play a key to drop that note in. It sounds every time it hits a wall, through whichever VOICE is selected &mdash; so the engines above are the tone and the shape is the rhythm. SPIN throws them; GRAVITY decides whether they settle.</div>
+  </div>
+  <div class="pslider" id="instShapeRow"><span class="lbl">SHAPE</span><input type="range" id="instShape" min="0" max="1" step="0.01"><span class="val" id="instShapeV">55%</span></div>
+  <div id="instShapeWhat" style="font-size:10px;color:var(--txt-dim);margin:0 0 6px"></div>
   <div class="row">
     <span class="lbl">KEY</span>
     <select aria-label="Instrument key" id="instKey"></select>
