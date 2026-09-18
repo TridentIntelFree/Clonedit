@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R196 · 2026-09-18 · controls you can hear, and a way to find them';
+const BUILD = 'JBH-88 · R197 · 2026-09-18 · LOCK means the same thing in both views';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -10101,6 +10101,24 @@ function drawCircle(){
       cx.fill();
       if(isCur){ cx.strokeStyle='#4aa3ff'; cx.lineWidth=isSel?4:2; cx.stroke(); }
       else if(isSel && i%4===0){ cx.strokeStyle='rgba(255,255,255,0.18)'; cx.lineWidth=1; cx.stroke(); }
+      /* The grid marks a locked step with a dot and outlines the one being
+         edited. The circle drew neither, so a step that plays darker than the
+         one beside it looked identical here — the same 1:1 failure the grid's
+         marker exists to prevent, in the other view. */
+      if(isSel && seqLockMode && !seqSelPoly && i===seqSelStep){
+        cx.strokeStyle='#ffb454'; cx.lineWidth=3; cx.stroke();
+      }
+      /* White, not the LCD amber the grid's dot uses and not the playhead's
+         blue. The rings are already amber, so an amber dot disappears into the
+         step it is marking, and blue is what the playhead ring is drawn in —
+         a marker that can be mistaken for the transport is worse than none. */
+      if(pat.locks && stepHasLock(pat.locks[LK(p,i,false)])){
+        const am=(a0+a1)/2, rm=r0+(r1-r0)*0.78, dr=Math.max(2,span*0.075);
+        cx.beginPath();
+        cx.arc(ccx+Math.cos(am)*rm, ccy+Math.sin(am)*rm, dr, 0, Math.PI*2);
+        cx.fillStyle=isSel?'#ffffff':'rgba(255,255,255,0.6)'; cx.fill();
+        cx.strokeStyle='rgba(0,0,0,0.55)'; cx.lineWidth=1; cx.stroke();
+      }
     }
     // ring label
     cx.fillStyle=isSel?'#ffb454':'rgba(255,180,84,0.5)';
@@ -10141,10 +10159,23 @@ function circleTap(clientX,clientY){
   if(ang<0) ang+=Math.PI*2;
   const i=Math.floor(ang/(Math.PI*2)*ring.len)%ring.len;
   if(morphGuard()) return;
+  /* LOCK MODE APPLIES HERE TOO.
+
+     Reported as "it's same function on or off, just toggles that sequence on
+     or off" — and it was, in this view. LOCK is a button in the LEN row, which
+     stays on screen in both views, but only the grid's own click handler ever
+     looked at it. In CIRCLE the button lit up, the hint changed, and tapping
+     kept toggling steps, so the whole feature read as doing nothing. Two grids
+     and one mode is two places to honour it, and I only wrote one. */
+  if(seqLockMode){
+    seqSelStep=i; seqSelPoly=false;
+    drawSteps(); drawCircle(); drawPoly(); drawStepLock(); auditionLock();
+    return;
+  }
   const pat=S.patterns[S.pattern], row=pat.steps[ring.p];
   const wasOn=row[i]>0;
   row[i]=wasOn?0:parseFloat($('stepVel').value);
-  if(wasOn){ delete pat.locks[ring.p+':'+i]; if(playing) stopPadVoices(ring.p); }
+  if(wasOn){ delete pat.locks[ring.p+':'+i]; bumpLocks(); if(playing) stopPadVoices(ring.p); }
   else if(!playing) hitLive(ring.p,row[i]);
   drawSteps(); drawCircle(); dirty();
 }

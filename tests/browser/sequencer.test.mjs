@@ -352,6 +352,105 @@ export default async function ({ browser, base }) {
       aud.hitsFor30Moves >= 1 && aud.hitsFor30Moves <= 4,
       aud.hitsFor30Moves + ' hits for 30 slider moves');
 
+    /* R197. Reported as "what is lock supposed to do?" and then "it's the same
+       function on or off, just toggles that sequence on or off" — which was
+       true, in CIRCLE view. LOCK is a button in the LEN row and that row is on
+       screen in both views, but only the grid's own click handler ever looked
+       at seqLockMode. So in CIRCLE the button lit, the hint changed, and taps
+       kept toggling steps: the entire feature read as doing nothing.
+
+       Worth noting how it hid. Every check written for the locks drove the
+       grid, because that is the view a fresh page opens in — and the view is
+       remembered in localStorage, so anyone who had once pressed CIRCLE was in
+       the one view where none of it worked. Two grids and one mode is two
+       places to honour it, so both are walked here. */
+    t.head('AND LOCK MEANS THE SAME THING IN BOTH VIEWS');
+    const views = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      document.querySelector('#tabs button[data-v="seq"]').click();
+      await wait(200);
+      const pat = S.patterns[S.pattern], pad = S.seqPad;
+      pat.steps.forEach(r => r.fill(0)); pat.locks = {}; bumpLocks();
+      pat.steps[pad][5] = 0.9;
+      if (seqLockMode) document.getElementById('btnStepLock').click();
+      seqSelStep = -1;
+
+      /* GRID */
+      setSeqView('grid'); drawSeq(); await wait(150);
+      const cell = () => document.querySelectorAll('#stepgrid .step')[5];
+      let b = pat.steps[pad][5];
+      cell().click(); await wait(80);
+      o.gridLockOff = { toggled: pat.steps[pad][5] !== b, selected: seqSelStep };
+      pat.steps[pad][5] = 0.9; drawSeq();
+      document.getElementById('btnStepLock').click(); await wait(100);
+      b = pat.steps[pad][5];
+      cell().click(); await wait(150);
+      o.gridLockOn = { toggled: pat.steps[pad][5] !== b, selected: seqSelStep,
+        panel: document.getElementById('steplock').style.display };
+      document.getElementById('btnStepLock').click(); await wait(80);
+
+      /* CIRCLE — tapped at real canvas coordinates, through the same pointer
+         path a finger takes, because the bug was in that path and not in any
+         function a test could call directly. */
+      setSeqView('circle'); await wait(250);
+      pat.steps[pad][5] = 0.9; drawCircle(); await wait(120);
+      const cv = document.getElementById('circle'), bb = cv.getBoundingClientRect();
+      const ring = CIRC.rings.find(g => g.p === pad);
+      const base = canvasBase.get(cv) || { w: cv.width, h: cv.height };
+      const a = -Math.PI / 2 + ((5 + 0.5) / ring.len) * Math.PI * 2;
+      const rm = (ring.r0 + ring.r1) / 2;
+      const px = bb.left + (CIRC.cx + Math.cos(a) * rm) / (base.w / bb.width);
+      const py = bb.top + (CIRC.cy + Math.sin(a) * rm) / (base.h / bb.height);
+      seqSelStep = -1;
+      b = pat.steps[pad][5];
+      circleTap(px, py); await wait(80);
+      o.circLockOff = { toggled: pat.steps[pad][5] !== b, selected: seqSelStep };
+      pat.steps[pad][5] = 0.9; drawCircle();
+      document.getElementById('btnStepLock').click(); await wait(100);
+      b = pat.steps[pad][5];
+      circleTap(px, py); await wait(150);
+      o.circLockOn = { toggled: pat.steps[pad][5] !== b, selected: seqSelStep,
+        panel: document.getElementById('steplock').style.display };
+
+      /* And the lock has to be VISIBLE in the circle, not only obeyed. Counted
+         as near-white pixels, which the rings and the playhead never are —
+         amber fills and a blue playhead ring. */
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const whites = () => { const c = cv.getContext('2d');
+        const d = c.getImageData(0, 0, cv.width, cv.height).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4)
+          if (d[i] > 230 && d[i + 1] > 230 && d[i + 2] > 230 && d[i + 3] > 200) n++;
+        return n; };
+      pat.locks = {}; bumpLocks(); drawCircle(); await wait(120);
+      o.whiteBefore = whites();
+      pat.locks[pad + ':5'] = { fcut: 0.2 }; bumpLocks(); drawCircle(); await wait(120);
+      o.whiteAfter = whites();
+      o.dpr = dpr;
+
+      document.getElementById('btnStepLock').click();
+      setSeqView('grid'); pat.locks = {}; pat.steps.forEach(r => r.fill(0));
+      bumpLocks(); seqSelStep = -1; drawSeq();
+      return o;
+    });
+    t.ok('GRID: with LOCK off a tap toggles the step',
+      views.gridLockOff.toggled && views.gridLockOff.selected === -1);
+    t.ok('GRID: with LOCK on it selects the step for editing instead',
+      !views.gridLockOn.toggled && views.gridLockOn.selected === 5 &&
+      views.gridLockOn.panel === 'block');
+    t.ok('CIRCLE: with LOCK off a tap toggles the step',
+      views.circLockOff.toggled && views.circLockOff.selected === -1);
+    t.ok('CIRCLE: AND WITH LOCK ON IT DOES THE SAME THING THE GRID DOES',
+      !views.circLockOn.toggled && views.circLockOn.selected === 5 &&
+      views.circLockOn.panel === 'block',
+      views.circLockOn.toggled ? 'it still toggled the step' :
+        'selected ' + views.circLockOn.selected + ', panel ' + views.circLockOn.panel);
+    t.note('    near-white pixels in the circle: ' + views.whiteBefore +
+      ' with no locks → ' + views.whiteAfter + ' with one');
+    t.ok('and a locked step is MARKED in the circle, not only obeyed',
+      views.whiteAfter > views.whiteBefore + 8,
+      views.whiteAfter - views.whiteBefore + ' pixels of marker');
+
     t.head('A TAP AND THE TAP THAT UNDOES IT LAND ON THE SAME PATTERN');
     /* Reported as "I click and add one then I click it again to remove it but
        the sound still plays", and it was not a removal bug. The demo project
