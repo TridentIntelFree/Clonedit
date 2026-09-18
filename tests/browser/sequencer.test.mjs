@@ -250,6 +250,108 @@ export default async function ({ browser, base }) {
     t.ok('measured by an A/B that would have seen a leak',
       lock.lockedStepDiffers > 0.05,
       'the locked step itself differs by ' + lock.lockedStepDiffers + ' between the two renders');
+    /* R196. R195 shipped the locks working and unhearable: you moved CUTOFF,
+       nothing happened, and tapping the pad to check played the pad's own
+       sound because a hand hit resets the channel on purpose. A working
+       feature that reads as a dead control is a broken feature. */
+    t.head('AND YOU CAN HEAR THE STEP WHILE YOU EDIT IT');
+    const aud = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(200);
+      /* Broadband again, and for the same reason: the demo's pads are drums,
+         and a lowpass at 79Hz takes almost nothing off a kick's PEAK. Measured
+         that way first and the check failed on a working audition — the sample
+         was wrong for the question, not the code. */
+      const PAD = 6;
+      const n = Math.round(AC.sampleRate * 0.25);
+      const nb = AC.createBuffer(2, n, AC.sampleRate);
+      const rnd = mulberry32(4242);
+      for (let i = 0; i < n; i++) { const v = (rnd() * 2 - 1) * 0.7;
+        nb.getChannelData(0)[i] = v; nb.getChannelData(1)[i] = v; }
+      S.buffers.push(nb);
+      const padWas = S.pads[PAD], mutesWere = S.pads.map(p => p.mute);
+      S.pads.forEach((p, i) => { p.mute = i !== PAD; });
+      S.pads[PAD] = newPad(PAD);
+      S.pads[PAD].bufId = S.buffers.indexOf(nb); S.pads[PAD].mute = false;
+      S.pads[PAD].gain = 0.9; S.pads[PAD].ftype = 'lowpass';
+      S.pads[PAD].fcut = 1; S.pads[PAD].fres = 1;
+      const pat = S.patterns[S.pattern];
+      pat.steps.forEach(r => r.fill(0)); pat.locks = {}; bumpLocks();
+      pat.steps[PAD][4] = 0.9;
+      S.seqPad = PAD;
+      reapplyLivePads(); await wait(150);
+      seqLockMode = true; seqSelStep = 4; seqSelPoly = false;
+      drawStepLock();
+
+      const an = AC.createAnalyser(); an.fftSize = 2048;
+      LIVE.master.connect(an);
+      const b = new Float32Array(an.fftSize);
+      const fb = new Float32Array(an.frequencyBinCount);
+      /* Peak says it sounded; the top third of the spectrum says WHAT sounded.
+         A cutoff lock is a brightness change, so brightness is what has to be
+         measured — peak alone cannot tell a filtered hit from an unfiltered
+         one on material with any low end at all. */
+      const hzPerBin = AC.sampleRate / an.fftSize;
+      const listen = async (ms) => { let pk = 0, hi = -200;
+        for (let i = 0; i < ms / 8; i++) { await wait(8);
+          an.getFloatTimeDomainData(b);
+          for (let j = 0; j < b.length; j++) pk = Math.max(pk, Math.abs(b[j]));
+          an.getFloatFrequencyData(fb);
+          let m = -200;
+          for (let j = Math.round(3000 / hzPerBin); j < fb.length; j++) m = Math.max(m, fb[j]);
+          hi = Math.max(hi, m); }
+        return { pk: +pk.toFixed(4), hi: +hi.toFixed(1) }; };
+
+      /* Moving the slider must be audible on its own — no transport, no tap. */
+      lockAudAt = 0;
+      const cut = document.getElementById('slCut');
+      cut.value = '1'; cut.dispatchEvent(new Event('input', { bubbles: true }));
+      o.open = await listen(400);
+      await wait(250);
+      lockAudAt = 0;
+      cut.value = '0.03'; cut.dispatchEvent(new Event('input', { bubbles: true }));
+      o.shut = await listen(400);
+      o.lockWritten = JSON.parse(JSON.stringify(pat.locks[PAD + ':4'] || null));
+
+      /* …and must stay quiet while the transport is rolling, where the step is
+         already being heard in its own place. */
+      await wait(250);
+      playing = true; lockAudAt = 0;
+      cut.value = '0.5'; cut.dispatchEvent(new Event('input', { bubbles: true }));
+      o.whileRolling = (await listen(300)).pk;
+      playing = false;
+
+      /* A drag is many input events: it should scrub, not machine-gun. */
+      lockAudAt = 0; let fired = 0;
+      const realTrig = triggerPad;
+      window.triggerPad = function (...a) { fired++; return realTrig.apply(this, a); };
+      for (let i = 0; i < 30; i++) { cut.value = String(0.1 + i * 0.03);
+        cut.dispatchEvent(new Event('input', { bubbles: true })); }
+      window.triggerPad = realTrig;
+      o.hitsFor30Moves = fired;
+
+      try { LIVE.master.disconnect(an); } catch (e) {}
+      seqLockMode = false; seqSelStep = -1;
+      pat.locks = {}; pat.steps.forEach(r => r.fill(0)); bumpLocks();
+      S.pads[PAD] = padWas; mutesWere.forEach((m, i) => { S.pads[i].mute = m; });
+      reapplyLivePads(); drawStepLock();
+      return o;
+    });
+    t.note('    cutoff wide open → peak ' + aud.open.pk + ', top end ' + aud.open.hi + ' dB');
+    t.note('    almost shut      → peak ' + aud.shut.pk + ', top end ' + aud.shut.hi + ' dB');
+    t.ok('MOVING A LOCK PLAYS THE STEP — with no transport and no pad tap',
+      aud.open.pk > 0.02, 'peak ' + aud.open.pk);
+    t.ok('and what you hear is the LOCKED sound, not the pad’s',
+      aud.shut.hi < aud.open.hi - 12,
+      (aud.open.hi - aud.shut.hi).toFixed(1) + ' dB less above 3kHz with the cutoff shut');
+    t.ok('the value really was written to the step', aud.lockWritten &&
+      aud.lockWritten.fcut === 0.03, JSON.stringify(aud.lockWritten));
+    t.ok('it stays quiet while the sequence is rolling, where the step speaks for itself',
+      aud.whileRolling < 0.01, 'peak ' + aud.whileRolling);
+    t.ok('and a drag scrubs rather than machine-gunning',
+      aud.hitsFor30Moves >= 1 && aud.hitsFor30Moves <= 4,
+      aud.hitsFor30Moves + ' hits for 30 slider moves');
+
     t.head('A TAP AND THE TAP THAT UNDOES IT LAND ON THE SAME PATTERN');
     /* Reported as "I click and add one then I click it again to remove it but
        the sound still plays", and it was not a removal bug. The demo project

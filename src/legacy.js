@@ -12346,7 +12346,7 @@ function drawSteps(){
     if(seqLockMode && !seqSelPoly && i===seqSelStep) el.classList.add('selstep');
     el.addEventListener('click',()=>{
       if(morphGuard()) return;
-      if(seqLockMode){ seqSelStep=i; seqSelPoly=false; drawSteps(); drawPoly(); drawStepLock(); }
+      if(seqLockMode){ seqSelStep=i; seqSelPoly=false; drawSteps(); drawPoly(); drawStepLock(); auditionLock(); }
       else {
         holdForEdit();                                 // stop the grid moving between taps
         const wasOn=row[i]>0;
@@ -12426,8 +12426,9 @@ $('btnLenUp').addEventListener('click',()=>setTrackLen(1));
 $('btnStepLock').addEventListener('click',()=>{
   seqLockMode=!seqLockMode; $('btnStepLock').classList.toggle('on',seqLockMode);
   if(!seqLockMode){ seqSelStep=-1; seqSelPoly=false; }
-  $('lockHint').textContent=seqLockMode?'tap a step to edit its locks':'tap step to toggle';
+  $('lockHint').textContent=seqLockMode?'tap a step to hear it and edit its sound':'tap step to toggle';
   drawSteps(); drawStepLock();
+  if(seqLockMode) lcd('LOCK — tap a step to hear it, then give that one step its own CUTOFF, LEVEL, PAN, DECAY or START.');
 });
 function drawStepLock(){
   const panel=$('steplock');
@@ -12498,6 +12499,37 @@ $('slPlain').addEventListener('click',()=>{
   lcd(lk.plain ? 'STEP '+(seqSelStep+1)+' plays one ordinary hit — the figure is skipped here.'
                 : 'STEP '+(seqSelStep+1)+" plays the pad's figure again.");
 });
+/* HEAR THE STEP YOU ARE EDITING.
+
+   Shipped without this in R195 and it was the whole problem. The locks
+   worked — a locked step measured 0.019 against 0.53 for its neighbours
+   through the live transport — but there was no way to find that out while
+   editing. You moved CUTOFF, nothing happened; tapping the pad to check
+   played the pad's own sound, because a hand hit deliberately resets the
+   channel. So a working feature read as a dead control.
+
+   Now moving any lock plays THAT STEP, with its lock, immediately. Throttled
+   rather than debounced: a slider drag should scrub, not machine-gun, and
+   should not wait for you to let go. Silent while the transport rolls, since
+   the step is already being heard in its place, and the extra hit would land
+   off the grid. */
+let lockAudAt=0;
+function auditionLock(){
+  if(seqSelStep<0 || playing) return;
+  const pat=S.patterns[S.pattern], p=S.seqPad, pd=S.pads[p];
+  if(!pd || pd.bufId<0) return;
+  const now=(typeof performance!=='undefined'?performance.now():Date.now());
+  if(now-lockAudAt<110) return;
+  lockAudAt=now;
+  ensureAudio();
+  const lk=pat.locks[LK(p,seqSelStep,seqSelPoly)]||null;
+  const row=seqSelPoly?polyRowOf(pat,p):pat.steps[p];
+  const v=(row && row[seqSelStep]>0)?row[seqSelStep]:0.9;
+  const when=AC.currentTime+0.01;
+  applyStepLocks(LIVE, pat, p, lk, when);
+  triggerPad(AC, LIVE, p, v, when, chokeLive, (lk&&lk.pitch)||0, true, null, lk);
+  flashPad(p,v);
+}
 function setLock(field,val,def){
   if(seqSelStep<0) return;
   if(morphGuard()) return;
@@ -12508,6 +12540,9 @@ function setLock(field,val,def){
   if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
   bumpLocks();
   drawSteps(); drawPoly(); drawStepLock(); dirty();
+  /* PROB and RATCH are not auditioned: one is a dice roll and the other only
+     means anything against a tempo, so a single hit would misrepresent both. */
+  if(field!=='prob' && field!=='rat') auditionLock();
 }
 $('slVel').addEventListener('input',e=>{
   if(seqSelStep<0) return;
@@ -12515,7 +12550,7 @@ $('slVel').addEventListener('input',e=>{
   const pat=S.patterns[S.pattern];
   const row=seqSelPoly?polyRowOf(pat,S.seqPad):pat.steps[S.seqPad];
   if(row) row[seqSelStep]=parseFloat(e.target.value);
-  drawSteps(); drawPoly(); drawStepLock(); dirty();
+  drawSteps(); drawPoly(); drawStepLock(); dirty(); auditionLock();
 });
 $('slPitch').addEventListener('input',e=>setLock('pitch',parseInt(e.target.value,10),0));
 $('slProb').addEventListener('input',e=>setLock('prob',parseFloat(e.target.value),1));
@@ -12834,7 +12869,7 @@ function drawPoly(){
     if(seqLockMode && seqSelPoly && i===seqSelStep) el.classList.add('selstep');
     el.addEventListener('click',()=>{
       if(morphGuard()) return;
-      if(seqLockMode){ seqSelStep=i; seqSelPoly=true; drawSteps(); drawPoly(); drawStepLock(); return; }
+      if(seqLockMode){ seqSelStep=i; seqSelPoly=true; drawSteps(); drawPoly(); drawStepLock(); auditionLock(); return; }
       holdForEdit();
       const wasOn=row[i]>0;
       row[i]=wasOn?0:parseFloat($('stepVel').value);
