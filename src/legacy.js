@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R191 · 2026-09-07 · the label is the thing that has to be clicked';
+const BUILD = 'JBH-88 · R192 · 2026-09-18 · three engines that are three methods';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -11053,7 +11053,7 @@ function traxCommit(){
 
 /* ---------------- LIVE — playable instruments ---------------- */
 /* SCALES, NOTE_NAMES, snapSemitone → src/pure/scale.js */
-const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker',bass:'finger',padKey:-1};
+const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker',bass:'finger',padKey:-1,shape:0.55};
 S.inst=Object.assign({},INSTDEF);
 const instVoices=new Set();
 let ther=null, arpTimer=0, arpNotes=null, arpIdx=0, arpNext=0;
@@ -11085,12 +11085,127 @@ function ksBuf(f){ // live Karplus-Strong pluck, cached per rounded Hz
   for(let i=N;i<len;i++) d[i]=(d[i-N]+d[i-N+1])*0.5*loss;
   ksCache[k]=b; return b;
 }
+/* ---------------- THREE MORE WAYS TO MAKE A NOTE --------------------------
+   The LIVE section had four voices and three of them were the same idea: a
+   couple of oscillators and a filter. Nothing in here swept a spectrum, and a
+   sweeping spectrum is most of what people mean by a synth having character.
+
+   ON THE PROVENANCE, since it was asked: what is borrowed here are METHODS,
+   and they are old. Phase distortion is Casio's CZ line from 1984 and those
+   patents lapsed decades ago; the pulse-width and detuned-stack ideas predate
+   digital synthesis entirely. What belongs to a manufacturer is their name,
+   their panel, their firmware and their presets — so none of those are here.
+   These are our own implementations under our own names, built from the same
+   textbook the whole industry works from.
+
+   THE IMPLEMENTATION CHOICE THAT MATTERS. The obvious way to do phase
+   distortion or PWM in Web Audio is a bank of PeriodicWaves, one per amount,
+   swapped as the sound moves. That is a table swap per step on the audio
+   thread — the exact cost R171 measured on the pad drive curves and removed —
+   and it quantises a sweep into stairs. Both engines here are built instead so
+   the amount is an AudioParam feeding a FIXED WaveShaper, which means the
+   sweep is continuous, sample-accurate, automatable by envelope, and costs one
+   gain ramp. Nothing is rebuilt while a note sounds.
+
+   They alias. A hard phase wrap and a square edge both do, and the CZ and
+   every analogue pulse did too — it is part of the sound rather than a defect
+   to apologise for. Each is followed by a gentle lowpass that takes the worst
+   of it off without taking the edge. */
+let pdCurve=null, pwCurve=null;
+function pdShapeCurve(){
+  /* One cosine cycle across the input range, and FLAT beyond it. A WaveShaper
+     clamps out-of-range input to the end of its curve, which is what turns a
+     gain on the phasor into phase distortion: at 1x the ramp traverses exactly
+     one cycle, at 6x it completes six times faster and then holds — a burst of
+     cosine at 6f at the head of every period of f, which is a formant you can
+     move with a single number. */
+  if(pdCurve) return pdCurve;
+  const n=4096, c=new Float32Array(n);
+  for(let i=0;i<n;i++) c[i]=Math.cos(Math.PI*(i/(n-1)*2-1));
+  return (pdCurve=c);
+}
+function pwShapeCurve(){
+  /* A comparator with a soft knee. Hard sign() aliases without limit and the
+     knee costs nothing: the width still goes all the way to a sliver. */
+  if(pwCurve) return pwCurve;
+  const n=4096, c=new Float32Array(n);
+  for(let i=0;i<n;i++){ const x=i/(n-1)*2-1; c[i]=Math.tanh(x*24); }
+  return (pwCurve=c);
+}
+/* 0..1 from the panel, meaning something different but analogous in each
+   engine: how far the sweep goes. */
+function instShape(){ return clamp(S.inst.shape==null?0.55:+S.inst.shape,0,1); }
+function buildPD(f,t,env){
+  const saw=pLive('sawtooth',f);
+  const k=AC.createGain();                       // the phase multiplier — the whole engine
+  const sh=AC.createWaveShaper(); sh.curve=pdShapeCurve(); sh.oversample='2x';
+  const lp=AC.createBiquadFilter(); lp.type='lowpass';
+  lp.frequency.value=Math.min(16000,f*26); lp.Q.value=0.5;
+  const top=1+instShape()*9;                     // 1x = a sine, 10x = a hard formant
+  /* The sweep is the sound, so it has to last long enough to BE one. A 12ms
+     rise — the first version — is an attack transient: shorter than an FFT
+     window, unmeasurable, and heard as a click rather than a movement. Up over
+     30ms and down over three quarters of a second is where it reads as a
+     formant travelling, which is the whole point of the method. */
+  k.gain.setValueAtTime(1.0,t);
+  k.gain.linearRampToValueAtTime(top,t+0.03);
+  k.gain.exponentialRampToValueAtTime(Math.max(1.02,1+instShape()*1.2),t+0.78);
+  saw.connect(k); k.connect(sh); sh.connect(lp); lp.connect(env);
+  return [saw];
+}
+function buildPWM(f,t,env){
+  const saw=pLive('sawtooth',f);
+  const sum=AC.createGain();                     // saw + offset, then compared
+  const off=AC.createConstantSource();           // the offset IS the pulse width
+  const sh=AC.createWaveShaper(); sh.curve=pwShapeCurve(); sh.oversample='2x';
+  const lp=AC.createBiquadFilter(); lp.type='lowpass';
+  lp.frequency.value=Math.min(15000,f*22); lp.Q.value=0.5;
+  const g=AC.createGain(); g.gain.value=0.42;    // a square is loud; match the others
+  const d=instShape()*0.85;
+  off.offset.setValueAtTime(0,t);
+  /* Width drifts rather than sits, which is the only reason a pulse sounds
+     alive rather than like a test tone. Slow, and never all the way to silence
+     at either end. */
+  off.offset.linearRampToValueAtTime(d,t+1.1);
+  off.offset.linearRampToValueAtTime(-d*0.6,t+3.0);
+  saw.connect(sum); off.connect(sum);
+  sum.connect(sh); sh.connect(lp); lp.connect(g); g.connect(env);
+  return [saw,off];
+}
+function buildCluster(f,t,env){
+  /* Six partials on slightly wrong ratios, each drifting at its own rate. The
+     wrongness is the point: exact harmonics fuse into one note, and a few cents
+     of disagreement is what the ear hears as a choir rather than an organ. */
+  const RAT=[1,2,3,4.03,5.06,6.11], parts=[];
+  const spread=6+instShape()*40;                 // cents at the top partial
+  RAT.forEach((r,i)=>{
+    const hz=f*r; if(hz>AC.sampleRate*0.45) return;
+    const o=pLive(i<3?'sine':'triangle',hz);
+    o.detune.value=(i%2?1:-1)*spread*(i/RAT.length);
+    const g=AC.createGain(); g.gain.value=0.5/(1+i*1.15);
+    /* One slow drift per partial, at a rate that is not a multiple of any
+       other, so the beating never settles into a pattern. */
+    const lfo=AC.createOscillator(); lfo.type='sine'; lfo.frequency.value=0.07+i*0.031;
+    const amt=AC.createGain(); amt.gain.value=2+i*1.6;
+    lfo.connect(amt); amt.connect(o.detune);
+    o.connect(g); g.connect(env);
+    parts.push(o,lfo);
+  });
+  return parts;
+}
 function instVoice(f,when){
   ensureAudio();
   const bus=instBus(), t=when!=null?when:AC.currentTime;
   const env=AC.createGain(); env.connect(bus.g);
   const parts=[], v={env,parts,dead:false};
-  if(S.inst.voice==='pluck'){
+  if(S.inst.voice==='phase'||S.inst.voice==='pulse'||S.inst.voice==='cluster'){
+    const lvl=S.inst.voice==='cluster'?0.34:0.42;
+    const atk=S.inst.voice==='cluster'?0.09:0.006;
+    env.gain.setValueAtTime(0,t);
+    env.gain.linearRampToValueAtTime(lvl,t+atk);
+    const mk=S.inst.voice==='phase'?buildPD:S.inst.voice==='pulse'?buildPWM:buildCluster;
+    mk(f,t,env).forEach(o=>{ o.start(t); parts.push(o); });
+  }else if(S.inst.voice==='pluck'){
     const src=AC.createBufferSource(); src.buffer=ksBuf(f);
     env.gain.setValueAtTime(0.85,t);
     src.connect(env); src.start(t); parts.push(src);
@@ -11119,7 +11234,7 @@ function instVoice(f,when){
   v.stop=(tt)=>{
     if(v.dead) return; v.dead=true;
     const x=Math.max(tt!=null?tt:AC.currentTime, AC.currentTime);
-    const rel=S.inst.voice==='pluck'?0.15:0.3;
+    const rel=S.inst.voice==='pluck'?0.15:S.inst.voice==='cluster'?0.9:0.3;
     try{ env.gain.cancelScheduledValues(x); env.gain.setTargetAtTime(0,x,rel*0.4); }catch(e){}
     parts.forEach(o=>{ try{ o.stop(x+rel*3); }catch(e){} });
     setTimeout(()=>{ instVoices.delete(v); try{env.disconnect();}catch(e){} },(x-AC.currentTime+rel*3+0.2)*1000);
@@ -11647,6 +11762,7 @@ function tiltReset(){
 function drawLive(){
   const m=S.inst.mode;
   $('instSel').value=m; $('instVoiceSel').value=S.inst.voice;
+  try{ drawInstShape(); }catch(e){}
   $('instKey').value=String(S.inst.key); $('instScale').value=S.inst.scale;
   $('instSnap').classList.toggle('on',S.inst.snap);
   $('instSnap').style.display=(m==='ther'||m==='ribbon')?'':'none';
@@ -11736,7 +11852,28 @@ $('btnPerfRec').addEventListener('click',()=>{
   lcd('RECORDING \u2192 TRACK '+(i+1)+' — play! Only your live playing is captured, not the beat. Tap again (or STOP) to commit.');
 });
 $('instSel').addEventListener('change',e=>{ instPanic(); S.inst.mode=e.target.value; drawLive(); dirty(); });
-$('instVoiceSel').addEventListener('change',e=>{ S.inst.voice=e.target.value; dirty(); });
+/* SHAPE means a different thing in each engine, so the panel says which — one
+   unlabelled slider that does three unrelated jobs is a slider nobody moves. */
+const SHAPE_WHAT={
+  phase:'how far the formant sweeps on each note. Low is close to a sine; high is the hard '
+    +'resonant edge phase distortion is known for.',
+  pulse:'how wide the pulse travels as the note holds. Low is a thin reed, high swings from '
+    +'narrow to fat and back.',
+  cluster:'how far the six partials disagree, in cents. Low fuses into one note, high spreads '
+    +'into a choir that never quite settles.'
+};
+function drawInstShape(){
+  const row=$('instShapeRow'), what=$('instShapeWhat');
+  if(!row) return;
+  const mine=SHAPE_WHAT[S.inst.voice];
+  row.style.display=mine?'':'none';
+  if(what){ what.style.display=mine?'':'none'; what.textContent=mine?'SHAPE \u2014 '+mine:''; }
+  const sl=$('instShape'), v=instShape();
+  if(sl) sl.value=v;
+  const vv=$('instShapeV'); if(vv) vv.textContent=Math.round(v*100)+'%';
+}
+$('instVoiceSel').addEventListener('change',e=>{ S.inst.voice=e.target.value; drawInstShape(); dirty(); });
+$('instShape').addEventListener('input',e=>{ S.inst.shape=parseFloat(e.target.value); drawInstShape(); dirty(); });
 $('instKey').addEventListener('change',e=>{ instPanic(); S.inst.key=parseInt(e.target.value,10); drawLive(); dirty(); });
 $('instScale').addEventListener('change',e=>{ instPanic(); S.inst.scale=e.target.value; drawLive(); dirty(); });
 $('instSnap').addEventListener('click',()=>{ S.inst.snap=!S.inst.snap; drawLive(); });

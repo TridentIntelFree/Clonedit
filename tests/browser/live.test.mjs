@@ -1860,6 +1860,113 @@ export default async function ({ browser, base }) {
       /WERE UNUSABLE|WAS UNUSABLE/.test(poison.said), '"' + poison.said.slice(0, 110) + '…"');
     t.ok('AND THE APP STILL PLAYS AFTERWARDS', poison.plays > 0.05, 'level ' + poison.plays);
 
+    t.head('THREE ENGINES THAT ARE THREE METHODS, NOT ONE WITH A MENU');
+    /* "Teenage Engineering's OP-1 has some interesting tricks to create synth
+       sounds… can we do that in our live section?" — and then: "I want to copy
+       the method the synth I mentioned uses."
+
+       The methods, then, which is the part that is copyable: phase distortion,
+       pulse-width modulation and a detuned partial cluster are three of that
+       machine's own engine families, and all three predate it. Phase
+       distortion is Casio's CZ line from 1984 and those patents lapsed decades
+       ago. What belongs to a manufacturer is the name, the panel, the firmware
+       and the presets, and none of those are here.
+
+       A menu of names is easy and worthless, so each claim is the SIGNATURE of
+       its method measured in the output — a formant that travels, a notch that
+       moves, partials that are deliberately not harmonics. Any of the three
+       could be faked by relabelling a filter; none of these measurements
+       could. */
+    const syn = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(300);
+      document.querySelector('#tabs button[data-v="live"]').click();
+      const keep = JSON.parse(JSON.stringify(S.inst));
+      S.inst.vol = 0.8; S.inst.rev = 0; S.inst.dly = 0;
+      instBus().rv.gain.value = 0; instBus().dl.gain.value = 0;
+      const F = 220;
+      const mk = n => { const a = AC.createAnalyser(); a.fftSize = n;
+        a.smoothingTimeConstant = 0; instBus().g.connect(a); return a; };
+      const fast = mk(2048), fine = mk(16384);
+      const bF = new Float32Array(fast.frequencyBinCount);
+      const bN = new Float32Array(fine.frequencyBinCount);
+      const ampOf = (buf, per) => hz => { const i = Math.round(hz / per);
+        let m = -Infinity; for (let k = i - 2; k <= i + 2; k++) if (k > 0 && buf[k] > m) m = buf[k];
+        return Math.pow(10, m / 20); };
+      const perF = (AC.sampleRate / 2) / bF.length, perN = (AC.sampleRate / 2) / bN.length;
+      /* Energy above the fundamental: what a phase sweep moves, and far
+         steadier to read than a centroid. */
+      const bright = () => { fast.getFloatFrequencyData(bF); const a = ampOf(bF, perF);
+        let hi = 0; for (let n = 2; n <= 16; n++) hi += a(F * n);
+        const f0 = a(F); return f0 > 0 ? +(20 * Math.log10(hi / f0)).toFixed(1) : -99; };
+
+      const sweep = async (voice, shape) => {
+        S.inst.voice = voice; S.inst.shape = shape;
+        const v = instVoice(F);
+        await wait(120); const early = bright();
+        await wait(700); const late = bright();
+        v.stop(); await wait(900);
+        return { early, late, fall: +(early - late).toFixed(1) };
+      };
+      o.phaseHi = await sweep('phase', 1.0);
+      o.phaseLo = await sweep('phase', 0.02);
+      o.glass = await sweep('glass', 0.5);
+
+      /* PULSE: the notch has to MOVE. A static pulse is just a waveform; the
+         modulation is the method. */
+      S.inst.voice = 'pulse'; S.inst.shape = 0.9;
+      const pv = instVoice(F);
+      const h2 = () => { fast.getFloatFrequencyData(bF); const a = ampOf(bF, perF);
+        return +(20 * Math.log10(a(F * 2) / a(F))).toFixed(1); };
+      await wait(140); const pw0 = h2();
+      await wait(750); const pw1 = h2();
+      pv.stop(); await wait(900);
+      o.pulse = { start: pw0, later: pw1, moved: +Math.abs(pw1 - pw0).toFixed(1) };
+
+      /* CLUSTER: the partials sit BESIDE the harmonics, not on them. A stack
+         tuned to exact multiples fuses into one note; the disagreement is the
+         entire method, and it is visible as a hole where the harmonic should
+         be next to a peak where it actually is. */
+      S.inst.voice = 'cluster'; S.inst.shape = 0.9;
+      const cv = instVoice(F); await wait(450);
+      fine.getFloatFrequencyData(bN); const aN = ampOf(bN, perN);
+      o.cluster = { onHarmonic: +(20 * Math.log10(aN(F * 4) / aN(F))).toFixed(1),
+        beside: +(20 * Math.log10(aN(F * 4.03) / aN(F))).toFixed(1) };
+      cv.stop(); await wait(900);
+
+      o.ui = {
+        shown: (() => { S.inst.voice = 'phase'; drawInstShape();
+          return document.getElementById('instShapeRow').style.display !== 'none'; })(),
+        hidden: (() => { S.inst.voice = 'glass'; drawInstShape();
+          return document.getElementById('instShapeRow').style.display === 'none'; })(),
+        says: (() => { S.inst.voice = 'cluster'; drawInstShape();
+          return document.getElementById('instShapeWhat').textContent; })(),
+        inMenu: [...document.querySelectorAll('#instVoiceSel option')].map(x => x.value)
+      };
+      S.inst = keep; try { drawLive(); } catch (e) {}
+      return o;
+    });
+    t.ok('PHASE SWEEP MOVES A FORMANT ACROSS THE NOTE, which is the method',
+      syn.phaseHi.fall > 8,
+      'brightness ' + syn.phaseHi.early + ' dB → ' + syn.phaseHi.late + ' dB, a '
+      + syn.phaseHi.fall + ' dB fall');
+    t.ok('and SHAPE at the bottom is very nearly a sine — the control',
+      syn.phaseLo.fall < 3 && syn.phaseLo.early < syn.phaseHi.early - 20,
+      'fell ' + syn.phaseLo.fall + ' dB from ' + syn.phaseLo.early + ' dB');
+    t.ok('while an older voice does not sweep at all', syn.glass.fall < 6,
+      'GLASS fell ' + syn.glass.fall + ' dB');
+    t.ok('PULSE MOVES ITS NOTCH, so it is modulation and not just a waveform',
+      syn.pulse.moved > 8,
+      'second harmonic ' + syn.pulse.start + ' dB → ' + syn.pulse.later + ' dB');
+    t.ok('CLUSTER PUTS ITS PARTIALS BESIDE THE HARMONICS, not on them',
+      syn.cluster.beside > syn.cluster.onHarmonic + 20,
+      'at 4×F: ' + syn.cluster.onHarmonic + ' dB · at 4.03×F: ' + syn.cluster.beside + ' dB');
+    t.ok('all three are in the menu', ['phase', 'pulse', 'cluster']
+      .every(v => syn.ui.inMenu.includes(v)), syn.ui.inMenu.join(', '));
+    t.ok('SHAPE appears only for the engines it means something to, and says which',
+      syn.ui.shown && syn.ui.hidden && /partials disagree/.test(syn.ui.says),
+      '"' + syn.ui.says.slice(0, 70) + '…"');
+
     t.head('THE ANGLE OF THE PHONE CANNOT CHANGE THE VOLUME IN SECRET');
     /* "My volume in playback is different depending on if my phone is landscape
        or regular — same speaker producing sound, not a stereo thing."
