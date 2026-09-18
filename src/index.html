@@ -974,6 +974,13 @@ a silence gives the gap away.</p>
     <div class="pslider"><span class="lbl">PROB</span><input type="range" id="slProb" min="0.05" max="1" step="0.05" value="1"><span class="val" id="slProbV">100%</span></div>
     <div class="pslider"><span class="lbl">RATCH</span><input type="range" id="slRat" min="1" max="6" step="1" value="1"><span class="val" id="slRatV">1</span></div>
     <div class="pslider"><span class="lbl">NUDGE</span><input type="range" id="slNudge" min="-0.5" max="0.5" step="0.05" value="0"><span class="val" id="slNudgeV">0</span></div>
+    <div style="font-size:10px;color:var(--lcd);margin:8px 0 2px;letter-spacing:.5px">SOUND &mdash; these change what this one step plays like</div>
+    <div class="pslider"><span class="lbl">CUTOFF</span><input type="range" id="slCut" min="0" max="1" step="0.005" value="1"><span class="val" id="slCutV">off</span></div>
+    <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="slGain" min="0" max="2" step="0.01" value="0.9"><span class="val" id="slGainV">off</span></div>
+    <div class="pslider"><span class="lbl">PAN</span><input type="range" id="slPan" min="-1" max="1" step="0.05" value="0"><span class="val" id="slPanV">off</span></div>
+    <div class="pslider"><span class="lbl">DECAY</span><input type="range" id="slRel" min="0.005" max="1" step="0.005" value="0.06"><span class="val" id="slRelV">off</span></div>
+    <div class="pslider"><span class="lbl">START</span><input type="range" id="slStart" min="0" max="0.98" step="0.005" value="0"><span class="val" id="slStartV">off</span></div>
+    <div id="slSoundHint" style="font-size:10px;color:var(--txt-dim);margin:0 0 4px">Each is OFF until you move it, and then applies to this step only. DRIVE is not here on purpose: it is a waveshaper table rather than a parameter, and swapping one every sixteenth is the cost that was taken out of the pad FX panel.</div>
     <!-- Only meaningful on a pad whose figure is fired from its steps, so it is
          hidden otherwise rather than sitting there doing nothing. -->
     <div class="row" id="slPlainRow" style="display:none">
