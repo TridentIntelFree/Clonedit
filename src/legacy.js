@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R194 · 2026-09-18 · a keyboard that is always there';
+const BUILD = 'JBH-88 · R195 · 2026-09-18 · a step that holds a sound';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -3620,7 +3620,7 @@ function pickLayerIdx(g,p,idx,v){
   const rr=g.rr||(g.rr={});
   const k=(rr[idx]||0)%n; rr[idx]=k+1; return k;
 }
-function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLayer){
+function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLayer, lk){
   const p=S.pads[idx]; if(p.bufId<0) return null;
   if(p.mode==='grain'){   // GRAIN pads spray a cloud instead of playing the sample
     scheduleGrains(ctx,g,idx,clamp(vel,0,1),when,clamp(p.grBurst||0.45,0.05,4),pitchOff||0);
@@ -3632,13 +3632,17 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
      and must not choke itself. */
   if(forceLayer==null && p.layMode==='stack' && padLayerCount(p)>1){
     for(let li=1;li<padLayerCount(p);li++)
-      triggerPad(ctx,g,idx,vel,when,null,pitchOff,liveTap,li);
+      triggerPad(ctx,g,idx,vel,when,null,pitchOff,liveTap,li,lk);
   }
   const li = forceLayer!=null ? forceLayer : pickLayerIdx(g,p,idx,clamp(vel,0,1));
   const lay = padLayer(p,li) || padLayer(p,0);
   if(lay.bufId<0) return null;
   let buf=S.buffers[lay.bufId]; if(!buf) return null;
-  let s0=lay.start, e0=lay.end;
+  /* START is the one lock that changes WHICH audio plays rather than how it
+     sounds, so it is clamped inside the layer's own trim: a locked start past
+     the end would be a step that plays nothing, which reads as a broken
+     sequencer rather than as an edit. */
+  let s0=(lk&&lk.start!=null)?clamp(lk.start,0,Math.max(0,lay.end-0.002)):lay.start, e0=lay.end;
   if(p.reverse){ const rv=getReversed(lay.bufId); if(rv) buf=rv; s0=1-lay.end; e0=1-lay.start; }
   /* Down only for level, so VARY can never turn a mixed pad into a clipping
      one; pitch is symmetrical because a drum that is only ever flat is worse
@@ -3697,7 +3701,8 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
   const decT=Math.max(0.001, p.dec==null?0.12:+p.dec);
   const sus=clamp(p.sus==null?1:+p.sus,0,1);
   const attEnd=when+att;
-  const relStart=when+Math.max(att+0.002,outDur-p.rel);
+  const relT=(lk&&lk.rel!=null)?clamp(lk.rel,0.005,1):p.rel;
+  const relStart=when+Math.max(att+0.002,outDur-relT);
   env.gain.setValueAtTime(0,when);
   env.gain.linearRampToValueAtTime(v,attEnd);
   let holdLvl=v;
@@ -3717,7 +3722,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
     }
   }
   env.gain.setValueAtTime(holdLvl,relStart);
-  env.gain.linearRampToValueAtTime(0.0001,relStart+p.rel);
+  env.gain.linearRampToValueAtTime(0.0001,relStart+relT);
   src.connect(env); env.connect(g.pads[idx].in);
   scheduleFilterEnv(ctx, g.pads[idx], p, when, outDur, clamp(vel,0,1));
   let ltg=null;
@@ -3745,7 +3750,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
     try{ dg.cancelScheduledValues(when); dg.linearRampToValueAtTime(1-dep, when+0.012); dg.linearRampToValueAtTime(1, when+0.012+rel); }catch(e){}
   }
   src.start(when,off,sliceDur);
-  src.stop(when+outDur+p.rel+0.25);
+  src.stop(when+outDur+relT+0.25);
   src.onended=()=>{
     const i=act.indexOf(env._v); if(i>=0) act.splice(i,1);
     liveVoices.delete(src);
@@ -4466,6 +4471,10 @@ $('smNextEmpty').addEventListener('click',()=>{
 function hitLive(idx, vel, pitchOff){
   ensureAudio();
   if(silGateDown && LIVE){ silRestore(LIVE, AC.currentTime); silGateDown=false; }
+  /* A hand hit is not a step, so it gets the pad's own sound even if the last
+     step to play left a lock on the channel. Passing no lock writes the pad's
+     values back, which is the whole point of locks being local. */
+  applyStepLocks(LIVE, curPat(), idx, null, AC.currentTime);
   const a=triggerPad(AC, LIVE, idx, vel, AC.currentTime, chokeLive, pitchOff||0, true);
   if(a) activeEnv[idx]=a;
   flashPad(idx,vel);
@@ -4569,6 +4578,7 @@ function repStart(idx,vel){
   h.timer=setInterval(()=>{               // mini lookahead scheduler — sample-accurate rolls
     const iv=60/bpmAbs()/parseInt($('repRate').value,10);
     while(h.nextT<AC.currentTime+0.1){
+      applyStepLocks(LIVE, curPat(), idx, null, h.nextT);   // a roll is hand hits too — the pad's own sound
       triggerPad(AC,LIVE,idx,h.vel,h.nextT,chokeLive,0,true);
       writeLiveStep(idx,h.vel,h.nextT);
       const dt=Math.max(0,(h.nextT-AC.currentTime)*1000);
@@ -9125,6 +9135,13 @@ async function loadSongDoc(doc){
         if(src.prob!=null) lk.prob=clamp(src.prob,0,1);
         if(src.rat!=null&&src.rat>1) lk.rat=clamp(src.rat|0,2,4);
         if(src.nudge!=null) lk.nudge=clamp(src.nudge,-0.5,0.5);
+        if(src.plain) lk.plain=1;
+        /* Clamped rather than dropped, because a song doc is hand-writable and
+           a cutoff of 2 is a typo with an obvious intent — but only once it is
+           known to be a number at all. */
+        { const rng={fcut:[0,1],gain:[0,2],pan:[-1,1],rel:[0.005,1],start:[0,0.99]};
+          LOCK_FX.forEach(f=>{ if(src[f]==null) return; const v=+src[f];
+            if(isFinite(v)) lk[f]=clamp(v,rng[f][0],rng[f][1]); }); }
         if(Object.keys(lk).length) P[pi].locks[kk]=lk;
       }
       if(pp.len) for(const k in pp.len){ const pad=parseInt(k,10); if(pad>=0&&pad<NPADS) P[pi].len[pad]=clamp(pp.len[k]|0,1,patLen(P[pi])); }
@@ -9181,6 +9198,11 @@ function exportSongDoc(){
     const locks={};
     for(const k in pt.locks){ const lk=pt.locks[k], o={};
       if(lk.prob!=null) o.prob=lk.prob; if(lk.rat>1) o.rat=lk.rat; if(lk.nudge) o.nudge=lk.nudge;
+      if(lk.plain) o.plain=1;
+      /* The sound a step holds travels with it. Without these a song doc would
+         round-trip the hits and drop what they sound like, which is the same
+         failure as a sequencer that plays something other than what it shows. */
+      LOCK_FX.forEach(f=>{ if(lk[f]!=null) o[f]=+(+lk[f]).toFixed(4); });
       if(Object.keys(o).length) locks[k]=o; }
     const sil=[]; (pt.sil||[]).forEach((v,i)=>{ if(v) sil.push(i); });
     const o={steps};
@@ -9767,6 +9789,72 @@ let seqT0=0;
    itself. The poly lane keeps its own, so the nested tuplets that ratcheting a
    cell gives you still work and belong to the cell you set them on. */
 const LK=(p,i,poly)=>(poly?'P':'')+p+':'+i;
+/* ---------------- PARAMETER LOCKS ----------------------------------------
+   A step could already hold a pitch, a chord, a probability, a ratchet and a
+   nudge. It could not hold a SOUND. So a pattern could say when a pad plays and
+   how hard, and nothing about what it plays like — which is the difference
+   between a drum machine and a sequencer, and the reason one pad tended to be
+   one part played sixteen times.
+
+   Five more fields, chosen because each is a real musical move and each can be
+   done without rebuilding anything on the audio thread: CUTOFF, LEVEL, PAN,
+   DECAY and START.
+
+   DRIVE IS DELIBERATELY NOT HERE. It is a WaveShaper curve rather than an
+   AudioParam, so locking it per step would mean handing the audio thread a new
+   table on every sixteenth — the exact cost R171 measured and removed from the
+   pad FX panel. A lock that made the engine stutter would not be worth having.
+
+   TWO OF THE FIVE ARE CHANNEL PARAMETERS and three are not, which is why they
+   are applied in two different places. Cutoff, level and pan live on the pad's
+   channel, shared by every voice on it, so they are scheduled at the step time
+   just before the voice starts. Decay and start belong to the voice being
+   built, so they are handed to triggerPad.
+
+   A LOCK HAS TO BE LOCAL. Writing the locked value at step 3 would leave it
+   there for steps 4 to 16, so on a pad that uses locks at all, EVERY step
+   writes either its locked value or the pad's own — which is what makes the
+   lock affect one step instead of the rest of the bar. Pads with no locks are
+   not touched at all, so nothing about them changes. */
+/* LOCK_FX → src/pure/pattern.js, shared with stepHasLock so the grid's lock
+   marker and the scheduler cannot disagree about which fields count. */
+let lockVer=0;
+const lockCache=new WeakMap();
+function bumpLocks(){ lockVer++; }
+function padLockedFields(pat,p){
+  if(!pat||!pat.locks) return null;
+  /* Keyed on the version AND the number of locks. The count catches every
+     lock that appears or disappears without a bumpLocks() — which is most of
+     them, since locks are written by direct assignment from two dozen places.
+     The bump is only load-bearing for a field added to a key that already
+     exists, and those all go through setLock. Counting is a for-in over a
+     handful of keys: no regex, no allocation, and it runs once per step. */
+  let n=0; for(const k0 in pat.locks) n++;
+  let c=lockCache.get(pat);
+  if(!c || c.ver!==lockVer || c.n!==n){
+    c={ver:lockVer,n:n,map:{}}; lockCache.set(pat,c);
+    for(const k in pat.locks){
+      const m=/^P?(\d+):/.exec(k); if(!m) continue;
+      const lk=pat.locks[k]; if(!lk) continue;
+      for(const f of LOCK_FX){
+        if(lk[f]==null) continue;
+        const pi=+m[1];
+        (c.map[pi]||(c.map[pi]={}))[f]=1;
+      }
+    }
+  }
+  return c.map[p]||null;
+}
+function applyStepLocks(g,pat,p,lk,when){
+  const used=padLockedFields(pat,p);
+  if(!used||!g||!g.pads) return;
+  const n=g.pads[p], pd=S.pads[p];
+  if(!n||!pd) return;
+  const put=(param,v)=>{ try{ param.setValueAtTime(v,when); }catch(e){} };
+  if(used.fcut) put(n.flt.frequency, cutHz(clamp(lk&&lk.fcut!=null?lk.fcut:pd.fcut,0,1)));
+  if(used.gain) put(n.ch.gain, clamp(lk&&lk.gain!=null?lk.gain:pd.gain,0,2));
+  if(used.pan && n.pan) put(n.pan.pan, clamp(lk&&lk.pan!=null?lk.pan:pd.pan,-1,1));
+}
 
 /* A poly pad's cells, split out of the grid row they used to share the moment
    anything reads them. Every reader comes through here — the scheduler, the
@@ -9821,9 +9909,10 @@ function polyFire(pat, p, idx, v, when, pd, fired){
   const chord=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0];
   const rat=(lk&&lk.rat>1)?lk.rat:1;
   const creg=chord.length>1?null:chokeLive;
+  applyStepLocks(LIVE, pat, p, lk, when);
   chord.forEach(pitchOff=>{
-    if(rat>1){ const rd=pd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, hv, when+r*rd, creg, pitchOff); }
-    else triggerPad(AC, LIVE, p, hv, when, creg, pitchOff);
+    if(rat>1){ const rd=pd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, hv, when+r*rd, creg, pitchOff, false, null, lk); }
+    else triggerPad(AC, LIVE, p, hv, when, creg, pitchOff, false, null, lk);
   });
   if(S.notesOut && midiOutDev){
     const baseNote=(S.pads[p].note>=0?S.pads[p].note:36+p);
@@ -9925,9 +10014,10 @@ function schedStep(barStep, absStep, t){
     const chord=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0];
     const rat=(lk&&lk.rat>1)?lk.rat:1;                           // ratchet / roll
     const creg=chord.length>1?null:chokeLive;                    // chord voices must not choke each other
+    applyStepLocks(LIVE, pat, p, lk, when);
     chord.forEach(pitchOff=>{
-      if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, hv, when+r*rd, creg, pitchOff); }
-      else triggerPad(AC, LIVE, p, hv, when, creg, pitchOff);
+      if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, hv, when+r*rd, creg, pitchOff, false, null, lk); }
+      else triggerPad(AC, LIVE, p, hv, when, creg, pitchOff, false, null, lk);
     });
     if(S.notesOut && midiOutDev){   // mirror the step (whole chord) to hardware
       const baseNote=(S.pads[p].note>=0?S.pads[p].note:36+p);
@@ -12358,6 +12448,30 @@ function drawStepLock(){
   $('slProb').value=lk.prob!=null?lk.prob:1; $('slProbV').textContent=Math.round((lk.prob!=null?lk.prob:1)*100)+'%';
   $('slRat').value=lk.rat||1; $('slRatV').textContent=String(lk.rat||1);
   $('slNudge').value=lk.nudge||0; $('slNudgeV').textContent=(lk.nudge?(lk.nudge>0?'+':'')+Math.round(lk.nudge*100)+'%':'0');
+  /* A lock reads OFF until it holds something, and the slider still sits at the
+     pad's own value so moving it starts from where the sound already is rather
+     than jumping. "off" is the honest word: the step is not overriding. */
+  const pd=S.pads[S.seqPad];
+  const lockRow=(id,val,dflt,fmt)=>{
+    $(id).value=(val!=null?val:dflt);
+    $(id+'V').textContent=(val!=null?fmt(val):'off');
+  };
+  lockRow('slCut',lk.fcut,pd.fcut,v=>Math.round(cutHz(v))+'Hz');
+  lockRow('slGain',lk.gain,pd.gain,v=>Math.round(v*100)+'%');
+  lockRow('slPan',lk.pan,pd.pan,v=>v===0?'centre':(v<0?'L':'R')+Math.round(Math.abs(v)*100));
+  lockRow('slRel',lk.rel,pd.rel,v=>Math.round(v*1000)+'ms');
+  lockRow('slStart',lk.start,pd.start,v=>Math.round(v*100)+'%');
+  /* Same trap as the filter envelope: a cutoff lock on a pad whose filter is
+     OFF moves nothing, and five live-looking sliders are a convincing way to
+     say otherwise. */
+  const dead=pd.ftype==='off' && lk.fcut!=null;
+  const sh=$('slSoundHint');
+  if(sh) sh.textContent = dead
+    ? '⚠ This pad\u2019s FILTER is OFF, so the CUTOFF lock is moving nothing — set it to LP, HP or BP in EDIT.'
+    : 'Each is OFF until you move it, and then applies to this step only. DRIVE is not here on purpose: '
+      +'it is a waveshaper table rather than a parameter, and swapping one every sixteenth is the cost '
+      +'that was taken out of the pad FX panel.';
+  if(sh) sh.style.color = dead ? 'var(--red)' : 'var(--txt-dim)';
   /* One step at a time can opt out of the pad's figure, for a part that is
      mostly figures with a couple of straight hits in it. Hidden unless the pad
      actually has a figure fired from its steps — a control that cannot do
@@ -12392,6 +12506,7 @@ function setLock(field,val,def){
     val=snapToScale(val); }                  // SCALE LOCK: land in key
   if(val===def) delete lk[field]; else lk[field]=val;
   if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
+  bumpLocks();
   drawSteps(); drawPoly(); drawStepLock(); dirty();
 }
 $('slVel').addEventListener('input',e=>{
@@ -12406,8 +12521,16 @@ $('slPitch').addEventListener('input',e=>setLock('pitch',parseInt(e.target.value
 $('slProb').addEventListener('input',e=>setLock('prob',parseFloat(e.target.value),1));
 $('slRat').addEventListener('input',e=>setLock('rat',parseInt(e.target.value,10),1));
 $('slNudge').addEventListener('input',e=>setLock('nudge',parseFloat(e.target.value),0));
+/* No default to compare against: a sound lock is either present or it is not,
+   and a value that happens to equal the pad's own is still a deliberate lock —
+   the pad can be changed afterwards and the step should hold. */
+[['slCut','fcut'],['slGain','gain'],['slPan','pan'],['slRel','rel'],['slStart','start']]
+  .forEach(([id,field])=>{
+    $(id).addEventListener('input',e=>setLock(field,parseFloat(e.target.value),null));
+  });
 $('slClr').addEventListener('click',()=>{ if(morphGuard()) return;
   delete S.patterns[S.pattern].locks[LK(S.seqPad,seqSelStep,seqSelPoly)];
+  bumpLocks();
   drawSteps(); drawPoly(); drawStepLock(); dirty(); });
 
 /* ---- melodic NOTES lane: a scale grid that writes per-step pitch locks.
@@ -14227,6 +14350,21 @@ function applySessionDoc(doc, bufs){
     if(PATLENS.indexOf(pt.plen)<0) pt.plen=NSTEPS;                       // pre-R89 patterns are one bar
     if(!Array.isArray(pt.len)) pt.len=new Array(NPADS).fill(pt.plen);
     if(!pt.locks||typeof pt.locks!=='object') pt.locks={};
+    /* A sound lock is written straight into an AudioParam, so a NaN or a wild
+       number out of a hand-edited file would poison the pad for the rest of
+       the session — the R189 failure, one lane down. Anything that is not a
+       finite number in range is dropped rather than corrected, because a
+       silently corrected value is a step that plays something the editor is
+       not showing. */
+    for(const k in pt.locks){ const lk=pt.locks[k]; if(!lk||typeof lk!=='object'){ delete pt.locks[k]; continue; }
+      const rng={fcut:[0,1],gain:[0,2],pan:[-1,1],rel:[0.005,1],start:[0,0.99]};
+      LOCK_FX.forEach(f=>{ if(!(f in lk)) return;
+        /* null is checked before the coercion, not with ==null: JSON.stringify
+           writes NaN as null and +null is 0, which is a perfectly valid cutoff.
+           A dead value would come back as "fully closed" instead of "absent". */
+        const v=lk[f]===null?NaN:+lk[f], r=rng[f];
+        if(isFinite(v) && v>=r[0] && v<=r[1]) lk[f]=v; else delete lk[f]; });
+      if(!Object.keys(lk).length) delete pt.locks[k]; }
     if(!Array.isArray(pt.sil)) pt.sil=new Array(MAXSTEPS).fill(0);
     while(pt.sil.length<MAXSTEPS) pt.sil.push(0);                        // grow to capacity
     for(let p=0;p<NPADS;p++){
@@ -15298,8 +15436,8 @@ async function renderMixInner(padSet, traxSet, opt){
               const pch=(plk&&plk.pitches&&plk.pitches.length)?plk.pitches:[(plk&&plk.pitch)||0];
               const prat=(plk&&plk.rat>1)?plk.rat:1, pIsChord=pch.length>1;
               pch.forEach(pitch=>{
-                if(prat>1){ const rd=pd/prat; for(let r=0;r<prat;r++) events.push({when:pw+r*rd,p,v:phv,pitch,chord:pIsChord}); }
-                else events.push({when:pw,p,v:phv,pitch,chord:pIsChord});
+                if(prat>1){ const rd=pd/prat; for(let r=0;r<prat;r++) events.push({when:pw+r*rd,p,v:phv,pitch,chord:pIsChord,lk:plk,pat}); }
+                else events.push({when:pw,p,v:phv,pitch,chord:pIsChord,lk:plk,pat});
               });
             }
             /* No `continue`: the pad plays its ordinary grid row as well, the
@@ -15321,15 +15459,15 @@ async function renderMixInner(padSet, traxSet, opt){
             let any=false;
             for(const f of polyFigure(pc, when, barDur)){
               any=true;
-              events.push({when:f.when, p, v:clamp(f.v*hv,0.02,1), pitch:0, chord:false});
+              events.push({when:f.when, p, v:clamp(f.v*hv,0.02,1), pitch:0, chord:false, lk, pat});
             }
             if(any) continue;
           }
           const chord=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0], rat=(lk&&lk.rat>1)?lk.rat:1;
           const isChord=chord.length>1;                            // NOTES-lane harmony bakes into the bounce too
           chord.forEach(pitch=>{
-            if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) events.push({when:when+r*rd,p,v:hv,pitch,chord:isChord}); }
-            else events.push({when,p,v:hv,pitch,chord:isChord});
+            if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) events.push({when:when+r*rd,p,v:hv,pitch,chord:isChord,lk,pat}); }
+            else events.push({when,p,v:hv,pitch,chord:isChord,lk,pat});
           });
         }
       }
@@ -15371,7 +15509,11 @@ async function renderMixInner(padSet, traxSet, opt){
   for(const ev of events){
     if(ev.sil){ silenceAt(g, ev.when, S.silFade); gateDown=true; continue; }
     if(gateDown){ silRestore(g, Math.max(0.001,ev.when-0.002)); gateDown=false; }
-    triggerPad(oc, g, ev.p, ev.v, ev.when, ev.chord?null:chokeOff, ev.pitch);   // chord voices don't choke each other
+    /* The locks have to be applied to the OFFLINE graph at the event's own
+       time, or a bounce is the pattern without its sound design — which is the
+       one way a sequencer can lie about what it played. */
+    applyStepLocks(g, ev.pat, ev.p, ev.lk, ev.when);
+    triggerPad(oc, g, ev.p, ev.v, ev.when, ev.chord?null:chokeOff, ev.pitch, false, null, ev.lk);   // chord voices don't choke each other
   }
   for(const x of trax){ const w=wireTrack(oc,g,x.tr,x.b,0.05,x.tr.gain); if(x.tr.loop) w.src.stop(t); }
   return await oc.startRendering();
