@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R192 · 2026-09-18 · three engines that are three methods';
+const BUILD = 'JBH-88 · R193 · 2026-09-18 · a rhythm you cannot program';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -11053,7 +11053,8 @@ function traxCommit(){
 
 /* ---------------- LIVE — playable instruments ---------------- */
 /* SCALES, NOTE_NAMES, snapSemitone → src/pure/scale.js */
-const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker',bass:'finger',padKey:-1,shape:0.55};
+const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker',bass:'finger',padKey:-1,shape:0.55,
+  tSides:5,tSpin:0.35,tGrav:0.55,tBounce:0.82};
 S.inst=Object.assign({},INSTDEF);
 const instVoices=new Set();
 let ther=null, arpTimer=0, arpNotes=null, arpIdx=0, arpNext=0;
@@ -11245,6 +11246,11 @@ function pLive(type,f){ const o=AC.createOscillator(); o.type=type; o.frequency.
 function instPanic(){
   instVoices.forEach(v=>{ try{ v.stop(); }catch(e){} });
   instVoices.clear();
+  /* Silence, not stop. PANIC is bound to visibilitychange among other things,
+     and tearing the animation down there left the drum frozen on coming back —
+     the loop already sits out a hidden tab on its own, and it ends itself the
+     moment the mode changes. */
+  try{ tombSilence(); }catch(e){}
   arpStop(); therEnd();
   try{ fluteVoices.forEach(v=>v.stop()); fluteVoices.clear(); }catch(e){}
   try{ ribbonEnd(); }catch(e){}
@@ -11384,6 +11390,14 @@ function drawKeysGrid(){
            the middle of the keyboard is always the sample as recorded. */
         hitLive(pk, 0.9, m-root);
         b.classList.add('on'); setTimeout(()=>b.classList.remove('on'),110);
+        return;
+      }
+      if(S.inst.mode==='tomb'){
+        /* A key does not sound a note here, it puts one in the drum. What you
+           hear afterwards is the physics, which is the entire idea. */
+        const ball=tombDrop(m);
+        if(ball){ b.classList.add('on'); setTimeout(()=>b.classList.remove('on'),110);
+          const c=$('tombCount'); if(c) c.textContent=TOMB.balls.length+' note'+(TOMB.balls.length===1?'':'s'); }
         return;
       }
       v=(S.inst.mode==='flute')?fluteVoiceStart(noteHz(m)):instVoice(noteHz(m)); b.classList.add('on'); };
@@ -11759,6 +11773,158 @@ function tiltReset(){
   LIVE.perfFilt.frequency.setTargetAtTime(18500,AC.currentTime,0.05);
   LIVE.perfFilt.Q.setTargetAtTime(0.7,AC.currentTime,0.05);
 }
+/* ---------------- TOMBOLA — a rhythm you cannot program -------------------
+   Notes are objects in a spinning polygon and they sound when they hit a wall.
+   You drop them in by playing a key; after that the pattern is whatever the
+   physics does with them. Nothing else in this app makes rhythm that way —
+   every other page here is a grid, and a grid can only give you what you
+   already thought of.
+
+   TWO DECISIONS WORTH THE COMMENT.
+
+   FIXED TIMESTEP. The simulation advances in 1/240s slices from an accumulator,
+   never by however long the last animation frame happened to take. Stepping by
+   frame time is the obvious way and it is wrong here for a musical reason: the
+   rhythm would then be a property of the SCREEN. The same patch would play
+   differently on a 60Hz phone and a 120Hz one, slow down when another tab got
+   busy, and never repeat. A sequencer whose output depends on the refresh rate
+   is not a sequencer.
+
+   COLLISION IN THE WALL'S FRAME. A bounce is resolved against the wall's own
+   velocity, not against a stationary line — at a point r from the centre a
+   spinning wall is moving at omega x r, and subtracting that before the
+   reflection and adding it back after is what makes the spin THROW the balls
+   rather than just rotate a picture behind them. That one term is the
+   difference between a toy and an instrument. */
+const TOMB={balls:[], theta:0, raf:0, last:0, acc:0, lit:0};
+const TOMB_DT=1/240, TOMB_R=0.055, TOMB_MAX=14;
+function tombNum(k,d){ const v=+S.inst[k]; return isFinite(v)?v:d; }
+function tombSides(){ return Math.round(clamp(tombNum('tSides',5),3,9)); }
+function tombOmega(){ return tombNum('tSpin',0.35)*4.2; }        // rad/s
+function tombDrop(midi){
+  if(TOMB.balls.length>=TOMB_MAX){
+    lcd('TOMBOLA IS FULL at '+TOMB_MAX+' notes — CLEAR, or let some fly out.'); return null; }
+  /* Dropped near the middle with a little sideways push, so two notes played
+     together do not sit on top of each other for ever. */
+  const a=Math.random()*Math.PI*2;
+  const b={x:Math.cos(a)*0.18, y:Math.sin(a)*0.18,
+    vx:(Math.random()*2-1)*0.5, vy:(Math.random()*2-1)*0.5,
+    note:midi, hit:0, cool:0};
+  TOMB.balls.push(b);
+  return b;
+}
+function tombClear(){ TOMB.balls.length=0; TOMB.lit=0; }
+/* Exposed as its own function so the rhythm can be driven by a clock that is
+   not the screen's — which is how the timing claim is testable at all. */
+function tombStep(dt){
+  const n=tombSides(), ap=Math.cos(Math.PI/n), om=tombOmega();
+  const g=tombNum('tGrav',0.55)*2.4, e=clamp(tombNum('tBounce',0.82),0.2,0.99);
+  TOMB.theta+=om*dt;
+  const hits=[];
+  for(const b of TOMB.balls){
+    b.vy+=g*dt;
+    b.x+=b.vx*dt; b.y+=b.vy*dt;
+    b.hit=Math.max(0,b.hit-dt*4);
+    b.cool=Math.max(0,b.cool-dt);
+    for(let k=0;k<n;k++){
+      const ang=TOMB.theta+(k+0.5)*2*Math.PI/n;
+      const nx=Math.cos(ang), ny=Math.sin(ang);
+      const d=b.x*nx+b.y*ny;
+      const lim=ap-TOMB_R;
+      if(d<=lim) continue;
+      b.x-=nx*(d-lim); b.y-=ny*(d-lim);
+      const wvx=-om*b.y, wvy=om*b.x;                 // the wall is moving here
+      let rvx=b.vx-wvx, rvy=b.vy-wvy;
+      const vn=rvx*nx+rvy*ny;
+      if(vn<=0) continue;
+      rvx-=(1+e)*vn*nx; rvy-=(1+e)*vn*ny;
+      rvx*=0.995; rvy*=0.995;                        // a touch of wall friction
+      b.vx=rvx+wvx; b.vy=rvy+wvy;
+      if(b.cool<=0){
+        b.cool=0.045;                                // a ball wedged in a corner must not machine-gun
+        b.hit=1;
+        hits.push({note:b.note, v:clamp(0.25+Math.abs(vn)*0.5,0.2,1)});
+      }
+    }
+  }
+  return hits;
+}
+let tombVoices=new Set();
+function tombSound(hits){
+  if(!hits.length) return;
+  ensureAudio();
+  for(const h of hits){
+    if(tombVoices.size>=8) break;                    // a cap, so a stuck ball cannot bury the mix
+    let v=null;
+    try{ v=instVoice(noteHz(h.note)); }catch(e){}
+    if(!v) continue;
+    /* A drum full of notes is many voices at once where the keyboard is one or
+       two, so each is scaled back: measured at full level four balls put 2.64
+       on the instrument bus, which is headroom the rest of the mix wanted. */
+    try{ v.env.gain.cancelScheduledValues(AC.currentTime);
+         v.env.gain.setValueAtTime(v.env.gain.value*h.v*0.45,AC.currentTime); }catch(e){}
+    tombVoices.add(v);
+    setTimeout(()=>{ try{ v.stop(); }catch(e){} tombVoices.delete(v); },380);
+  }
+}
+function tombDraw(){
+  const cv=$('tombola'); if(!cv) return;
+  const {cx,W,H}=fitCanvas(cv);
+  cx.fillStyle='#120d04'; cx.fillRect(0,0,W,H);
+  const ccx=W/2, ccy=H/2, rad=Math.min(W,H)*0.44, n=tombSides();
+  cx.lineWidth=2; cx.strokeStyle='#5a6070';
+  cx.beginPath();
+  for(let k=0;k<=n;k++){
+    const a=TOMB.theta+k*2*Math.PI/n;
+    const x=ccx+Math.cos(a)*rad, y=ccy+Math.sin(a)*rad;
+    if(k===0) cx.moveTo(x,y); else cx.lineTo(x,y);
+  }
+  cx.closePath(); cx.stroke();
+  for(const b of TOMB.balls){
+    const x=ccx+b.x*rad, y=ccy+b.y*rad, r=TOMB_R*rad;
+    if(b.hit>0.01){
+      cx.fillStyle='rgba(255,140,46,'+(b.hit*0.45).toFixed(3)+')';
+      cx.beginPath(); cx.arc(x,y,r*(1.8+b.hit*1.4),0,Math.PI*2); cx.fill();
+    }
+    cx.fillStyle=b.hit>0.05?'#ffb454':'#c9722a';
+    cx.beginPath(); cx.arc(x,y,r,0,Math.PI*2); cx.fill();
+  }
+  if(!TOMB.balls.length){
+    cx.fillStyle='#7b8090'; cx.font='11px system-ui,sans-serif'; cx.textAlign='center';
+    cx.fillText('play a key to drop a note in', ccx, ccy);
+  }
+}
+function tombLoop(now){
+  if(S.inst.mode!=='tomb'){ TOMB.raf=0; return; }
+  TOMB.raf=requestAnimationFrame(tombLoop);
+  if(document.hidden) { TOMB.last=now; return; }
+  if(!TOMB.last) TOMB.last=now;
+  let dt=(now-TOMB.last)/1000; TOMB.last=now;
+  /* Never let a stall become a burst: a tab that was away for ten seconds must
+     not fire ten seconds of collisions at once. */
+  if(dt>0.25) dt=0.25;
+  TOMB.acc+=dt;
+  const all=[];
+  let guard=0;
+  while(TOMB.acc>=TOMB_DT && guard++<80){ TOMB.acc-=TOMB_DT; const h=tombStep(TOMB_DT); if(h.length) all.push(...h); }
+  tombSound(all);
+  tombDraw();
+}
+function tombStart(){ if(!TOMB.raf){ TOMB.last=0; TOMB.acc=0; TOMB.raf=requestAnimationFrame(tombLoop); } }
+function tombSilence(){ tombVoices.forEach(v=>{ try{ v.stop(); }catch(e){} }); tombVoices.clear(); }
+function tombStop(){ if(TOMB.raf) cancelAnimationFrame(TOMB.raf); TOMB.raf=0; tombSilence(); }
+function drawTomb(){
+  const on=S.inst.mode==='tomb';
+  const w=$('tombwrap'); if(w) w.style.display=on?'':'none';
+  if(!on){ tombStop(); return; }
+  const set=(id,val,fmt)=>{ const e=$(id); if(e){ e.value=val; const v=$(id+'V'); if(v) v.textContent=fmt; } };
+  set('tSides',tombSides(),tombSides()+' sides');
+  set('tSpin',tombNum('tSpin',0.35),(tombNum('tSpin',0.35)>=0?'+':'')+Math.round(tombNum('tSpin',0.35)*100)+'%');
+  set('tGrav',tombNum('tGrav',0.55),Math.round(tombNum('tGrav',0.55)*100)+'%');
+  set('tBounce',tombNum('tBounce',0.82),Math.round(tombNum('tBounce',0.82)*100)+'%');
+  const c=$('tombCount'); if(c) c.textContent=TOMB.balls.length+' note'+(TOMB.balls.length===1?'':'s');
+  tombStart();
+}
 function drawLive(){
   const m=S.inst.mode;
   $('instSel').value=m; $('instVoiceSel').value=S.inst.voice;
@@ -11768,7 +11934,7 @@ function drawLive(){
   $('instSnap').style.display=(m==='ther'||m==='ribbon')?'':'none';
   $('liveSurf').style.display=(m==='ther'||m==='harp'||m==='ribbon')?'block':'none';
   $('chordgrid').style.display=(m==='chord')?'grid':'none';
-  $('keysgrid').style.display=(m==='keys'||m==='flute'||m==='padkeys')?'grid':'none';
+  $('keysgrid').style.display=(m==='keys'||m==='flute'||m==='padkeys'||m==='tomb')?'grid':'none';
   $('chordopts').style.display=(m==='chord')?'flex':'none';
   $('percopts').style.display=(m==='perc')?'flex':'none';
   $('fluteopts').style.display=(m==='flute')?'flex':'none';
@@ -11791,7 +11957,8 @@ function drawLive(){
   $('instRev').value=S.inst.rev; $('instRevV').textContent=Math.round(S.inst.rev*100)+'%';
   $('instDly').value=S.inst.dly; $('instDlyV').textContent=Math.round(S.inst.dly*100)+'%';
   if(m==='chord') drawChordGrid();
-  if(m==='keys'||m==='flute'||m==='padkeys') drawKeysGrid();
+  if(m==='keys'||m==='flute'||m==='padkeys'||m==='tomb') drawKeysGrid();
+  try{ drawTomb(); }catch(e){}
   $('padkeyopts').style.display=(m==='padkeys')?'flex':'none';
   $('padkeyHint').style.display=(m==='padkeys')?'block':'none';
   if(m==='padkeys'){
@@ -11874,6 +12041,12 @@ function drawInstShape(){
 }
 $('instVoiceSel').addEventListener('change',e=>{ S.inst.voice=e.target.value; drawInstShape(); dirty(); });
 $('instShape').addEventListener('input',e=>{ S.inst.shape=parseFloat(e.target.value); drawInstShape(); dirty(); });
+[['tSides','tSides'],['tSpin','tSpin'],['tGrav','tGrav'],['tBounce','tBounce']].forEach(([id,key])=>{
+  const el=$(id); if(!el) return;
+  el.addEventListener('input',e=>{ S.inst[key]=parseFloat(e.target.value); drawTomb(); dirty(); });
+});
+$('tombClear').addEventListener('click',()=>{ tombClear(); drawTomb();
+  lcd('TOMBOLA CLEARED — play a key to drop a note back in.'); });
 $('instKey').addEventListener('change',e=>{ instPanic(); S.inst.key=parseInt(e.target.value,10); drawLive(); dirty(); });
 $('instScale').addEventListener('change',e=>{ instPanic(); S.inst.scale=e.target.value; drawLive(); dirty(); });
 $('instSnap').addEventListener('click',()=>{ S.inst.snap=!S.inst.snap; drawLive(); });

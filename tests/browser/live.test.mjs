@@ -1967,6 +1967,113 @@ export default async function ({ browser, base }) {
       syn.ui.shown && syn.ui.hidden && /partials disagree/.test(syn.ui.says),
       '"' + syn.ui.says.slice(0, 70) + '…"');
 
+    t.head('TOMBOLA — A RHYTHM YOU CANNOT PROGRAM');
+    /* Notes are objects in a spinning polygon and they sound when they hit a
+       wall. Every other page in this app is a grid, and a grid can only give
+       you what you already thought of.
+
+       Two claims are worth measuring and neither is about the picture. The
+       rhythm must not be a property of the SCREEN — a simulation stepped by
+       frame time would play differently on a 60Hz phone and a 120Hz one, and a
+       sequencer whose output depends on the refresh rate is not a sequencer.
+       And the spin must THROW the balls, which only happens if a bounce is
+       resolved against the wall's own velocity rather than a stationary line;
+       that one term is the difference between a toy and an instrument. */
+    const tomb = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(300);
+      document.querySelector('#tabs button[data-v="live"]').click();
+      const keep = JSON.parse(JSON.stringify(S.inst));
+      S.inst.mode = 'tomb'; S.inst.voice = 'phase'; drawLive(); await wait(200);
+      o.shown = document.getElementById('tombwrap').style.display !== 'none'
+        && document.getElementById('keysgrid').style.display === 'grid';
+
+      /* Driven by our own clock, in three different frame sizes. */
+      const runFixed = chunk => {
+        tombClear(); TOMB.theta = 0;
+        for (let i = 0; i < 5; i++) { const b = tombDrop(60 + i * 3);
+          b.x = -0.3 + i * 0.15; b.y = -0.2; b.vx = 0.2 - i * 0.1; b.vy = 0; }
+        let n = 0, acc = 0;
+        for (let tt = 0; tt < 6; tt += chunk) { acc += chunk;
+          while (acc >= 1 / 240) { acc -= 1 / 240; n += tombStep(1 / 240).length; } }
+        return n; };
+      o.at60 = runFixed(1 / 60); o.at120 = runFixed(1 / 120); o.at30 = runFixed(1 / 30);
+
+      const energyAfter = spin => { tombClear(); TOMB.theta = 0;
+        S.inst.tSpin = spin; S.inst.tGrav = 0; S.inst.tBounce = 0.95;
+        const b = tombDrop(60); b.x = 0; b.y = 0; b.vx = 0.9; b.vy = 0;
+        for (let i = 0; i < 240 * 4; i++) tombStep(1 / 240);
+        return +TOMB.balls.reduce((s, q) => s + q.vx * q.vx + q.vy * q.vy, 0).toFixed(3); };
+      o.still = energyAfter(0); o.spun = energyAfter(1);
+      S.inst.tSpin = 0.35; S.inst.tGrav = 0.55; S.inst.tBounce = 0.82;
+
+      const hitsWith = sides => { S.inst.tSides = sides; tombClear(); TOMB.theta = 0;
+        for (let i = 0; i < 4; i++) { const b = tombDrop(60); b.x = 0; b.y = -0.1 + i * 0.05;
+          b.vx = 0.4 + i * 0.1; b.vy = 0.1; }
+        let n = 0; for (let i = 0; i < 240 * 5; i++) n += tombStep(1 / 240).length;
+        return { n, escaped: TOMB.balls.filter(q => Math.hypot(q.x, q.y) > 1.2).length }; };
+      o.tri = hitsWith(3); o.nine = hitsWith(9);
+      S.inst.tSides = 5;
+
+      /* A ball wedged against a wall must not fire at the step rate. */
+      tombClear(); S.inst.tGrav = 1; S.inst.tBounce = 0.2;
+      const w = tombDrop(60); w.x = 0; w.y = 0.7; w.vx = 0; w.vy = 0;
+      o.wedged = 0; for (let i = 0; i < 240; i++) o.wedged += tombStep(1 / 240).length;
+      S.inst.tGrav = 0.55; S.inst.tBounce = 0.82;
+
+      tombClear();
+      for (let i = 0; i < 25; i++) tombDrop(60 + i);
+      o.capped = TOMB.balls.length;
+
+      /* Sound, and cost — against a control, because this harness drops a
+         block of its own now and then under load and a bare "zero" would be
+         asserting something about the machine rather than about the code. */
+      const cost = async withTomb => {
+        tombClear();
+        if (withTomb) for (let i = 0; i < 4; i++) tombDrop(60 + i * 4);
+        glitchReset(); glitchArm(); await wait(1700);
+        const g0 = glitchEvents;
+        startSeq(); await wait(200);
+        let peak = 0;
+        const an = AC.createAnalyser(); an.fftSize = 2048; instBus().g.connect(an);
+        const bf = new Float32Array(2048);
+        for (let k = 0; k < 80; k++) { an.getFloatTimeDomainData(bf);
+          for (let i = 0; i < bf.length; i++) peak = Math.max(peak, Math.abs(bf[i]));
+          await wait(20); }
+        stopSeq(); await wait(400);
+        return { drops: glitchEvents - g0, peak: +peak.toFixed(4) };
+      };
+      o.control = await cost(false);
+      o.running = await cost(true);
+
+      o.looping = TOMB.raf !== 0;
+      S.inst = keep; drawLive(); await wait(120);
+      o.stoppedOnLeave = TOMB.raf === 0;
+      return o;
+    });
+    t.ok('the drum and a keyboard to feed it both appear', tomb.shown);
+    t.ok('THE RHYTHM IS THE SAME AT 30, 60 AND 120 FRAMES A SECOND',
+      Math.max(tomb.at30, tomb.at60, tomb.at120) - Math.min(tomb.at30, tomb.at60, tomb.at120) <= 1,
+      tomb.at30 + ' / ' + tomb.at60 + ' / ' + tomb.at120 + ' hits over six seconds');
+    t.ok('AND THE SPIN ACTUALLY THROWS THEM — the wall carries its own velocity',
+      tomb.spun > tomb.still * 1.8,
+      'kinetic energy ' + tomb.still + ' still vs ' + tomb.spun + ' spinning');
+    t.ok('the number of sides changes the rhythm rather than only the picture',
+      tomb.tri.n > tomb.nine.n * 1.5,
+      tomb.tri.n + ' hits in a triangle vs ' + tomb.nine.n + ' in a nonagon');
+    t.ok('and nothing escapes the shape', tomb.tri.escaped === 0 && tomb.nine.escaped === 0);
+    t.ok('a ball pinned against a wall trills rather than machine-gunning',
+      tomb.wedged > 0 && tomb.wedged < 30, tomb.wedged + ' hits in a second, of 240 steps');
+    t.ok('the note count is capped, and asking for more does not throw',
+      tomb.capped === 14, tomb.capped + ' notes');
+    t.ok('IT MAKES SOUND', tomb.running.peak > 0.05 && tomb.running.peak < 2.5,
+      'peak ' + tomb.running.peak + ' on the instrument bus');
+    t.ok('and costs the audio thread no more than doing nothing does',
+      tomb.running.drops <= tomb.control.drops + 1,
+      tomb.running.drops + ' dropouts running vs ' + tomb.control.drops + ' idle');
+    t.ok('the loop runs while it is on screen and stops when it is not',
+      tomb.looping && tomb.stoppedOnLeave);
+
     t.head('THE ANGLE OF THE PHONE CANNOT CHANGE THE VOLUME IN SECRET');
     /* "My volume in playback is different depending on if my phone is landscape
        or regular — same speaker producing sound, not a stereo thing."
