@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R193 · 2026-09-18 · a rhythm you cannot program';
+const BUILD = 'JBH-88 · R194 · 2026-09-18 · a keyboard that is always there';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -11053,7 +11053,7 @@ function traxCommit(){
 
 /* ---------------- LIVE — playable instruments ---------------- */
 /* SCALES, NOTE_NAMES, snapSemitone → src/pure/scale.js */
-const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker',bass:'finger',padKey:-1,shape:0.55,
+const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker',bass:'finger',padKey:-1,shape:0.55,oct:0,
   tSides:5,tSpin:0.35,tGrav:0.55,tBounce:0.82};
 S.inst=Object.assign({},INSTDEF);
 const instVoices=new Set();
@@ -11071,10 +11071,39 @@ function instBus(){ // lazy per-graph: level + rev/dly sends into the master mix
   }
   return LIVE._inst;
 }
+/* A KEYBOARD THAT IS ALWAYS THERE.
+
+   "Where's the keyboard on my live?" … "Need a standalone keyboard man."
+
+   Both fair, and the second one is the real answer to the first. The keys were
+   never a thing in their own right — they appeared for three of the nine
+   modes, were hidden for the rest, and my first fix for the missing one was to
+   pick the element up and put it down inside the tombola panel, which is how
+   you end up with an instrument that is somewhere different depending on what
+   you last touched.
+
+   So it stands alone. It is on screen for every mode, it plays whatever VOICE
+   is selected, and it has its own octave so it is a playable range rather than
+   sixteen notes above middle C. The modes that used to own it still get what
+   they need from it — PAD KEYS plays a pad, BREATH FLUTE opens the breath
+   voice, TOMBOLA drops a note into the drum — but none of them own it any
+   more, and nothing moves. */
+function instOct(){ return clamp(Math.round(+S.inst.oct||0),-3,3); }
 function scaleMidis(n){ // n notes of the current key/scale upward from the root octave
-  const iv=SCALES[S.inst.scale]||SCALES.minor, root=48+S.inst.key, out=[];
+  const iv=SCALES[S.inst.scale]||SCALES.minor, root=48+S.inst.key+instOct()*12, out=[];
   for(let i=0;i<n;i++) out.push(root+12*Math.floor(i/iv.length)+iv[i%iv.length]);
   return out;
+}
+function drawKeyHead(){
+  const o=instOct(), lab=$('kbOctV');
+  if(lab) lab.textContent=(o>0?'+':'')+o;
+  const n=$('kbWhat');
+  if(!n) return;
+  const m=S.inst.mode;
+  n.textContent = m==='tomb' ? 'a key drops that note into the drum'
+    : m==='padkeys' ? 'a key plays the chosen pad, transposed'
+    : m==='flute' ? 'a key opens the breath voice — blow into the mic'
+    : 'a key plays the VOICE above';
 }
 const ksCache={};
 function ksBuf(f){ // live Karplus-Strong pluck, cached per rounded Hz
@@ -11934,7 +11963,7 @@ function drawLive(){
   $('instSnap').style.display=(m==='ther'||m==='ribbon')?'':'none';
   $('liveSurf').style.display=(m==='ther'||m==='harp'||m==='ribbon')?'block':'none';
   $('chordgrid').style.display=(m==='chord')?'grid':'none';
-  $('keysgrid').style.display=(m==='keys'||m==='flute'||m==='padkeys'||m==='tomb')?'grid':'none';
+  $('kbwrap').style.display='';          // the keyboard is not a mode's property
   $('chordopts').style.display=(m==='chord')?'flex':'none';
   $('percopts').style.display=(m==='perc')?'flex':'none';
   $('fluteopts').style.display=(m==='flute')?'flex':'none';
@@ -11957,7 +11986,7 @@ function drawLive(){
   $('instRev').value=S.inst.rev; $('instRevV').textContent=Math.round(S.inst.rev*100)+'%';
   $('instDly').value=S.inst.dly; $('instDlyV').textContent=Math.round(S.inst.dly*100)+'%';
   if(m==='chord') drawChordGrid();
-  if(m==='keys'||m==='flute'||m==='padkeys'||m==='tomb') drawKeysGrid();
+  drawKeysGrid(); try{ drawKeyHead(); }catch(e){}
   try{ drawTomb(); }catch(e){}
   $('padkeyopts').style.display=(m==='padkeys')?'flex':'none';
   $('padkeyHint').style.display=(m==='padkeys')?'block':'none';
@@ -12047,6 +12076,16 @@ $('instShape').addEventListener('input',e=>{ S.inst.shape=parseFloat(e.target.va
 });
 $('tombClear').addEventListener('click',()=>{ tombClear(); drawTomb();
   lcd('TOMBOLA CLEARED — play a key to drop a note back in.'); });
+[['kbOctDown',-1],['kbOctUp',1]].forEach(([id,d])=>{
+  const b=$(id); if(!b) return;
+  b.addEventListener('click',()=>{
+    const was=instOct();
+    S.inst.oct=clamp(was+d,-3,3);
+    if(S.inst.oct===was){ lcd('OCTAVE: that is as far as it goes ('+(d>0?'+3':'-3')+').'); return; }
+    drawKeysGrid(); drawKeyHead(); dirty();
+    lcd('OCTAVE '+(S.inst.oct>0?'+':'')+S.inst.oct+' — the keyboard moved, nothing else did.');
+  });
+});
 $('instKey').addEventListener('change',e=>{ instPanic(); S.inst.key=parseInt(e.target.value,10); drawLive(); dirty(); });
 $('instScale').addEventListener('change',e=>{ instPanic(); S.inst.scale=e.target.value; drawLive(); dirty(); });
 $('instSnap').addEventListener('click',()=>{ S.inst.snap=!S.inst.snap; drawLive(); });

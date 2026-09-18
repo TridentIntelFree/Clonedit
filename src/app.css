@@ -513,6 +513,10 @@ h3 span{font-weight:400}
 #chordgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0}
 #chordgrid button{min-height:62px;font-size:13px}
 #keysgrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:8px 0}
+/* The keyboard is its own section now rather than something a mode switches
+   on, so its heading carries the octave stepper and stays compact. */
+#kbwrap h3{margin:8px 0 2px}
+#kbwrap .stepper button{min-height:30px;padding:2px 10px;font-size:13px}
 #keysgrid button{min-height:52px;font-size:10px;padding:4px 0}
 
 /* project */

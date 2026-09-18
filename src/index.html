@@ -1298,9 +1298,16 @@ bars of anything, and send the best two to a pad.</p>
       <option value="cluster">CLUSTER</option>
     </select>
   </div>
+  <div id="kbwrap">
+    <h3 style="display:flex;align-items:center;gap:8px">KEYBOARD
+      <span id="kbWhat" style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px;flex:1"></span>
+      <span class="stepper"><button id="kbOctDown" aria-label="Octave down">&minus;</button><span id="kbOctV">0</span><button id="kbOctUp" aria-label="Octave up">+</button></span>
+    </h3>
+    <div id="keysgrid"></div>
+  </div>
   <div id="tombwrap" style="display:none">
     <canvas id="tombola" width="320" height="220" data-fluid
-      style="width:100%;height:auto;aspect-ratio:1.45;background:var(--lcd-bg);border:1px solid var(--edge);border-radius:8px;display:block"
+      style="width:100%;height:auto;aspect-ratio:1.45;max-height:min(200px,26vh);background:var(--lcd-bg);border:1px solid var(--edge);border-radius:8px;display:block"
       aria-label="Tombola: notes bouncing inside a spinning shape"></canvas>
     <div class="row" style="margin-top:4px">
       <span id="tombCount" style="font-size:11px;color:var(--lcd);flex:1">0 notes</span>
@@ -1330,7 +1337,6 @@ bars of anything, and send the best two to a pad.</p>
   </div>
   <canvas id="liveSurf" width="800" height="460"></canvas>
   <div id="chordgrid" style="display:none"></div>
-  <div id="keysgrid" style="display:none"></div>
   <div class="row" id="chordopts" style="display:none">
     <button id="inst7">7TH</button>
     <button id="instStrum" class="on">STRUM</button>

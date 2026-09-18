@@ -1967,6 +1967,97 @@ export default async function ({ browser, base }) {
       syn.ui.shown && syn.ui.hidden && /partials disagree/.test(syn.ui.says),
       '"' + syn.ui.says.slice(0, 70) + '…"');
 
+    t.head('A KEYBOARD THAT IS ALWAYS THERE');
+    /* "Where's the keyboard on my live?" … "Need a standalone keyboard man."
+
+       Both fair, and the second is the answer to the first. The keys were
+       never a thing in their own right: they appeared for three of the nine
+       modes and were hidden for the rest, and my first fix for the missing one
+       was to pick the element up and put it down inside the tombola panel —
+       which is how you get an instrument that is somewhere different depending
+       on what you last touched. It stands alone now, is present in every mode,
+       and has its own octave.
+
+       The geometry is tested at 390x780, a phone, because that is the size it
+       was broken at and the only size where it can be broken: standalone but
+       below a canvas and four sliders is still a keyboard you cannot reach. */
+    const wasView = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 780 });   // the size it broke at
+    const kb = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(200);
+      document.querySelector('#tabs button[data-v="live"]').click();
+      const keep = JSON.parse(JSON.stringify(S.inst));
+      const keys = () => document.getElementById('keysgrid');
+      o.modes = {};
+      for (const m of ['ther','chord','harp','keys','ribbon','padkeys','flute','perc','tomb']) {
+        S.inst.mode = m; drawLive(); await wait(90);
+        const k = keys();
+        o.modes[m] = { n: k.querySelectorAll('button').length,
+          h: Math.round(k.getBoundingClientRect().height),
+          says: document.getElementById('kbWhat').textContent };
+      }
+      /* The worst case for room: the drum panel is the tallest thing a mode
+         puts on the page. */
+      S.inst.mode = 'tomb'; drawLive(); await wait(160);
+      const r1 = keys().getBoundingClientRect();
+      const r2 = document.getElementById('tombola').getBoundingClientRect();
+      const vis = r => Math.round(Math.max(0, Math.min(r.bottom, innerHeight) - r.top));
+      o.room = { vh: innerHeight, kbTop: Math.round(r1.top), kbVis: vis(r1),
+        kbH: Math.round(r1.height), drumVis: vis(r2), drumH: Math.round(r2.height) };
+
+      S.inst.mode = 'keys'; S.inst.oct = 0; drawLive(); await wait(90);
+      const first = () => keys().querySelector('button').textContent;
+      o.oct = { at0: first() };
+      document.getElementById('kbOctUp').click(); await wait(70);
+      o.oct.up = first(); o.oct.shown = document.getElementById('kbOctV').textContent;
+      for (let i = 0; i < 8; i++) document.getElementById('kbOctDown').click();
+      await wait(70); o.oct.floor = S.inst.oct;
+      for (let i = 0; i < 12; i++) document.getElementById('kbOctUp').click();
+      await wait(70); o.oct.ceil = S.inst.oct;
+      S.inst.oct = 0; drawLive(); await wait(90);
+
+      const an = AC.createAnalyser(); an.fftSize = 2048; instBus().g.connect(an);
+      const bf = new Float32Array(2048);
+      S.inst.voice = 'glass';
+      keys().querySelectorAll('button')[3].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      let pk = 0;
+      for (let i = 0; i < 25; i++) { an.getFloatTimeDomainData(bf);
+        for (let j = 0; j < bf.length; j++) pk = Math.max(pk, Math.abs(bf[j]));
+        await wait(20); }
+      o.plays = +pk.toFixed(4);
+      instPanic();
+      S.inst.mode = 'tomb'; drawLive(); await wait(120); tombClear();
+      keys().querySelectorAll('button')[2].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      await wait(80);
+      o.dropsInsteadOfSounding = TOMB.balls.length;
+      tombClear();
+      S.inst = keep; drawLive(); await wait(120);
+      return o;
+    });
+    if (wasView) await page.setViewportSize(wasView);
+    t.ok('the keyboard is present in every mode, not three of nine',
+      Object.values(kb.modes).every(m => m.n === 16 && m.h > 40),
+      Object.keys(kb.modes).length + ' modes, all with 16 keys');
+    t.ok('and says what a key will do in the mode you are in',
+      /drops that note into the drum/.test(kb.modes.tomb.says)
+      && /plays the chosen pad/.test(kb.modes.padkeys.says)
+      && /plays the VOICE/.test(kb.modes.ther.says),
+      '"' + kb.modes.tomb.says + '"');
+    t.ok('IT IS ON SCREEN ON A PHONE, under the tallest panel any mode has',
+      kb.room.kbVis === kb.room.kbH,
+      'at y=' + kb.room.kbTop + ' on a ' + kb.room.vh + 'px screen, all '
+      + kb.room.kbH + 'px of it showing');
+    t.ok('without pushing the drum off in exchange', kb.room.drumVis > kb.room.drumH * 0.75,
+      kb.room.drumVis + ' of ' + kb.room.drumH + 'px of drum still visible');
+    t.ok('the octave moves the whole keyboard and clamps at both ends',
+      kb.oct.at0 === 'C3' && kb.oct.up === 'C4' && kb.oct.shown === '+1'
+      && kb.oct.floor === -3 && kb.oct.ceil === 3,
+      kb.oct.at0 + ' → ' + kb.oct.up + ', clamped ' + kb.oct.floor + '..' + kb.oct.ceil);
+    t.ok('AND IT PLAYS', kb.plays > 0.05, 'peak ' + kb.plays);
+    t.ok('while in TOMBOLA the same key loads the drum instead of sounding',
+      kb.dropsInsteadOfSounding === 1);
+
     t.head('TOMBOLA — A RHYTHM YOU CANNOT PROGRAM');
     /* Notes are objects in a spinning polygon and they sound when they hit a
        wall. Every other page in this app is a grid, and a grid can only give
@@ -1985,8 +2076,11 @@ export default async function ({ browser, base }) {
       document.querySelector('#tabs button[data-v="live"]').click();
       const keep = JSON.parse(JSON.stringify(S.inst));
       S.inst.mode = 'tomb'; S.inst.voice = 'phase'; drawLive(); await wait(200);
+      /* The keyboard no longer has its visibility toggled by mode — it is
+         always there — so "is it showing" is a question about the box it
+         occupies, not about an inline style that is now never set. */
       o.shown = document.getElementById('tombwrap').style.display !== 'none'
-        && document.getElementById('keysgrid').style.display === 'grid';
+        && document.getElementById('keysgrid').getBoundingClientRect().height > 40;
 
       /* Driven by our own clock, in three different frame sizes. */
       const runFixed = chunk => {
