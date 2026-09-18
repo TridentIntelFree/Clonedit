@@ -659,7 +659,14 @@ export default async function ({ browser, base }) {
       o.armLcd = document.getElementById('lcdmsg').textContent;
 
       await playPressed();
-      await new Promise(r => setTimeout(r, 1800));
+      /* Polled rather than waited out. A fixed 1800ms for getUserMedia to hand
+         over Chromium's fake device is a guess, and it lost about one run in
+         three on a loaded machine — the check then failed for the length of a
+         sleep rather than for anything about the app. Still bounded, so a mic
+         that genuinely never opens still fails. */
+      for (let i = 0; i < 60 && capturesOpen().length === 0; i++)
+        await new Promise(r => setTimeout(r, 50));
+      await new Promise(r => setTimeout(r, 1500));   // then let it actually record a pass
       o.openWhileRolling = capturesOpen();
       o.pipWhileRolling = !document.getElementById('recPip').classList.contains('ok');
 
@@ -1934,15 +1941,19 @@ export default async function ({ browser, base }) {
         beside: +(20 * Math.log10(aN(F * 4.03) / aN(F))).toFixed(1) };
       cv.stop(); await wait(900);
 
+      /* Every voice has a SHAPE as of R196, so what is checked is no longer
+         "it appears for three of them" but that each one names its OWN
+         parameter. A shared word like "brightness" across seven engines would
+         be a menu pretending to be seven instruments. */
       o.ui = {
-        shown: (() => { S.inst.voice = 'phase'; drawInstShape();
-          return document.getElementById('instShapeRow').style.display !== 'none'; })(),
-        hidden: (() => { S.inst.voice = 'glass'; drawInstShape();
-          return document.getElementById('instShapeRow').style.display === 'none'; })(),
-        says: (() => { S.inst.voice = 'cluster'; drawInstShape();
-          return document.getElementById('instShapeWhat').textContent; })(),
-        inMenu: [...document.querySelectorAll('#instVoiceSel option')].map(x => x.value)
+        inMenu: [...document.querySelectorAll('#instVoiceSel option')].map(x => x.value),
+        says: {}, shownFor: []
       };
+      for (const vc of o.ui.inMenu) {
+        S.inst.voice = vc; drawInstShape();
+        if (document.getElementById('instShapeRow').style.display !== 'none') o.ui.shownFor.push(vc);
+        o.ui.says[vc] = document.getElementById('instShapeWhat').textContent;
+      }
       S.inst = keep; try { drawLive(); } catch (e) {}
       return o;
     });
@@ -1963,9 +1974,190 @@ export default async function ({ browser, base }) {
       'at 4×F: ' + syn.cluster.onHarmonic + ' dB · at 4.03×F: ' + syn.cluster.beside + ' dB');
     t.ok('all three are in the menu', ['phase', 'pulse', 'cluster']
       .every(v => syn.ui.inMenu.includes(v)), syn.ui.inMenu.join(', '));
-    t.ok('SHAPE appears only for the engines it means something to, and says which',
-      syn.ui.shown && syn.ui.hidden && /partials disagree/.test(syn.ui.says),
-      '"' + syn.ui.says.slice(0, 70) + '…"');
+    t.ok('every voice has a SHAPE, not three of seven',
+      syn.ui.shownFor.length === syn.ui.inMenu.length,
+      syn.ui.shownFor.length + ' of ' + syn.ui.inMenu.length);
+    t.ok('and each names its own parameter rather than all saying "brightness"',
+      new Set(Object.values(syn.ui.says)).size === syn.ui.inMenu.length &&
+      /partials disagree/.test(syn.ui.says.cluster) &&
+      /modulation index/.test(syn.ui.says.ep) &&
+      /damping/.test(syn.ui.says.pluck),
+      'ep: "' + syn.ui.says.ep.slice(7, 60) + '…"');
+
+    /* "The sounds that are there aren't bad, there's no settings or anything
+       to customize the keyboard sound."
+
+       Exactly right: of seven voices only three had a SHAPE, and nothing had a
+       filter, an attack or a release. Every sample pad in the app has all of
+       that; the instrument meant to be played by hand had none of it.
+
+       Four controls added — TONE, RES, ATTACK, RELEASE — plus a SHAPE for the
+       four voices that lacked one. What is checked here is that they MOVE THE
+       SOUND, per voice, because a row of sliders that does nothing is worse
+       than no sliders: it answers the complaint without fixing it. And that
+       the centre position is the voice exactly as it was, so a project saved
+       before this build opens sounding the same. */
+    t.head('AND CONTROLS THAT SHAPE IT, ON EVERY VOICE');
+    const tone = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(250);
+      document.querySelector('#tabs button[data-v="live"]').click();
+      const keep = JSON.parse(JSON.stringify(S.inst));
+      S.inst.vol = 0.8; S.inst.rev = 0; S.inst.dly = 0;
+      const bus = instBus();
+      bus.rv.gain.value = 0; bus.dl.gain.value = 0;
+      const an = AC.createAnalyser(); an.fftSize = 4096; an.smoothingTimeConstant = 0;
+      bus.g.connect(an);
+      const fb = new Float32Array(an.frequencyBinCount);
+      const per = (AC.sampleRate / 2) / fb.length;
+      /* Loudness above 2kHz and total loudness, both as the peak seen over a
+         held note. Two numbers are needed because TONE changes the balance
+         between them while RELEASE changes only how long either lasts. */
+      const hold = async (ms) => {
+        let hi = -200, all = -200;
+        for (let i = 0; i < ms / 10; i++) { await wait(10);
+          an.getFloatFrequencyData(fb);
+          for (let k = 1; k < fb.length; k++) {
+            if (fb[k] > all) all = fb[k];
+            if (k * per > 2000 && fb[k] > hi) hi = fb[k];
+          } }
+        return { hi: +hi.toFixed(1), all: +all.toFixed(1) };
+      };
+      const note = async (ms) => { const v = instVoice(330); const r = await hold(ms);
+        v.stop(); await wait(260); return r; };
+      /* How long a voice keeps sounding after the key is released. */
+      const tail = async () => {
+        const v = instVoice(330); await wait(180);
+        v.stop(); const t0 = performance.now();
+        let last = t0;
+        for (let i = 0; i < 260; i++) { await wait(10);
+          an.getFloatTimeDomainData(fb);
+          let pk = 0; for (let k = 0; k < fb.length; k++) pk = Math.max(pk, Math.abs(fb[k]));
+          if (pk > 0.004) last = performance.now(); }
+        await wait(150);
+        return Math.round(last - t0);
+      };
+
+      /* TONE, on the voice with the most top end to take away. */
+      S.inst.voice = 'saw'; S.inst.cut = 1; S.inst.res = 0; S.inst.att = 0.5; S.inst.rel = 0.5;
+      drawInstTone(); await wait(60);
+      o.toneOpen = await note(320);
+      S.inst.cut = 0.15; drawInstTone(); await wait(60);
+      o.toneShut = await note(320);
+
+      /* RES must lift the band AT the cutoff, which is the only thing that
+         distinguishes resonance from simply turning the filter up. */
+      S.inst.cut = 0.42; S.inst.res = 0; drawInstTone(); await wait(60);
+      const hzAt = instCutHz();
+      const atCut = async () => { const v = instVoice(hzAt); let m = -200;
+        for (let i = 0; i < 26; i++) { await wait(10); an.getFloatFrequencyData(fb);
+          const k = Math.round(hzAt / per);
+          for (let j = k - 2; j <= k + 2; j++) if (j > 0 && fb[j] > m) m = fb[j]; }
+        v.stop(); await wait(240); return +m.toFixed(1); };
+      o.resOff = await atCut();
+      S.inst.res = 0.85; drawInstTone(); await wait(60);
+      o.resOn = await atCut();
+      S.inst.cut = 1; S.inst.res = 0; drawInstTone();
+
+      /* RELEASE, measured as how long the tail actually lasts. */
+      S.inst.voice = 'glass'; S.inst.rel = 0.5; drawInstTone(); await wait(60);
+      o.tailMid = await tail();
+      S.inst.rel = 0.95; drawInstTone(); await wait(60);
+      o.tailLong = await tail();
+      S.inst.rel = 0.5; drawInstTone();
+
+      /* SHAPE on the FOUR VOICES THIS BUILD GAVE ONE TO. The other three are
+         measured in the section above, each against its own method.
+
+         Each is measured against what its own hint claims, which took three
+         attempts to get right. Brightness alone failed PULSE and CLUSTER on
+         working controls — pulse-width modulation moves a NOTCH and the
+         cluster engine DETUNES PARTIALS, and neither is "more treble". A
+         whole-spectrum distance then failed on repeatability: these engines
+         evolve across the note and start at an arbitrary oscillator phase, so
+         two runs of the SAME setting differed nearly as much as two settings.
+         Peak-hold also fills a moving notch back in, which is the one thing it
+         must not do to PULSE. So: one measurement per claim.
+
+         GLASS and SAW both claim two tones that BEAT against each other, so
+         what is measured is beating — how much the level wobbles across a held
+         note. EP claims a modulation index, which is sidebands, so brightness.
+         PLUCK claims damping, and says a brighter string rings longer, so the
+         tail is timed. */
+      const beat = async (ms) => {
+        const v = instVoice(330);
+        await wait(70);                      // past the attack, into the steady part
+        let mn = 1e9, mx = 0;
+        for (let i = 0; i < ms / 10; i++) { await wait(10);
+          an.getFloatTimeDomainData(fb);
+          let pk = 0; for (let k = 0; k < fb.length; k++) pk = Math.max(pk, Math.abs(fb[k]));
+          mn = Math.min(mn, pk); mx = Math.max(mx, pk); }
+        v.stop(); await wait(260);
+        return mx > 0 ? +((mx - mn) / mx).toFixed(3) : 0;
+      };
+      const atShape = async (vc, s, fn) => { S.inst.voice = vc; S.inst.shape = s;
+        drawInstShape(); await wait(50); return await fn(); };
+      o.glass = { fused: await atShape('glass', 0.02, () => beat(420)),
+        spread: await atShape('glass', 0.98, () => beat(420)) };
+      o.saw = { fused: await atShape('saw', 0.02, () => beat(420)),
+        spread: await atShape('saw', 0.98, () => beat(420)) };
+      o.ep = { dark: (await atShape('ep', 0.02, () => note(300))).hi,
+        bright: (await atShape('ep', 0.98, () => note(300))).hi };
+      o.pluck = { damped: await atShape('pluck', 0.02, tail),
+        ringing: await atShape('pluck', 0.98, tail) };
+
+      /* The centre is the voice as it was: the multipliers read exactly 1. */
+      S.inst.att = 0.5; S.inst.rel = 0.5;
+      o.centred = { att: +instAtkMul().toFixed(4), rel: +instRelMul().toFixed(4) };
+      o.defaults = { cut: INSTDEF.cut, res: INSTDEF.res, att: INSTDEF.att, rel: INSTDEF.rel };
+      /* And a poisoned value cannot reach the filter. */
+      S.inst.cut = NaN; S.inst.res = 'x'; S.inst.att = null;
+      o.poison = { hz: instCutHz(), q: instResQ(), att: instAtkMul() };
+      try { drawInstTone(); o.poisonThrew = false; } catch (e) { o.poisonThrew = true; }
+      o.filterAfter = LIVE._inst.flt.frequency.value;
+
+      try { bus.g.disconnect(an); } catch (e) {}
+      S.inst = keep; try { drawInstShape(); drawLive(); } catch (e) {}
+      return o;
+    });
+    t.note('    TONE open → ' + tone.toneOpen.hi + ' dB above 2kHz,  nearly shut → ' + tone.toneShut.hi + ' dB');
+    t.ok('TONE TAKES THE TOP OFF — one filter for the whole instrument',
+      tone.toneShut.hi < tone.toneOpen.hi - 15,
+      (tone.toneOpen.hi - tone.toneShut.hi).toFixed(1) + ' dB above 2kHz');
+    t.ok('and it is a filter, not a volume — the note is still there',
+      tone.toneShut.all > tone.toneOpen.all - 12,
+      'overall ' + tone.toneOpen.all + ' dB → ' + tone.toneShut.all + ' dB');
+    t.ok('RES lifts the band at the cutoff, which is what makes it resonance',
+      tone.resOn > tone.resOff + 6, tone.resOff + ' dB → ' + tone.resOn + ' dB at the cutoff');
+    t.note('    release tail: centre ' + tone.tailMid + 'ms,  wide open ' + tone.tailLong + 'ms');
+    t.ok('RELEASE really holds the note on after the key',
+      tone.tailLong > tone.tailMid * 1.8, tone.tailMid + 'ms → ' + tone.tailLong + 'ms');
+    t.note('    the four voices that had no control before this build:');
+    t.note('        GLASS  level wobble ' + tone.glass.fused + ' → ' + tone.glass.spread);
+    t.note('        SAW    level wobble ' + tone.saw.fused + ' → ' + tone.saw.spread);
+    t.note('        EP     above 2kHz   ' + tone.ep.dark + ' dB → ' + tone.ep.bright + ' dB');
+    t.note('        PLUCK  tail         ' + tone.pluck.damped + 'ms → ' + tone.pluck.ringing + 'ms');
+    t.ok('GLASS SHAPE makes the two tones beat, which is what it claims',
+      tone.glass.spread > tone.glass.fused + 0.1,
+      tone.glass.fused + ' → ' + tone.glass.spread + ' of the level');
+    t.ok('SAW SHAPE spreads the unison, so it choruses instead of sitting still',
+      tone.saw.spread > tone.saw.fused + 0.05,
+      tone.saw.fused + ' → ' + tone.saw.spread);
+    t.ok('EP SHAPE IS THE MODULATION INDEX — a sine at one end, a bell at the other',
+      tone.ep.bright > tone.ep.dark + 12,
+      (tone.ep.bright - tone.ep.dark).toFixed(1) + ' dB of sidebands');
+    t.ok('PLUCK SHAPE damps the string, and a brighter string rings longer',
+      tone.pluck.ringing > tone.pluck.damped * 1.4,
+      tone.pluck.damped + 'ms → ' + tone.pluck.ringing + 'ms');
+    t.ok('the centre of ATTACK and RELEASE is the voice exactly as it came',
+      tone.centred.att === 1 && tone.centred.rel === 1 &&
+      tone.defaults.att === 0.5 && tone.defaults.rel === 0.5 &&
+      tone.defaults.cut === 1 && tone.defaults.res === 0,
+      '×' + tone.centred.att + ' attack, ×' + tone.centred.rel + ' release');
+    t.ok('and a NaN cannot reach the filter',
+      isFinite(tone.poison.hz) && isFinite(tone.poison.q) && isFinite(tone.poison.att) &&
+      !tone.poisonThrew && isFinite(tone.filterAfter),
+      tone.poison.hz.toFixed(0) + 'Hz, Q ' + tone.poison.q.toFixed(2));
 
     t.head('A KEYBOARD THAT IS ALWAYS THERE');
     /* "Where's the keyboard on my live?" … "Need a standalone keyboard man."

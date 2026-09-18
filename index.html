@@ -1344,6 +1344,14 @@ bars of anything, and send the best two to a pad.</p>
   </div>
   <div class="pslider" id="instShapeRow"><span class="lbl">SHAPE</span><input type="range" id="instShape" min="0" max="1" step="0.01"><span class="val" id="instShapeV">55%</span></div>
   <div id="instShapeWhat" style="font-size:10px;color:var(--txt-dim);margin:0 0 6px"></div>
+  <div class="pslider"><span class="lbl">TONE</span><input type="range" id="instCut" min="0" max="1" step="0.005"><span class="val" id="instCutV"></span></div>
+  <div class="pslider"><span class="lbl">RES</span><input type="range" id="instRes" min="0" max="1" step="0.01"><span class="val" id="instResV"></span></div>
+  <div class="pslider"><span class="lbl">ATTACK</span><input type="range" id="instAtt" min="0" max="1" step="0.01"><span class="val" id="instAttV"></span></div>
+  <div class="pslider"><span class="lbl">RELEASE</span><input type="range" id="instRel" min="0" max="1" step="0.01"><span class="val" id="instRelV"></span></div>
+  <div class="row" style="margin:-2px 0 6px">
+    <span id="instVoiceWhat" style="font-size:10px;color:var(--txt-dim);flex:1;line-height:1.4"></span>
+    <button id="instVoiceDef" style="font-size:10px">RESET</button>
+  </div>
   <div class="row">
     <span class="lbl">KEY</span>
     <select aria-label="Instrument key" id="instKey"></select>
@@ -5588,7 +5596,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R195 · 2026-09-18 · a step that holds a sound';
+const BUILD = 'JBH-88 · R196 · 2026-09-18 · controls you can hear, and a way to find them';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -13893,24 +13901,70 @@ function traxCommit(){
 
 /* ---------------- LIVE — playable instruments ---------------- */
 /* SCALES, NOTE_NAMES, snapSemitone → src/pure/scale.js */
+/* cut/res/att/rel default to "the voice as it was before these existed": the
+   filter wide open and both envelope multipliers at their centre. A project
+   saved before this build therefore opens sounding identical. */
 const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker',bass:'finger',padKey:-1,shape:0.55,oct:0,
+  cut:1,res:0,att:0.5,rel:0.5,
   tSides:5,tSpin:0.35,tGrav:0.55,tBounce:0.82};
 S.inst=Object.assign({},INSTDEF);
 const instVoices=new Set();
 let ther=null, arpTimer=0, arpNotes=null, arpIdx=0, arpNext=0;
 
-function instBus(){ // lazy per-graph: level + rev/dly sends into the master mix
+/* THE INSTRUMENT'S OWN TONE CONTROL.
+
+   "The sounds that are there aren't bad, there's no settings or anything to
+   customize the keyboard sound." Exactly right: of seven voices only three had
+   a SHAPE, and nothing had a filter, an attack or a release. Every pad in the
+   app has all of that; the instrument that is meant to be played had none.
+
+   ONE filter for the whole instrument rather than one per voice. A voice here
+   can be six oscillators, and a held chord is six of those — a filter per note
+   is thirty-six biquads for one hand. Shared, it is one, it costs nothing, and
+   it is what a synth's cutoff knob actually is anyway.
+
+   It sits BEFORE the level stage so the reverb and delay sends hear the
+   filtered sound. Sending the raw tone to a reverb and the filtered tone to
+   the speakers would make closing the cutoff sound like turning the reverb
+   up, which is the opposite of what the control claims. */
+function instBus(){ // lazy per-graph: tone → level + rev/dly sends into the master mix
   if(!LIVE._inst){
+    const flt=AC.createBiquadFilter(); flt.type='lowpass';
+    flt.frequency.value=instCutHz(); flt.Q.value=instResQ();
     const g=AC.createGain(); g.gain.value=S.inst.vol;
     const rv=AC.createGain(); rv.gain.value=S.inst.rev;
     const dl=AC.createGain(); dl.gain.value=S.inst.dly;
+    flt.connect(g);
     g.connect(LIVE.duckBus||LIVE.master); g.connect(rv); g.connect(dl);   // live instruments duck too
     if(LIVE.liveBus) g.connect(LIVE.liveBus);   // …and count as live performance for LIVE-ONLY recording
     rv.connect(LIVE.revIn); dl.connect(LIVE.dlyIn);
-    LIVE._inst={g,rv,dl};
+    /* `in` is where voices connect and `g` is still the level stage, so the
+       three places that already ride LIVE._inst.g for volume keep working. */
+    LIVE._inst={in:flt,flt,g,rv,dl};
   }
   return LIVE._inst;
 }
+/* TONE is a 0..1 knob over 120Hz to 18kHz, exponential, because pitch is
+   exponential and a linear cutoff spends four fifths of its travel in the top
+   octave where nothing much happens. RES is deliberately capped at 12: this is
+   one filter carrying a whole chord, and a self-oscillating lowpass under six
+   held notes is a shriek rather than a character. */
+/* Read through a finite check, not just a clamp. clamp(NaN) is NaN, and these
+   four go straight into AudioParams — the R189 failure was exactly one dead
+   number reaching one parameter and staying there across a save. Guarding at
+   the accessor covers every path into them at once: load, MIDI, a hand-edited
+   file, a future control. */
+function instNum(k,d){ const v=+S.inst[k]; return isFinite(v)?clamp(v,0,1):d; }
+function instCutHz(){ return 120*Math.pow(150, instNum('cut',1)); }
+function instResQ(){ return 0.7+instNum('res',0)*11.3; }
+/* ATTACK and RELEASE are multipliers on whatever the voice already does, not
+   absolute times. Every voice has its own shape — a pluck is not a pad — and
+   an absolute 400ms attack would be a reasonable string swell and a ruined
+   pluck. At the centre each voice sounds exactly as it did before these
+   existed, which also means every project saved before this opens unchanged. */
+function instEnvMul(k){ return Math.pow(8, (instNum(k,0.5)-0.5)*2); }   // 0.125× … 8×, 1× at centre
+function instAtkMul(){ return instEnvMul('att'); }
+function instRelMul(){ return instEnvMul('rel'); }
 /* A KEYBOARD THAT IS ALWAYS THERE.
 
    "Where's the keyboard on my live?" … "Need a standalone keyboard man."
@@ -13946,13 +14000,28 @@ function drawKeyHead(){
     : 'a key plays the VOICE above';
 }
 const ksCache={};
-function ksBuf(f){ // live Karplus-Strong pluck, cached per rounded Hz
-  const k=Math.round(f); if(ksCache[k]) return ksCache[k];
+/* Cached per rounded Hz AND per damping step, because the damping is baked
+   into the samples — it is not a parameter of a running node. Quantised to 20
+   steps so dragging the SHAPE slider reuses buffers instead of synthesising a
+   1.8-second string for every pixel; the string is 0.4s of work and the slider
+   fires at frame rate. */
+function ksBuf(f,shape){
+  const s=Math.round(clamp(shape==null?0.55:shape,0,1)*20);
+  const k=Math.round(f)+':'+s; if(ksCache[k]) return ksCache[k];
   const sr=AC.sampleRate, N=Math.max(2,Math.round(sr/f)), len=Math.ceil(sr*1.8);
-  const b=AC.createBuffer(1,len,sr), d=b.getChannelData(0), r=mulberry32(k);
+  const b=AC.createBuffer(1,len,sr), d=b.getChannelData(0), r=mulberry32(Math.round(f));
   for(let i=0;i<N;i++) d[i]=r()*2-1;
-  const loss=Math.exp(Math.log(0.05)/(1.2*f));
-  for(let i=N;i<len;i++) d[i]=(d[i-N]+d[i-N+1])*0.5*loss;
+  /* Two knobs move together, as they do on a real string: a brighter string
+     also rings longer. `hold` is the decay time in seconds-ish, `bright` is
+     how much of the averaging low-pass is applied each trip round the loop —
+     at 1 it is the plain two-tap average this always used, at 0 the loop keeps
+     its high end and the note stays metallic. */
+  const t=s/20, hold=0.45+t*2.6, bright=1-t*0.85;
+  const loss=Math.exp(Math.log(0.05)/(hold*f));
+  for(let i=N;i<len;i++){
+    const prev=d[i-N], nxt=d[i-N+1];
+    d[i]=(prev*(1-bright*0.5)+nxt*(bright*0.5))*loss;
+  }
   ksCache[k]=b; return b;
 }
 /* ---------------- THREE MORE WAYS TO MAKE A NOTE --------------------------
@@ -14004,7 +14073,7 @@ function pwShapeCurve(){
 }
 /* 0..1 from the panel, meaning something different but analogous in each
    engine: how far the sweep goes. */
-function instShape(){ return clamp(S.inst.shape==null?0.55:+S.inst.shape,0,1); }
+function instShape(){ return instNum('shape',0.55); }
 function buildPD(f,t,env){
   const saw=pLive('sawtooth',f);
   const k=AC.createGain();                       // the phase multiplier — the whole engine
@@ -14066,45 +14135,62 @@ function buildCluster(f,t,env){
 function instVoice(f,when){
   ensureAudio();
   const bus=instBus(), t=when!=null?when:AC.currentTime;
-  const env=AC.createGain(); env.connect(bus.g);
+  const env=AC.createGain(); env.connect(bus.in);
   const parts=[], v={env,parts,dead:false};
+  const sh=instShape(), am=instAtkMul();
   if(S.inst.voice==='phase'||S.inst.voice==='pulse'||S.inst.voice==='cluster'){
     const lvl=S.inst.voice==='cluster'?0.34:0.42;
-    const atk=S.inst.voice==='cluster'?0.09:0.006;
+    const atk=(S.inst.voice==='cluster'?0.09:0.006)*am;
     env.gain.setValueAtTime(0,t);
     env.gain.linearRampToValueAtTime(lvl,t+atk);
     const mk=S.inst.voice==='phase'?buildPD:S.inst.voice==='pulse'?buildPWM:buildCluster;
     mk(f,t,env).forEach(o=>{ o.start(t); parts.push(o); });
   }else if(S.inst.voice==='pluck'){
-    const src=AC.createBufferSource(); src.buffer=ksBuf(f);
-    env.gain.setValueAtTime(0.85,t);
+    /* SHAPE is the string's damping — how fast the Karplus-Strong loop loses
+       its high end. Low is a felt mute, high is a bright steel string that
+       rings. It is the one control a plucked string really has, and until now
+       the only voice with no control at all was the one modelling a string. */
+    const src=AC.createBufferSource(); src.buffer=ksBuf(f,sh);
+    env.gain.setValueAtTime(0,t);
+    env.gain.linearRampToValueAtTime(0.85,t+Math.max(0.0005,0.001*am));
     src.connect(env); src.start(t); parts.push(src);
     src.onended=()=>{ instVoices.delete(v); try{src.disconnect();env.disconnect();}catch(e){} };
   }else{
     let atk=0.015, lvl=0.5, mk;
     if(S.inst.voice==='glass'){
-      mk=()=>{ const o1=pLive('sine',f), o2=pLive('triangle',f); o2.detune.value=6;
-        const g2=AC.createGain(); g2.gain.value=0.35;
+      /* SHAPE is how far the two tones disagree, in cents. At zero they fuse
+         into one clean bell; wide open they beat against each other and the
+         note shimmers instead of sitting still. */
+      mk=()=>{ const o1=pLive('sine',f), o2=pLive('triangle',f); o2.detune.value=1+sh*44;
+        const g2=AC.createGain(); g2.gain.value=0.12+sh*0.45;
         o1.connect(env); o2.connect(g2); g2.connect(env); return [o1,o2]; };
     }else if(S.inst.voice==='saw'){
       atk=0.05; lvl=0.4;
+      /* SHAPE is the spread between the two saws — a unison detune. Narrow is
+         one firm saw, wide is the slow chorusing a supersaw is made of. */
       mk=()=>{ const lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=2300; lp.Q.value=0.6; lp.connect(env);
-        return [-7,7].map(dt=>{ const o=pLive('sawtooth',f); o.detune.value=dt; o.connect(lp); return o; }); };
+        const d=1+sh*34;
+        return [-d,d].map(dt=>{ const o=pLive('sawtooth',f); o.detune.value=dt; o.connect(lp); return o; }); };
     }else{ // ep — 2-op FM
       atk=0.004; lvl=0.55;
+      /* SHAPE is the modulation index, which in FM is the whole instrument:
+         low is a sine, high is a metallic bell. Ramped down over the note
+         either way, because a tine's brightness decaying faster than its
+         loudness is what makes it read as struck rather than blown. */
       mk=()=>{ const car=pLive('sine',f), mod=pLive('sine',f), mi=AC.createGain();
-        mi.gain.setValueAtTime(f*2.5,t); mi.gain.exponentialRampToValueAtTime(Math.max(1,f*0.2),t+1.1);
+        const idx=f*(0.35+sh*6.5);
+        mi.gain.setValueAtTime(idx,t); mi.gain.exponentialRampToValueAtTime(Math.max(1,idx*0.08),t+1.1);
         mod.connect(mi); mi.connect(car.frequency); car.connect(env); return [car,mod]; };
     }
     env.gain.setValueAtTime(0,t);
-    env.gain.linearRampToValueAtTime(lvl,t+atk);
+    env.gain.linearRampToValueAtTime(lvl,t+atk*am);
     mk().forEach(o=>{ o.start(t); parts.push(o); });
   }
   instVoices.add(v);
   v.stop=(tt)=>{
     if(v.dead) return; v.dead=true;
     const x=Math.max(tt!=null?tt:AC.currentTime, AC.currentTime);
-    const rel=S.inst.voice==='pluck'?0.15:S.inst.voice==='cluster'?0.9:0.3;
+    const rel=(S.inst.voice==='pluck'?0.15:S.inst.voice==='cluster'?0.9:0.3)*instRelMul();
     try{ env.gain.cancelScheduledValues(x); env.gain.setTargetAtTime(0,x,rel*0.4); }catch(e){}
     parts.forEach(o=>{ try{ o.stop(x+rel*3); }catch(e){} });
     setTimeout(()=>{ instVoices.delete(v); try{env.disconnect();}catch(e){} },(x-AC.currentTime+rel*3+0.2)*1000);
@@ -14132,7 +14218,7 @@ function therStart(){
   const o=pLive('sine',220), lfo=pLive('sine',5.4), vd=AC.createGain();
   vd.gain.value=0; lfo.connect(vd); vd.connect(o.frequency);
   const g=AC.createGain(); g.gain.value=0;
-  o.connect(g); g.connect(bus.g);
+  o.connect(g); g.connect(bus.in);
   o.start(); lfo.start();
   ther={o,lfo,vd,g};
 }
@@ -14398,7 +14484,7 @@ function ribbonStart(){
   lp.frequency.value=d.cut; lp.Q.value=d.q;
   const g=AC.createGain(); g.gain.value=0;
   o.connect(lp); if(o2) o2.connect(lp);
-  subo.connect(sg); sg.connect(lp); lp.connect(g); g.connect(bus.g);
+  subo.connect(sg); sg.connect(lp); lp.connect(g); g.connect(bus.in);
   o.start(); if(o2) o2.start(); subo.start();
   /* The plectrum / fingertip: a short filtered noise burst at the moment of
      contact. It is most of what tells an ear "something struck this". */
@@ -14473,7 +14559,7 @@ function fluteVoiceStart(f){
   const nf=AC.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=Math.min(12000,f*2); nf.Q.value=8;
   const ng=AC.createGain(); ng.gain.value=0;
   const g=AC.createGain(); g.gain.value=0;
-  o.connect(g); o2.connect(g2); g2.connect(g); nz.connect(nf); nf.connect(ng); ng.connect(g); g.connect(bus.g);
+  o.connect(g); o2.connect(g2); g2.connect(g); nz.connect(nf); nf.connect(ng); ng.connect(g); g.connect(bus.in);
   if(!breathOn){ g.gain.linearRampToValueAtTime(0.45,t+0.07); ng.gain.setValueAtTime(0.08,t); }
   o.start(); o2.start(); lfo.start(); nz.start();
   const fv={g,ng,stop:()=>{
@@ -14562,7 +14648,7 @@ function hitPerc(v){
     const g=AC.createGain();
     g.gain.setValueAtTime(g0*v,(at||t));
     g.gain.exponentialRampToValueAtTime(0.001,(at||t)+dur);
-    n.connect(bp); bp.connect(g); g.connect(bus.g); n.start(at||t);
+    n.connect(bp); bp.connect(g); g.connect(bus.in); n.start(at||t);
     n.onended=()=>{ try{n.disconnect();g.disconnect();}catch(e){} };
   }
   function jingles(n,base,spread,dec,g0){
@@ -14571,7 +14657,7 @@ function hitPerc(v){
       const t0=t+0.004*i;
       g.gain.setValueAtTime(g0*v,t0);
       g.gain.exponentialRampToValueAtTime(0.001,t0+dec+0.04*i);
-      o.connect(g); g.connect(bus.g); o.start(t0); o.stop(t0+dec+0.3);
+      o.connect(g); g.connect(bus.in); o.start(t0); o.stop(t0+dec+0.3);
       o.onended=()=>{ try{o.disconnect();g.disconnect();}catch(e){} };
     }
   }
@@ -14890,13 +14976,30 @@ $('btnPerfRec').addEventListener('click',()=>{
 $('instSel').addEventListener('change',e=>{ instPanic(); S.inst.mode=e.target.value; drawLive(); dirty(); });
 /* SHAPE means a different thing in each engine, so the panel says which — one
    unlabelled slider that does three unrelated jobs is a slider nobody moves. */
+/* Every voice has a SHAPE now, and every one of them names the actual
+   parameter rather than saying "brightness". Three of the seven had one; the
+   other four had no control at all, which is what "there's no settings to
+   customize the keyboard sound" was about. */
 const SHAPE_WHAT={
   phase:'how far the formant sweeps on each note. Low is close to a sine; high is the hard '
     +'resonant edge phase distortion is known for.',
   pulse:'how wide the pulse travels as the note holds. Low is a thin reed, high swings from '
     +'narrow to fat and back.',
   cluster:'how far the six partials disagree, in cents. Low fuses into one note, high spreads '
-    +'into a choir that never quite settles.'
+    +'into a choir that never quite settles.',
+  glass:'how far the two tones disagree. At zero they fuse into one clean bell; wide open they '
+    +'beat against each other and the note shimmers.',
+  saw:'the unison spread between the two saws. Narrow is one firm saw, wide is the slow '
+    +'chorusing a supersaw is made of.',
+  ep:'the modulation index \u2014 in FM this IS the instrument. Low is nearly a sine, high is a '
+    +'metallic bell. It decays over the note either way, which is what makes a tine read as struck.',
+  pluck:'the string\u2019s damping. Low is a felt mute that dies fast, high is bright steel that '
+    +'rings on \u2014 a brighter string also sustains longer, as a real one does.'
+};
+const VOICE_WHAT={
+  glass:'two tones, a sine and a triangle', saw:'two detuned saws into a lowpass',
+  ep:'two-operator FM', pluck:'a plucked string, modelled',
+  phase:'phase distortion', pulse:'pulse-width modulation', cluster:'six partials at once'
 };
 function drawInstShape(){
   const row=$('instShapeRow'), what=$('instShapeWhat');
@@ -14907,9 +15010,47 @@ function drawInstShape(){
   const sl=$('instShape'), v=instShape();
   if(sl) sl.value=v;
   const vv=$('instShapeV'); if(vv) vv.textContent=Math.round(v*100)+'%';
+  drawInstTone();
+}
+/* The four tone controls read out in the units they actually are, not in
+   percent. A cutoff that says "62%" tells you nothing you can act on; one that
+   says 4.2kHz can be matched to what you are hearing. The envelope pair reads
+   as a multiplier because that is honestly what it is \u2014 "\u00d71" means this voice
+   as it comes, and a number of milliseconds would be a different lie for each
+   of the seven. */
+function drawInstTone(){
+  const set=(id,val,txt)=>{ const el=$(id); if(el) el.value=val;
+    const vv=$(id+'V'); if(vv) vv.textContent=txt; };
+  const hz=instCutHz();
+  set('instCut', S.inst.cut==null?1:S.inst.cut,
+    (S.inst.cut>=0.999?'open':(hz>=1000?(hz/1000).toFixed(hz>=10000?0:1)+'kHz':Math.round(hz)+'Hz')));
+  const q=instResQ();
+  set('instRes', S.inst.res||0, (S.inst.res>0.001?'Q '+q.toFixed(1):'off'));
+  const am=instAtkMul(), rm=instRelMul();
+  const mul=m=>(Math.abs(m-1)<0.02?'\u00d71 (as it comes)':'\u00d7'+(m<1?m.toFixed(2):m.toFixed(1)));
+  set('instAtt', S.inst.att==null?0.5:S.inst.att, mul(am));
+  set('instRel', S.inst.rel==null?0.5:S.inst.rel, mul(rm));
+  const w=$('instVoiceWhat');
+  if(w) w.textContent=(VOICE_WHAT[S.inst.voice]||'')+' \u2014 TONE and RES are one filter for the whole instrument.';
+  /* The whole point of a filter is that you hear it move, so it moves under a
+     held note rather than waiting for the next one. */
+  if(LIVE && LIVE._inst){
+    const t=AC.currentTime;
+    try{ LIVE._inst.flt.frequency.setTargetAtTime(hz,t,0.02);
+      LIVE._inst.flt.Q.setTargetAtTime(q,t,0.02); }catch(e){}
+  }
 }
 $('instVoiceSel').addEventListener('change',e=>{ S.inst.voice=e.target.value; drawInstShape(); dirty(); });
 $('instShape').addEventListener('input',e=>{ S.inst.shape=parseFloat(e.target.value); drawInstShape(); dirty(); });
+[['instCut','cut'],['instRes','res'],['instAtt','att'],['instRel','rel']].forEach(([id,key])=>{
+  const el=$(id); if(!el) return;
+  el.addEventListener('input',e=>{ S.inst[key]=parseFloat(e.target.value); drawInstTone(); dirty(); });
+});
+$('instVoiceDef').addEventListener('click',()=>{
+  ['cut','res','att','rel','shape'].forEach(k=>{ S.inst[k]=INSTDEF[k]; });
+  drawInstShape(); dirty();
+  lcd('VOICE RESET \u2014 TONE open, no resonance, and this voice\u2019s own attack and release.');
+});
 [['tSides','tSides'],['tSpin','tSpin'],['tGrav','tGrav'],['tBounce','tBounce']].forEach(([id,key])=>{
   const el=$(id); if(!el) return;
   el.addEventListener('input',e=>{ S.inst[key]=parseFloat(e.target.value); drawTomb(); dirty(); });
@@ -18832,6 +18973,12 @@ const TOUR=[
     title:'THE SEQUENCER',
     body:'Tap steps to turn them on. The row you are editing follows the selected pad, so pick a pad then write its part.<br><br>Patterns run <b>16, 32, 48 or 64</b> steps — set the length with LEN.' },
 
+  /* Added in R196. The locks had been in for a build and the tour never
+     mentioned them, so the only way to find the thing that stops one pad being
+     one sound was to press a button marked LOCK and guess. */
+  { tab:'seq', el:'btnStepLock', title:'ONE STEP, ITS OWN SOUND',
+    body:'<b>LOCK</b>, then tap a step: it plays, and you can give <i>that step alone</i> its own <b>CUTOFF, LEVEL, PAN, DECAY</b> or <b>START</b> — as well as pitch, probability and ratchets.<br><br>Every slider you move plays the step back straight away, so you hear the edit as you make it. This is what stops one pad being one sound repeated sixteen times.' },
+
   { tab:'seq', el:'euPreset', title:'EUCLIDEAN RHYTHMS + GROOVE',
     body:'Spread <b>N hits evenly over M steps</b> and you get the rhythms that run through most of the world’s music. Choose a preset, or dial hits/steps/rotate yourself.<br><br>The <b>GROOVE</b> menu below then pushes the timing around — swing, shuffle, dragged backbeats — so it breathes instead of marching.' },
 
@@ -18841,11 +18988,19 @@ const TOUR=[
   { tab:'seq', el:'btnPoly', title:'ONE PAD, ITS OWN TEMPO',
     body:'<b>POLY</b> gives the selected pad a <i>figure</i> at a BPM of its own — and every lit step of that pad plays the whole figure instead of a single hit. No step, no sound.<br><br>Set it to <b>triplet</b> and one step becomes three hits inside a beat. That is a <b>polyrhythm</b>, and it is the thing a grid of sixteen steps cannot write, because sixteen does not divide by three.' },
 
+  /* Added in R196, after an audit of what onboarding actually covers: LIVE,
+     AMP, DJ, MIX and MIDI appeared in no tour step and no recipe. LIVE is the
+     whole other half of the app — nine ways to play, seven voices, a keyboard
+     and a tombola — and nothing anywhere told you it was there. Four of the
+     ten steps were the sequencer; none was the instrument. */
+  { tab:'live', el:'instVoiceSel', title:'LIVE — PLAY IT BY HAND',
+    body:'The other half of the app. A <b>KEYBOARD</b> that is always on screen, and nine ways to play it — a theremin surface, chord pads, a strummed harp, a bass ribbon, a breath flute, percussion you shake the phone for, and a <b>TOMBOLA</b> where notes bounce inside a spinning shape.<br><br>Seven <b>VOICES</b>, each with its own <b>SHAPE</b> control, plus <b>TONE</b>, <b>RES</b>, <b>ATTACK</b> and <b>RELEASE</b>. It all plays through the same mix as the sequencer, so you can jam over your beat and record it with TRAX.' },
+
   { tab:'trax', el:'traxlist', title:'TRAX — RECORD YOUR TAKE',
     body:'These are your tape lanes. Arm one with <b>&#9679;</b>, press PLAY and it records a pass — the whole mix, just what you play in <b>LIVE</b>, or the mic.<br><br>Stack lanes into an arrangement, and reopen any take in the sample editor to chop it like any other sound.' },
 
   { tab:'pads', el:'btnPlay', title:'THAT IS THE TOUR',
-    body:'Press <b>&#9654;</b> to start playing. Your work saves itself as you go, and the <b>PROJ</b> tab keeps named projects, undo history and the bounce/export tools.<br><br>The <b>?</b> button replays this, holds six step-by-step recipes, and has <b>SCREEN SIZE</b> — worth a look on a smaller phone, where it hands the top bars’ space back to the instrument.' }
+    body:'Press <b>&#9654;</b> to start playing. Your work saves itself as you go, and the <b>PROJ</b> tab keeps named projects, undo history and the bounce/export tools.<br><br>Not covered here but worth finding: <b>MIX</b> is the fader-and-sends view of every pad, <b>AMP</b> takes a guitar or line input, <b>DJ</b> gives you filter and loop performance controls, and <b>MIDI</b> plays hardware or is played by it. Each has its own explainer inside the tab.<br><br>The <b>?</b> button replays this, holds seven step-by-step recipes, and has <b>SCREEN SIZE</b> — worth a look on a smaller phone, where it hands the top bars’ space back to the instrument.' }
 ];
 let tourAt=-1;
 /* ---------------- guides: the tour, and the recipe book ----------------------
@@ -19190,6 +19345,33 @@ const recipeBook=[
     base:()=>playing, done:b=>playing&&!b },
   { tab:'trax', el:'traxlist', title:'KEEP IT, OR DO IT AGAIN',
     body:'Press <b>STOP</b> to commit. The lane now holds your take — <b>&infin;</b> loops it, <b>M</b> and <b>S</b> mute and solo it, and <b>FX</b> gives it filter, pan and sends.<br><br><b>FX &rarr; TO PAD</b> moves the take onto a pad, so a phrase you played once becomes something you can trigger.' }]},
+
+/* The seventh, against my own note above that six is close to the ceiling. It
+   earns the place because the audit that prompted it found LIVE in no tour
+   step and no recipe at all: the app's entire instrument half — nine ways to
+   play, seven voices, a keyboard — had no route in, and "there's no settings
+   to customize the keyboard sound" is what that looks like from outside. It
+   ends in a take on a lane, so it still ends in something that exists. */
+{ id:'synth', name:'Make the keyboard your own sound',
+  blurb:'Pick a voice, shape it until it is yours, then play it over the beat and keep the take.',
+  steps:[
+  { title:'MAKE THE KEYBOARD YOUR OWN SOUND', body:'The <b>LIVE</b> tab is an instrument, not a preset list. Four steps: choose an engine, shape it, play it, keep it.' },
+  { tab:'live', el:'instVoiceSel', title:'CHOOSE AN ENGINE',
+    body:'Seven <b>VOICES</b>, and they are seven different methods rather than one with a menu. <b>PHASE SWEEP</b> moves a formant across the note, <b>PULSE</b> moves a notch, <b>CLUSTER</b> stacks six partials that deliberately disagree, <b>FM KEYS</b> is two-operator FM, <b>PLUCK</b> is a modelled string.<br><br>Change it and play the keyboard below — they do not sound alike.',
+    waitFor:'pick a VOICE and play a key.',  didIt:'That is the engine.',
+    base:()=>S.inst.voice, done:b=>S.inst.voice!==b, tap:'instVoiceSel' },
+  { tab:'live', el:'instShapeRow', title:'SHAPE IT',
+    body:'<b>SHAPE</b> is that engine’s own main parameter — the line under it says which. On FM KEYS it is the modulation index, on PLUCK the string’s damping, on CLUSTER how far the partials drift apart.<br><br>Move it while you hold a note and you will hear the instrument change, not just get brighter.',
+    waitFor:'move SHAPE.', didIt:'That is your sound now.',
+    base:()=>instShape(), done:b=>Math.abs(instShape()-b)>0.05, tap:'instShape' },
+  { tab:'live', el:'instCut', title:'TONE, AND HOW LONG IT RINGS',
+    body:'<b>TONE</b> and <b>RES</b> are one filter across the whole instrument — close it down for something muted, open it and add resonance for a sound with an edge.<br><br><b>ATTACK</b> and <b>RELEASE</b> are multipliers on whatever the voice already does, so the centre is the voice as it comes. Push RELEASE up and a pluck becomes a pad.',
+    waitFor:'move TONE or RELEASE.', didIt:'Now it is yours.',
+    base:()=>[S.inst.cut,S.inst.rel].join(), done:b=>[S.inst.cut,S.inst.rel].join()!==b, tap:'instCut' },
+  { tab:'trax', el:'traxSrc', title:'KEEP WHAT YOU PLAY',
+    body:'Set SOURCE to <b>LIVE ONLY</b>, arm a lane with <b>&#9679;</b>, then press PLAY and perform over your beat. The sequencer is backing you can hear but will not capture.<br><br>STOP commits the take, and <b>FX &rarr; TO PAD</b> puts it on a pad so a phrase you played once becomes something you can sequence.',
+    waitFor:'set SOURCE to LIVE ONLY.', didIt:'It will capture just your playing.',
+    done:()=>$('traxSrc').value==='live' }]},
 
 { id:'finish', name:'Finish it and get a file',
   blurb:'Set the master so nothing clips, then export a WAV you can send to anyone.',

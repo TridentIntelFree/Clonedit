@@ -70,6 +70,43 @@ export default async function ({ browser, base }) {
     t.ok('no step sends you to a control that needs a connection', netty.length === 0,
       netty.join(', ') || 'none');
 
+    /* R196. Everything the guides named existed and every tab they opened was
+       real — and LIVE had still gone three builds without a single mention
+       anywhere in onboarding. Nine ways to play, seven voices, a keyboard and
+       a tombola, and the only route to them was noticing the tab. "The
+       keyboard section still seems shallow… there's no settings to customize
+       the sound" is partly what an unmentioned feature looks like from
+       outside.
+
+       A reference check cannot catch that, because the failure is an ABSENCE.
+       So: every tab is either walked through by a guide, or named in the
+       closing step as something to go and find. A tab added later fails this
+       until someone decides which it is, which is the whole point. */
+    t.head('AND NO PART OF THE APP IS LEFT UNMENTIONED');
+    const cover = await page.evaluate(() => {
+      const tabs = [...document.querySelectorAll('#tabs button')].map(b => b.dataset.v);
+      const walked = new Set();
+      TOUR.forEach(s => { if (s.tab) walked.add(s.tab); });
+      recipeBook.forEach(r => r.steps.forEach(s => { if (s.tab) walked.add(s.tab); }));
+      const last = TOUR[TOUR.length - 1].body.toLowerCase();
+      const label = v => (document.querySelector('#tabs button[data-v="' + v + '"]')
+        .textContent || v).trim().toLowerCase();
+      return { tabs, walked: [...walked],
+        unwalked: tabs.filter(v => !walked.has(v)),
+        unwalkedAndUnnamed: tabs.filter(v => !walked.has(v) && !last.includes(label(v))),
+        recipes: recipeBook.length };
+    });
+    t.note('    ' + cover.walked.length + ' of ' + cover.tabs.length +
+      ' tabs are walked through by a guide: ' + cover.walked.join(' '));
+    t.note('    the rest are named in the closing step: ' + cover.unwalked.join(' '));
+    t.ok('EVERY TAB IS EITHER WALKED THROUGH OR NAMED AS SOMETHING TO GO AND FIND',
+      cover.unwalkedAndUnnamed.length === 0,
+      cover.unwalkedAndUnnamed.join(', ') || 'nothing is silently missing');
+    t.ok('and LIVE in particular is walked, not just named — it is half the app',
+      cover.walked.includes('live'));
+    t.ok('with a recipe of its own, so there is a way in and not only a mention',
+      cover.recipes === 7, cover.recipes + ' recipes');
+
     t.head('EACH STEP IS ON SCREEN WHEN ITS TAB IS OPEN');
     /* Targets inside a panel a previous step opens are excluded here and
        covered properly by the walk below; everything else must be visible the
