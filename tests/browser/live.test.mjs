@@ -2159,6 +2159,211 @@ export default async function ({ browser, base }) {
       !tone.poisonThrew && isFinite(tone.filterAfter),
       tone.poison.hz.toFixed(0) + 'Hz, Q ' + tone.poison.q.toFixed(2));
 
+    /* "I need control over the keyboard sounds, the reverb and stuff is gone.
+       I need a lot of effects available for the keyboard and more synth sounds,
+       not much to choose from there."
+
+       Three complaints and one of them was my fault. R196 put four new sliders
+       in the LIVE tab ABOVE the sends, which pushed LEVEL, REVERB and DELAY
+       past the bottom of a phone screen — the reverb was not gone, it was
+       three mode-specific panels further down than it used to be. Everything
+       that shapes the instrument is one block now.
+
+       The other two were fair. The instrument had two sends and nothing else,
+       against a sample pad's drive, crush, filter and three bands of EQ; and
+       seven voices of which three were variations on "oscillators into a
+       filter". So: a four-pedal insert chain, and five engines that are five
+       methods the others cannot reach.
+
+       Each pedal is measured against the thing it is named for, on a near-sine
+       source. A saw is the worst possible test signal for a distortion — it is
+       already all harmonics — and a DETUNED saw beats at 4Hz on its own, which
+       is indistinguishable from a working tremolo. Both of those wasted a
+       measurement round before the source was changed. */
+    t.head('A PEDALBOARD FOR THE INSTRUMENT, AND TWELVE WAYS TO FEED IT');
+    const fx = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(r => setTimeout(r, ms));
+      ensureAudio(); await wait(250);
+      document.querySelector('#tabs button[data-v="live"]').click();
+      await wait(150);
+      const keep = JSON.parse(JSON.stringify(S.inst));
+      const bus = instBus();
+      S.inst.vol = 0.8; S.inst.rev = 0; S.inst.dly = 0;
+      bus.rv.gain.value = 0; bus.dl.gain.value = 0;
+      ['cut', 'res', 'att', 'rel', 'drv', 'cho', 'pha', 'tre']
+        .forEach(k => { S.inst[k] = INSTDEF[k]; });
+
+      /* THE LAYOUT COMPLAINT FIRST: the sends must be findable, which here
+         means "in the same block as the rest of the sound controls and not
+         below every mode panel". Measured as how far down the tab they sit. */
+      const yOf = id => { const e = document.getElementById(id);
+        if (!e) return null; const r = e.getBoundingClientRect();
+        const v = document.getElementById('v-live').getBoundingClientRect();
+        return Math.round(r.top - v.top); };
+      o.layout = { tone: yOf('instCut'), rev: yOf('instRev'), dly: yOf('instDly'),
+        vol: yOf('instVol'), key: yOf('instKey') };
+      /* The sliders of the LIVE tab in document order. "One block" means this
+         sequence runs unbroken from SHAPE to LEVEL with nothing else wedged
+         into it — a distance in pixels would only measure how many sliders
+         there are, which is not the complaint. */
+      o.order = [...document.querySelectorAll('#v-live .pslider input[type=range]')]
+        .map(i => i.id);
+
+      const sp = AC.createChannelSplitter(2);
+      const aL = AC.createAnalyser(), aR = AC.createAnalyser();
+      aL.fftSize = aR.fftSize = 4096;
+      aL.smoothingTimeConstant = aR.smoothingTimeConstant = 0;
+      bus.g.connect(sp); sp.connect(aL, 0); sp.connect(aR, 1);
+      /* A SECOND, SHORT analyser purely for amplitude. The 4096-sample window
+         is 93ms and a 10.5Hz tremolo has a 95ms period, so its per-window PEAK
+         always lands on a crest and the modulation reads as nothing. 512
+         samples is 11.6ms, short enough to see the trough. That one detail is
+         the difference between "tremolo does nothing" and "tremolo is the
+         strongest of the four". */
+      const aA = AC.createAnalyser(); aA.fftSize = 512; aA.smoothingTimeConstant = 0;
+      bus.g.connect(aA);
+      const tA = new Float32Array(aA.fftSize);
+      const tL = new Float32Array(aL.fftSize), tR = new Float32Array(aR.fftSize);
+      const fL = new Float32Array(aL.frequencyBinCount);
+      const per = (AC.sampleRate / 2) / fL.length;
+
+      const run = async (ms) => {
+        const v = instVoice(330);
+        await wait(90);                                   // past the attack
+        let mn = 1e9, mx = 0, pk = 0, hi = -200, lr = 0, n = 0;
+        for (let i = 0; i < ms / 10; i++) { await wait(10);
+          aL.getFloatTimeDomainData(tL); aR.getFloatTimeDomainData(tR);
+          let p = 0, d = 0, e = 0;
+          for (let k = 0; k < tL.length; k++) { p = Math.max(p, Math.abs(tL[k]));
+            d += Math.abs(tL[k] - tR[k]); e += Math.abs(tL[k]) + Math.abs(tR[k]); }
+          pk = Math.max(pk, p);
+          lr += e > 0 ? d / e : 0; n++;
+          aA.getFloatTimeDomainData(tA);
+          let pa = 0; for (let k = 0; k < tA.length; k++) pa = Math.max(pa, Math.abs(tA[k]));
+          mn = Math.min(mn, pa); mx = Math.max(mx, pa);
+          aL.getFloatFrequencyData(fL);
+          let h = -200;
+          for (let k = Math.round(2500 / per); k < fL.length; k++) if (fL[k] > h) h = fL[k];
+          hi = Math.max(hi, h);
+        }
+        v.stop(); await wait(300);
+        return { peak: +pk.toFixed(4), hi: +hi.toFixed(1),
+          wobble: mx > 0 ? +((mx - mn) / mx).toFixed(3) : 0,
+          stereo: +(lr / n).toFixed(4) };
+      };
+
+      S.inst.voice = 'ep'; S.inst.shape = 0.02; drawInstShape(); await wait(90);
+      o.clean = await run(500);
+      const pedal = async (k, v) => { S.inst[k] = v; drawInstTone(); await wait(90);
+        const r = await run(500); S.inst[k] = 0; drawInstTone(); await wait(80); return r; };
+      o.drive = await pedal('drv', 0.9);
+      o.chorus = await pedal('cho', 0.9);
+      o.phaser = await pedal('pha', 0.9);
+      o.trem = await pedal('tre', 0.95);
+
+      /* THE SENDS STILL REACH THE RETURNS. This is the actual "reverb is gone"
+         check: play a short note and listen 600ms after it has stopped, when
+         the dry signal is long over. Anything left is the return. */
+      try { bus.g.disconnect(sp); bus.g.disconnect(aA); } catch (e) {}
+      const am = AC.createAnalyser(); am.fftSize = 2048; am.smoothingTimeConstant = 0;
+      LIVE.master.connect(am);
+      const tm = new Float32Array(am.fftSize);
+      const tail = async () => {
+        const v = instVoice(330); await wait(120); v.stop();
+        await wait(600);
+        let pk = 0;
+        for (let i = 0; i < 40; i++) { await wait(10); am.getFloatTimeDomainData(tm);
+          for (let k = 0; k < tm.length; k++) pk = Math.max(pk, Math.abs(tm[k])); }
+        await wait(900);
+        return +pk.toFixed(4);
+      };
+      S.inst.voice = 'pluck'; S.inst.shape = 0.5; drawInstShape();
+      S.inst.rev = 0; S.inst.dly = 0; bus.rv.gain.value = 0; bus.dl.gain.value = 0;
+      o.dryTail = await tail();
+      bus.rv.gain.value = 1; o.revTail = await tail(); bus.rv.gain.value = 0;
+      bus.dl.gain.value = 1; o.dlyTail = await tail(); bus.dl.gain.value = 0;
+      try { LIVE.master.disconnect(am); } catch (e) {}
+
+      /* EVERY VOICE MAKES A SOUND, including the five new ones — and at a
+         level in the same league as the rest. The first cut of WIND measured
+         0.013 against 0.4 for everything else, which is present in the graph
+         and absent from the room. */
+      const an2 = AC.createAnalyser(); an2.fftSize = 2048; an2.smoothingTimeConstant = 0;
+      bus.g.connect(an2);
+      const t2 = new Float32Array(an2.fftSize);
+      o.voices = {};
+      for (const vc of [...document.querySelectorAll('#instVoiceSel option')].map(x => x.value)) {
+        S.inst.voice = vc; S.inst.shape = 0.55; drawInstShape(); await wait(60);
+        const v = instVoice(330);
+        let pk = 0;
+        for (let i = 0; i < 30; i++) { await wait(10); an2.getFloatTimeDomainData(t2);
+          for (let k = 0; k < t2.length; k++) pk = Math.max(pk, Math.abs(t2[k])); }
+        v.stop(); await wait(280);
+        o.voices[vc] = +pk.toFixed(4);
+      }
+      try { bus.g.disconnect(an2); } catch (e) {}
+      o.newOnes = ['organ', 'super', 'vowel', 'wind', 'bell'];
+      S.inst = keep; try { drawInstShape(); drawLive(); } catch (e) {}
+      return o;
+    });
+
+    t.note('    down the LIVE tab:  TONE ' + fx.layout.tone + 'px · REVERB ' + fx.layout.rev +
+      'px · DELAY ' + fx.layout.dly + 'px · LEVEL ' + fx.layout.vol + 'px');
+    const want = ['instShape', 'instCut', 'instRes', 'instAtt', 'instRel',
+      'instDrv', 'instCho', 'instPha', 'instTre', 'instRev', 'instDly', 'instVol'];
+    const block = fx.order.filter(id => want.includes(id));
+    t.note('    sound controls in order: ' + block.map(x => x.replace('inst', '')).join(' '));
+    t.ok('THE SENDS SIT WITH THE REST OF THE SOUND CONTROLS, in one unbroken block',
+      block.join(',') === want.join(','), block.join(' '));
+    t.ok('and that block is above the KEY row, not below every mode panel',
+      fx.layout.rev < fx.layout.key && fx.layout.vol < fx.layout.key,
+      'REVERB at ' + fx.layout.rev + 'px, KEY at ' + fx.layout.key + 'px');
+    t.note('    tail 600ms after the note stops: dry ' + fx.dryTail +
+      ' · reverb ' + fx.revTail + ' · delay ' + fx.dlyTail);
+    t.ok('and they still reach the returns — the dry signal is long gone by then',
+      fx.dryTail < 0.005 && fx.revTail > 0.01 && fx.dlyTail > 0.01,
+      'dry ' + fx.dryTail + ', reverb ' + fx.revTail + ', delay ' + fx.dlyTail);
+
+    t.note('    clean     peak ' + fx.clean.peak + ' · >2.5kHz ' + fx.clean.hi +
+      ' dB · wobble ' + fx.clean.wobble + ' · stereo ' + fx.clean.stereo);
+    t.note('    DRIVE     peak ' + fx.drive.peak + ' · >2.5kHz ' + fx.drive.hi + ' dB');
+    t.note('    CHORUS    peak ' + fx.chorus.peak + ' · stereo ' + fx.chorus.stereo);
+    t.note('    PHASER    peak ' + fx.phaser.peak + ' · wobble ' + fx.phaser.wobble);
+    t.note('    TREMOLO   peak ' + fx.trem.peak + ' · wobble ' + fx.trem.wobble);
+    t.ok('DRIVE ADDS HARMONICS — measured on a near-sine, where they can only be its own',
+      fx.drive.hi > fx.clean.hi + 40,
+      (fx.drive.hi - fx.clean.hi).toFixed(0) + ' dB above 2.5kHz');
+    t.ok('and it is dirt rather than volume — the level barely moves',
+      Math.abs(20 * Math.log10(fx.drive.peak / fx.clean.peak)) < 3,
+      (20 * Math.log10(fx.drive.peak / fx.clean.peak)).toFixed(1) + ' dB');
+    t.ok('CHORUS MAKES IT WIDE — two delays swept in antiphase and panned apart',
+      fx.chorus.stereo > fx.clean.stereo + 0.1 && fx.chorus.stereo > fx.clean.stereo * 10,
+      fx.clean.stereo + ' → ' + fx.chorus.stereo + ' of left/right difference');
+    t.ok('PHASER SWEEPS ITS NOTCHES across the note',
+      fx.phaser.wobble > 0.3, 'level swings ' + fx.phaser.wobble + ' as the notches pass');
+    t.ok('and does not come on 6dB louder, which summing dry and wet at unity would',
+      Math.abs(20 * Math.log10(fx.phaser.peak / fx.clean.peak)) < 2.5,
+      (20 * Math.log10(fx.phaser.peak / fx.clean.peak)).toFixed(1) + ' dB');
+    t.ok('TREMOLO MOVES THE LEVEL, and does not gate it to silence',
+      fx.trem.wobble > 0.5 && fx.trem.wobble < 0.99,
+      fx.trem.wobble + ' of the level, trough still above zero');
+    t.ok('and every pedal is genuinely off at zero',
+      fx.clean.wobble < 0.05 && fx.clean.stereo < 0.05 && fx.clean.hi < -100,
+      'clean: wobble ' + fx.clean.wobble + ', stereo ' + fx.clean.stereo +
+      ', harmonics ' + fx.clean.hi + ' dB');
+
+    t.note('    peak per voice:');
+    Object.entries(fx.voices).forEach(([v, p]) =>
+      t.note('        ' + v.padEnd(9) + p + (fx.newOnes.includes(v) ? '   (new)' : '')));
+    t.ok('TWELVE VOICES, not seven', Object.keys(fx.voices).length === 12,
+      Object.keys(fx.voices).length + ' in the menu');
+    t.ok('and every one of them makes a sound',
+      Object.values(fx.voices).every(p => p > 0.02),
+      Object.entries(fx.voices).filter(([, p]) => p <= 0.02).map(([v]) => v).join(', ') || 'all twelve');
+    t.ok('the five new ones at a level in the same league as the rest, not a whisper',
+      fx.newOnes.every(v => fx.voices[v] > 0.15),
+      fx.newOnes.map(v => v + ' ' + fx.voices[v]).join(' · '));
+
     t.head('A KEYBOARD THAT IS ALWAYS THERE');
     /* "Where's the keyboard on my live?" … "Need a standalone keyboard man."
 

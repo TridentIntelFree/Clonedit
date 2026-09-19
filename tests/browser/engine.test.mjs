@@ -1050,12 +1050,23 @@ export default async function ({ browser, base }) {
       const glow = () => +(el.querySelector('.glow').style.opacity || 0);
       o.hasGlow = !!el.querySelector('.glow');
 
-      flashPad(pad, 1.0); await wait(16);
-      o.hard = { op: glow(), tf: el.style.transform };
+      /* The BRIGHTEST the glow gets, not whatever it happens to be one frame
+         later. The glow starts fading immediately, and `wait(16)` is one frame
+         only when the machine is idle — under a full suite run several frames
+         pass and the sample lands part way down the decay. Measured that way
+         this read 0.988, 0.938, 0.867 and 0.77 on four runs of identical code,
+         failing the fourth. A peak over the first few frames asks the question
+         the check is actually for: does a hard hit light it brightly. */
+      const peakGlow = async (v) => { flashPad(pad, v);
+        let top = 0, tf = '';
+        for (let k = 0; k < 16; k++) { await wait(4);
+          const g = glow(); if (g > top) { top = g; tf = el.style.transform; } }
+        return { op: top, tf };
+      };
+      o.hard = await peakGlow(1.0);
       await wait(500);
       o.rest = { op: glow(), tf: el.style.transform };
-      flashPad(pad, 0.2); await wait(16);
-      o.soft = { op: glow() };
+      o.soft = await peakGlow(0.2);
       await wait(500);
 
       /* A soft hit fades faster as well as glowing dimmer, so the grid reads

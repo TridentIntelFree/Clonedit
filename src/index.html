@@ -1303,6 +1303,11 @@ bars of anything, and send the best two to a pad.</p>
       <option value="phase">PHASE SWEEP</option>
       <option value="pulse">PULSE</option>
       <option value="cluster">CLUSTER</option>
+      <option value="organ">ORGAN</option>
+      <option value="super">SUPERSAW</option>
+      <option value="vowel">VOWEL</option>
+      <option value="wind">WIND</option>
+      <option value="bell">RING BELL</option>
     </select>
   </div>
   <div id="kbwrap">
@@ -1332,6 +1337,19 @@ bars of anything, and send the best two to a pad.</p>
   <div class="pslider"><span class="lbl">RES</span><input type="range" id="instRes" min="0" max="1" step="0.01"><span class="val" id="instResV"></span></div>
   <div class="pslider"><span class="lbl">ATTACK</span><input type="range" id="instAtt" min="0" max="1" step="0.01"><span class="val" id="instAttV"></span></div>
   <div class="pslider"><span class="lbl">RELEASE</span><input type="range" id="instRel" min="0" max="1" step="0.01"><span class="val" id="instRelV"></span></div>
+  <!-- The pedalboard, and then the two sends. These used to sit at the very
+       bottom of the tab, below every mode-specific panel — reported as "the
+       reverb and stuff is gone", which is what a control looks like when four
+       new sliders push it off the end of a phone screen. Everything that
+       shapes the instrument's sound is one block now. -->
+  <div style="font-size:10px;color:var(--lcd);margin:8px 0 2px;letter-spacing:.5px">EFFECTS &mdash; the whole instrument goes through these</div>
+  <div class="pslider"><span class="lbl">DRIVE</span><input type="range" id="instDrv" min="0" max="1" step="0.01"><span class="val" id="instDrvV"></span></div>
+  <div class="pslider"><span class="lbl">CHORUS</span><input type="range" id="instCho" min="0" max="1" step="0.01"><span class="val" id="instChoV"></span></div>
+  <div class="pslider"><span class="lbl">PHASER</span><input type="range" id="instPha" min="0" max="1" step="0.01"><span class="val" id="instPhaV"></span></div>
+  <div class="pslider"><span class="lbl">TREMOLO</span><input type="range" id="instTre" min="0" max="1" step="0.01"><span class="val" id="instTreV"></span></div>
+  <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="instRev" min="0" max="1" step="0.01"><span class="val" id="instRevV"></span></div>
+  <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="instDly" min="0" max="1" step="0.01"><span class="val" id="instDlyV"></span></div>
+  <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="instVol" min="0" max="2" step="0.01"><span class="val" id="instVolV"></span></div>
   <div class="row" style="margin:-2px 0 6px">
     <span id="instVoiceWhat" style="font-size:10px;color:var(--txt-dim);flex:1;line-height:1.4"></span>
     <button id="instVoiceDef" style="font-size:10px">RESET</button>
@@ -1387,9 +1405,6 @@ bars of anything, and send the best two to a pad.</p>
   <div class="row" id="fluteopts" style="display:none">
     <button id="instBreath" class="grow">BREATH CONTROL (MIC) — blow to play</button>
   </div>
-  <div class="pslider"><span class="lbl">LEVEL</span><input type="range" id="instVol" min="0" max="2" step="0.01"><span class="val" id="instVolV"></span></div>
-  <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="instRev" min="0" max="1" step="0.01"><span class="val" id="instRevV"></span></div>
-  <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="instDly" min="0" max="1" step="0.01"><span class="val" id="instDlyV"></span></div>
   <details class="ex"><summary>Where the sound goes</summary><div class="ex-body">
     <p>Everything here plays through the master — jam over the sequencer, record with
     TRAX (BUS) or REC OUT, then chop the take onto pads.</p>

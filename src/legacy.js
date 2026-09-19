@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R197 · 2026-09-18 · LOCK means the same thing in both views';
+const BUILD = 'JBH-88 · R198 · 2026-09-19 · a pedalboard, and twelve ways to feed it';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -11178,7 +11178,7 @@ function traxCommit(){
    filter wide open and both envelope multipliers at their centre. A project
    saved before this build therefore opens sounding identical. */
 const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker',bass:'finger',padKey:-1,shape:0.55,oct:0,
-  cut:1,res:0,att:0.5,rel:0.5,
+  cut:1,res:0,att:0.5,rel:0.5,drv:0,cho:0,pha:0,tre:0,
   tSides:5,tSpin:0.35,tGrav:0.55,tBounce:0.82};
 S.inst=Object.assign({},INSTDEF);
 const instVoices=new Set();
@@ -11200,22 +11200,159 @@ let ther=null, arpTimer=0, arpNotes=null, arpIdx=0, arpNext=0;
    filtered sound. Sending the raw tone to a reverb and the filtered tone to
    the speakers would make closing the cutoff sound like turning the reverb
    up, which is the opposite of what the control claims. */
-function instBus(){ // lazy per-graph: tone → level + rev/dly sends into the master mix
+/* AND ITS OWN PEDALBOARD.
+
+   "I need a lot of effects available for the keyboard." The instrument had two
+   sends and nothing else — no drive, no modulation, nothing between the voice
+   and the mix. Every sample pad has drive, crush, a filter and three bands of
+   EQ; the instrument you play with your hands had a volume knob.
+
+   Four inserts, in the order a pedalboard would put them: DRIVE, then CHORUS,
+   then PHASER, then TREMOLO, then the sends. Distortion before modulation,
+   because modulating a clean signal and then distorting it flattens the
+   modulation back out — the drive re-normalises exactly what the chorus just
+   varied.
+
+   ALL FOUR ARE ONE INSTANCE, not one per voice, for the same reason the filter
+   is: a held chord on the cluster engine is thirty-six oscillators, and a
+   phaser per note would be a hundred and forty-four allpass filters for one
+   hand. It is also what a pedalboard is — the whole instrument goes through
+   it, not each string.
+
+   EACH IS BYPASSED AT ZERO by crossfading its wet gain to silence rather than
+   by rewiring. Disconnecting a node mid-note clicks; a gain ramped to zero
+   does not, and the node sitting there costing a few microseconds is cheaper
+   than the branch that would avoid it. */
+function instBus(){ // lazy per-graph: tone → drive → chorus → phaser → trem → level + sends
   if(!LIVE._inst){
     const flt=AC.createBiquadFilter(); flt.type='lowpass';
     flt.frequency.value=instCutHz(); flt.Q.value=instResQ();
+
+    /* DRIVE — a waveshaper with a fixed curve, driven harder rather than
+       reshaped. Swapping the curve per setting would mean building a table on
+       every slider move; pushing level into a fixed tanh is the same sound and
+       costs one gain. The trim after it keeps the loud end from simply being
+       louder, so the control is dirt rather than volume. */
+    const drIn=AC.createGain(), drSh=AC.createWaveShaper(), drOut=AC.createGain();
+    drSh.curve=instDriveCurve(); drSh.oversample='2x';
+    const drDry=AC.createGain(), drWet=AC.createGain();
+    drIn.connect(drDry); drIn.connect(drSh); drSh.connect(drOut); drOut.connect(drWet);
+    const drSum=AC.createGain(); drDry.connect(drSum); drWet.connect(drSum);
+    flt.connect(drIn);
+
+    /* CHORUS — two delay lines either side of centre, swept by one LFO in
+       antiphase and panned apart. One line is a vibrato; two going opposite
+       ways is the width that makes it sound like more than one instrument. */
+    const chDry=AC.createGain(), chWet=AC.createGain();
+    const chL=AC.createDelay(0.05), chR=AC.createDelay(0.05);
+    chL.delayTime.value=0.012; chR.delayTime.value=0.019;
+    const chLfo=AC.createOscillator(); chLfo.type='sine'; chLfo.frequency.value=0.6;
+    const chDepL=AC.createGain(), chDepR=AC.createGain();
+    chDepL.gain.value=0; chDepR.gain.value=0;
+    chLfo.connect(chDepL); chLfo.connect(chDepR);
+    chDepL.connect(chL.delayTime); chDepR.connect(chR.delayTime);
+    const chPanL=AC.createStereoPanner(), chPanR=AC.createStereoPanner();
+    chPanL.pan.value=-0.7; chPanR.pan.value=0.7;
+    chL.connect(chPanL); chR.connect(chPanR);
+    chPanL.connect(chWet); chPanR.connect(chWet);
+    drSum.connect(chDry); drSum.connect(chL); drSum.connect(chR);
+    const chSum=AC.createGain(); chDry.connect(chSum); chWet.connect(chSum);
+
+    /* PHASER — four allpass stages swept together. Allpass filters do not
+       change the level of anything; mixed back against the dry signal their
+       phase shift becomes a set of notches that move, which is the sound.
+       Four stages is two notches, the classic number. */
+    const phDry=AC.createGain(), phWet=AC.createGain();
+    const phStages=[]; let phNode=null;
+    for(let i=0;i<4;i++){
+      const ap=AC.createBiquadFilter(); ap.type='allpass';
+      /* Centred at 900Hz so the sweep below has room: a biquad clamps its
+         frequency at zero, and an LFO that drives it negative would sit
+         flat-bottomed and turn the sweep into a lopsided thump. */
+      ap.frequency.value=900; ap.Q.value=0.6;
+      phStages.push(ap);
+      if(phNode) phNode.connect(ap); phNode=ap;
+    }
+    const phLfo=AC.createOscillator(); phLfo.type='sine'; phLfo.frequency.value=0.35;
+    const phDep=AC.createGain(); phDep.gain.value=0;
+    phLfo.connect(phDep);
+    phStages.forEach(ap=>phDep.connect(ap.frequency));
+    chSum.connect(phDry); chSum.connect(phStages[0]);
+    phNode.connect(phWet);
+    const phSum=AC.createGain(); phDry.connect(phSum); phWet.connect(phSum);
+
+    /* TREMOLO — level moved by an LFO. The depth gain is the modulation and
+       the 1 offset is what keeps it from cutting to silence at the trough:
+       a tremolo that reaches zero is a gate, which is a different pedal. */
+    const trm=AC.createGain(); trm.gain.value=1;
+    const trLfo=AC.createOscillator(); trLfo.type='sine'; trLfo.frequency.value=5;
+    const trDep=AC.createGain(); trDep.gain.value=0;
+    trLfo.connect(trDep); trDep.connect(trm.gain);
+    phSum.connect(trm);
+
     const g=AC.createGain(); g.gain.value=S.inst.vol;
     const rv=AC.createGain(); rv.gain.value=S.inst.rev;
     const dl=AC.createGain(); dl.gain.value=S.inst.dly;
-    flt.connect(g);
+    trm.connect(g);
     g.connect(LIVE.duckBus||LIVE.master); g.connect(rv); g.connect(dl);   // live instruments duck too
     if(LIVE.liveBus) g.connect(LIVE.liveBus);   // …and count as live performance for LIVE-ONLY recording
     rv.connect(LIVE.revIn); dl.connect(LIVE.dlyIn);
+    try{ chLfo.start(); phLfo.start(); trLfo.start(); }catch(e){}
     /* `in` is where voices connect and `g` is still the level stage, so the
        three places that already ride LIVE._inst.g for volume keep working. */
-    LIVE._inst={in:flt,flt,g,rv,dl};
+    LIVE._inst={in:flt,flt,g,rv,dl,
+      drIn,drOut,drDry,drWet,
+      chDry,chWet,chDepL,chDepR,chLfo,
+      phDry,phWet,phDep,phLfo,
+      trm,trDep,trLfo};
+    applyInstFx();
   }
   return LIVE._inst;
+}
+/* A fixed tanh, built once. 2x oversampling because a waveshaper folds
+   harmonics above Nyquist back down as aliasing, and this one is fed a
+   deliberately bright signal. */
+let _instDrvCurve=null;
+function instDriveCurve(){
+  if(_instDrvCurve) return _instDrvCurve;
+  const n=2048, c=new Float32Array(n);
+  for(let i=0;i<n;i++){ const x=(i/(n-1))*2-1; c[i]=Math.tanh(x*2.2)/Math.tanh(2.2); }
+  return (_instDrvCurve=c);
+}
+/* Every insert reads from S.inst and is written here, so there is one place
+   that knows how a stored 0..1 becomes a graph — the sliders, a project load
+   and the RESET button all come through it rather than each doing their own
+   arithmetic and drifting apart. */
+function applyInstFx(){
+  if(!LIVE || !LIVE._inst) return;
+  const n=LIVE._inst, t=AC.currentTime, S_=(p,v)=>{ try{ p.setTargetAtTime(v,t,0.02); }catch(e){} };
+  const drv=instNum('drv',0), cho=instNum('cho',0), pha=instNum('pha',0), tre=instNum('tre',0);
+  /* Drive pushes level INTO the curve and takes it back out after, so the
+     control adds dirt instead of adding volume. */
+  S_(n.drIn.gain, 1+drv*7);
+  /* Trimmed against the GAIN GOING IN, not against the saturated level. The
+     first version divided by 1+drv*3.2 and made the loud end half as loud as
+     clean — a drive control that turns the instrument down is a volume knob
+     with extra steps. */
+  S_(n.drOut.gain, 1/(1+drv*1.1));
+  S_(n.drWet.gain, drv>0.001?1:0);
+  S_(n.drDry.gain, drv>0.001?0:1);
+  S_(n.chWet.gain, cho*0.58);
+  S_(n.chDry.gain, 1-cho*0.42);          // not a full crossfade: a chorus keeps its dry
+  S_(n.chDepL.gain, cho*0.0045);
+  S_(n.chDepR.gain, -cho*0.0045);        // antiphase, which is where the width comes from
+  S_(n.chLfo.frequency, 0.35+cho*0.9);
+  /* Half each when engaged. A phaser is dry PLUS wet — the notches ARE the
+     sum — but summing two copies at unity is +6dB wherever they agree, which
+     measured as the peak doubling the moment the pedal came on. */
+  S_(n.phWet.gain, pha>0.001?0.5:0);
+  S_(n.phDry.gain, pha>0.001?0.5:1);
+  S_(n.phDep.gain, pha*780);             // ±780 around 900: the sweep never reaches zero
+  S_(n.phLfo.frequency, 0.15+pha*0.9);
+  n.phLfo.type='sine';
+  S_(n.trDep.gain, tre*0.48);
+  S_(n.trm.gain, 1-tre*0.48);            // keep the peak at unity rather than adding 3dB
+  S_(n.trLfo.frequency, 2+tre*9);
 }
 /* TONE is a 0..1 knob over 120Hz to 18kHz, exponential, because pitch is
    exponential and a linear cutoff spends four fifths of its travel in the top
@@ -11405,18 +11542,163 @@ function buildCluster(f,t,env){
   });
   return parts;
 }
+/* ---------------- FIVE MORE, AND FIVE DIFFERENT METHODS -------------------
+   "More synth sounds, not much to choose from there." Seven was thin, but the
+   fix is not seven more presets of the same two ideas. Each of these is a way
+   of making sound the other engines cannot reach:
+
+     ORGAN     additive — no filter, no envelope shaping, just sines added up
+     SUPER     seven-voice unison, which is a texture rather than a waveform
+     VOWEL     formant filtering — the method that makes a synth sound like a
+               throat rather than a circuit
+     WIND      no oscillator at all: noise through a filter sharp enough to
+               have a pitch
+     BELL      ring modulation, whose partials are sums and differences and so
+               are not harmonics of anything
+
+   All five take SHAPE, and on each it is the parameter that engine is really
+   about — drawbar mix, detune spread, which vowel, how sharp the resonance,
+   how inharmonic the ring. */
+function buildOrgan(f,t,env){
+  /* Drawbars. Nine on a real console; five here, because the top four are
+     mostly air and the ear is buying the bottom of the stack. SHAPE slides
+     from a sine-ish fundamental to the full bright stack, which is what
+     pulling the bars out actually does. */
+  const BARS=[[0.5,0.30],[1,1],[2,0.62],[3,0.42],[4,0.26]];
+  const sh=instShape(), parts=[];
+  BARS.forEach(([r,lvl],i)=>{
+    const hz=f*r; if(hz>AC.sampleRate*0.45) return;
+    const o=pLive('sine',hz);
+    const g=AC.createGain();
+    /* The fundamental is always there; the upper bars come in with SHAPE, the
+       higher the bar the later, so the stack fills from the bottom. */
+    const w=i<=1?1:Math.max(0,(sh-(i-1)*0.18)/0.6);
+    g.gain.value=0.62*lvl*Math.min(1,w);
+    o.connect(g); g.connect(env);
+    parts.push(o);
+  });
+  /* The click a drawbar organ makes when a key closes a contact. Very short,
+     and the reason an organ sample without it sounds like a flute. */
+  const kc=AC.createBufferSource(), n=Math.round(AC.sampleRate*0.006);
+  const b=AC.createBuffer(1,n,AC.sampleRate), d=b.getChannelData(0), r=mulberry32(Math.round(f));
+  for(let i=0;i<n;i++) d[i]=(r()*2-1)*(1-i/n);
+  kc.buffer=b;
+  const kg=AC.createGain(); kg.gain.value=0.16;
+  const kf=AC.createBiquadFilter(); kf.type='highpass'; kf.frequency.value=1400;
+  kc.connect(kf); kf.connect(kg); kg.connect(env);
+  parts.push(kc);
+  return parts;
+}
+function buildSuper(f,t,env){
+  /* Seven saws. SAW PAD is two, and two is a chorus; seven is the texture
+     people mean by a supersaw, because the beating stops being a rate you can
+     count and becomes a thickness. The outer pair are quieter so the centre
+     still has a pitch. */
+  const sh=instShape(), spread=4+sh*46, parts=[];
+  const DT=[-1,-0.66,-0.33,0,0.33,0.66,1];
+  const lp=AC.createBiquadFilter(); lp.type='lowpass';
+  lp.frequency.value=3200; lp.Q.value=0.5; lp.connect(env);
+  DT.forEach(d=>{
+    const o=pLive('sawtooth',f);
+    o.detune.value=d*spread;
+    const g=AC.createGain(); g.gain.value=(Math.abs(d)>0.9?0.26:Math.abs(d)>0.5?0.34:0.44);
+    o.connect(g); g.connect(lp);
+    parts.push(o);
+  });
+  return parts;
+}
+const VOWELS=[[730,1090,2440],[530,1840,2480],[390,1990,2550],[570,840,2410],[440,1020,2240]];
+function buildVowel(f,t,env){
+  /* Three resonant bandpasses in parallel over a saw — the formants that make
+     a vowel. SHAPE walks A→E→I→O→U and interpolates between them, so holding
+     a note and moving it is a sound talking rather than a filter opening.
+     Parallel, not in series: formants are peaks that coexist, and chained
+     bandpasses would multiply into one narrow survivor. */
+  const saw=pLive('sawtooth',f);
+  const sh=instShape()*(VOWELS.length-1);
+  const i0=Math.floor(sh), i1=Math.min(VOWELS.length-1,i0+1), mix=sh-i0;
+  const parts=[saw];
+  for(let k=0;k<3;k++){
+    const hz=VOWELS[i0][k]+(VOWELS[i1][k]-VOWELS[i0][k])*mix;
+    const bp=AC.createBiquadFilter(); bp.type='bandpass';
+    bp.frequency.value=hz; bp.Q.value=9-k*2;
+    const g=AC.createGain(); g.gain.value=2.6/(1+k*0.7);
+    saw.connect(bp); bp.connect(g); g.connect(env);
+  }
+  /* A little of the raw saw under the formants, or the note loses its bottom
+     and the vowel floats with no pitch to sit on. */
+  const sub=AC.createGain(); sub.gain.value=0.3;
+  saw.connect(sub); sub.connect(env);
+  return parts;
+}
+function buildWind(f,t,env){
+  /* No oscillator. White noise through a bandpass narrow enough that the
+     resonance itself has a pitch — which is how a flute or a bottle works,
+     and something none of the other engines can do, because all of them start
+     from a periodic waveform. SHAPE is how sharp the resonance is: breathy at
+     the bottom, nearly a whistle at the top. */
+  const n=Math.round(AC.sampleRate*1.2);
+  const b=AC.createBuffer(1,n,AC.sampleRate), d=b.getChannelData(0);
+  const r=mulberry32(1337);
+  for(let i=0;i<n;i++) d[i]=r()*2-1;
+  const src=AC.createBufferSource(); src.buffer=b; src.loop=true;
+  const Q=6+instShape()*44;
+  const bp=AC.createBiquadFilter(); bp.type='bandpass';
+  bp.frequency.value=Math.min(f,AC.sampleRate*0.45);
+  bp.Q.value=Q;
+  /* A second pass at the same frequency: one bandpass at Q 50 still leaks a
+     wide skirt of noise, and two in series is the difference between "noise
+     with a note in it" and a note. */
+  const bp2=AC.createBiquadFilter(); bp2.type='bandpass';
+  bp2.frequency.value=bp.frequency.value; bp2.Q.value=Q;
+  /* Compensated against Q, not against SHAPE. A bandpass passes a slice of the
+     spectrum whose width falls as 1/Q, and two in series square that, so the
+     energy getting through drops fast enough that the first version of this
+     voice measured 0.013 against 0.4 for everything else — audible only if you
+     knew to look for it. The gain has to track the filter, not the knob. */
+  const g=AC.createGain(); g.gain.value=(1.3+instShape()*1.5)*Q;
+  src.connect(bp); bp.connect(bp2); bp2.connect(g); g.connect(env);
+  return [src];
+}
+function buildBell(f,t,env){
+  /* Ring modulation: two sines multiplied, which produces their sum and their
+     difference and nothing else. Neither is a harmonic of the note unless the
+     ratio is a whole number, so the result is struck metal rather than a
+     tone — and SHAPE is the ratio, from nearly harmonic to deliberately not.
+     A gain whose gain is an audio signal IS a multiplier, which is why this
+     needs no worklet. */
+  const car=pLive('sine',f);
+  const ratio=1.4+instShape()*3.9;
+  const mod=pLive('sine',Math.min(f*ratio,AC.sampleRate*0.45));
+  const ring=AC.createGain(); ring.gain.value=0;     // pure ring: no carrier of its own
+  car.connect(ring); mod.connect(ring.gain);
+  /* The struck part decays much faster than the body, which is what makes a
+     bell read as hit rather than bowed. */
+  const strike=AC.createGain(); strike.gain.setValueAtTime(0.9,t);
+  strike.gain.exponentialRampToValueAtTime(0.16,t+0.55);
+  ring.connect(strike); strike.connect(env);
+  /* Plus a little of the fundamental, or there is no note to name. */
+  const fund=AC.createGain(); fund.gain.value=0.16;
+  car.connect(fund); fund.connect(env);
+  return [car,mod];
+}
 function instVoice(f,when){
   ensureAudio();
   const bus=instBus(), t=when!=null?when:AC.currentTime;
   const env=AC.createGain(); env.connect(bus.in);
   const parts=[], v={env,parts,dead:false};
   const sh=instShape(), am=instAtkMul();
-  if(S.inst.voice==='phase'||S.inst.voice==='pulse'||S.inst.voice==='cluster'){
-    const lvl=S.inst.voice==='cluster'?0.34:0.42;
-    const atk=(S.inst.voice==='cluster'?0.09:0.006)*am;
+  /* One table rather than a chain of else-ifs: level and attack are the only
+     things that differ between these, and a builder that returns its nodes is
+     the whole contract. Adding the tenth engine should be one row. */
+  const BUILT={ phase:[buildPD,0.42,0.006], pulse:[buildPWM,0.42,0.006],
+    cluster:[buildCluster,0.34,0.09], organ:[buildOrgan,0.40,0.004],
+    super:[buildSuper,0.34,0.05], vowel:[buildVowel,0.42,0.02],
+    wind:[buildWind,0.34,0.12], bell:[buildBell,0.42,0.002] };
+  if(BUILT[S.inst.voice]){
+    const [mk,lvl,atk0]=BUILT[S.inst.voice];
     env.gain.setValueAtTime(0,t);
-    env.gain.linearRampToValueAtTime(lvl,t+atk);
-    const mk=S.inst.voice==='phase'?buildPD:S.inst.voice==='pulse'?buildPWM:buildCluster;
+    env.gain.linearRampToValueAtTime(lvl,t+atk0*am);
     mk(f,t,env).forEach(o=>{ o.start(t); parts.push(o); });
   }else if(S.inst.voice==='pluck'){
     /* SHAPE is the string's damping — how fast the Karplus-Strong loop loses
@@ -11463,7 +11745,11 @@ function instVoice(f,when){
   v.stop=(tt)=>{
     if(v.dead) return; v.dead=true;
     const x=Math.max(tt!=null?tt:AC.currentTime, AC.currentTime);
-    const rel=(S.inst.voice==='pluck'?0.15:S.inst.voice==='cluster'?0.9:0.3)*instRelMul();
+    /* Each engine's own release. An organ stops the instant the contact opens
+       and a bell does not, and one number for all twelve would make half of
+       them wrong in a way ATTACK/RELEASE at centre could not put right. */
+    const REL={pluck:0.15,cluster:0.9,organ:0.06,bell:1.6,wind:0.35,super:0.5,vowel:0.22};
+    const rel=(REL[S.inst.voice]!=null?REL[S.inst.voice]:0.3)*instRelMul();
     try{ env.gain.cancelScheduledValues(x); env.gain.setTargetAtTime(0,x,rel*0.4); }catch(e){}
     parts.forEach(o=>{ try{ o.stop(x+rel*3); }catch(e){} });
     setTimeout(()=>{ instVoices.delete(v); try{env.disconnect();}catch(e){} },(x-AC.currentTime+rel*3+0.2)*1000);
@@ -12267,12 +12553,25 @@ const SHAPE_WHAT={
   ep:'the modulation index \u2014 in FM this IS the instrument. Low is nearly a sine, high is a '
     +'metallic bell. It decays over the note either way, which is what makes a tine read as struck.',
   pluck:'the string\u2019s damping. Low is a felt mute that dies fast, high is bright steel that '
-    +'rings on \u2014 a brighter string also sustains longer, as a real one does.'
+    +'rings on \u2014 a brighter string also sustains longer, as a real one does.',
+  organ:'the drawbars. At the bottom it is nearly a single sine; pull it up and the upper bars '
+    +'come in from the bottom of the stack, which is what pulling drawbars out does.',
+  super:'the detune spread across all seven saws. Narrow is one thick saw, wide is the beating '
+    +'that stops being a rate you can count and becomes a texture.',
+  vowel:'which vowel. It walks A \u2192 E \u2192 I \u2192 O \u2192 U and interpolates between them, '
+    +'so moving it under a held note is a sound talking rather than a filter opening.',
+  wind:'how sharp the resonance is. Low is breath with a note somewhere in it, high is nearly '
+    +'a whistle \u2014 there is no oscillator here at all, only noise and a very narrow filter.',
+  bell:'the ring ratio. Near the bottom the two tones are almost harmonic and it reads as a '
+    +'tone; higher up they are deliberately not, and it reads as struck metal.'
 };
 const VOICE_WHAT={
   glass:'two tones, a sine and a triangle', saw:'two detuned saws into a lowpass',
   ep:'two-operator FM', pluck:'a plucked string, modelled',
-  phase:'phase distortion', pulse:'pulse-width modulation', cluster:'six partials at once'
+  phase:'phase distortion', pulse:'pulse-width modulation', cluster:'six partials at once',
+  organ:'additive \u2014 five drawbars and a key click', super:'seven saws in unison',
+  vowel:'formant filtering \u2014 three resonances over a saw',
+  wind:'filtered noise, no oscillator', bell:'ring modulation \u2014 sums and differences'
 };
 function drawInstShape(){
   const row=$('instShapeRow'), what=$('instShapeWhat');
@@ -12303,6 +12602,17 @@ function drawInstTone(){
   const mul=m=>(Math.abs(m-1)<0.02?'\u00d71 (as it comes)':'\u00d7'+(m<1?m.toFixed(2):m.toFixed(1)));
   set('instAtt', S.inst.att==null?0.5:S.inst.att, mul(am));
   set('instRel', S.inst.rel==null?0.5:S.inst.rel, mul(rm));
+  /* The four inserts read out in what they DO rather than in percent, and say
+     "off" at zero so a bypassed pedal is obviously bypassed. */
+  const pc=v=>Math.round(v*100)+'%';
+  const fx=(id,key,fmt)=>{ const v=instNum(key,0);
+    const el=$(id); if(el) el.value=v;
+    const vv=$(id+'V'); if(vv) vv.textContent=v<0.005?'off':fmt(v); };
+  fx('instDrv','drv',v=>v<0.34?'warm '+pc(v):v<0.7?'driven '+pc(v):'dirty '+pc(v));
+  fx('instCho','cho',v=>pc(v)+' \u00b7 '+(0.35+v*0.9).toFixed(2)+'Hz');
+  fx('instPha','pha',v=>pc(v)+' \u00b7 '+(0.15+v*0.9).toFixed(2)+'Hz');
+  fx('instTre','tre',v=>pc(v)+' \u00b7 '+(2+v*9).toFixed(1)+'Hz');
+  applyInstFx();
   const w=$('instVoiceWhat');
   if(w) w.textContent=(VOICE_WHAT[S.inst.voice]||'')+' \u2014 TONE and RES are one filter for the whole instrument.';
   /* The whole point of a filter is that you hear it move, so it moves under a
@@ -12315,14 +12625,16 @@ function drawInstTone(){
 }
 $('instVoiceSel').addEventListener('change',e=>{ S.inst.voice=e.target.value; drawInstShape(); dirty(); });
 $('instShape').addEventListener('input',e=>{ S.inst.shape=parseFloat(e.target.value); drawInstShape(); dirty(); });
-[['instCut','cut'],['instRes','res'],['instAtt','att'],['instRel','rel']].forEach(([id,key])=>{
+[['instCut','cut'],['instRes','res'],['instAtt','att'],['instRel','rel'],
+ ['instDrv','drv'],['instCho','cho'],['instPha','pha'],['instTre','tre']].forEach(([id,key])=>{
   const el=$(id); if(!el) return;
   el.addEventListener('input',e=>{ S.inst[key]=parseFloat(e.target.value); drawInstTone(); dirty(); });
 });
 $('instVoiceDef').addEventListener('click',()=>{
-  ['cut','res','att','rel','shape'].forEach(k=>{ S.inst[k]=INSTDEF[k]; });
+  ['cut','res','att','rel','shape','drv','cho','pha','tre'].forEach(k=>{ S.inst[k]=INSTDEF[k]; });
   drawInstShape(); dirty();
-  lcd('VOICE RESET \u2014 TONE open, no resonance, and this voice\u2019s own attack and release.');
+  lcd('VOICE RESET \u2014 TONE open, every effect off, and this voice\u2019s own attack and release. '
+    +'REVERB, DELAY and LEVEL are left alone: they are where the instrument sits in the mix, not what it sounds like.');
 });
 [['tSides','tSides'],['tSpin','tSpin'],['tGrav','tGrav'],['tBounce','tBounce']].forEach(([id,key])=>{
   const el=$(id); if(!el) return;
