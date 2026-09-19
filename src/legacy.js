@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R198 · 2026-09-19 · a pedalboard, and twelve ways to feed it';
+const BUILD = 'JBH-88 · R199 · 2026-09-19 · a grand piano, and a room to put it in';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -11178,7 +11178,7 @@ function traxCommit(){
    filter wide open and both envelope multipliers at their centre. A project
    saved before this build therefore opens sounding identical. */
 const INSTDEF={mode:'ther',key:0,scale:'minor',voice:'glass',vol:0.8,rev:0.18,dly:0.08,sev:false,strum:true,arp:false,snap:true,perc:'shaker',bass:'finger',padKey:-1,shape:0.55,oct:0,
-  cut:1,res:0,att:0.5,rel:0.5,drv:0,cho:0,pha:0,tre:0,
+  cut:1,res:0,att:0.5,rel:0.5,drv:0,cho:0,pha:0,tre:0,room:0,rmSize:0.45,rmDamp:0.4,
   tSides:5,tSpin:0.35,tGrav:0.55,tBounce:0.82};
 S.inst=Object.assign({},INSTDEF);
 const instVoices=new Set();
@@ -11236,7 +11236,11 @@ function instBus(){ // lazy per-graph: tone → drive → chorus → phaser → 
     const drIn=AC.createGain(), drSh=AC.createWaveShaper(), drOut=AC.createGain();
     drSh.curve=instDriveCurve(); drSh.oversample='2x';
     const drDry=AC.createGain(), drWet=AC.createGain();
-    drIn.connect(drDry); drIn.connect(drSh); drSh.connect(drOut); drOut.connect(drWet);
+    /* The shaper is wired in on demand for the same reason the convolver is.
+       oversample='2x' means upsample, shape and downsample on every sample —
+       it is the second most expensive node here and it costs exactly the same
+       with the knob at zero as with it at ten. */
+    drIn.connect(drDry); drSh.connect(drOut); drOut.connect(drWet);
     const drSum=AC.createGain(); drDry.connect(drSum); drWet.connect(drSum);
     flt.connect(drIn);
 
@@ -11290,10 +11294,36 @@ function instBus(){ // lazy per-graph: tone → drive → chorus → phaser → 
     trLfo.connect(trDep); trDep.connect(trm.gain);
     phSum.connect(trm);
 
+    /* ROOM — a convolution the instrument carries itself, separate from the
+       master reverb the whole mix shares. Asked for as "room acoustics
+       tuneable", and a send to the one shared reverb cannot be that: the
+       question a piano asks is how big the room is and how much of the top
+       end its walls absorb, and answering it on the master would move the
+       drums too.
+
+       Convolution rather than a delay network because the thing that makes a
+       real room is the early reflections — the first dozen echoes off the lid,
+       the floor and the near wall, before the tail becomes a wash. Those are
+       placed explicitly in the impulse below, and their spacing is what SIZE
+       actually changes. */
+    const rmDry=AC.createGain(), rmWet=AC.createGain(), rmConv=AC.createConvolver();
+    rmConv.normalize=true; rmConv.buffer=makeRoomIR(AC);
+    trm.connect(rmDry); rmConv.connect(rmWet);
+    /* THE ONE PEDAL THAT IS REALLY DISCONNECTED WHEN IT IS OFF.
+       The other four are bypassed by crossfading to silence, because a gain or
+       a biquad left running costs a few microseconds and rewiring mid-note
+       clicks. A convolution is not in that category: a 1.4-second impulse is
+       the most expensive thing in the whole graph and it costs the same
+       whether anyone is listening to it. Leaving it in cost two audio-thread
+       dropouts in a check that had measured zero for builds — found because
+       an unrelated cost assertion in another section started failing, which is
+       what that assertion is for. */
+    const rmSum=AC.createGain(); rmDry.connect(rmSum); rmWet.connect(rmSum);
+
     const g=AC.createGain(); g.gain.value=S.inst.vol;
     const rv=AC.createGain(); rv.gain.value=S.inst.rev;
     const dl=AC.createGain(); dl.gain.value=S.inst.dly;
-    trm.connect(g);
+    rmSum.connect(g);
     g.connect(LIVE.duckBus||LIVE.master); g.connect(rv); g.connect(dl);   // live instruments duck too
     if(LIVE.liveBus) g.connect(LIVE.liveBus);   // …and count as live performance for LIVE-ONLY recording
     rv.connect(LIVE.revIn); dl.connect(LIVE.dlyIn);
@@ -11301,10 +11331,11 @@ function instBus(){ // lazy per-graph: tone → drive → chorus → phaser → 
     /* `in` is where voices connect and `g` is still the level stage, so the
        three places that already ride LIVE._inst.g for volume keep working. */
     LIVE._inst={in:flt,flt,g,rv,dl,
-      drIn,drOut,drDry,drWet,
+      drIn,drSh,drOut,drDry,drWet,
       chDry,chWet,chDepL,chDepR,chLfo,
       phDry,phWet,phDep,phLfo,
-      trm,trDep,trLfo};
+      trm,trDep,trLfo,
+      rmDry,rmWet,rmConv};
     applyInstFx();
   }
   return LIVE._inst;
@@ -11312,6 +11343,64 @@ function instBus(){ // lazy per-graph: tone → drive → chorus → phaser → 
 /* A fixed tanh, built once. 2x oversampling because a waveshaper folds
    harmonics above Nyquist back down as aliasing, and this one is fed a
    deliberately bright signal. */
+/* A ROOM, BUILT FROM TWO NUMBERS.
+
+   SIZE is the distance sound travels before it comes back, and it moves three
+   things at once because in a real room they are one thing: a bigger room has
+   a longer tail, later early reflections, and more air between you and the
+   wall. Dialling those separately would let you build rooms that cannot exist.
+
+   DAMP is what the surfaces are made of. Hard plaster reflects the top end and
+   the room rings bright; carpet, curtains and an audience absorb it and the
+   tail goes dark long before it goes quiet. Modelled as a one-pole lowpass
+   whose cutoff falls as the tail decays, which is what absorption does — the
+   sound does not just get quieter, it loses its highs first.
+
+   Deterministic from a seeded generator, so the same settings give the same
+   room every time and a bounce matches what was heard. */
+function makeRoomIR(ctx){
+  const size=instNum('rmSize',0.45), damp=instNum('rmDamp',0.4);
+  const sr=(ctx||AC).sampleRate;
+  const dur=0.22+size*size*3.4;                      // 0.22s booth → 3.6s hall
+  const len=Math.max(256,Math.floor(sr*dur));
+  const b=(ctx||AC).createBuffer(2,len,sr);
+  for(let ch=0;ch<2;ch++){
+    const d=b.getChannelData(ch), rnd=mulberry32(5150+ch*17);
+    /* The one-pole that darkens the tail. Its coefficient starts open and
+       closes as x runs to 1, so the decay loses its top end progressively
+       rather than being filtered by a fixed amount. */
+    /* THE TAIL BUILDS UP, it does not start at full level. A real impulse
+       response is direct sound, then a gap, then a handful of discrete
+       reflections off the near surfaces, and only then a dense wash as the
+       reflections of the reflections pile up. The first version had the diffuse
+       tail at full amplitude from sample zero, which buried the early
+       reflections underneath it — measurably: a detector looking for discrete
+       spikes in the first quarter found none. That IR is a reverb. This one is
+       a room, and the difference is audible as knowing how far away the
+       instrument is. */
+    const base=0.006+size*0.045;
+    const buildS=Math.max(1,Math.floor(sr*base*7));
+    let lp=0;
+    for(let i=0;i<len;i++){
+      const x=i/len;
+      const env=Math.pow(1-x,1.6+size*1.1);
+      const a=Math.max(0.02, (1-damp*0.92)*(1-x*0.75));
+      lp+=((rnd()*2-1)-lp)*a;
+      const build=i<buildS?0.04+0.96*Math.pow(i/buildS,1.7):1;
+      d[i]=lp*env*build*0.55;
+    }
+    /* EARLY REFLECTIONS. Six surfaces — lid, floor, the near wall, the far
+       wall — at times that scale with the room and at alternating sign,
+       because a reflection off a boundary inverts. These are what the ear
+       reads as "size" before the tail has even arrived, and a tail on its own
+       sounds like a reverb rather than like a place. */
+    for(let k=1;k<=6;k++){
+      const p=Math.floor(sr*base*k*(0.74+k*0.11)*(0.9+rnd()*0.2));
+      if(p<len) d[p]+=((k%2)?0.9:-0.7)/Math.pow(k,0.7)*(1-damp*0.45);
+    }
+  }
+  return b;
+}
 let _instDrvCurve=null;
 function instDriveCurve(){
   if(_instDrvCurve) return _instDrvCurve;
@@ -11335,8 +11424,14 @@ function applyInstFx(){
      clean — a drive control that turns the instrument down is a volume knob
      with extra steps. */
   S_(n.drOut.gain, 1/(1+drv*1.1));
-  S_(n.drWet.gain, drv>0.001?1:0);
-  S_(n.drDry.gain, drv>0.001?0:1);
+  const wantDrv=drv>0.002;
+  S_(n.drWet.gain, wantDrv?1:0);
+  S_(n.drDry.gain, wantDrv?0:1);
+  if(wantDrv!==!!n._drvOn){
+    n._drvOn=wantDrv;
+    if(wantDrv){ try{ n.drIn.connect(n.drSh); }catch(e){} }
+    else setTimeout(()=>{ if(!n._drvOn){ try{ n.drIn.disconnect(n.drSh); }catch(e){} } },220);
+  }
   S_(n.chWet.gain, cho*0.58);
   S_(n.chDry.gain, 1-cho*0.42);          // not a full crossfade: a chorus keeps its dry
   S_(n.chDepL.gain, cho*0.0045);
@@ -11353,6 +11448,38 @@ function applyInstFx(){
   S_(n.trDep.gain, tre*0.48);
   S_(n.trm.gain, 1-tre*0.48);            // keep the peak at unity rather than adding 3dB
   S_(n.trLfo.frequency, 2+tre*9);
+  const room=instNum('room',0);
+  S_(n.rmWet.gain, room);
+  /* Connected on the way up so the tail starts building before it is audible,
+     and disconnected on the way down only AFTER the wet gain has ramped out,
+     so the room fades rather than stopping dead. */
+  const wantRoom=room>0.002;
+  if(wantRoom!==!!n._roomOn){
+    n._roomOn=wantRoom;
+    if(wantRoom){ try{ n.trm.connect(n.rmConv); }catch(e){} }
+    else setTimeout(()=>{ if(!n._roomOn){ try{ n.trm.disconnect(n.rmConv); }catch(e){} } },260);
+  }
+  /* A room does not make the direct sound quieter, it adds to it — but past
+     about half it starts to read as distance, so the dry falls away slowly
+     rather than not at all. That one curve is most of what "close mic" versus
+     "back of the hall" means. */
+  S_(n.rmDry.gain, 1-room*0.45);
+}
+/* The impulse is a buffer, so it cannot be ramped — it is rebuilt. Doing that
+   on every input event of a slider would be a 3-second buffer synthesised per
+   pixel, so it is coalesced to the next frame and skipped entirely when the
+   numbers have not moved. */
+let _roomKey='', _roomTimer=0;
+function refreshRoomIR(){
+  if(!LIVE || !LIVE._inst || !LIVE._inst.rmConv) return;
+  if(instNum('room',0)<=0.002) return;      // nothing is listening; build it when it is switched on
+  const k=instNum('rmSize',0.45).toFixed(3)+'/'+instNum('rmDamp',0.4).toFixed(3);
+  if(k===_roomKey) return;
+  _roomKey=k;
+  clearTimeout(_roomTimer);
+  _roomTimer=setTimeout(()=>{
+    try{ LIVE._inst.rmConv.buffer=makeRoomIR(AC); }catch(e){}
+  },90);
 }
 /* TONE is a 0..1 knob over 120Hz to 18kHz, exponential, because pitch is
    exponential and a linear cutoff spends four fifths of its travel in the top
@@ -11682,6 +11809,224 @@ function buildBell(f,t,env){
   car.connect(fund); fund.connect(env);
   return [car,mod];
 }
+/* ---------------- A GRAND PIANO, AS FAR AS THIS GOES ----------------------
+   Asked for as a challenge: "a true acoustic grand with room acoustics
+   tuneable." Worth saying plainly what is and is not reachable here, because
+   the gap is the interesting part.
+
+   WHY A PIANO IS THE HARD ONE. Every other voice in this app can be built live
+   from a handful of oscillators because every other voice is, roughly, a
+   waveform. A piano is not. Four things make it what it is and three of them
+   fight the way this engine works:
+
+   1. INHARMONICITY. A piano string is stiff, so its partials are not at n·f0
+      but at n·f0·sqrt(1+B·n²) — each one sharp of where a harmonic would be,
+      and further sharp the higher it goes. That stretch is the sound. It is
+      also why a piano cannot be sampled at one pitch and transposed: B is not
+      constant across the keyboard, it is nearly flat through the bass and then
+      climbs steeply, because bass strings are wound (heavy but flexible) while
+      the top strings are short, thick and very stiff. The app's PRESET piano
+      does model B — and then plays one rendered note across the whole
+      keyboard, which throws it away. Transposing a piano two octaves is the
+      one thing you cannot do to a piano.
+
+   2. TWO-STAGE DECAY. Strike a string and it does not fade evenly. It drops
+      fast, then hangs on much longer and quieter. The cause is that the string
+      vibrates in two planes at once — one coupled hard to the bridge, one
+      barely — and they lose energy at different rates. Modelled here as two
+      decays per partial summed, which is the standard way and is audibly right.
+
+   3. THREE STRINGS PER NOTE, deliberately not in tune with each other. One in
+      the low bass, two through the mid-bass, three above. A cent or so apart,
+      which is what makes a held note shimmer rather than sit.
+
+   4. THE HAMMER. Strike position nulls every partial at a multiple of 1/8 of
+      the string length. Harder playing is not just louder, it is brighter,
+      because the hammer felt compresses and its contact with the string gets
+      shorter.
+
+   WHAT IS NOT HERE, and would need a sampled instrument or a worklet:
+   sympathetic resonance across the other 87 strings when the pedal is down,
+   una corda, the noise of the dampers landing as a chord releases, and the
+   way one note's soundboard excitation bleeds into every other. Those are
+   real and they are missing. This is a synthesised grand, not a recorded one.
+
+   HOW IT IS BUILT. Each note is rendered ONCE, at its own pitch, into its own
+   buffer, through an OfflineAudioContext — 3 strings × up to 34 partials × 2
+   decay stages is around two hundred nodes, which is nothing for the native
+   renderer and far too much to run live per key. The keyboard only offers 16
+   notes, so 16 renders covers it, and they are warmed in the background the
+   moment PIANO is chosen. */
+const pianoCache=new Map();
+let pianoWarming=0, pianoWant='';
+/* Inharmonicity against pitch. Nearly flat through the bass because those
+   strings are wound, then climbing steeply: about 0.0003 at A1, 0.0005 at
+   middle C, 0.003 at C6, 0.015 at C7 — which is the shape the measured
+   literature gives and is audible as the top two octaves sounding "stretched"
+   and the bass sounding merely thick. */
+function pianoB(f0){ return 0.00028*(1+Math.pow(f0/440,2.4)); }
+/* Capped at 4.5s rather than the 6 a bass string would really want. Each note
+   costs about 250ms of native rendering and there are sixteen of them, so the
+   tail length is bought directly in warm-up time — and a key press releases
+   the damper long before five seconds anyway. */
+function pianoDur(f0){ return clamp(7*Math.pow(110/f0,0.5), 1.1, 4.5); }
+function pianoStrings(f0){ return f0<90?1 : f0<180?2 : 3; }
+/* Quantised, because the hammer is baked into the render and a slider that
+   invalidated sixteen buffers per pixel would be unusable. Five steps is
+   finer than most people can name and coarse enough to cache. */
+function pianoHardStep(){ return Math.round(instShape()*4); }
+function pianoKey(midi,step){ return midi+':'+step; }
+function pianoRenderNote(midi, step){
+  const f0=noteHz(midi), sr=AC.sampleRate, dur=pianoDur(f0);
+  const oc=new OfflineAudioContext(1, Math.max(1024,Math.ceil(sr*dur)), sr);
+  const nyq=sr*0.45, hard=step/4, B=pianoB(f0);
+  /* The soundboard. Not a convolution — three broad peaks and a rolloff,
+     which is what a box of spruce does to everything that passes through it
+     and is the difference between "additive partials" and "an instrument". */
+  const out=oc.createGain(); out.gain.value=1; out.connect(oc.destination);
+  const hp=oc.createBiquadFilter(); hp.type='highpass';
+  hp.frequency.value=Math.max(24,f0*0.55); hp.Q.value=0.6;
+  const body1=oc.createBiquadFilter(); body1.type='peaking';
+  body1.frequency.value=128; body1.Q.value=1.1; body1.gain.value=3.5;
+  const body2=oc.createBiquadFilter(); body2.type='peaking';
+  body2.frequency.value=440; body2.Q.value=0.9; body2.gain.value=-2.2;
+  const body3=oc.createBiquadFilter(); body3.type='peaking';
+  body3.frequency.value=1500; body3.Q.value=0.8; body3.gain.value=2.4;
+  const top=oc.createBiquadFilter(); top.type='lowpass';
+  top.frequency.value=Math.min(nyq, 2600+hard*11000); top.Q.value=0.5;
+  hp.connect(body1); body1.connect(body2); body2.connect(body3);
+  body3.connect(top); top.connect(out);
+
+  /* Softer blow, steeper rolloff: the felt stays in contact longer and cannot
+     excite the short wavelengths. This one exponent is most of what separates
+     a whisper from a slam on a real instrument. */
+  const roll=2.15-hard*1.05;
+  const T=pianoDur(f0)*1.35;
+  const nStr=pianoStrings(f0);
+  const rnd=mulberry32(midi*97+11);
+  const nMax=Math.min(30, Math.floor(nyq/f0));
+  for(let s=0;s<nStr;s++){
+    /* Deliberately not in tune. Same every time for the same note, because a
+       piano that retunes itself between presses is not a piano. */
+    const cents=nStr===1?0:(s-(nStr-1)/2)*(0.55+rnd()*1.1);
+    for(let n=1;n<=nMax;n++){
+      const fn=n*f0*Math.sqrt(1+B*n*n)*Math.pow(2,cents/1200);
+      if(fn>nyq) break;
+      /* Strike position: the hammer hits about an eighth of the way along, so
+         the 8th partial and its multiples get nothing. Leave that out and the
+         tone is hollow in a way that is hard to name and easy to hear. */
+      const comb=Math.abs(Math.sin(Math.PI*n*0.125));
+      const a=Math.pow(n,-roll)*(0.28+0.72*comb)/nStr;
+      if(a<0.00035) break;
+      const o=oc.createOscillator(); o.type='sine'; o.frequency.value=fn;
+      /* TWO DECAYS, one oscillator. The fast one is the string's strongly
+         coupled plane dumping energy into the bridge; the slow one is the
+         plane that is barely coupled and therefore rings on. Higher partials
+         lose energy faster in both, which is why a piano note gets darker as
+         it dies rather than just quieter. */
+      const t1=Math.max(0.05, T*0.11/(1+0.05*Math.pow(n,1.5)));
+      const t2=Math.max(0.12, T/(1+0.016*Math.pow(n,1.5)));
+      const atk=0.0016+0.004*(1-hard);
+      [[a*0.62,t1],[a*0.38,t2]].forEach(([amp,tau])=>{
+        const g=oc.createGain();
+        g.gain.setValueAtTime(0,0);
+        g.gain.linearRampToValueAtTime(amp,atk);
+        g.gain.setTargetAtTime(0,atk,tau);
+        o.connect(g); g.connect(hp);
+      });
+      o.start(0); o.stop(dur);
+    }
+  }
+  /* The hammer itself: a very short noise burst around the strike, band-passed
+     near the low partials. It is almost subliminal on its own and its absence
+     is what makes additive pianos sound like an electric piano. */
+  const nl=Math.max(64,Math.round(sr*0.05));
+  const nb=oc.createBuffer(1,nl,sr), nd=nb.getChannelData(0), nr=mulberry32(midi*31+7);
+  for(let i=0;i<nl;i++) nd[i]=(nr()*2-1);
+  const ns=oc.createBufferSource(); ns.buffer=nb;
+  const nf=oc.createBiquadFilter(); nf.type='bandpass';
+  nf.frequency.value=Math.min(nyq, f0*(3+hard*5)); nf.Q.value=0.8;
+  const ng=oc.createGain();
+  ng.gain.setValueAtTime(0.05+hard*0.16,0);
+  ng.gain.setTargetAtTime(0,0.001,0.004+0.006*(1-hard));
+  ns.connect(nf); nf.connect(ng); ng.connect(hp); ns.start(0);
+  /* NORMALISED, because the partial count and the strike comb between them
+     decide the peak and there is no arithmetic that predicts it — the first
+     render came back at 1.03, which is a clipped piano. Scaled rather than
+     limited, so the two-stage decay it took all this trouble to produce is
+     not flattened by a compressor on the way out. */
+  return oc.startRendering().then(b=>{
+    const d=b.getChannelData(0);
+    let pk=0; for(let i=0;i<d.length;i++){ const v=d[i]<0?-d[i]:d[i]; if(v>pk) pk=v; }
+    if(pk>0){ const k=0.92/pk; for(let i=0;i<d.length;i++) d[i]*=k; }
+    return b;
+  });
+}
+/* Warmed in the background rather than on the first key press. A 6-second
+   bass render is tens of milliseconds of native work, which is invisible in a
+   loop and very visible as a gap between pressing a key and hearing it. */
+async function pianoWarm(){
+  const step=pianoHardStep();
+  const want=scaleMidis(16).join(',')+'|'+step;
+  if(want===pianoWant && !pianoWarming) return;
+  pianoWant=want;
+  const mine=want;
+  /* Warmed from the middle of the keyboard outwards, because that is where
+     hands go first and the nearest-neighbour fallback is at its worst for a
+     note with nothing rendered near it yet. */
+  const all=scaleMidis(16), mid=(all.length-1)/2;
+  const list=all.filter(m=>!pianoCache.has(pianoKey(m,step)))
+    .sort((a,b)=>Math.abs(all.indexOf(a)-mid)-Math.abs(all.indexOf(b)-mid));
+  if(!list.length){ pianoWarming=0; drawPianoWarm(); return; }
+  pianoWarming=list.length; drawPianoWarm();
+  for(const m of list){
+    if(pianoWant!==mine) return;                 // the key or the hammer moved: abandon this pass
+    /* AND STOP IF THE VOICE HAS MOVED ON. Flicking through the menu past
+       PIANO used to leave four seconds of offline rendering running behind
+       whatever you landed on — found by an audio-thread cost check in another
+       section failing two runs out of three, because the suite sweeps every
+       voice in the menu and the warm it started was still going. Nobody would
+       ever have reported this; it just makes the app worse for a few seconds
+       at a time, for no reason. */
+    if(S.inst.voice!=='piano'){ pianoWarming=0; drawPianoWarm(); return; }
+    try{ pianoCache.set(pianoKey(m,step), await pianoRenderNote(m,step)); }catch(e){}
+    pianoWarming--; drawPianoWarm();
+    await new Promise(r=>setTimeout(r,0));       // let the page breathe between notes
+  }
+  pianoWarming=0; drawPianoWarm();
+  /* Bounded. Sixteen notes times five hammer settings is eighty buffers and
+     several seconds of audio each; without this, walking the SHAPE slider up
+     and down the keyboard would quietly eat a phone's memory. */
+  while(pianoCache.size>48){ pianoCache.delete(pianoCache.keys().next().value); }
+}
+function drawPianoWarm(){
+  const el=$('pianoWarm'); if(!el) return;
+  const on=S.inst.voice==='piano';
+  el.style.display=on?'':'none';
+  if(!on) return;
+  el.textContent = pianoWarming>0
+    ? 'building the piano — '+pianoWarming+' note'+(pianoWarming===1?'':'s')+' to go. '
+      +'Keys already work; until a note is ready its nearest neighbour is used.'
+    : 'Every note is rendered at its own pitch — inharmonicity, the two-stage decay and '
+      +'the unison detune are all register-dependent, so a piano is the one instrument you '
+      +'cannot sample once and transpose.';
+}
+/* Nearest rendered note, so a key pressed mid-warm still sounds like a piano
+   rather than nothing. The shift is at most a few semitones because the notes
+   being warmed are the ones the keyboard offers. */
+function pianoPick(f){
+  const step=pianoHardStep();
+  const midi=Math.round(69+12*Math.log2(f/440));
+  const exact=pianoCache.get(pianoKey(midi,step));
+  if(exact) return {buf:exact, rate:f/noteHz(midi), exact:true};
+  let best=null, bestD=1e9;
+  pianoCache.forEach((buf,k)=>{
+    const [m,st]=k.split(':');
+    const d=Math.abs(+m-midi)+Math.abs(+st-step)*0.5;
+    if(d<bestD){ bestD=d; best={buf, rate:f/noteHz(+m), exact:false}; }
+  });
+  return best;
+}
 function instVoice(f,when){
   ensureAudio();
   const bus=instBus(), t=when!=null?when:AC.currentTime;
@@ -11700,6 +12045,19 @@ function instVoice(f,when){
     env.gain.setValueAtTime(0,t);
     env.gain.linearRampToValueAtTime(lvl,t+atk0*am);
     mk(f,t,env).forEach(o=>{ o.start(t); parts.push(o); });
+  }else if(S.inst.voice==='piano'){
+    /* The note is already a note: the buffer holds the whole strike and decay
+       at this pitch. What is left to do live is the damper, which is the
+       release below — everything a key does on a real grand after the hammer
+       has left the string is let go of it. */
+    const pick=pianoPick(f);
+    if(!pick) { pianoWarm(); return null; }
+    const src=AC.createBufferSource(); src.buffer=pick.buf;
+    src.playbackRate.value=pick.rate;
+    env.gain.setValueAtTime(0.92,t);
+    src.connect(env); src.start(t); parts.push(src);
+    v.piano=true;
+    src.onended=()=>{ instVoices.delete(v); try{src.disconnect();env.disconnect();}catch(e){} };
   }else if(S.inst.voice==='pluck'){
     /* SHAPE is the string's damping — how fast the Karplus-Strong loop loses
        its high end. Low is a felt mute, high is a bright steel string that
@@ -11748,7 +12106,11 @@ function instVoice(f,when){
     /* Each engine's own release. An organ stops the instant the contact opens
        and a bell does not, and one number for all twelve would make half of
        them wrong in a way ATTACK/RELEASE at centre could not put right. */
-    const REL={pluck:0.15,cluster:0.9,organ:0.06,bell:1.6,wind:0.35,super:0.5,vowel:0.22};
+    /* A damper is not a release envelope, it is a piece of felt landing on a
+       moving string — quick, but not instant, and slower in the bass where
+       there is far more energy to absorb. 0.09s is about right for the middle
+       of the keyboard, which is what this table's single number has to be. */
+    const REL={pluck:0.15,cluster:0.9,organ:0.06,bell:1.6,wind:0.35,super:0.5,vowel:0.22,piano:0.09};
     const rel=(REL[S.inst.voice]!=null?REL[S.inst.voice]:0.3)*instRelMul();
     try{ env.gain.cancelScheduledValues(x); env.gain.setTargetAtTime(0,x,rel*0.4); }catch(e){}
     parts.forEach(o=>{ try{ o.stop(x+rel*3); }catch(e){} });
@@ -12563,7 +12925,10 @@ const SHAPE_WHAT={
   wind:'how sharp the resonance is. Low is breath with a note somewhere in it, high is nearly '
     +'a whistle \u2014 there is no oscillator here at all, only noise and a very narrow filter.',
   bell:'the ring ratio. Near the bottom the two tones are almost harmonic and it reads as a '
-    +'tone; higher up they are deliberately not, and it reads as struck metal.'
+    +'tone; higher up they are deliberately not, and it reads as struck metal.',
+  piano:'how hard the hammer is. Soft felt at the bottom, a bright concert hammer at the top \u2014 '
+    +'it changes the strike noise and how far up the partials reach, which is what playing harder '
+    +'really does. Each setting re-renders the notes, so give it a moment.'
 };
 const VOICE_WHAT={
   glass:'two tones, a sine and a triangle', saw:'two detuned saws into a lowpass',
@@ -12571,7 +12936,8 @@ const VOICE_WHAT={
   phase:'phase distortion', pulse:'pulse-width modulation', cluster:'six partials at once',
   organ:'additive \u2014 five drawbars and a key click', super:'seven saws in unison',
   vowel:'formant filtering \u2014 three resonances over a saw',
-  wind:'filtered noise, no oscillator', bell:'ring modulation \u2014 sums and differences'
+  wind:'filtered noise, no oscillator', bell:'ring modulation \u2014 sums and differences',
+  piano:'a grand, rendered per note \u2014 inharmonic partials, two-stage decay, three strings'
 };
 function drawInstShape(){
   const row=$('instShapeRow'), what=$('instShapeWhat');
@@ -12582,6 +12948,8 @@ function drawInstShape(){
   const sl=$('instShape'), v=instShape();
   if(sl) sl.value=v;
   const vv=$('instShapeV'); if(vv) vv.textContent=Math.round(v*100)+'%';
+  drawPianoWarm();
+  if(S.inst.voice==='piano') pianoWarm();
   drawInstTone();
 }
 /* The four tone controls read out in the units they actually are, not in
@@ -12612,6 +12980,19 @@ function drawInstTone(){
   fx('instCho','cho',v=>pc(v)+' \u00b7 '+(0.35+v*0.9).toFixed(2)+'Hz');
   fx('instPha','pha',v=>pc(v)+' \u00b7 '+(0.15+v*0.9).toFixed(2)+'Hz');
   fx('instTre','tre',v=>pc(v)+' \u00b7 '+(2+v*9).toFixed(1)+'Hz');
+  /* The room reads out in the units it IS — seconds of tail and what the walls
+     are made of — because "62%" tells you nothing you can match to a sound you
+     are imagining, and a room is a place before it is a number. */
+  fx('instRoom','room',v=>pc(v)+(v<0.3?' \u00b7 close':v<0.6?' \u00b7 in the room':' \u00b7 far back'));
+  { const sz=instNum('rmSize',0.45), dp=instNum('rmDamp',0.4);
+    const sEl=$('instRmSize'); if(sEl) sEl.value=sz;
+    const sV=$('instRmSizeV');
+    if(sV) sV.textContent=(0.22+sz*sz*3.4).toFixed(2)+'s \u00b7 '
+      +(sz<0.22?'booth':sz<0.45?'studio':sz<0.7?'recital room':'concert hall');
+    const dEl=$('instRmDamp'); if(dEl) dEl.value=dp;
+    const dV=$('instRmDampV');
+    if(dV) dV.textContent=dp<0.2?'plaster \u2014 bright':dp<0.45?'wood':dp<0.7?'curtains':'full house \u2014 dark'; }
+  refreshRoomIR();
   applyInstFx();
   const w=$('instVoiceWhat');
   if(w) w.textContent=(VOICE_WHAT[S.inst.voice]||'')+' \u2014 TONE and RES are one filter for the whole instrument.';
@@ -12623,15 +13004,17 @@ function drawInstTone(){
       LIVE._inst.flt.Q.setTargetAtTime(q,t,0.02); }catch(e){}
   }
 }
-$('instVoiceSel').addEventListener('change',e=>{ S.inst.voice=e.target.value; drawInstShape(); dirty(); });
+$('instVoiceSel').addEventListener('change',e=>{ S.inst.voice=e.target.value; drawInstShape(); dirty();
+  if(S.inst.voice==='piano') pianoWarm(); });
 $('instShape').addEventListener('input',e=>{ S.inst.shape=parseFloat(e.target.value); drawInstShape(); dirty(); });
 [['instCut','cut'],['instRes','res'],['instAtt','att'],['instRel','rel'],
- ['instDrv','drv'],['instCho','cho'],['instPha','pha'],['instTre','tre']].forEach(([id,key])=>{
+ ['instDrv','drv'],['instCho','cho'],['instPha','pha'],['instTre','tre'],
+ ['instRoom','room'],['instRmSize','rmSize'],['instRmDamp','rmDamp']].forEach(([id,key])=>{
   const el=$(id); if(!el) return;
   el.addEventListener('input',e=>{ S.inst[key]=parseFloat(e.target.value); drawInstTone(); dirty(); });
 });
 $('instVoiceDef').addEventListener('click',()=>{
-  ['cut','res','att','rel','shape','drv','cho','pha','tre'].forEach(k=>{ S.inst[k]=INSTDEF[k]; });
+  ['cut','res','att','rel','shape','drv','cho','pha','tre','room','rmSize','rmDamp'].forEach(k=>{ S.inst[k]=INSTDEF[k]; });
   drawInstShape(); dirty();
   lcd('VOICE RESET \u2014 TONE open, every effect off, and this voice\u2019s own attack and release. '
     +'REVERB, DELAY and LEVEL are left alone: they are where the instrument sits in the mix, not what it sounds like.');
@@ -12649,11 +13032,14 @@ $('tombClear').addEventListener('click',()=>{ tombClear(); drawTomb();
     S.inst.oct=clamp(was+d,-3,3);
     if(S.inst.oct===was){ lcd('OCTAVE: that is as far as it goes ('+(d>0?'+3':'-3')+').'); return; }
     drawKeysGrid(); drawKeyHead(); dirty();
+    if(S.inst.voice==='piano') pianoWarm();
     lcd('OCTAVE '+(S.inst.oct>0?'+':'')+S.inst.oct+' — the keyboard moved, nothing else did.');
   });
 });
-$('instKey').addEventListener('change',e=>{ instPanic(); S.inst.key=parseInt(e.target.value,10); drawLive(); dirty(); });
-$('instScale').addEventListener('change',e=>{ instPanic(); S.inst.scale=e.target.value; drawLive(); dirty(); });
+$('instKey').addEventListener('change',e=>{ instPanic(); S.inst.key=parseInt(e.target.value,10); drawLive(); dirty();
+  if(S.inst.voice==='piano') pianoWarm(); });
+$('instScale').addEventListener('change',e=>{ instPanic(); S.inst.scale=e.target.value; drawLive(); dirty();
+  if(S.inst.voice==='piano') pianoWarm(); });
 $('instSnap').addEventListener('click',()=>{ S.inst.snap=!S.inst.snap; drawLive(); });
 $('inst7').addEventListener('click',()=>{ S.inst.sev=!S.inst.sev; drawLive(); dirty(); });
 $('instStrum').addEventListener('click',()=>{ S.inst.strum=!S.inst.strum; drawLive(); dirty(); });
