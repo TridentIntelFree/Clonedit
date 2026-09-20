@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R199 · 2026-09-19 · a grand piano, and a room to put it in';
+const BUILD = 'JBH-88 · R200 · 2026-09-20 · a track view, and a take that knows where it is';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -4348,6 +4348,14 @@ function meterLoop(){
   if(pk>=0.895) mClipHold=now;
   $('mClip').classList.toggle('on', now-mClipHold<800);
   markPolyHead();          // the poly lane runs on its own clock, not the grid's
+  /* The now-line, only while the transport is rolling AND the TRAX tab is the
+     one on screen. Drawing eight lanes of waveform behind a tab nobody is
+     looking at is the kind of work that shows up as an audio dropout rather
+     than as a slow picture. */
+  if(playing && tvView==='track' && !tvDrag){
+    const v=document.querySelector('.view.on');
+    if(v && v.id==='v-trax'){ try{ drawTrackView(); }catch(e){} }
+  }
   /* Four times a second is plenty for a badge, and keeps two AudioParam reads
      and a string compare off the other fifty-six frames. */
   if(now-perfPipT>250){ perfPipT=now; try{ drawPerfPip(); }catch(e){} }
@@ -10582,7 +10590,8 @@ $('btnJamPad').addEventListener('click',()=>{
 
 /* ---------------- TRAX — cakewalk-style tape lanes ---------------- */
 const NTRAX=8, TRAX_MAX_S=180;
-function newTrack(){ return {bufId:-1,name:'',gain:0.9,pan:0,mute:false,loop:false,ftype:'off',fcut:1,rev:0,dly:0,pres:0,body:0}; }
+function newTrack(){ return {bufId:-1,name:'',gain:0.9,pan:0,mute:false,loop:false,ftype:'off',fcut:1,rev:0,dly:0,pres:0,body:0,
+  start:0,tin:0,tout:1,fin:0,fout:0}; }
 S.trax=Array.from({length:NTRAX},()=>newTrack());
 let traxArm=-1, traxSolo=-1, traxVoices=[], traxCap=null, traxStream=null;
 
@@ -10644,7 +10653,249 @@ function traxPreview(i){
     : 'PREVIEWING TRACK '+(i+1)+' \u00b7 '+buf.duration.toFixed(1)+'s \u00b7 peak '+pk.toFixed(2)
       +' — dry, ignoring mute, volume and FX. Tap again to stop.');
 }
+/* ---------------- TRACK VIEW ----------------------------------------------
+   "I'd like to be able to do anything Cakewalk can do and would like a similar
+   layout."
+
+   The honest part of that first: this is one HTML file that has to run on a
+   phone, and Cakewalk is thirty years of Windows DAW with VST hosting, a MIDI
+   piano roll and an unlimited track count. Those are not coming. What IS
+   Cakewalk — and what the app genuinely lacked — is the TRACK VIEW: headers
+   down the left, a bar ruler across the top, and clips drawn where they
+   actually sit in time rather than a list of lanes that all secretly start at
+   bar 1.
+
+   Drawn on a canvas rather than built from elements, because eight lanes of
+   waveform redrawn on every transport frame is exactly the work that made the
+   pad grid stutter before R190. The headers stay as real buttons, so arm, mute
+   and solo keep their labels and their keyboard focus — a canvas cannot be
+   tabbed to and this app checks that it can.
+
+   The timeline scrolls sideways under fixed headers, which is what the real
+   Track View does and the only way it fits 360px. */
+let tvView='track', tvSel=-1, tvPx=64, tvDrag=null;
+const TV_HEAD=18, TV_ROW=34;
+function tvBarSec(){ return 60/bpmAbs()/4*NSTEPS; }
+function tvBars(){
+  /* Long enough to hold the arrangement AND anything dragged past its end,
+     with a couple of empty bars after so there is somewhere to drag TO. */
+  let end=0;
+  S.trax.forEach(tr=>{ const b=tr.bufId>=0?S.buffers[tr.bufId]:null; if(!b) return;
+    end=Math.max(end, clipStart(tr)+clipLen(tr,b)); });
+  const bar=tvBarSec();
+  return Math.max(8, Math.ceil(end/bar)+2);
+}
+function tvFit(){
+  const cv=$('tvcanvas'); if(!cv) return null;
+  const w=Math.max(240, Math.round(tvBars()*tvPx));
+  const h=TV_HEAD+S.trax.length*TV_ROW;
+  cv.style.width=w+'px'; cv.style.height=h+'px';
+  const dpr=Math.min(2,window.devicePixelRatio||1);
+  if(cv.width!==Math.round(w*dpr)||cv.height!==Math.round(h*dpr)){
+    cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+  }
+  const cx=cv.getContext('2d');
+  cx.setTransform(dpr,0,0,dpr,0,0);
+  const hd=$('tvheads'); if(hd) hd.style.height=h+'px';
+  return {cx,w,h};
+}
+/* Peaks are cached per buffer and per pixel width. Walking 8 million samples
+   on every transport frame is not a drawing cost, it is a reason the audio
+   thread misses a deadline. */
+const tvPeaks=new WeakMap();
+function tvWave(b,cols){
+  let e=tvPeaks.get(b);
+  if(e && e.cols===cols) return e.p;
+  const d=b.getChannelData(0), n=d.length, p=new Float32Array(cols);
+  const step=n/cols;
+  for(let c=0;c<cols;c++){
+    const a=Math.floor(c*step), z=Math.min(n,Math.floor((c+1)*step));
+    let m=0; for(let i=a;i<z;i+=3){ const v=d[i]<0?-d[i]:d[i]; if(v>m) m=v; }
+    p[c]=m;
+  }
+  e={cols,p}; tvPeaks.set(b,e); return p;
+}
+function drawTrackView(){
+  if(tvView!=='track') return;
+  const f=tvFit(); if(!f) return;
+  const {cx,w,h}=f, bar=tvBarSec(), bars=tvBars();
+  cx.fillStyle='#120d04'; cx.fillRect(0,0,w,h);
+  /* The ruler. Bar numbers every bar while they fit, every fourth when they
+     do not, because a ruler you cannot read is just a stripe. */
+  const every=tvPx<34?4:1;
+  cx.font='9px ui-monospace'; cx.textBaseline='middle';
+  for(let i=0;i<=bars;i++){
+    const x=Math.round(i*tvPx)+0.5;
+    cx.strokeStyle=i%4===0?'rgba(255,180,84,0.30)':'rgba(255,255,255,0.09)';
+    cx.lineWidth=1;
+    cx.beginPath(); cx.moveTo(x,0); cx.lineTo(x,h); cx.stroke();
+    if(i%every===0 && i<bars){
+      cx.fillStyle=i%4===0?'#ffb454':'#8a6530';
+      cx.textAlign='left'; cx.fillText(String(i+1), x+3, TV_HEAD/2);
+    }
+  }
+  cx.strokeStyle='rgba(255,255,255,0.18)';
+  cx.beginPath(); cx.moveTo(0,TV_HEAD+0.5); cx.lineTo(w,TV_HEAD+0.5); cx.stroke();
+
+  S.trax.forEach((tr,i)=>{
+    const y=TV_HEAD+i*TV_ROW;
+    cx.fillStyle=i%2?'rgba(255,255,255,0.018)':'rgba(255,255,255,0.035)';
+    cx.fillRect(0,y,w,TV_ROW-1);
+    const b=tr.bufId>=0?S.buffers[tr.bufId]:null;
+    if(!b) return;
+    const x0=clipStart(tr)/bar*tvPx, len=clipLen(tr,b);
+    const cw=Math.max(6, len/bar*tvPx), ch=TV_ROW-7, cy=y+3;
+    const sel=(tvSel===i), muted=tr.mute||(traxSolo>=0&&traxSolo!==i);
+    cx.fillStyle = muted ? 'rgba(255,180,84,0.10)' : sel ? 'rgba(255,140,46,0.26)' : 'rgba(255,140,46,0.17)';
+    cx.fillRect(x0,cy,cw,ch);
+    cx.strokeStyle = sel ? '#ffb454' : 'rgba(255,180,84,0.45)';
+    cx.lineWidth = sel?2:1;
+    cx.strokeRect(Math.round(x0)+0.5,cy+0.5,Math.round(cw)-1,ch-1);
+    /* The waveform of the TRIMMED span, not of the file. A clip drawn showing
+       audio it will not play is the same lie as a step that plays something
+       the grid is not showing. */
+    const cols=Math.max(2,Math.round(cw));
+    const peaks=tvWave(b,Math.max(cols,64));
+    const i0=clipIn(tr,b)/b.duration, i1=clipOut(tr,b)/b.duration;
+    cx.fillStyle = muted ? 'rgba(255,180,84,0.35)' : '#ffd9a8';
+    const mid=cy+ch/2;
+    for(let c=0;c<cols;c++){
+      const t0=i0+(i1-i0)*(c/cols);
+      const p=peaks[Math.min(peaks.length-1,Math.floor(t0*peaks.length))];
+      const hh=Math.max(0.5,p*(ch/2-2));
+      cx.fillRect(x0+c, mid-hh, 1, hh*2);
+    }
+    /* Fades drawn as the triangles they are, so a fade is something you can
+       see rather than a number in a panel. */
+    const fi=Math.min(+tr.fin||0,len*0.5), fo=Math.min(+tr.fout||0,len*0.5);
+    cx.fillStyle='rgba(18,13,4,0.72)';
+    if(fi>0){ const fw=fi/len*cw; cx.beginPath(); cx.moveTo(x0,cy); cx.lineTo(x0+fw,cy);
+      cx.lineTo(x0,cy+ch); cx.closePath(); cx.fill(); }
+    if(fo>0){ const fw=fo/len*cw; cx.beginPath(); cx.moveTo(x0+cw,cy); cx.lineTo(x0+cw-fw,cy);
+      cx.lineTo(x0+cw,cy+ch); cx.closePath(); cx.fill(); }
+    cx.fillStyle = sel?'#fff':'rgba(255,255,255,0.65)';
+    cx.font='9px ui-monospace'; cx.textAlign='left';
+    if(cw>34) cx.fillText((tr.name||'take').slice(0,12), x0+4, cy+7);
+  });
+
+  /* NOW-TIME. The line that makes a timeline a timeline. */
+  if(playing && seqT0){
+    const el=AC.currentTime-seqT0;
+    if(el>=0){ const x=Math.round(el/bar*tvPx)+0.5;
+      if(x>=0 && x<=w){ cx.strokeStyle='#4aa3ff'; cx.lineWidth=2;
+        cx.beginPath(); cx.moveTo(x,0); cx.lineTo(x,h); cx.stroke(); } }
+  }
+}
+/* Pointer handling. Grabbing within 9px of an edge trims that edge, anywhere
+   else moves the clip — which is how every track view behaves and needs no
+   mode button. */
+function tvHit(clientX,clientY){
+  const cv=$('tvcanvas'); if(!cv) return null;
+  const r=cv.getBoundingClientRect();
+  const x=clientX-r.left, y=clientY-r.top;
+  const i=Math.floor((y-TV_HEAD)/TV_ROW);
+  if(i<0||i>=S.trax.length) return null;
+  const tr=S.trax[i], b=tr.bufId>=0?S.buffers[tr.bufId]:null;
+  if(!b) return {i,tr,b:null,zone:'empty',x};
+  const bar=tvBarSec();
+  const x0=clipStart(tr)/bar*tvPx, cw=Math.max(6, clipLen(tr,b)/bar*tvPx);
+  if(x<x0-6||x>x0+cw+6) return {i,tr,b,zone:'empty',x};
+  const zone = (x<x0+9) ? 'in' : (x>x0+cw-9) ? 'out' : 'move';
+  return {i,tr,b,zone,x,x0,cw};
+}
+function tvPointerDown(clientX,clientY){
+  const h=tvHit(clientX,clientY); if(!h) return;
+  tvSel=h.i; tvcOpen(h.i);
+  if(!h.b||h.zone==='empty'){ drawTrackView(); drawTrax(); return; }
+  tvDrag={...h, grabX:h.x, start0:clipStart(h.tr), in0:+h.tr.tin||0,
+    out0:(h.tr.tout==null?1:+h.tr.tout), moved:false};
+  drawTrackView(); drawTrax();
+}
+function tvPointerMove(clientX,clientY){
+  if(!tvDrag) return;
+  const cv=$('tvcanvas'), r=cv.getBoundingClientRect();
+  const x=clientX-r.left, bar=tvBarSec();
+  const dSec=(x-tvDrag.grabX)/tvPx*bar;
+  if(Math.abs(x-tvDrag.grabX)>2) tvDrag.moved=true;
+  const tr=tvDrag.tr, b=tvDrag.b;
+  if(tvDrag.zone==='move'){
+    /* Snapped to the nearest sixteenth unless the pointer is a long way from
+       it, so a clip lands in time by default and can still be nudged off the
+       grid deliberately. */
+    let s=Math.max(0, tvDrag.start0+dSec);
+    const q=bar/NSTEPS*4;
+    const snapped=Math.round(s/q)*q;
+    if(Math.abs(snapped-s)<q*0.35) s=snapped;
+    tr.start=clamp(s,0,TRAX_MAX_S);
+  }else if(tvDrag.zone==='in'){
+    const f=dSec/b.duration;
+    tr.tin=clamp(tvDrag.in0+f,0,(tr.tout==null?1:tr.tout)-0.01);
+  }else{
+    const f=dSec/b.duration;
+    tr.tout=clamp(tvDrag.out0+f,(+tr.tin||0)+0.01,1);
+  }
+  drawTrackView(); tvcSync();
+}
+function tvPointerUp(){
+  if(!tvDrag) return;
+  const moved=tvDrag.moved, i=tvDrag.i;
+  tvDrag=null;
+  if(moved){ dirty(); drawTrax();
+    const tr=S.trax[i], b=tr.bufId>=0?S.buffers[tr.bufId]:null;
+    if(b) lcd('T'+(i+1)+' · starts at bar '+(clipStart(tr)/tvBarSec()+1).toFixed(2)
+      +', '+clipLen(tr,b).toFixed(2)+'s long — the take itself is untouched.');
+  }
+}
+function drawTvHeads(){
+  const el=$('tvheads'); if(!el) return;
+  el.innerHTML='';
+  const sp=document.createElement('div');
+  sp.style.cssText='height:'+TV_HEAD+'px;border-bottom:1px solid rgba(255,255,255,0.18)';
+  el.appendChild(sp);
+  S.trax.forEach((tr,i)=>{
+    const d=document.createElement('div');
+    d.style.cssText='height:'+TV_ROW+'px;display:flex;align-items:center;gap:2px;padding:0 3px;'
+      +'box-sizing:border-box;border-bottom:1px solid rgba(255,255,255,0.05);'
+      +(tvSel===i?'background:rgba(255,140,46,0.12)':'');
+    const n=document.createElement('span');
+    n.style.cssText='font-size:9px;min-width:16px;color:'+(traxArm===i?'var(--red)':'var(--lcd-dim)');
+    n.textContent='T'+(i+1);
+    const mk=(txt,on,lab,fn)=>{ const b=document.createElement('button');
+      b.textContent=txt; b.style.cssText='font-size:9px;padding:2px 4px;min-width:0';
+      b.classList.toggle('on',on); b.setAttribute('aria-label',lab);
+      b.addEventListener('click',fn); return b; };
+    d.append(n,
+      mk('●',traxArm===i,'Arm track '+(i+1)+' to record',()=>armTrack(i)),
+      mk('M',tr.mute,'Mute track '+(i+1),()=>{ tr.mute=!tr.mute; applyTraxMix(); drawTrax(); dirty(); }),
+      mk('S',traxSolo===i,'Solo track '+(i+1),()=>{ traxSolo=traxSolo===i?-1:i; applyTraxMix(); drawTrax(); }));
+    el.appendChild(d);
+  });
+  a11yPass(el);
+}
+/* The clip panel is the same five numbers the drag gestures write, spelled
+   out — because a drag on a phone is a blunt instrument and "start at exactly
+   bar 9" is not a thing fingers do. */
+function tvcOpen(i){ tvSel=i; $('tvclip').style.display='block'; tvcSync(); }
+function tvcSync(){
+  const i=tvSel; if(i<0||!S.trax[i]) { $('tvclip').style.display='none'; return; }
+  const tr=S.trax[i], b=tr.bufId>=0?S.buffers[tr.bufId]:null, bar=tvBarSec();
+  $('tvcTitle').textContent='T'+(i+1)+(tr.name?' · '+tr.name:'')+(b?'':' · empty');
+  const set=(id,v,txt,dis)=>{ const e=$(id); if(!e) return; e.value=v;
+    e.disabled=!!dis; e.classList.toggle('inert',!!dis);
+    const vv=$(id+'V'); if(vv) vv.textContent=txt; };
+  const bars=clipStart(tr)/bar;
+  set('tvcStart',bars,'bar '+(bars+1).toFixed(2),!b);
+  set('tvcIn',+tr.tin||0, b?(clipIn(tr,b)).toFixed(2)+'s':'—',!b);
+  set('tvcOut',tr.tout==null?1:+tr.tout, b?(clipOut(tr,b)).toFixed(2)+'s':'—',!b);
+  set('tvcFin',+tr.fin||0,(+tr.fin||0).toFixed(2)+'s',!b);
+  set('tvcFout',+tr.fout||0,(+tr.fout||0).toFixed(2)+'s',!b);
+  const len=b?clipLen(tr,b):0;
+  $('tvHint').textContent = b
+    ? 'T'+(i+1)+': '+len.toFixed(2)+'s from bar '+(bars+1).toFixed(2)
+    : 'drag a clip to move it · drag its edges to trim';
+}
 function drawTrax(){
+  try{ drawTvHeads(); drawTrackView(); tvcSync(); }catch(e){}
   const el=$('traxlist'); el.innerHTML='';
   S.trax.forEach((tr,i)=>{
     const row=document.createElement('div'); row.className='row';
@@ -10744,6 +10995,64 @@ function drawTraxFx(){
     }
   }
 }
+(function(){
+  const cv=$('tvcanvas'); if(!cv) return;
+  cv.addEventListener('pointerdown',e=>{ e.preventDefault();
+    try{ cv.setPointerCapture(e.pointerId); }catch(x){}
+    tvPointerDown(e.clientX,e.clientY); });
+  cv.addEventListener('pointermove',e=>{ if(tvDrag){ e.preventDefault(); tvPointerMove(e.clientX,e.clientY); } });
+  cv.addEventListener('pointerup',e=>{ tvPointerUp(); });
+  cv.addEventListener('pointercancel',()=>{ tvDrag=null; });
+  /* The canvas must not scroll the page out from under a drag, but it MUST
+     still scroll sideways when nobody is dragging — so the browser is told to
+     keep horizontal panning and give up the vertical. */
+  cv.style.touchAction='pan-x';
+})();
+function setTvView(v){
+  tvView=v;
+  $('tvwrap').style.display = v==='track' ? 'flex' : 'none';
+  $('traxlist').style.display = v==='track' ? 'none' : '';
+  $('btnTvTrack').classList.toggle('on',v==='track');
+  $('btnTvList').classList.toggle('on',v==='list');
+  if(v!=='track') $('tvclip').style.display='none';
+  drawTrax();
+  try{ localStorage.setItem('jbh_tvview',v); }catch(e){}
+}
+$('btnTvTrack').addEventListener('click',()=>setTvView('track'));
+$('btnTvList').addEventListener('click',()=>setTvView('list'));
+$('tvcClose').addEventListener('click',()=>{ $('tvclip').style.display='none'; tvSel=-1; drawTrax(); });
+/* Every clip control writes the same fields the drag gestures do and then
+   redraws from the state, so the picture and the numbers cannot disagree. */
+[['tvcStart',(tr,v)=>{ tr.start=clamp(v*tvBarSec(),0,TRAX_MAX_S); }],
+ ['tvcIn',(tr,v)=>{ tr.tin=clamp(v,0,(tr.tout==null?1:tr.tout)-0.01); }],
+ ['tvcOut',(tr,v)=>{ tr.tout=clamp(v,(+tr.tin||0)+0.01,1); }],
+ ['tvcFin',(tr,v)=>{ tr.fin=Math.max(0,v); }],
+ ['tvcFout',(tr,v)=>{ tr.fout=Math.max(0,v); }]].forEach(([id,fn])=>{
+  const el=$(id); if(!el) return;
+  el.addEventListener('input',e=>{ if(tvSel<0) return;
+    fn(S.trax[tvSel], parseFloat(e.target.value));
+    drawTrackView(); tvcSync(); dirty(); });
+});
+$('tvcSnap').addEventListener('click',()=>{
+  if(tvSel<0) return;
+  const tr=S.trax[tvSel], bar=tvBarSec();
+  tr.start=Math.round(clipStart(tr)/bar)*bar;
+  drawTrackView(); tvcSync(); dirty();
+  lcd('T'+(tvSel+1)+' snapped to bar '+(clipStart(tr)/bar+1).toFixed(0)+'.');
+});
+$('tvcReset').addEventListener('click',()=>{
+  if(tvSel<0) return;
+  const tr=S.trax[tvSel];
+  tr.start=0; tr.tin=0; tr.tout=1; tr.fin=0; tr.fout=0;
+  drawTrackView(); tvcSync(); dirty();
+  lcd('T'+(tvSel+1)+' back to the whole take at bar 1 — none of this ever changed the audio.');
+});
+/* Applied unconditionally, not only when the stored value is 'list'. Setting
+   the variable is not the same as setting the view: on a first run tvView was
+   already 'track' so this was skipped, #traxlist was never hidden, and the
+   tab showed the timeline with the whole old list still stacked under it. */
+try{ setTvView(localStorage.getItem('jbh_tvview')==='list'?'list':'track'); }
+catch(e){ try{ setTvView('track'); }catch(x){} }
 $('tfxType').addEventListener('change',e=>{ S.trax[traxFxSel].ftype=e.target.value; applyTraxFx(traxFxSel); dirty();
   lcd('TRACK FILTER '+e.target.value.toUpperCase()+' — on/off takes effect on next PLAY.'); });
 $('tfxCut').addEventListener('input',e=>{ const tr=S.trax[traxFxSel]; tr.fcut=parseFloat(e.target.value);
@@ -10976,9 +11285,34 @@ function trackLoopEnd(b){ // loop the take at the nearest whole bar so it stays 
   if(end<bar*0.99) end=b.duration;   // shorter than a bar: loop the whole take
   return end;
 }
+/* ---------------- A TAKE BECOMES A CLIP ------------------------------------
+   Until now a take had no position: it started at bar 1 because bar 1 was the
+   only place it could start, and it ran to its end because there was no way to
+   say otherwise. That one fact is why TRAX had no punch-in, no way to put a
+   verse take and a chorus take on the same lane, and nothing to draw on a
+   timeline — there was no timeline, because nothing had a time.
+
+   So a lane's take now has a START, a TRIM and FADES. Everything else people
+   expect from a track view needs a clip to have somewhere to be, and none of
+   it was reachable before this.
+
+   Stored on the track beside bufId rather than replacing it with a clip list.
+   Twenty-five places read tr.bufId — the bounce, the export, the buffer
+   collector, TO PAD, the diagnostics — and all of them still find what they
+   expect. Only the three places that actually PLAY a lane had to learn about
+   position, and they all go through wireTrack. */
+function clipIn(tr,b){ return clamp(+tr.tin||0,0,0.999)*b.duration; }
+function clipOut(tr,b){ return clamp(tr.tout==null?1:+tr.tout,0.001,1)*b.duration; }
+function clipLen(tr,b){ return Math.max(0.02, clipOut(tr,b)-clipIn(tr,b)); }
+function clipStart(tr){ const v=+tr.start; return isFinite(v)&&v>0?v:0; }   // seconds after bar 1
 function wireTrack(ctx,g,tr,b,when,gainVal){ // shared by live transport and bounce
   const src=ctx.createBufferSource(); src.buffer=b;
-  if(tr.loop){ src.loop=true; src.loopStart=0; src.loopEnd=trackLoopEnd(b); }
+  const off=clipIn(tr,b), len=clipLen(tr,b), at=when+clipStart(tr);
+  /* A trimmed clip loops its TRIMMED span, not the whole file. Looping the
+     buffer while showing a trim would be the lane playing something the
+     timeline is not drawing. */
+  if(tr.loop){ src.loop=true; src.loopStart=off;
+    src.loopEnd=off+(off===0&&len>=b.duration-0.001 ? trackLoopEnd(b) : len); }
   let head=src, flt=null;
   if(tr.ftype && tr.ftype!=='off'){
     flt=ctx.createBiquadFilter(); flt.type=tr.ftype; flt.frequency.value=cutHz(tr.fcut); flt.Q.value=1.2;
@@ -10988,6 +11322,16 @@ function wireTrack(ctx,g,tr,b,when,gainVal){ // shared by live transport and bou
   const vc=buildVoiceLift(ctx);
   applyVoiceLift(vc,ctx,tr.pres||0,tr.body||0);
   head.connect(vc.in); head=vc.out;
+  /* Fades get their OWN gain node rather than riding on the fader. The fader
+     is moved live while a lane plays — by the mixer, by mute, by solo — and a
+     fade written onto the same parameter would be wiped by the first touch of
+     the volume slider. */
+  const fg=ctx.createGain(); fg.gain.value=1;
+  const fi=Math.min(Math.max(+tr.fin||0,0), len*0.5), fo=Math.min(Math.max(+tr.fout||0,0), len*0.5);
+  if(fi>0){ fg.gain.setValueAtTime(0.0001,at); fg.gain.linearRampToValueAtTime(1,at+fi); }
+  if(fo>0 && !tr.loop){ fg.gain.setValueAtTime(1,at+len-fo);
+    fg.gain.linearRampToValueAtTime(0.0001,at+len); }
+  head.connect(fg); head=fg;
   const gn=ctx.createGain(); gn.gain.value=gainVal;
   head.connect(gn);
   const pn=ctx.createStereoPanner?ctx.createStereoPanner():null;
@@ -10998,8 +11342,11 @@ function wireTrack(ctx,g,tr,b,when,gainVal){ // shared by live transport and bou
   const dl=ctx.createGain(); dl.gain.value=tr.dly||0;
   tail.connect(rv); tail.connect(dl);
   rv.connect(g.revIn); dl.connect(g.dlyIn);
-  src.start(when);
-  return {src,gn,flt,pn,rv,dl,vc};
+  /* Started at the clip's own time, from the clip's own offset, for the clip's
+     own length. A looping lane is given no duration or it would stop at the
+     end of the first pass. */
+  if(tr.loop) src.start(at,off); else src.start(at,off,len);
+  return {src,gn,fg,flt,pn,rv,dl,vc};
 }
 function startTrax(when){
   stopTraxVoices();
@@ -15222,7 +15569,18 @@ function applySessionDoc(doc, bufs){
   while(S.trax.length<NTRAX) S.trax.push(newTrack());
   S.trax.forEach(tr=>{ if(tr.gain==null)tr.gain=0.9; if(tr.pan==null)tr.pan=0; tr.mute=!!tr.mute; if(tr.bufId==null)tr.bufId=-1;
     tr.pres=clamp(+tr.pres||0,0,12); tr.body=clamp(+tr.body||0,0,1);
-    tr.loop=!!tr.loop; if(tr.ftype==null)tr.ftype='off'; if(tr.fcut==null)tr.fcut=1; if(tr.rev==null)tr.rev=0; if(tr.dly==null)tr.dly=0; });
+    tr.loop=!!tr.loop; if(tr.ftype==null)tr.ftype='off'; if(tr.fcut==null)tr.fcut=1; if(tr.rev==null)tr.rev=0; if(tr.dly==null)tr.dly=0;
+    /* Clip position and trim. A project written before R200 has none of these
+       and must come back sounding exactly as it did: start 0, no trim, no
+       fades is the take pinned to bar 1 playing whole, which is what it was.
+       Read through isFinite because these go into src.start() — a NaN offset
+       throws and takes the whole transport down with it. */
+    const num=(v,d,lo,hi)=>{ const n=+v; return isFinite(n)?clamp(n,lo,hi):d; };
+    tr.start=num(tr.start,0,0,TRAX_MAX_S);
+    tr.tin=num(tr.tin,0,0,0.999);
+    tr.tout=num(tr.tout,1,0.001,1);
+    if(tr.tout<=tr.tin) { tr.tin=0; tr.tout=1; }
+    tr.fin=num(tr.fin,0,0,10); tr.fout=num(tr.fout,0,0,10); });
   traxArm=-1; traxSolo=-1;
   S.inst=Object.assign({},INSTDEF,doc.inst||{});
   try{ applyMicSettings(doc.mic); applyAmpSettings(doc.amp); }catch(e){}
@@ -16384,7 +16742,12 @@ async function renderMixInner(padSet, traxSet, opt){
     const b=S.buffers[tr.bufId]; if(b) trax.push({tr,b});
   });
   if(!events.length && !trax.length) return null;
-  let dur=t; trax.forEach(x=>{ dur=Math.max(dur,0.05+x.b.duration); });
+  /* A clip that starts at bar 9 makes the render longer by where it starts,
+     not just by how long it is. Without this the bounce would be cut off at
+     the end of the pattern and a moved clip would be missing from the file —
+     the sequencer showing one thing and the export containing another. */
+  let dur=t;
+  trax.forEach(x=>{ dur=Math.max(dur, 0.05+clipStart(x.tr)+clipLen(x.tr,x.b)); });
   /* The reverb tail is most of a short render — 3.7s of decay after a 2.7s
      pattern. A bounce needs it. AUTO does not: a convolution tail is loudest
      where it starts, under the music that produced it, and only decays from
@@ -16919,6 +17282,12 @@ setInterval(()=>{
    scrolls its target into view and cuts a spotlight hole out of the dimmer.
    "Seen" is remembered in localStorage; the ? button in the transport bar
    replays it any time. */
+/* Whichever tape view is on screen. TRACK VIEW became the default in R200 and
+   #traxlist is display:none behind it, so three guide steps were spotlighting
+   an element with no box — caught by the guides suite, which exists for
+   exactly this. The SEQ steps already do the same dance between the grid and
+   the circle. */
+function traxTargetEl(){ return tvView==='track' ? 'tvwrap' : 'traxlist'; }
 const TOUR_KEY='jbh_tour_v1';
 const TOUR=[
   { title:'WELCOME TO JBH-88',
@@ -16967,7 +17336,7 @@ const TOUR=[
   { tab:'live', el:'instVoiceSel', title:'LIVE — PLAY IT BY HAND',
     body:'The other half of the app. A <b>KEYBOARD</b> that is always on screen, and nine ways to play it — a theremin surface, chord pads, a strummed harp, a bass ribbon, a breath flute, percussion you shake the phone for, and a <b>TOMBOLA</b> where notes bounce inside a spinning shape.<br><br>Seven <b>VOICES</b>, each with its own <b>SHAPE</b> control, plus <b>TONE</b>, <b>RES</b>, <b>ATTACK</b> and <b>RELEASE</b>. It all plays through the same mix as the sequencer, so you can jam over your beat and record it with TRAX.' },
 
-  { tab:'trax', el:'traxlist', title:'TRAX — RECORD YOUR TAKE',
+  { tab:'trax', el:traxTargetEl, title:'TRAX — RECORD YOUR TAKE',
     body:'These are your tape lanes. Arm one with <b>&#9679;</b>, press PLAY and it records a pass — the whole mix, just what you play in <b>LIVE</b>, or the mic.<br><br>Stack lanes into an arrangement, and reopen any take in the sample editor to chop it like any other sound.' },
 
   { tab:'pads', el:'btnPlay', title:'THAT IS THE TOUR',
@@ -17306,7 +17675,7 @@ const recipeBook=[
     body:'<b>LIVE ONLY</b> is the one you want here: it records what <i>you</i> play — pads you hit, the LIVE instruments, the AMP input — and treats the sequencer as silent backing you can hear but do not capture.<br><br><b>PRE-MASTER</b> records everything instead, tapped before the OUT master chain so the polish is applied once at BOUNCE rather than baked into the lane.',
     waitFor:'set SOURCE to LIVE ONLY.', didIt:'It will capture just your playing.',
     done:()=>$('traxSrc').value==='live' },
-  { tab:'trax', el:'traxlist', title:'ARM A LANE',
+  { tab:'trax', el:traxTargetEl, title:'ARM A LANE',
     body:'Tap the <b>&#9679;</b> on any empty lane. Armed lanes are the ones that will record.',
     waitFor:'tap ● on an empty lane.', didIt:'Lane armed.',
     base:()=>traxArm, done:b=>traxArm>=0 && traxArm!==b },
@@ -17314,7 +17683,7 @@ const recipeBook=[
     body:'PLAY rolls the beat and starts recording at the same time. Hit pads, play the LIVE tab, make a mess — you can do it again.<br><br>Press <b>STOP</b> when you are finished and the take commits to the lane.',
     waitFor:'press PLAY and perform.', didIt:'Recording.',
     base:()=>playing, done:b=>playing&&!b },
-  { tab:'trax', el:'traxlist', title:'KEEP IT, OR DO IT AGAIN',
+  { tab:'trax', el:traxTargetEl, title:'KEEP IT, OR DO IT AGAIN',
     body:'Press <b>STOP</b> to commit. The lane now holds your take — <b>&infin;</b> loops it, <b>M</b> and <b>S</b> mute and solo it, and <b>FX</b> gives it filter, pan and sends.<br><br><b>FX &rarr; TO PAD</b> moves the take onto a pad, so a phrase you played once becomes something you can trigger.' }]},
 
 /* The seventh, against my own note above that six is close to the ceiling. It

@@ -1048,6 +1048,34 @@ hum a bassline into the mic over your beat. Then set the lane to loop with the
     <select id="traxSrc"><option value="bus">PRE-MASTER</option><option value="live">LIVE ONLY</option><option value="mic">MIC</option></select>
     <span class="grow" style="font-size:10px;color:var(--txt-dim)">arm &#9679; · PLAY rolls &amp; records · STOP commits</span>
   </div>
+  <!-- TRACK VIEW — Cakewalk's layout: fixed track headers on the left, a bar
+       ruler across the top, clips drawn where they actually sit in time. The
+       timeline scrolls sideways under the headers, which is what the real one
+       does and is the only way it fits a phone. -->
+  <div class="row" style="margin-bottom:2px">
+    <span class="lbl">VIEW</span>
+    <button id="btnTvTrack" class="on">TRACK VIEW</button>
+    <button id="btnTvList">LIST</button>
+    <span class="grow" id="tvHint" style="font-size:10px;color:var(--txt-dim)">drag a clip to move it · drag its edges to trim</span>
+  </div>
+  <div id="tvwrap" style="display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--lcd-bg)">
+    <div id="tvheads" style="flex:0 0 108px;background:var(--panel);border-right:1px solid var(--line)"></div>
+    <div id="tvscroll" style="flex:1;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch">
+      <canvas id="tvcanvas" height="320" data-fluid
+        aria-label="Timeline of the tape tracks. Each clip is drawn where it plays. Switch to LIST for the same tracks as rows of buttons."></canvas>
+    </div>
+  </div>
+  <div id="tvclip" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
+    <div class="row"><span class="lbl">CLIP</span><span id="tvcTitle" style="color:var(--amber);font-size:12px">T1</span>
+      <span class="grow"></span><button id="tvcClose">CLOSE</button></div>
+    <div class="pslider"><span class="lbl">START</span><input type="range" id="tvcStart" min="0" max="64" step="0.25"><span class="val" id="tvcStartV"></span></div>
+    <div class="pslider"><span class="lbl">TRIM IN</span><input type="range" id="tvcIn" min="0" max="0.99" step="0.001"><span class="val" id="tvcInV"></span></div>
+    <div class="pslider"><span class="lbl">TRIM OUT</span><input type="range" id="tvcOut" min="0.01" max="1" step="0.001"><span class="val" id="tvcOutV"></span></div>
+    <div class="pslider"><span class="lbl">FADE IN</span><input type="range" id="tvcFin" min="0" max="4" step="0.01"><span class="val" id="tvcFinV"></span></div>
+    <div class="pslider"><span class="lbl">FADE OUT</span><input type="range" id="tvcFout" min="0" max="4" step="0.01"><span class="val" id="tvcFoutV"></span></div>
+    <div class="row"><button id="tvcSnap" class="grow">SNAP TO BAR</button><button id="tvcReset" class="grow">RESET CLIP</button></div>
+    <div style="font-size:10px;color:var(--txt-dim);margin-top:4px">Nothing here rewrites the audio &mdash; the take is untouched and every one of these is reversible.</div>
+  </div>
   <div id="traxlist"></div>
   <div id="traxfx" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
     <div class="row"><span class="lbl">TRACK</span><span id="tfxTitle" style="color:var(--amber);font-size:12px">T1</span>

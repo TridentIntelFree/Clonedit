@@ -2103,8 +2103,19 @@ export default async function ({ browser, base }) {
         spread: await atShape('saw', 0.98, () => beat(420)) };
       o.ep = { dark: (await atShape('ep', 0.02, () => note(300))).hi,
         bright: (await atShape('ep', 0.98, () => note(300))).hi };
-      o.pluck = { damped: await atShape('pluck', 0.02, tail),
-        ringing: await atShape('pluck', 0.98, tail) };
+      /* Measured on the STRING BUFFER, not on a played note. Playing it meant
+         calling v.stop() to time the tail, which applies the voice's release
+         envelope — and the release then dominated what was being measured, so
+         a 5x change in the damping coefficient came out as a 36% change in
+         the tail and the check sat right on its own threshold. ksBuf is where
+         SHAPE acts; ask it directly. */
+      const ringOf = (sh) => { const b = ksBuf(330, sh), d = b.getChannelData(0);
+        let pk = 0; for (let i = 0; i < d.length; i++) pk = Math.max(pk, Math.abs(d[i]));
+        const floor = pk * 0.02;                       // -34dB, well clear of the noise
+        for (let i = d.length - 1; i >= 0; i--) if (Math.abs(d[i]) > floor)
+          return Math.round(i / b.sampleRate * 1000);
+        return 0; };
+      o.pluck = { damped: ringOf(0.02), ringing: ringOf(0.98) };
 
       /* The centre is the voice as it was: the multipliers read exactly 1. */
       S.inst.att = 0.5; S.inst.rel = 0.5;
@@ -2147,8 +2158,8 @@ export default async function ({ browser, base }) {
       tone.ep.bright > tone.ep.dark + 12,
       (tone.ep.bright - tone.ep.dark).toFixed(1) + ' dB of sidebands');
     t.ok('PLUCK SHAPE damps the string, and a brighter string rings longer',
-      tone.pluck.ringing > tone.pluck.damped * 1.4,
-      tone.pluck.damped + 'ms → ' + tone.pluck.ringing + 'ms');
+      tone.pluck.ringing > tone.pluck.damped * 1.8,
+      tone.pluck.damped + 'ms → ' + tone.pluck.ringing + 'ms of ring in the string itself');
     t.ok('the centre of ATTACK and RELEASE is the voice exactly as it came',
       tone.centred.att === 1 && tone.centred.rel === 1 &&
       tone.defaults.att === 0.5 && tone.defaults.rel === 0.5 &&
