@@ -193,6 +193,134 @@ export default async function ({ browser, base }) {
       view.zoneWasOut && view.trimmedTo < 0.95 && view.trimmedTo > 0.3,
       'trim out ' + view.trimmedTo);
 
+    /* R201. The thing a tape lane could not do: fix bar 12 without playing
+       bars 1 to 11 again and keeping none of them. This is the reason a clip
+       needed a position before anything else could follow.
+
+       The claim being tested is narrow and absolute: everything outside the
+       punch window must be the ORIGINAL AUDIO, sample for sample. A punch that
+       re-renders the whole take and happens to sound similar is not a punch,
+       it is a re-record with extra steps. */
+    t.head('PUNCH REPLACES A SPAN AND KEEPS THE REST');
+    const punch = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));
+      ensureAudio(); await wait(250);
+      const sr = AC.sampleRate;
+      S.bpm = 120;
+      const bar = tvBarSec();
+      o.bar = bar;
+      /* Eight seconds of a steady 220Hz tone, so any sample of the original
+         can be checked against the formula that made it rather than against a
+         copy of itself. */
+      const n = Math.round(sr * 8);
+      const old = AC.createBuffer(2, n, sr);
+      for (let c = 0; c < 2; c++) { const d = old.getChannelData(c);
+        for (let i = 0; i < n; i++) d[i] = Math.sin(2 * Math.PI * 220 * i / sr) * 0.5; }
+      S.buffers.push(old);
+      const tr = S.trax[0];
+      tr.bufId = S.buffers.indexOf(old); tr.name = 'old'; tr.mute = false;
+      tr.start = 0; tr.tin = 0; tr.tout = 1; tr.fin = 0; tr.fout = 0;
+      /* The new pass: DC at +0.9, which no tone could be mistaken for. */
+      const nl = new Float32Array(n).fill(0.9), nr = new Float32Array(n).fill(0.9);
+
+      S.punchOn = true; S.punchIn = bar; S.punchOut = bar * 2;   // bars 2 to 3
+      const res = punchSplice(tr, nl, nr, sr, S.punchIn, S.punchOut);
+      o.spliced = !!res;
+      if (!res) return o;
+      o.lenKept = +res.buf.duration.toFixed(3);
+      const d = res.buf.getChannelData(0);
+      const at = s => d[Math.round(s * sr)];
+      const want = s => Math.sin(2 * Math.PI * 220 * Math.round(s * sr) / sr) * 0.5;
+      let wb = 0, wa = 0;
+      for (let s = 0; s < bar - 0.02; s += 0.0007) wb = Math.max(wb, Math.abs(at(s) - want(s)));
+      for (let s = bar * 2 + 0.02; s < 7.9; s += 0.0007) wa = Math.max(wa, Math.abs(at(s) - want(s)));
+      o.worstBefore = wb; o.worstAfter = wa;
+      let mn = 2, mx = -2;
+      for (let s = bar + 0.05; s < bar * 2 - 0.05; s += 0.0007) {
+        mn = Math.min(mn, at(s)); mx = Math.max(mx, at(s)); }
+      o.insideMin = +mn.toFixed(4); o.insideMax = +mx.toFixed(4);
+      /* No click at either seam: the worst sample-to-sample jump near them
+         must stay in the league of the tone's own slope, against the 0.9 step
+         that butting a sine against DC would produce. */
+      let jt = 0;
+      for (let i = 1; i < Math.round(bar * sr) - 2; i++) jt = Math.max(jt, Math.abs(d[i] - d[i - 1]));
+      let js = 0;
+      const span = (f, t2) => { for (let i = Math.round(f * sr); i < Math.round(t2 * sr); i++)
+        js = Math.max(js, Math.abs(d[i] - d[i - 1])); };
+      span(bar - 0.03, bar + 0.03); span(bar * 2 - 0.03, bar * 2 + 0.03);
+      o.jumpTone = +jt.toFixed(4); o.jumpSeam = +js.toFixed(4);
+      o.jumpIfButted = +Math.abs(0.9 - want(bar)).toFixed(4);
+
+      /* An empty lane punches into place rather than refusing. */
+      const tr2 = S.trax[1]; tr2.bufId = -1; tr2.start = 0;
+      const r2 = punchSplice(tr2, nl, nr, sr, bar, bar * 2);
+      o.empty = r2 ? { start: +r2.start.toFixed(3), dur: +r2.buf.duration.toFixed(3) } : null;
+
+      /* The armed lane must PLAY while being punched into — you cannot join
+         onto bars you cannot hear — and be gated to silence across the window
+         so the old audio is not under your hands. */
+      o.gateWired = (() => {
+        const g = { trackBus: AC.createGain(), revIn: AC.createGain(), dlyIn: AC.createGain() };
+        const v = wireTrack(AC, g, tr, old, AC.currentTime + 0.5, 1, { in: bar, out: bar * 2 });
+        const had = !!v.fg;
+        try { v.src.stop(); } catch (e) {}
+        return had;
+      })();
+      traxArm = 0;
+      o.armedPlaysWhenPunching = (() => {
+        /* startTrax's own rule, read directly: with a punch window the armed
+           lane is wired; without one it is skipped and replaced wholesale. */
+        const was = S.punchOn;
+        S.punchOn = true; const a = punchOn() && traxArm >= 0;
+        S.punchOn = false; const b2 = punchOn() && traxArm >= 0;
+        S.punchOn = was;
+        return a === true && b2 === false;
+      })();
+      traxArm = -1;
+
+      /* It saves and comes back, and a poisoned window is refused. */
+      const doc = JSON.parse(JSON.stringify(snapshotSession()));
+      o.saved = { on: doc.punchOn, in: +(+doc.punchIn).toFixed(3), out: +(+doc.punchOut).toFixed(3) };
+      doc.punchIn = NaN; doc.punchOut = -3; doc.punchOn = true;
+      applySessionDoc(JSON.parse(JSON.stringify(doc)), S.buffers);
+      o.healed = { on: S.punchOn, in: S.punchIn, out: S.punchOut,
+        finite: isFinite(S.punchIn) && isFinite(S.punchOut) };
+      S.punchOn = false; S.punchIn = 0; S.punchOut = 0;
+      S.trax[0] = newTrack(); S.trax[1] = newTrack();
+      drawTrax();
+      return o;
+    });
+    t.ok('the splice happens at all', punch.spliced);
+    t.note('    worst error outside the window: ' + punch.worstBefore.toExponential(2) +
+      ' before, ' + punch.worstAfter.toExponential(2) + ' after');
+    t.ok('EVERYTHING OUTSIDE THE PUNCH IS THE ORIGINAL, SAMPLE FOR SAMPLE',
+      punch.worstBefore < 1e-6 && punch.worstAfter < 1e-6,
+      'worst ' + Math.max(punch.worstBefore, punch.worstAfter).toExponential(2) +
+      ' — float32 precision, not a re-render');
+    t.ok('and everything inside it is the new pass',
+      punch.insideMin === 0.9 && punch.insideMax === 0.9,
+      punch.insideMin + ' to ' + punch.insideMax);
+    t.ok('the take keeps its full length rather than being cut to the punch',
+      Math.abs(punch.lenKept - 8) < 0.01, punch.lenKept + 's');
+    t.note('    worst jump: ' + punch.jumpTone + ' in the tone itself, ' + punch.jumpSeam +
+      ' at the seams, ' + punch.jumpIfButted + ' if they were simply butted together');
+    t.ok('AND NEITHER SEAM CLICKS — an 8ms crossfade at each',
+      punch.jumpSeam < punch.jumpTone * 2 && punch.jumpSeam < punch.jumpIfButted / 10,
+      punch.jumpSeam + ' against ' + punch.jumpIfButted + ' with no crossfade');
+    t.ok('punching an empty lane puts the take where the window is',
+      punch.empty && Math.abs(punch.empty.start - punch.bar) < 0.01 &&
+      Math.abs(punch.empty.dur - punch.bar) < 0.01,
+      punch.empty ? punch.empty.dur + 's at ' + punch.empty.start + 's' : 'refused');
+    t.ok('the lane being punched into is gated rather than left playing underneath',
+      punch.gateWired);
+    t.ok('and it plays at all only when there IS a window — otherwise it is replaced whole',
+      punch.armedPlaysWhenPunching);
+    t.ok('the window saves with the project', punch.saved.on === true &&
+      Math.abs(punch.saved.in - punch.bar) < 0.01, JSON.stringify(punch.saved));
+    t.ok('and a poisoned one is refused rather than reaching the splice',
+      punch.healed.finite && punch.healed.on === false,
+      JSON.stringify(punch.healed));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

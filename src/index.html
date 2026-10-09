@@ -1058,6 +1058,14 @@ hum a bassline into the mic over your beat. Then set the lane to loop with the
     <button id="btnTvList">LIST</button>
     <span class="grow" id="tvHint" style="font-size:10px;color:var(--txt-dim)">drag a clip to move it · drag its edges to trim</span>
   </div>
+  <div class="row" style="margin-bottom:2px">
+    <button id="btnPunch">PUNCH</button>
+    <span class="lbl">IN</span><input type="number" id="punchIn" min="1" max="256" step="0.25" value="1"
+      style="width:80px" aria-label="Punch in, in bars">
+    <span class="lbl">OUT</span><input type="number" id="punchOut" min="1" max="256" step="0.25" value="3"
+      style="width:80px" aria-label="Punch out, in bars">
+    <span class="grow" id="punchHint" style="font-size:10px;color:var(--txt-dim)">off &mdash; a take replaces the whole lane</span>
+  </div>
   <div id="tvwrap" style="display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--lcd-bg)">
     <div id="tvheads" style="flex:0 0 108px;background:var(--panel);border-right:1px solid var(--line)"></div>
     <div id="tvscroll" style="flex:1;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch">

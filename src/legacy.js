@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R200 · 2026-09-20 · a track view, and a take that knows where it is';
+const BUILD = 'JBH-88 · R201 · 2026-10-09 · punch in, punch out, keep the rest';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2911,6 +2911,7 @@ const S = {
   patterns: Array.from({length:NPAT},()=>newPattern()),
   pattern: 0, bank: 0, editPad: 0, seqPad: 0,
   bpm: 100, swing: 0, human: 0, autoWarp: false, silFade: 0.06, masterVol: 0.9, delayFb: 0.35,
+  punchOn:false, punchIn:0, punchOut:0,   // auto-punch window, in seconds after bar 1
   revLvl: 0.9, revSize: 3.0, revType: 'hall', delayDiv: 0.375, dlyTone: 5200, dlyMode: 'digital', compAmt: 0.4,
   chain: [], chainOn: false, chainPos: 0,
   vcurve: 'linear', midiCh: -1, extClk: false, pcPat: true,
@@ -10734,6 +10735,19 @@ function drawTrackView(){
       cx.textAlign='left'; cx.fillText(String(i+1), x+3, TV_HEAD/2);
     }
   }
+  /* THE PUNCH WINDOW, drawn down the whole height rather than only on the
+     ruler. It is a span of TIME that applies to the armed lane, and a band
+     across every lane is the only drawing that says so — a marker sitting up
+     in the ruler reads as a bookmark. */
+  if(punchOn()){
+    const px0=S.punchIn/bar*tvPx, px1=S.punchOut/bar*tvPx;
+    cx.fillStyle='rgba(224,60,60,0.13)';
+    cx.fillRect(px0,0,px1-px0,h);
+    cx.fillStyle='rgba(224,60,60,0.5)';
+    cx.fillRect(px0,0,2,h); cx.fillRect(px1-2,0,2,h);
+    cx.fillStyle='#e03c3c'; cx.font='bold 9px ui-monospace'; cx.textAlign='left';
+    if(px1-px0>46) cx.fillText('PUNCH', px0+5, TV_HEAD/2);
+  }
   cx.strokeStyle='rgba(255,255,255,0.18)';
   cx.beginPath(); cx.moveTo(0,TV_HEAD+0.5); cx.lineTo(w,TV_HEAD+0.5); cx.stroke();
 
@@ -10804,6 +10818,18 @@ function tvHit(clientX,clientY){
   return {i,tr,b,zone,x,x0,cw};
 }
 function tvPointerDown(clientX,clientY){
+  /* A drag on the RULER sets the punch window. It is where a DAW puts it, it
+     needs no mode, and it is the only gesture on this canvas that does not
+     belong to a lane. */
+  const cv=$('tvcanvas'), rr=cv.getBoundingClientRect();
+  if(clientY-rr.top < TV_HEAD){
+    const bar=tvBarSec(), at=Math.max(0,(clientX-rr.left)/tvPx*bar);
+    const q=bar/4;                                   // quarter-bar grid
+    tvDrag={zone:'punch', anchor:Math.round(at/q)*q, moved:false};
+    S.punchOn=true; S.punchIn=tvDrag.anchor; S.punchOut=tvDrag.anchor+bar;
+    drawPunch(); drawTrackView();
+    return;
+  }
   const h=tvHit(clientX,clientY); if(!h) return;
   tvSel=h.i; tvcOpen(h.i);
   if(!h.b||h.zone==='empty'){ drawTrackView(); drawTrax(); return; }
@@ -10815,6 +10841,15 @@ function tvPointerMove(clientX,clientY){
   if(!tvDrag) return;
   const cv=$('tvcanvas'), r=cv.getBoundingClientRect();
   const x=clientX-r.left, bar=tvBarSec();
+  if(tvDrag.zone==='punch'){
+    const q=bar/4, at=Math.round(Math.max(0,x/tvPx*bar)/q)*q;
+    S.punchIn=Math.min(tvDrag.anchor,at);
+    S.punchOut=Math.max(tvDrag.anchor,at);
+    if(S.punchOut<=S.punchIn) S.punchOut=S.punchIn+q;
+    tvDrag.moved=true;
+    drawPunch(); drawTrackView();
+    return;
+  }
   const dSec=(x-tvDrag.grabX)/tvPx*bar;
   if(Math.abs(x-tvDrag.grabX)>2) tvDrag.moved=true;
   const tr=tvDrag.tr, b=tvDrag.b;
@@ -10838,6 +10873,13 @@ function tvPointerMove(clientX,clientY){
 }
 function tvPointerUp(){
   if(!tvDrag) return;
+  if(tvDrag.zone==='punch'){
+    tvDrag=null; dirty(); drawPunch();
+    const bar=tvBarSec();
+    lcd('PUNCH bar '+(S.punchIn/bar+1).toFixed(2)+' to '+(S.punchOut/bar+1).toFixed(2)
+      +' — arm a lane and press PLAY. Only that span is replaced; the rest of the take is kept.');
+    return;
+  }
   const moved=tvDrag.moved, i=tvDrag.i;
   tvDrag=null;
   if(moved){ dirty(); drawTrax();
@@ -10895,7 +10937,7 @@ function tvcSync(){
     : 'drag a clip to move it · drag its edges to trim';
 }
 function drawTrax(){
-  try{ drawTvHeads(); drawTrackView(); tvcSync(); }catch(e){}
+  try{ drawTvHeads(); drawTrackView(); tvcSync(); drawPunch(); }catch(e){}
   const el=$('traxlist'); el.innerHTML='';
   S.trax.forEach((tr,i)=>{
     const row=document.createElement('div'); row.className='row';
@@ -11008,6 +11050,39 @@ function drawTraxFx(){
      keep horizontal panning and give up the vertical. */
   cv.style.touchAction='pan-x';
 })();
+function drawPunch(){
+  const b=$('btnPunch'); if(!b) return;
+  const on=!!S.punchOn, bar=tvBarSec();
+  b.classList.toggle('on',on);
+  const inEl=$('punchIn'), outEl=$('punchOut');
+  if(inEl) inEl.value=(S.punchIn/bar+1).toFixed(2);
+  if(outEl) outEl.value=(S.punchOut/bar+1).toFixed(2);
+  [inEl,outEl].forEach(e=>{ if(e){ e.disabled=!on; e.classList.toggle('inert',!on); } });
+  const h=$('punchHint');
+  if(h) h.innerHTML = !on
+    ? 'off &mdash; a take replaces the whole lane'
+    : punchOn()
+      ? 'bar '+(S.punchIn/bar+1).toFixed(2)+' → '+(S.punchOut/bar+1).toFixed(2)
+        +' &middot; only this span is replaced. Drag on the ruler to move it.'
+      : '⚠ OUT must be after IN — nothing will be punched.';
+}
+$('btnPunch').addEventListener('click',()=>{
+  S.punchOn=!S.punchOn;
+  if(S.punchOn && !(S.punchOut>S.punchIn)){ const bar=tvBarSec(); S.punchIn=0; S.punchOut=bar*2; }
+  drawPunch(); drawTrackView(); dirty();
+  lcd(S.punchOn
+    ? 'PUNCH ON — arm a lane and press PLAY. Only the red span is replaced; everything either side of it is kept, with an 8ms crossfade at each seam.'
+    : 'PUNCH OFF — a take replaces the whole lane again.');
+});
+[['punchIn','punchIn'],['punchOut','punchOut']].forEach(([id,key])=>{
+  const el=$(id); if(!el) return;
+  el.addEventListener('change',e=>{
+    const bar=tvBarSec(), v=parseFloat(e.target.value);
+    if(isFinite(v)) S[key]=Math.max(0,(v-1)*bar);
+    if(S.punchOut<=S.punchIn) S.punchOut=S.punchIn+bar;
+    drawPunch(); drawTrackView(); dirty();
+  });
+});
 function setTvView(v){
   tvView=v;
   $('tvwrap').style.display = v==='track' ? 'flex' : 'none';
@@ -11301,11 +11376,31 @@ function trackLoopEnd(b){ // loop the take at the nearest whole bar so it stays 
    collector, TO PAD, the diagnostics — and all of them still find what they
    expect. Only the three places that actually PLAY a lane had to learn about
    position, and they all go through wireTrack. */
+/* ---------------- PUNCH IN / OUT -------------------------------------------
+   The thing a tape lane could not do: fix bar 12 without playing bars 1 to 11
+   again and keeping none of them. Cakewalk's auto-punch, and the reason a clip
+   needed a position before it could exist.
+
+   HOW IT RECORDS. The whole pass is captured exactly as it always was, and
+   only the punch window is used at commit. Teaching the capture to start and
+   stop mid-flight would have meant unpicking the bar-1 sync marker, which is
+   the one piece of this that is sample-accurate and was hard-won — it locates
+   bar 1 inside the audio rather than trusting a callback timestamp, because
+   cold and warm starts differ by a whole buffer. A few unused seconds of
+   capture is a much better price than a punch that lands two buffers late.
+
+   HOW IT COMMITS. The new audio is spliced INTO the take rather than replacing
+   it: everything before the punch-in and after the punch-out is the original,
+   sample for sample. Both seams get an 8ms crossfade, because two pieces of
+   audio butted together at an arbitrary sample is a click, and a click at the
+   punch point is the thing people notice first. */
+const PUNCH_XF=0.008;
+function punchOn(){ return !!S.punchOn && S.punchOut>S.punchIn+0.02; }
 function clipIn(tr,b){ return clamp(+tr.tin||0,0,0.999)*b.duration; }
 function clipOut(tr,b){ return clamp(tr.tout==null?1:+tr.tout,0.001,1)*b.duration; }
 function clipLen(tr,b){ return Math.max(0.02, clipOut(tr,b)-clipIn(tr,b)); }
 function clipStart(tr){ const v=+tr.start; return isFinite(v)&&v>0?v:0; }   // seconds after bar 1
-function wireTrack(ctx,g,tr,b,when,gainVal){ // shared by live transport and bounce
+function wireTrack(ctx,g,tr,b,when,gainVal,gate){ // shared by live transport and bounce
   const src=ctx.createBufferSource(); src.buffer=b;
   const off=clipIn(tr,b), len=clipLen(tr,b), at=when+clipStart(tr);
   /* A trimmed clip loops its TRIMMED span, not the whole file. Looping the
@@ -11331,6 +11426,18 @@ function wireTrack(ctx,g,tr,b,when,gainVal){ // shared by live transport and bou
   if(fi>0){ fg.gain.setValueAtTime(0.0001,at); fg.gain.linearRampToValueAtTime(1,at+fi); }
   if(fo>0 && !tr.loop){ fg.gain.setValueAtTime(1,at+len-fo);
     fg.gain.linearRampToValueAtTime(0.0001,at+len); }
+  /* The punch gate, on the lane being recorded into: the existing take plays
+     up to the punch-in and from the punch-out, and is silent across the window
+     so you are not performing underneath the thing you are replacing. Ramped
+     over the same 8ms the splice uses, so what you hear while punching is the
+     shape of what you will get. */
+  if(gate){
+    const gi=when+gate.in, go=when+gate.out;
+    fg.gain.setValueAtTime(1,Math.max(when,gi-PUNCH_XF));
+    fg.gain.linearRampToValueAtTime(0.0001,gi);
+    fg.gain.setValueAtTime(0.0001,go);
+    fg.gain.linearRampToValueAtTime(1,go+PUNCH_XF);
+  }
   head.connect(fg); head=fg;
   const gn=ctx.createGain(); gn.gain.value=gainVal;
   head.connect(gn);
@@ -11350,12 +11457,21 @@ function wireTrack(ctx,g,tr,b,when,gainVal){ // shared by live transport and bou
 }
 function startTrax(when){
   stopTraxVoices();
+  const punching=punchOn() && traxArm>=0;
   S.trax.forEach((tr,i)=>{
     if(tr.bufId<0) return;
-    if(i===traxArm) return;   // re-recording over this lane: its old take stays silent and gets replaced on STOP
+    /* THE ARMED LANE PLAYS WHEN YOU ARE PUNCHING INTO IT. Without a punch
+       window the whole lane is about to be replaced, so it stays silent and
+       always did. With one, only part of it is — and you have to hear the
+       bars either side or you are playing into a hole with nothing to join
+       onto, which is the entire difficulty punching exists to remove. It is
+       gated to silence across the window itself so the old audio is not
+       under your hands while you replace it. */
+    if(i===traxArm && !punching) return;
     const b=S.buffers[tr.bufId]; if(!b) return;
     const aud=!tr.mute && (traxSolo<0||traxSolo===i);
-    const v=wireTrack(AC,LIVE,tr,b,when,aud?tr.gain:0);
+    const v=wireTrack(AC,LIVE,tr,b,when,aud?tr.gain:0,
+      (i===traxArm && punching) ? {in:S.punchIn, out:S.punchOut} : null);
     v.i=i;
     v.src.onended=()=>{ try{v.src.disconnect();v.gn.disconnect();}catch(e){} };
     traxVoices.push(v);
@@ -11412,6 +11528,11 @@ function traxBeginCapture(when, offset){
       }
     }
     const cap={ctx,srcNode,L:[],R:[],len:0,first:-1, midRoll:+offset||0,
+      /* The window is frozen at the moment PLAY is pressed. Moving the punch
+         handles while a pass is rolling would otherwise change where the
+         audio you are currently recording is about to land, which is a thing
+         no tape machine has ever done to anyone. */
+      punch: punchOn() ? {in:S.punchIn, out:S.punchOut} : null,
       seqStartCap: ctx===AC ? when : ctx.currentTime+(when-AC.currentTime)};
     const ct=makeCaptureTap(ctx,(l,r,frames,when)=>{
       if(cap.first<0) cap.first=(when!=null?when:ctx.currentTime);
@@ -11449,6 +11570,55 @@ function traxBeginCapture(when, offset){
     traxCap=cap;
     lcd('ROLLING — TRACK '+(traxArm+1)+' recording ('+(cap.srcMode==='bus'?'PRE-MASTER':cap.srcMode.toUpperCase())+') · STOP commits.');
   }catch(e){ traxCap=null; lcd('TRACK REC FAILED: '+(e.message||'tap error')); }
+}
+/* Splice the punch window into whatever the lane already holds.
+
+   Everything is worked out in TIMELINE SECONDS — where things are when the
+   transport rolls — rather than in buffer offsets, because the lane's existing
+   take may already be moved and trimmed and its buffer offsets mean nothing
+   outside itself. The result is one buffer again, placed with its own start,
+   which is what keeps the twenty-five other readers of tr.bufId working.
+
+   Returns null when there is nothing sensible to do, and the caller falls back
+   to the old replace-the-lane behaviour. */
+function punchSplice(tr, nl, nr, sr, pIn, pOut){
+  const old = tr.bufId>=0 ? S.buffers[tr.bufId] : null;
+  const oldStart = old ? clipStart(tr) : 0;
+  const oldLen   = old ? clipLen(tr,old) : 0;
+  const oldOff   = old ? clipIn(tr,old) : 0;
+  const oldEnd   = oldStart+oldLen;
+  const start = old ? Math.min(oldStart,pIn) : pIn;
+  const end   = old ? Math.max(oldEnd,pOut)  : pOut;
+  const n = Math.round((end-start)*sr);
+  if(n<Math.round(sr*0.02)) return null;
+  const out = AC.createBuffer(2,n,sr);
+  const oL=out.getChannelData(0), oR=out.getChannelData(1);
+  /* 1. the take as it stands, at its own place */
+  if(old){
+    const sl=old.getChannelData(0), sRch=old.numberOfChannels>1?old.getChannelData(1):sl;
+    const at=Math.round((oldStart-start)*sr), from=Math.round(oldOff*sr);
+    const cnt=Math.min(Math.round(oldLen*sr), sl.length-from, n-at);
+    for(let k=0;k<cnt;k++){ oL[at+k]=sl[from+k]; oR[at+k]=sRch[from+k]; }
+  }
+  /* 2. the new audio over the punch window. The capture is aligned so that
+        sample 0 IS bar 1, so the window's position in the capture is simply
+        its position on the timeline. */
+  const at=Math.round((pIn-start)*sr);
+  const from=Math.round(pIn*sr);
+  const cnt=Math.min(Math.round((pOut-pIn)*sr), nl.length-from, n-at);
+  if(cnt<=0) return null;
+  const xf=Math.min(Math.round(PUNCH_XF*sr), Math.floor(cnt/3));
+  for(let k=0;k<cnt;k++){
+    /* Equal-gain crossfades at both seams. Butting two unrelated pieces of
+       audio together at an arbitrary sample is a step discontinuity, and a
+       click exactly where you punched is what anyone notices first. */
+    let w=1;
+    if(xf>0 && k<xf) w=k/xf;
+    else if(xf>0 && k>cnt-1-xf) w=(cnt-1-k)/xf;
+    oL[at+k]=oL[at+k]*(1-w)+nl[from+k]*w;
+    oR[at+k]=oR[at+k]*(1-w)+(nr[from+k]!=null?nr[from+k]:nl[from+k])*w;
+  }
+  return {buf:out, start};
 }
 function traxCommit(){
   const cap=traxCap; if(!cap) return;
@@ -11495,8 +11665,14 @@ function traxCommit(){
     else{ dl=new Float32Array(L.length-lead); dl.set(L,-lead); dr=new Float32Array(R.length-lead); dr.set(R,-lead); }
   }
   if(dl.length<sr*0.05){ drawTrax(); lcd('TAKE TOO SHORT.'); return; }
-  const buf=AC.createBuffer(2,dl.length,sr);
-  buf.copyToChannel(dl,0); buf.copyToChannel(dr,1);
+  let buf, punched=false;
+  if(punchOn() && cap.punch){
+    const r=punchSplice(S.trax[i], dl, dr, sr, cap.punch.in, cap.punch.out);
+    if(r){ buf=r.buf; S.trax[i].start=r.start; S.trax[i].tin=0; S.trax[i].tout=1;
+      S.trax[i].fin=0; S.trax[i].fout=0; punched=true; }
+  }
+  if(!buf){ buf=AC.createBuffer(2,dl.length,sr);
+    buf.copyToChannel(dl,0); buf.copyToChannel(dr,1); }
   S.buffers.push(buf);
   S.trax[i].bufId=S.buffers.length-1;
   S.trax[i].name='take'+(i+1);
@@ -15282,6 +15458,7 @@ $('btnSave').addEventListener('click',()=>{
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
+    punchOn:S.punchOn, punchIn:S.punchIn, punchOut:S.punchOut,
     mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp, mTrim:S.mTrim,
     mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
@@ -15581,6 +15758,10 @@ function applySessionDoc(doc, bufs){
     tr.tout=num(tr.tout,1,0.001,1);
     if(tr.tout<=tr.tin) { tr.tin=0; tr.tout=1; }
     tr.fin=num(tr.fin,0,0,10); tr.fout=num(tr.fout,0,0,10); });
+  { const num=(v,d)=>{ const n=+v; return isFinite(n)&&n>=0?clamp(n,0,TRAX_MAX_S):d; };
+    S.punchOn=!!doc.punchOn; S.punchIn=num(doc.punchIn,0); S.punchOut=num(doc.punchOut,0);
+    if(S.punchOut<=S.punchIn){ S.punchOut=0; S.punchOn=false; }
+    try{ drawPunch(); }catch(e){} }
   traxArm=-1; traxSolo=-1;
   S.inst=Object.assign({},INSTDEF,doc.inst||{});
   try{ applyMicSettings(doc.mic); applyAmpSettings(doc.amp); }catch(e){}
@@ -15893,6 +16074,7 @@ function snapshotSession(){
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
+    punchOn:S.punchOn, punchIn:S.punchIn, punchOut:S.punchOut,
     mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp, mTrim:S.mTrim,
     mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
@@ -16010,6 +16192,7 @@ function undoSnap(){
     chain:S.chain, chainOn:S.chainOn, chainPos:S.chainPos,
     pattern:S.pattern, bank:S.bank, editPad:S.editPad, seqPad:S.seqPad,
     trax:S.trax, inst:S.inst, mic:micSettings(), amp:ampSettings(),
+    punchOn:S.punchOn, punchIn:S.punchIn, punchOut:S.punchOut,
     mEqLo:S.mEqLo, mEqMid:S.mEqMid, mEqHi:S.mEqHi, mWidth:S.mWidth, mMono:S.mMono, mCeil:S.mCeil, mByp:S.mByp, mTrim:S.mTrim,
     mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
