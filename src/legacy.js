@@ -11744,7 +11744,7 @@ function traxCommit(){
          only safe answer, and it has to say why nothing landed or it reads
          as the recording having silently not worked. (R203) */
       const bar=tvBarSec();
-      disarmTrax(); drawTrax();
+      drawTrax();    // traxCommit already disarmed, up at the top
       plog('TRACK '+(i+1)+': punch found nothing to place inside bar '
         +(cap.punch.in/bar+1).toFixed(2)+'→'+(cap.punch.out/bar+1).toFixed(2)
         +(cap.midRoll>0?(' (armed '+cap.midRoll.toFixed(2)+'s into the cycle, after the window)'):'')
