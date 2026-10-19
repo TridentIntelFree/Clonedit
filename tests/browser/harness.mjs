@@ -44,7 +44,7 @@ export async function findBrowser() {
 }
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json',
-  '.css': 'text/css', '.png': 'image/png', '.wav': 'audio/wav',
+  '.css': 'text/css', '.png': 'image/png', '.wav': 'audio/wav', '.mp3': 'audio/mpeg',
   '.webmanifest': 'application/manifest+json' };
 
 export async function serve(root = ROOT) {

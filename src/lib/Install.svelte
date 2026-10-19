@@ -10,6 +10,7 @@
      permanent copy in the PROJ tab, so dismissing the nudge never makes
      installing undiscoverable. -->
 <script>
+  import { untrack } from 'svelte';
   import { detectPlatform, installSteps, isInstalled } from '../pure/install.js';
 
   let { mode = 'panel' } = $props();
@@ -21,7 +22,8 @@
   let installed = $state(isInstalled());
   let canPrompt = $state(!!globalThis.__jbhInstall);
   let dismissed = $state(read(DISMISS));
-  let expanded = $state(mode === 'panel');
+  // the starting state only: after that it is the person's toggle, not the prop's
+  let expanded = $state(untrack(() => mode === 'panel'));
   let busy = $state(false);
   let outcome = $state('');
   let accepted = $state(false);   // once they have said yes, stop offering the how-to

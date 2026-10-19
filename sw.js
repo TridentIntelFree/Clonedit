@@ -14,9 +14,9 @@
    Samples and icons are deliberately NOT no-store: they are large, they almost
    never change, and forcing a re-download of a 14 MB sample pack on every
    launch would be worse than useless. */
-const CACHE = 'jbh88-shell-v4';   // bumped: shell revalidation no longer trusts the HTTP cache
+const CACHE = 'jbh88-shell-v5';   // bumped: icon-256 joined the offline shell (it is in the manifest)
 const SHELL = ['./', './index.html', './manifest.webmanifest',
-  './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png',
+  './icons/icon-180.png', './icons/icon-192.png', './icons/icon-256.png', './icons/icon-512.png',
   './icons/maskable-192.png', './icons/maskable-512.png'];
 
 /* Files that change every time the app is rebuilt, and so must never be served

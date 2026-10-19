@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R201 · 2026-10-09 · punch in, punch out, keep the rest';
+const BUILD = 'JBH-88 · R202 · 2026-10-19 · audit fixes: self-heal, black box, caches, punch, resume';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2930,6 +2930,19 @@ const S = {
   mMud:0, mAir:0, mFocus:0, mDeess:0
 };
 const revCache = {};      // bufId -> reversed AudioBuffer
+/* IDENTITY, NOT POSITION. bufId is an index, and indexes get reused: NEW
+   PROJECT empties the list, a load replaces it, gcBuffers renumbers it. Every
+   cache that was keyed on the index alone could therefore hand back the audio
+   of whatever used to sit at that slot — measured at R201 as a reversed pad
+   playing the PREVIOUS project's kick, and pad faces drawing the old sound's
+   waveform. Keys now carry a token for the buffer OBJECT, so a cache entry can
+   only ever match the exact audio it was built from. (R202) */
+const _bufTok=new WeakMap(); let _bufTokN=0;
+function bufTok(bufId){
+  const b=S.buffers[bufId]; if(!b) return 'x'+bufId;
+  let t=_bufTok.get(b); if(t==null){ t=++_bufTokN; _bufTok.set(b,t); }
+  return t;
+}
 
 /* ---------------- audio graph ---------------- */
 let AC=null, LIVE=null;      // LIVE = {master,comp,revIn,dlyIn,dlyFb,dlyNode,pads:[...]}
@@ -3416,8 +3429,9 @@ function scApplyRoutingG(g,ctx){ // trigger pad → direct (unducked); others �
 function scApplyRouting(){ if(LIVE) scApplyRoutingG(LIVE,AC); }
 
 function getReversed(bid){
-  if(revCache[bid]) return revCache[bid];
   const b=S.buffers[bid]; if(!b) return null;
+  const hit=revCache[bid];
+  if(hit && hit._src===b) return hit;   // built from THIS buffer, not just this slot (R202)
   let r;
   try{ r=new AudioBuffer({length:b.length,sampleRate:b.sampleRate,numberOfChannels:b.numberOfChannels}); }
   catch(e){ ensureAudio(); r=AC.createBuffer(b.numberOfChannels,b.length,b.sampleRate); }
@@ -3425,6 +3439,7 @@ function getReversed(bid){
     const s=b.getChannelData(c), d=r.getChannelData(c);
     for(let i=0,n=b.length;i<n;i++) d[i]=s[n-1-i];
   }
+  r._src=b;
   revCache[bid]=r; return r;
 }
 
@@ -3436,7 +3451,8 @@ function getReversed(bid){
    triggers never hitch — a trigger only READS the cache (varispeed fallback
    if it isn't built yet). */
 const speedCache = {};   // `${bufId}|${dir}|${spd}` -> pitch-preserved AudioBuffer
-function speedKey(bufId,reverse,spd){ return bufId+'|'+(reverse?'r':'f')+'|'+spd.toFixed(3); }
+function speedKey(bufId,reverse,spd){ return bufTok(bufId)+'|'+(reverse?'r':'f')+'|'+spd.toFixed(3); }
+function pitchKey(bufId,reverse,ratio){ return 'p|'+bufTok(bufId)+'|'+(reverse?'r':'f')+'|'+ratio.toFixed(3); }
 function buildSpeedStretch(bufId,reverse,spd){   // sync build + cache (no-op at 1×)
   if(bufId<0 || Math.abs(spd-1)<=0.001) return null;
   const key=speedKey(bufId,reverse,spd);
@@ -3465,7 +3481,7 @@ function padSpeed(p){ return clamp(p.speed||1,0.25,4); }
 function pitchRatio(p){ return Math.pow(2,((p.pitch||0)+(p.fine||0)/100)/12); }
 function buildPitchStretch(bufId,reverse,ratio){
   if(bufId<0 || Math.abs(ratio-1)<=0.001) return null;
-  const key='p|'+bufId+'|'+(reverse?'r':'f')+'|'+ratio.toFixed(3);
+  const key=pitchKey(bufId,reverse,ratio);
   if(speedCache[key]) return speedCache[key];
   const src=reverse?getReversed(bufId):S.buffers[bufId];
   if(!src) return null;
@@ -3668,7 +3684,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
   if(p.keepTime && !p.keepPitch){
     const pr=pitchRatio(p);
     if(Math.abs(pr-1)>0.001){
-      const pb=speedCache['p|'+lay.bufId+'|'+(p.reverse?'r':'f')+'|'+pr.toFixed(3)];
+      const pb=speedCache[pitchKey(lay.bufId,!!p.reverse,pr)];
       if(pb){ buf=pb; ktSlice=1; }
     }
   }
@@ -4020,7 +4036,12 @@ function makeCaptureTap(ctx,onChunk,size){
     };
     node.connect(sink); sink.connect(ctx.destination);
     return { node, worklet:true,
-      stop(){ try{ node.port.postMessage({cmd:'stop'}); }catch(e){}
+      /* Detach the handler FIRST. Chunks already queued on the port still
+         arrive after stop(), and their owner has usually released what they
+         write into by then — BLACK BOX OFF threw "Cannot set properties of
+         null" exactly that way (R202). */
+      stop(){ try{ node.port.onmessage=null; }catch(e){}
+              try{ node.port.postMessage({cmd:'stop'}); }catch(e){}
               try{ node.disconnect(); }catch(e){} try{ sink.disconnect(); }catch(e){} } };
   }
   const node=ctx.createScriptProcessor(4096,2,2);   // legacy engines only
@@ -4044,6 +4065,10 @@ function bbStart(){
     const n=Math.ceil(AC.sampleRate*BB_SECONDS);
     if(!bbL||bbL.length!==n){ bbL=new Float32Array(n); bbR=new Float32Array(n); bbPos=0; bbFilled=0; }
     const cap=makeCaptureTap(AC,(inL,inR,frames)=>{
+      /* Only the CURRENT tap writes the ring. A stopped or replaced tap (the
+         worklet upgrade swaps one in at startup) must not interleave its late
+         chunks into the history, or write into a ring that has been freed. */
+      if(bbCap!==cap || !bbL) return;
       let p=bbPos;
       for(let i=0;i<frames;i++){ bbL[p]=inL[i]; bbR[p]=inR[i]; p++; if(p>=bbL.length)p=0; }
       bbPos=p; bbFilled=Math.min(bbL.length,bbFilled+frames);
@@ -4547,8 +4572,9 @@ function buildPads(){
 const PAD_PK=48;                    // columns across a pad face
 const padPeaks={};                  // bufId -> Float32Array(PAD_PK) of |peak|
 function peaksFor(bufId){
-  if(padPeaks[bufId]) return padPeaks[bufId];
   const buf=S.buffers[bufId]; if(!buf) return null;
+  const hit=padPeaks[bufId];
+  if(hit && hit._src===buf) return hit;   // same slot is not the same sound (R202)
   const d=buf.getChannelData(0), out=new Float32Array(PAD_PK);
   const spp=Math.max(1,Math.floor(d.length/PAD_PK));
   let mx=0;
@@ -4558,6 +4584,7 @@ function peaksFor(bufId){
     out[x]=m; if(m>mx) mx=m;
   }
   if(mx>0) for(let x=0;x<PAD_PK;x++) out[x]/=mx;   // normalised: shape, not level
+  out._src=buf;
   padPeaks[bufId]=out;
   return out;
 }
@@ -10036,7 +10063,11 @@ function schedStep(barStep, absStep, t){
     }
     fired.push({p,v:hv});
   }
-  if(fired.length) lastFireT=performance.now();
+  /* Only a hit that SHOULD be heard counts toward the self-heal. A pad you set
+     to 3%, or one that is muted, firing into silence is the mix you chose, not
+     a dead engine. (R202) */
+  if(fired.some(f=>{ const q=S.pads[f.p]; return q && q.bufId>=0 && !q.mute && (q.gain||0)>=0.1 && f.v>=0.1; }))
+    lastFireT=performance.now();
   if(silGateDown && fired.length){ silRestore(LIVE, t+swing); silGateDown=false; }   // sound returns on the next hit
   const delay=Math.max(0,(t-AC.currentTime)*1000);
   setTimeout(()=>{ markStep(absStep); flashFired(fired); },delay);
@@ -11539,7 +11570,7 @@ function traxBeginCapture(when, offset){
       cap.L.push(l.buffer?l:new Float32Array(l));
       cap.R.push(r.buffer?r:new Float32Array(r));
       cap.len+=frames;
-      if(cap.len>=ctx.sampleRate*TRAX_MAX_S) traxCommit();
+      if(cap.len>=ctx.sampleRate*TRAX_MAX_S){ cap.hitMax=true; traxCommit(); }
     });
     const tap=ct.node;
     cap.bufSize=ct.worklet?2048:(tap.bufferSize||4096);
@@ -11581,7 +11612,14 @@ function traxBeginCapture(when, offset){
 
    Returns null when there is nothing sensible to do, and the caller falls back
    to the old replace-the-lane behaviour. */
-function punchSplice(tr, nl, nr, sr, pIn, pOut){
+function punchSplice(tr, nl, nr, sr, pIn, pOut, recFrom){
+  /* A pass armed AFTER the punch-in point has no audio before the moment it
+     armed — the capture is zero-padded up to there. Splicing from pIn anyway
+     wrote that padding over the take, erasing what was on the lane between the
+     punch-in and where recording actually began. Punch from where the new audio
+     really starts instead. (R202) */
+  if(recFrom>0) pIn=Math.max(pIn,recFrom);
+  if(!(pOut>pIn+0.02)) return null;
   const old = tr.bufId>=0 ? S.buffers[tr.bufId] : null;
   const oldStart = old ? clipStart(tr) : 0;
   const oldLen   = old ? clipLen(tr,old) : 0;
@@ -11596,9 +11634,26 @@ function punchSplice(tr, nl, nr, sr, pIn, pOut){
   /* 1. the take as it stands, at its own place */
   if(old){
     const sl=old.getChannelData(0), sRch=old.numberOfChannels>1?old.getChannelData(1):sl;
-    const at=Math.round((oldStart-start)*sr), from=Math.round(oldOff*sr);
-    const cnt=Math.min(Math.round(oldLen*sr), sl.length-from, n-at);
-    for(let k=0;k<cnt;k++){ oL[at+k]=sl[from+k]; oR[at+k]=sRch[from+k]; }
+    const at=Math.round((oldStart-start)*sr);
+    const osr=old.sampleRate;
+    if(Math.abs(osr-sr)<0.5){
+      const from=Math.round(oldOff*sr);
+      const cnt=Math.min(Math.round(oldLen*sr), sl.length-from, n-at);
+      for(let k=0;k<cnt;k++){ oL[at+k]=sl[from+k]; oR[at+k]=sRch[from+k]; }
+    }else{
+      /* The existing take was recorded at a different rate — on iPhone the mic
+         can be captured in its own context at the hardware rate. Copying it
+         sample-for-sample played that part at the wrong speed and in the
+         wrong place, so it is resampled onto the new take's clock. (R202) */
+      const step=osr/sr, from=oldOff*osr;
+      const cnt=Math.min(Math.round(oldLen*sr), n-at);
+      for(let k=0;k<cnt;k++){
+        const x=from+k*step, i0=Math.floor(x); if(i0+1>=sl.length) break;
+        const f=x-i0;
+        oL[at+k]=sl[i0]+(sl[i0+1]-sl[i0])*f;
+        oR[at+k]=sRch[i0]+(sRch[i0+1]-sRch[i0])*f;
+      }
+    }
   }
   /* 2. the new audio over the punch window. The capture is aligned so that
         sample 0 IS bar 1, so the window's position in the capture is simply
@@ -11667,7 +11722,7 @@ function traxCommit(){
   if(dl.length<sr*0.05){ drawTrax(); lcd('TAKE TOO SHORT.'); return; }
   let buf, punched=false;
   if(punchOn() && cap.punch){
-    const r=punchSplice(S.trax[i], dl, dr, sr, cap.punch.in, cap.punch.out);
+    const r=punchSplice(S.trax[i], dl, dr, sr, cap.punch.in, cap.punch.out, cap.midRoll>0?cap.midRoll:0);
     if(r){ buf=r.buf; S.trax[i].start=r.start; S.trax[i].tin=0; S.trax[i].tout=1;
       S.trax[i].fin=0; S.trax[i].fout=0; punched=true; }
   }
@@ -11693,6 +11748,13 @@ function traxCommit(){
     lcd('TAKE \u2192 TRACK '+(i+1)+' \u00b7 '+buf.duration.toFixed(1)+'s from '+srcName
       +' — it plays with the transport; find it in TRAX.');
   }
+  /* A take that ran into the length limit stopped on its own, mid-song, and
+     used to be reported exactly like one you stopped. Say so. (R202) */
+  if(cap.hitMax){
+    plog('TRACK '+(i+1)+': recording reached the '+(TRAX_MAX_S/60)+'-minute limit and stopped there; the transport kept playing.');
+    lcd('⚠ TRACK '+(i+1)+' STOPPED RECORDING AT THE '+(TRAX_MAX_S/60)+'-MINUTE LIMIT — the take is saved up to there; the song kept playing.');
+  }
+  if(punched) plog('TRACK '+(i+1)+': punched in over the existing take.');
 }
 
 /* ---------------- LIVE — playable instruments ---------------- */
@@ -16381,6 +16443,10 @@ function projNew(){
   S.pattern=0; S.bank=0; S.editPad=0; S.seqPad=0;
   S.scOn=false; workBuf=null; slices=[]; selSlice=-1;
   Object.keys(warpOrig).forEach(k=>delete warpOrig[k]);
+  /* The outgoing project's derived audio goes with it, as a load already does.
+     (Lookups are identity-checked since R202, so this is memory, not
+     correctness: a reversed 30s take is 11MB that nothing can use any more.) */
+  [revCache,speedCache,padPeaks,chokeLive,activeEnv].forEach(o=>Object.keys(o).forEach(k=>delete o[k]));
   curProjId=null; $('projName').value='untitled';
   reapplyLivePads(); scApplyRouting();
   buildPads(); drawPads(); drawEdit(); drawSeq(); drawTrax(); drawSong(); drawMixer(); drawFader(); drawSidechain();
@@ -17281,7 +17347,14 @@ function resumeSession(){
      capture. The old list named micBusy, ampOn and the recorder but not micOn
      or breathOn, so touching the screen with the MIC panel live could cut it.
      capturesOpen() is the whole list, in one place. */
-  if(capturesOpen().length) { drawRoutePip(); return; }
+  if(capturesOpen().length) {
+    /* Leave the CATEGORY alone, but still wake the context. resume() does not
+       touch the session category, and returning before it meant that leaving
+       the app with the MIC or AMP open came back to a suspended context and
+       total silence until the input was closed. (R202) */
+    if(AC.state!=='running'){ try{ const p=AC.resume(); if(p && p.catch) p.catch(()=>{}); }catch(e){} }
+    drawRoutePip(); return;
+  }
   // re-assert playback session category (DRUKBOX lesson — iOS can revert it)
   applyAudioRoute();
   if(AC.state!=='running'){
@@ -17447,12 +17520,13 @@ setInterval(()=>{
   const now=performance.now();
   // pads scheduled + firing but the master has been silent >5s → engine-level
   // failure we can't hear-diagnose remotely: dump state and rebuild everything.
-  if(lastFireT && now-lastFireT<2500 && lastLoudT && now-lastLoudT>5000 && now-lastHealT>30000){
+  /* Not when the silence is the person's own doing: master volume down is a
+     choice. And never by editing their mix — the heal used to push every pad
+     under 5% back to 80%, so a volume fade restarted the song AND rewrote the
+     levels. It now repairs the engine only, and the pads stay as set. (R202) */
+  if((S.masterVol||0)>=0.05 && lastFireT && now-lastFireT<2500 && lastLoudT && now-lastLoudT>5000 && now-lastHealT>30000){
     lastHealT=now;
     diagDump('auto-heal');
-    const zeroed=[];
-    S.pads.forEach((pd,i)=>{ if(pd.bufId>=0 && pd.gain<0.05){ zeroed.push(padName(i)+' was '+pd.gain.toFixed(2)); pd.gain=0.8; } });
-    if(zeroed.length){ plog('SELF-HEAL: restored zeroed pad gains → 0.8: '+zeroed.join(', ')+' (see gainWrites above for who zeroed them)'); dirty(); }
     plog('SELF-HEAL: steps firing but output silent — rebuilding audio and restarting playback.');
     try{ stopSeq(); }catch(e){}
     try{ rebuildAudio(); }catch(e){}
