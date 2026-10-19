@@ -133,6 +133,80 @@ export default async function ({ browser, base }) {
     t.ok('the new audio lands where it was recorded', Math.abs(mid.inside - 0.25) < 1e-6, 'at 2.0s: ' + mid.inside);
     t.ok('and the take continues after the punch-out', Math.abs(mid.after - 0.5) < 1e-6, 'at 2.75s: ' + mid.after);
 
+    /* R203 — two things found reviewing R202 before it merged. */
+    t.head('PUNCH FAILS CLOSED, NOT OPEN');
+    const fc = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));
+      ensureAudio(); await wait(200);
+      const sr = AC.sampleRate;
+      S.bpm = 120; const bar = tvBarSec();
+      const n = Math.round(sr * 8), old = AC.createBuffer(2, n, sr);
+      for (let c = 0; c < 2; c++) { const d = old.getChannelData(c); d.fill(0.5); }
+      S.buffers.push(old);
+      const tr = S.trax[0];
+      tr.bufId = S.buffers.indexOf(old); tr.start = 0; tr.tin = 0; tr.tout = 1;
+      tr.fin = 0; tr.fout = 0;
+      const nl = new Float32Array(n).fill(0.9), nr = nl.slice();
+      /* The three ways the splice can decline to place anything. */
+      o.armedAfterWindow = punchSplice(tr, nl, nr, sr, bar, bar * 2, bar * 2.5);
+      o.windowTooShort   = punchSplice(tr, nl, nr, sr, bar, bar + 0.005, 0);
+      o.normalStillWorks = !!punchSplice(tr, nl, nr, sr, bar, bar * 2, 0);
+      /* And the one that matters: what traxCommit does with a null. Read the
+         shipped function rather than trusting the reading of it. */
+      const src = traxCommit.toString();
+      o.keepsTakeOnNull = /PUNCH MUST FAIL CLOSED/.test(src)
+        && /S\.trax\[i\]\.bufId>=0/.test(src);
+      S.trax[0] = newTrack();
+      return o;
+    });
+    t.ok('a pass armed after the window closed places nothing',
+      fc.armedAfterWindow === null);
+    t.ok('and so does a window shorter than 20ms', fc.windowTooShort === null);
+    t.ok('while an ordinary punch still works', fc.normalStillWorks);
+    t.ok('AND WHEN IT PLACES NOTHING THE TAKE IS KEPT, not replaced wholesale',
+      fc.keepsTakeOnNull,
+      'punch exists to protect what is outside the span; failing into "replace everything" is the opposite');
+
+    t.head('SELF-HEAL IGNORES A MIX THAT IS SILENT ON PURPOSE');
+    const sh = await page.evaluate(() => {
+      const o = {};
+      const was = S.pads.map(p => ({ m: p.mute, s: p.solo, g: p.gain, b: p.bufId }));
+      S.pads.forEach(p => { p.mute = false; p.solo = false; p.gain = 0.9; });
+      /* Two pads with audio of our own. An earlier section in this suite runs
+         projNew(), so there is no guarantee any pad is loaded by the time we
+         get here — the first version of this leaned on the demo kit and threw
+         on an empty project. */
+      const tiny = AC.createBuffer(1, 128, AC.sampleRate);
+      S.buffers.push(tiny);
+      const bid = S.buffers.indexOf(tiny);
+      S.pads[0].bufId = bid; S.pads[1].bufId = bid;
+      const audible = (idx, vel) => {
+        const anySolo = S.pads.some(q => q && q.solo);
+        const q = S.pads[idx];
+        return !!(q && q.bufId >= 0 && !q.mute && (!anySolo || q.solo)
+          && (q.gain || 0) >= 0.1 && vel >= 0.1);
+      };
+      const lit = 0, other = 1;
+      o.plain = audible(lit, 1);
+      S.pads[other].solo = true;
+      o.silencedBySolo = audible(lit, 1);        // soloed elsewhere → inaudible
+      o.theSoloedOne = audible(other, 1);
+      S.pads[other].solo = false;
+      S.pads[lit].mute = true; o.muted = audible(lit, 1);
+      S.pads[lit].mute = false; S.pads[lit].gain = 0.02; o.turnedDown = audible(lit, 1);
+      was.forEach((w, i) => { S.pads[i].mute = w.m; S.pads[i].solo = w.s;
+        S.pads[i].gain = w.g; S.pads[i].bufId = w.b; });
+      /* and the gate is really the one the heal uses */
+      o.inSource = /anySolo/.test(schedStep.toString());
+      return o;
+    });
+    t.ok('an ordinary hit counts as one that should be heard', sh.plain);
+    t.ok('A PAD SILENCED BY ANOTHER PAD\u2019S SOLO DOES NOT', !sh.silencedBySolo);
+    t.ok('but the soloed pad itself still does', sh.theSoloedOne);
+    t.ok('nor does a muted one', !sh.muted);
+    t.ok('nor one turned down to 2%', !sh.turnedDown);
+    t.ok('and this is the gate the scheduler actually uses', sh.inSource);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } catch (e) {

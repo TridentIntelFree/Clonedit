@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R202 · 2026-10-19 · audit fixes: self-heal, black box, caches, punch, resume';
+const BUILD = 'JBH-88 · R203 · 2026-10-19 · audit fixes, and punch that fails closed';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -10066,7 +10066,14 @@ function schedStep(barStep, absStep, t){
   /* Only a hit that SHOULD be heard counts toward the self-heal. A pad you set
      to 3%, or one that is muted, firing into silence is the mix you chose, not
      a dead engine. (R202) */
-  if(fired.some(f=>{ const q=S.pads[f.p]; return q && q.bufId>=0 && !q.mute && (q.gain||0)>=0.1 && f.v>=0.1; }))
+  /* …and SOLO silences a pad just as surely as mute does. Without this clause
+     a pad that is only inaudible because a different pad is soloed still
+     counted as a hit that should have been heard, so the heal could fire —
+     and rebuild the engine and restart the song — on a mix that is silent
+     exactly as asked. (R203) */
+  const anySolo=S.pads.some(q=>q&&q.solo);
+  if(fired.some(f=>{ const q=S.pads[f.p];
+    return q && q.bufId>=0 && !q.mute && (!anySolo || q.solo) && (q.gain||0)>=0.1 && f.v>=0.1; }))
     lastFireT=performance.now();
   if(silGateDown && fired.length){ silRestore(LIVE, t+swing); silGateDown=false; }   // sound returns on the next hit
   const delay=Math.max(0,(t-AC.currentTime)*1000);
@@ -11725,6 +11732,28 @@ function traxCommit(){
     const r=punchSplice(S.trax[i], dl, dr, sr, cap.punch.in, cap.punch.out, cap.midRoll>0?cap.midRoll:0);
     if(r){ buf=r.buf; S.trax[i].start=r.start; S.trax[i].tin=0; S.trax[i].tout=1;
       S.trax[i].fin=0; S.trax[i].fout=0; punched=true; }
+    else if(S.trax[i].bufId>=0){
+      /* PUNCH MUST FAIL CLOSED.
+
+         punchSplice returns null when it cannot place the new audio — armed
+         after the window had already closed, a window under 20ms, nothing
+         captured inside it. The fallback below then replaced the WHOLE lane
+         with the raw pass, which is the exact opposite of what punch is for:
+         you switched it on to protect everything outside a span, and the
+         failure handed you a destroyed take. Keeping what is there is the
+         only safe answer, and it has to say why nothing landed or it reads
+         as the recording having silently not worked. (R203) */
+      const bar=tvBarSec();
+      disarmTrax(); drawTrax();
+      plog('TRACK '+(i+1)+': punch found nothing to place inside bar '
+        +(cap.punch.in/bar+1).toFixed(2)+'→'+(cap.punch.out/bar+1).toFixed(2)
+        +(cap.midRoll>0?(' (armed '+cap.midRoll.toFixed(2)+'s into the cycle, after the window)'):'')
+        +'. The take was left untouched.');
+      lcd('⚠ NOTHING PUNCHED — recording began after the punch window had closed, so there was '
+        +'nothing to put in it. TRACK '+(i+1)+' is exactly as it was. Arm the lane before bar '
+        +(cap.punch.in/bar+1).toFixed(2)+', or move the window.');
+      return;
+    }
   }
   if(!buf){ buf=AC.createBuffer(2,dl.length,sr);
     buf.copyToChannel(dl,0); buf.copyToChannel(dr,1); }
