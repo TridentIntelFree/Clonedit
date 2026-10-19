@@ -1078,16 +1078,37 @@ export default async function ({ browser, base }) {
       o.softDecay = await decayOf(0.15); await wait(200);
       o.hardDecay = await decayOf(1.0); await wait(300);
 
-      /* THE ONE THAT MATTERS. */
-      glitchReset(); glitchArm(); await wait(1800);
-      const before = glitchEvents;
-      startSeq(); await wait(300);
-      const t0 = performance.now();
-      for (let k = 0; k < 240; k++) { flashPad(pad, 0.3 + (k % 7) / 10); await wait(4); }
-      o.mainThreadMs = +(performance.now() - t0 - 240 * 4).toFixed(1);
-      await wait(600);
-      o.dropouts = glitchEvents - before;
-      stopSeq(); await wait(300);
+      /* THE ONE THAT MATTERS — AGAINST A CONTROL, and reading the counter
+         rather than a difference.
+
+         Two faults here, both found by running the whole suite three times
+         over and watching this fail once. First, PLAY itself calls
+         glitchReset(): taking `before` ahead of startSeq and subtracting it
+         afterwards measured (drops after PLAY) minus (drops before PLAY),
+         which is not a quantity and can come out negative. That is the same
+         mistake the tombola cost check had, fixed at R199 — this identical
+         instance was missed. Second, it demanded exactly zero with no
+         baseline, so on a loaded machine it was asserting something about the
+         machine. The same loop WITHOUT the glow, measured either side, says
+         what this box was going to drop anyway. */
+      const cost = async (withGlow) => {
+        glitchReset(); glitchArm(); await wait(1800);
+        startSeq(); await wait(300);
+        const t0 = performance.now();
+        for (let k = 0; k < 240; k++) { if (withGlow) flashPad(pad, 0.3 + (k % 7) / 10); await wait(4); }
+        const ms = +(performance.now() - t0 - 240 * 4).toFixed(1);
+        await wait(600);
+        const drops = glitchEvents;
+        stopSeq(); await wait(300);
+        return { drops, ms };
+      };
+      const ctrlA = await cost(false);
+      const withGlow = await cost(true);
+      const ctrlB = await cost(false);
+      o.dropouts = withGlow.drops;
+      o.control = Math.max(ctrlA.drops, ctrlB.drops);
+      o.controlBoth = ctrlA.drops + '/' + ctrlB.drops;
+      o.mainThreadMs = withGlow.ms;
       /* Structural, not stylistic: the old one armed a timer per hit. */
       o.timers = (() => { let n = 0; const real = window.setTimeout;
         window.setTimeout = function (...a) { n++; return real.apply(window, a); };
@@ -1111,8 +1132,11 @@ export default async function ({ browser, base }) {
       feel.softDecay + 'ms soft vs ' + feel.hardDecay + 'ms hard');
     t.ok('everything is put back when it is over — no stuck glow or transform',
       feel.rest.op === 0 && feel.rest.tf === '');
-    t.ok('IT COSTS THE AUDIO THREAD NOTHING', feel.dropouts === 0,
-      feel.dropouts + ' dropouts across 240 hits while playing');
+    t.note('    240 hits while playing: ' + feel.dropouts + ' dropouts, against ' +
+      feel.controlBoth + ' for the same loop with no glow at all');
+    t.ok('IT COSTS THE AUDIO THREAD NOTHING THE IDLE LOOP DOES NOT',
+      feel.dropouts <= feel.control + 1,
+      feel.dropouts + ' dropouts across 240 hits, control ' + feel.controlBoth);
     t.ok('and next to nothing on the main one',
       feel.mainThreadMs < 240, feel.mainThreadMs + 'ms for 240 hits ('
       + (feel.mainThreadMs / 240).toFixed(2) + 'ms each)');
