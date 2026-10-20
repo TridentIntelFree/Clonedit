@@ -2206,31 +2206,19 @@ Same notes, different performance. Keep whichever you prefer.</p>
   <input type="file" id="libIn" style="display:none">
   <h3>REWIND <span style="color:var(--txt-dim);letter-spacing:0">— automatic checkpoints, every 3 min while you work</span></h3>
   <div id="rewindList"></div>
-  <h3>AI JAM — SONG DOC <span style="color:var(--txt-dim);letter-spacing:0">— an AI writes a beat as JSON; this app plays it</span></h3>
+  <!-- ONE SECTION, NOT TWO. These grew apart: a paste box added when the only
+       way to involve an AI was to copy text between two windows, and a live
+       link added later that does everything the paste box does and more. Side
+       by side they read as alternatives of equal standing, which sent people
+       to the worse one first. The live link leads now; the paste box is the
+       fallback, folded away, and honest about being one. -->
+  <h3>AI &amp; AGENTS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; let something play along, or paste a beat in</span></h3>
+
   <div class="row">
-    <button id="btnDocLoad" class="grow">LOAD DOC</button>
-    <button id="btnDocExport">EXPORT CURRENT</button>
-    <button id="btnDocSpec">SPEC</button>
-    <button id="btnDiag" title="engine state snapshot">DIAG</button>
-    <button id="btnDiagCopy" title="Copy the diagnostic report to the clipboard">COPY</button>
+    <button id="btnAgentLink" class="grow">&#9679; CONNECT AN AGENT</button>
   </div>
-  <textarea id="docText" spellcheck="false" placeholder='Tap SPEC → copy the whole thing → paste it to any AI and ask for a beat → paste the AI&apos;s reply back here → tap LOAD DOC. (Code fences / extra text are fine.)'></textarea>
-  <details class="ex"><summary>How AI JAM works</summary><div class="ex-body">
-    <p><b>SPEC</b> puts a ready-to-paste prompt (with a working example) in the box — hand it to an AI, paste the reply back, LOAD. The loader pulls the JSON out even if the AI wraps it in ```json or adds chatter. EXPORT lets an AI remix what you made. Console: <span style="color:var(--lcd)">window.JBH.load / .export / .play / .spec</span></p>
-<p>There is no AI inside this app and no server behind it. AI JAM is a document
-format: SPEC writes out a prompt describing that format, you hand it to whatever
-assistant you like, and paste the reply back. The app renders every sound from
-the description.</p>
-<p>Which means it keeps working offline for everything except the part where you
-talk to an assistant, it sends nothing anywhere on its own, and it is not tied
-to any particular AI outliving any other.</p>
-  </div></details>
-  <!-- AGENT LINK — a live two-way connection to something driving the app
-       from outside, and a place to talk to it. Off until switched on. -->
-  <h3>AGENT LINK <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; live control, same device, nothing sent anywhere</span></h3>
-  <div class="row">
-    <button id="btnAgentLink">CONNECT</button>
-    <span class="grow" id="agentStat" style="font-size:10px;color:var(--txt-dim)">off &mdash; nothing can drive this page</span>
+  <div id="agentStat" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px;line-height:1.45">
+    off &mdash; nothing can drive this page
   </div>
   <div id="agentLog" role="log" aria-live="polite" aria-label="Messages to and from the connected agent"
     style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
@@ -2240,23 +2228,51 @@ to any particular AI outliving any other.</p>
       aria-label="Message to the connected agent" autocomplete="off">
     <button id="btnAgentSay">SEND</button>
   </div>
-  <details class="ex"><summary>What AGENT LINK is</summary><div class="ex-body">
-    <p>AI JAM above is a <em>document</em>: you paste a description in and the app
-builds it. This is the other thing &mdash; a live connection, so something can
-drive the app <b>while it plays</b>: hit pads, move the tempo, write steps,
-load sounds, bounce the result and read the level back.</p>
-<p>It works over <b>postMessage</b> (an embedding page or an iframe) and
+  <details class="ex"><summary>What a connected agent can do</summary><div class="ex-body">
+    <p>Everything you can, while the transport is rolling: load sounds &mdash;
+synthesised, downloaded, or recorded &mdash; write steps and their locks, move
+clips on the tape lanes, change the LIVE instrument, hit pads in time, move the
+tempo, bounce the result and <em>read the level back</em>. That last one is the
+difference between an assistant that suggests a beat and one that can hear
+whether the hats came out inaudible and fix them.</p>
+<p>It connects over <b>postMessage</b> (an embedding page or iframe) and
 <b>BroadcastChannel</b> (another tab on this origin). Both are same-device
-browser plumbing &mdash; there is no server, no socket, and nothing leaves the
-machine. An agent that can drive a browser can also just call
-<span style="color:var(--lcd)">window.JBH</span> directly.</p>
-<p><b>It is off until you switch it on, and off again on reload.</b> An app that
+browser plumbing: no server, no socket, nothing leaves the machine. Anything
+that can drive a browser can skip all of it and call
+<span style="color:var(--lcd)">window.JBH</span> directly &mdash;
+<span style="color:var(--lcd)">JBH.calls()</span> lists the lot.</p>
+<p><b>Off until you switch it on, and off again on reload.</b> An app that
 answered to any tab on its origin the moment it loaded would be a different
-proposition from this one, so turning it on is always a deliberate act.</p>
-<p>The box below the switch is a two-way line: what you type goes to whatever is
-connected, and what it says back appears here. <span style="color:var(--lcd)">window.JBH.calls()</span>
-lists everything it can do.</p>
+proposition from this one, so turning it on stays a deliberate act. Anything it
+says to you is shown as text and never as markup.</p>
+<p>The box is a two-way line: what you type goes to whatever is connected, and
+what it answers appears above it.</p>
   </div></details>
+
+  <details id="songDocBox" class="ex" style="margin-top:8px"><summary>No agent? Paste a song document instead</summary><div class="ex-body">
+    <p style="margin-top:0">The original way, and it still works with no connection of any kind:
+<b>SPEC</b> writes a prompt into the box, you hand that to any assistant in its
+own window, and paste the reply back. One-way, between takes, and it describes
+the first sixteen pads only &mdash; no tape lanes, no LIVE instrument, no
+downloaded sounds. Use CONNECT above where you can.</p>
+    <div class="row">
+      <button id="btnDocSpec" class="grow">SPEC &#8594; BOX</button>
+      <button id="btnDocLoad" class="grow">LOAD DOC</button>
+      <button id="btnDocExport">EXPORT CURRENT</button>
+    </div>
+    <textarea id="docText" spellcheck="false" placeholder="Tap SPEC &#8594; BOX, hand the whole thing to an assistant, paste its reply here, tap LOAD DOC. Code fences and chatter are fine."></textarea>
+    <p>The loader pulls the JSON out even when it is wrapped in a code fence or
+buried in conversation. EXPORT CURRENT goes the other way, so an assistant can
+remix what you already made.</p>
+  </div></details>
+
+  <div class="row" style="margin-top:8px">
+    <span class="lbl">DIAG</span>
+    <button id="btnDiag" class="grow" title="engine state snapshot">ENGINE SNAPSHOT</button>
+    <button id="btnDiagCopy" title="Copy the diagnostic report to the clipboard">COPY</button>
+  </div>
+  <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 4px">Writes a state dump into the song-document box, opening it &mdash; useful in a bug report, and the fastest way to show an agent what is going on.</div>
+
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>

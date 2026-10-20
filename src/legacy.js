@@ -17589,9 +17589,17 @@ $('btnDocExport').addEventListener('click',()=>{
   plog('Exported song doc'+(anon?' ('+anon+' sampled pad(s) noted by name only — presets round-trip, recordings don\'t)':'')+'.');
   lcd('DOC EXPORTED to the text box — copy it to your AI.');
 });
-$('btnDocSpec').addEventListener('click',()=>{ $('docText').value=SONGDOC_SPEC; lcd('SPEC + example in the box — copy ALL of it to an AI, ask for a beat, paste the reply back, tap LOAD DOC.'); });
+$('btnDocSpec').addEventListener('click',()=>{ $('docText').value=SONGDOC_SPEC; openSongDocBox();
+  lcd('SPEC + example in the box — copy ALL of it to an AI, ask for a beat, paste the reply back, tap LOAD DOC. '
+    +'Or press CONNECT AN AGENT above and skip the copying entirely.'); });
 let lastDiag='';
+/* The box these write into is folded away now, so opening it is part of
+   writing to it — a button whose whole effect lands somewhere invisible reads
+   as a button that did nothing. */
+function openSongDocBox(){ const d=$('songDocBox'); if(d && !d.open) d.open=true; }
 $('btnDiag').addEventListener('click',()=>{ lastDiag=diagDump('manual'); $('docText').value=lastDiag;
+  openSongDocBox();
+  try{ $('docText').scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){}
   lcd('DIAG in the text box + PROJ log — tap COPY to put it on the clipboard.'); });
 /* Asked for directly: "an easy way to copy and paste the diagnostic report
    would help". Selecting a full dump by hand on a phone is genuinely awkward,
