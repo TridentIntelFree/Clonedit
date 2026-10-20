@@ -30,22 +30,48 @@ LIVE instrument, the transport — and it works *while the thing is playing*.
 
 ```js
 JBH.calls()                       // everything callable
+JBH.params()                      // every writable field, and its value now
+JBH.clear()                       // an empty session, not the demo song
 JBH.presets()                     // synthesised sounds, no network
 await JBH.preset('dkick', 0)      // render one onto pad 1
 await JBH.pack(); await JBH.sound('kick_acoustic', 1)   // downloadable packs
 JBH.step(0, 4, 1, { fcut: 0.2 })  // a step, with its sound lock
+JBH.pattern(0, { plen: 64, len: { 3: 7 } })   // 4 bars; pad 3 phases on 7
+JBH.poly(5, { on: true, bpm: 300, cells: 3,   // a pad with its OWN tempo:
+  row: [[0, .9, { pitch: 0 }], [1, .6, { pitch: 3 }], [2, .7, { pitch: 7 }]] })
+JBH.euclid(2, 5, 16)              // 5 hits spread over 16
 JBH.lane(2, { start: 4.0 })       // move a tape clip
 JBH.live({ voice: 'piano' })
 JBH.set({ bpm: 128 }); JBH.play(); JBH.hit(0, 0.9)      // live, in time
 await JBH.render()                // bounce and read peak/RMS back
 ```
 
-That last one matters: an agent that cannot hear what it made is composing
-blind. `render()` returns the measurements, and the WAV bytes if asked.
+`render()` matters most: an agent that cannot hear what it made is composing
+blind. It returns the measurements, and the WAV bytes if asked.
+
+`params()` matters nearly as much. Every effect in the app was always
+reachable — `set()`, `pad()`, `lane()` and `live()` each write any field of
+the thing they own — but nothing said the reverb is `revType`/`revSize`/
+`revLvl` or that the master chain is the `m`-prefixed block, and a name you
+have to guess is not an API. `params()` reads the lot off the live objects,
+so it cannot drift: 68 session fields, 55 per pad, 31 on the instrument, 17
+on a tape lane.
+
+`poly()` is the one thing the step grid genuinely cannot express. A pad's BPM
+counts **its own hits** per minute, so against a project at 100, 300 is
+triplets and 500 is quintuplets — real polyrhythm, not a tuplet drawn on a
+16th grid. Pair it with `pattern({len})`, where a track shorter than the
+pattern phases against it, and three divisions of the beat can run at once.
 
 `sound(id, pad)` puts it on **that** pad — it replaces what is there rather
 than wandering off to an empty one, asks nothing, and throws if the download
 or the decode fails. A kit laid out by index stays where it was put.
+
+**Transposing a sampled instrument is not free.** Pitch is playback rate
+unless `keepTime` is on, and a piano moved a fifth stops sounding like a
+piano — the hammer noise and the beating of the unisons move with it. For
+anything acoustic, load a root near every note you mean to play and bend it
+a semitone, rather than stretching one sample across an octave.
 
 **AGENT LINK** (PROJ) exposes the same API *outside* the page, over
 `postMessage` and `BroadcastChannel('jbh88')` — same device, no server,

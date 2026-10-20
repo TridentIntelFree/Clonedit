@@ -147,6 +147,47 @@ const TOOLS = [
     inputSchema: { type: 'object', required: ['lane'], properties: {
       lane: { type: 'integer' }, props: { type: 'object' } } } },
 
+  { name: 'jbh_poly', description:
+      'A pad with its OWN BPM — polyrhythm, which the step grid genuinely cannot express. '
+      + 'The pad\'s bpm counts ITS hits per minute, so against a project at 100: 300 is '
+      + 'triplets, 500 is quintuplets, 75 is three hits per bar against four beats. cells is '
+      + 'how long the figure runs before repeating. row is [[cell, vel, locks]…] and those '
+      + 'per-cell locks are where a pitch goes — without them a figure can only repeat one '
+      + 'note. trig "step" (default) means a lit grid step fires the figure; "free" runs it '
+      + 'on its own clock. Call with no props to read.',
+    inputSchema: { type: 'object', required: ['pad'], properties: {
+      pad: { type: 'integer' }, props: { type: 'object' } } } },
+
+  { name: 'jbh_pattern', description:
+      'A pattern\'s own shape, which nothing else reaches. plen is its length (16/32/48/64 '
+      + 'steps, 16 to the bar). len is {pad: steps} — a shorter track than the pattern is '
+      + 'POLYMETER and phases against it. bpm is a per-pattern tempo (null follows the '
+      + 'session). sil is the silencer row. Also copyFrom, clear and select. No props reads.',
+    inputSchema: { type: 'object', properties: {
+      pattern: { type: 'integer' }, props: { type: 'object' } } } },
+
+  { name: 'jbh_euclid', description:
+      'Spread N hits as evenly as possible over K steps — the distribution behind tresillo, '
+      + 'son clave and most Afro-Latin and Balkan rhythm. Setting steps shorter than the '
+      + 'pattern also shortens that track, so 5-in-7 under a 16-step part phases for bars.',
+    inputSchema: { type: 'object', required: ['pad', 'hits'], properties: {
+      pad: { type: 'integer' }, hits: { type: 'integer' }, steps: { type: 'integer' },
+      rot: { type: 'integer' }, vel: { type: 'number' }, locks: { type: 'object' } } } },
+
+  { name: 'jbh_params', description:
+      'EVERY writable field and what it is set to now, read off the live objects so it '
+      + 'cannot drift: the session (reverb, delay, compressor, master chain, scale lock…), '
+      + 'a pad (filter, drive, crush, EQ, LFO, envelopes, granular…), a tape lane, the LIVE '
+      + 'instrument, the pattern and poly shapes, and the step-lock names. Call this before '
+      + 'guessing a field name — everything here is reachable through jbh_set, jbh_pad, '
+      + 'jbh_lane, jbh_live, jbh_pattern and jbh_poly.',
+    inputSchema: { type: 'object', properties: {} } },
+
+  { name: 'jbh_clear', description:
+      'Start from an empty session. A freshly opened app holds a demo song, and any pad you '
+      + 'do not overwrite stays loaded and is carried in every file you save.',
+    inputSchema: { type: 'object', properties: {} } },
+
   { name: 'jbh_live', description:
       'Read or write the LIVE instrument. voice is one of glass, saw, ep, pluck, phase, pulse, '
       + 'cluster, organ, super, vowel, wind, bell, piano. shape is that engine’s own main '
@@ -227,6 +268,11 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_pad':         return ok(await jbh('pad', [a.pad, a.props]));
       case 'jbh_lane':        return ok(await jbh('lane', [a.lane, a.props]));
       case 'jbh_live':        return ok(await jbh('live', [a.props]));
+      case 'jbh_poly':        return ok(await jbh('poly', [a.pad, a.props]));
+      case 'jbh_pattern':     return ok(await jbh('pattern', [a.pattern, a.props]));
+      case 'jbh_euclid':      return ok(await jbh('euclid', [a.pad, a.hits, a.steps, a.rot, a.vel, a.locks]));
+      case 'jbh_params':      return ok(await jbh('params'));
+      case 'jbh_clear':       return ok(await jbh('clear'));
       case 'jbh_set':         return ok(await jbh('set', [a.props]));
       case 'jbh_transport':   return ok(await jbh(a.action === 'stop' ? 'stop' : 'play'));
       case 'jbh_hit':         return ok(await jbh('hit', [a.pad, a.vel, a.pitch]));

@@ -9484,6 +9484,223 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     dirty();
     return JSON.parse(JSON.stringify(S.inst));
   },
+  /* A CLEAN SLATE, which nothing but the NEW button could ask for.
+
+     An agent arriving at a freshly opened app lands on the demo song, and
+     every pad it does not overwrite stays loaded underneath whatever it
+     writes — inaudible, because it clears the patterns, and still carried
+     in the saved file. The first run of this wrote a ten-voice piano piece
+     into a session file of seventeen megabytes, six of which were a demo
+     kit nothing played. Starting from nothing has to be askable. */
+  clear(){ projNew(); return window.MVX.state(); },
+
+  /* THE PATTERN'S OWN SETTINGS, which nothing else could reach.
+
+     step() writes inside a pattern and set() writes the session around it,
+     and between the two sat four fields neither could touch: how long the
+     pattern is, how long each PAD's track is before it repeats (polymeter —
+     a 7-step hat under a 16-step kick phrases for bars), the pattern's own
+     tempo, and the silencer row. An agent could write a part and not the
+     shape of the bar it sits in. */
+  pattern(idx, props){
+    const n=(idx==null)?S.pattern:clamp(idx|0,0,NPAT-1);
+    const pat=S.patterns[n];
+    const readBack=()=>{
+      const L=patLen(pat), len={};
+      for(let p=0;p<NPADS;p++){ const t=trackLen(pat,p); if(t!==L) len[p]=t; }
+      let hits=0;
+      for(let p=0;p<NPADS;p++) for(let i=0;i<L;i++) if(pat.steps[p][i]>0) hits++;
+      return { index:n, selected:S.pattern===n, plen:L, bpm:pat.bpm||null,
+        len, sil:(pat.sil||[]).slice(0,L), hits,
+        poly:Object.keys(pat.poly||{}).map(k=>+k).filter(k=>pat.poly[k].on) };
+    };
+    if(!props) return readBack();
+    /* copyFrom first, so the same call can duplicate a pattern and then
+       adjust it — which is how a variation actually gets written. */
+    if(props.copyFrom!=null){
+      const src=S.patterns[clamp(props.copyFrom|0,0,NPAT-1)];
+      if(src!==pat){
+        pat.steps=src.steps.map(r=>r.slice());
+        pat.locks=JSON.parse(JSON.stringify(src.locks||{}));
+        pat.len=(src.len||[]).slice(); pat.plen=src.plen; pat.bpm=src.bpm;
+        pat.sil=(src.sil||[]).slice();
+        pat.poly=JSON.parse(JSON.stringify(src.poly||{}));
+      }
+    }
+    if(props.clear){
+      pat.steps.forEach(r=>r.fill(0)); pat.locks={};
+      pat.sil=new Array(MAXSTEPS).fill(0); pat.poly={};
+    }
+    if(props.plen!=null && PATLENS.indexOf(props.plen|0)>=0){
+      const nl=props.plen|0, old=patLen(pat);
+      if(nl!==old){
+        pat.plen=nl;
+        if(!Array.isArray(pat.len)) pat.len=new Array(NPADS).fill(nl);
+        /* THE SAME RULE THE LEN CONTROL FOLLOWS. A track that was running the
+           whole pattern follows it; a deliberately shortened one keeps its own
+           length, capped by the new size. Written the obvious way first, which
+           left every track at the old length when a pattern grew — so the new
+           half of a 32-step bar silently repeated the first half and nothing
+           said so. */
+        for(let p2=0;p2<NPADS;p2++)
+          pat.len[p2]=(pat.len[p2]===old)?nl:clamp(pat.len[p2]||nl,1,nl);
+        for(let p2=0;p2<NPADS;p2++) trimTrack(pat,p2,pat.len[p2]);
+        if(pat.sil) for(let i=nl;i<pat.sil.length;i++) pat.sil[i]=0;
+      }
+    }
+    if('bpm' in props) pat.bpm=props.bpm==null?null:clamp(+props.bpm,20,300);
+    if(props.len){
+      pat.len=pat.len||new Array(NPADS).fill(patLen(pat));
+      /* A map keyed by pad, because setting one track's length is the common
+         case and an array of sixty-four numbers to change one of them is not
+         a thing anybody would write. null puts a track back to full length. */
+      Object.keys(props.len).forEach(k=>{
+        const p=clamp(k|0,0,NPADS-1);
+        pat.len[p]=(props.len[k]==null)?patLen(pat):clamp(props.len[k]|0,1,patLen(pat));
+      });
+    }
+    if(Array.isArray(props.sil)){
+      pat.sil=pat.sil||new Array(MAXSTEPS).fill(0);
+      props.sil.forEach((v,i)=>{ if(i<MAXSTEPS) pat.sil[i]=+v||0; });
+    }
+    if(props.select) S.pattern=n;
+    bumpLocks();
+    try{ drawSeq(); drawPads(); drawSong(); }catch(e){}
+    dirty();
+    return readBack();
+  },
+  /* EUCLID, as a call rather than as three boxes and a button. Spreads hits
+     as evenly as a number allows, which is what people everywhere do, and
+     pairs with the per-track length above: 5 in 7 under a 16-step kick takes
+     bars to come back around. Writes the row and returns where it landed. */
+  euclid(padIdx, hits, steps, rot, vel, locks){
+    const pat=S.patterns[S.pattern], p=clamp(padIdx|0,0,NPADS-1);
+    const L=patLen(pat), n=clamp(steps|0||L,1,L);
+    const on=euclid(clamp(hits|0,0,n), n, rot|0);
+    const v=clamp(vel==null?0.9:+vel,0.01,1);
+    for(let i=0;i<L;i++){ pat.steps[p][i]=0; delete pat.locks[LK(p,i,false)]; }
+    const at=[];
+    on.forEach((b,i)=>{ if(!b) return; pat.steps[p][i]=v; at.push(i);
+      if(locks) pat.locks[LK(p,i,false)]=Object.assign({},locks); });
+    if(n!==L){ pat.len=pat.len||new Array(NPADS).fill(L); pat.len[p]=n; }
+    bumpLocks();
+    try{ drawSeq(); drawPads(); }catch(e){}
+    dirty();
+    return {pad:p, steps:n, hits:at.length, at, trackLen:trackLen(pat,p)};
+  },
+  /* WHAT CAN BE SET, AND WHAT IT IS SET TO NOW.
+
+     set(), pad(), lane() and live() will each write any field of the thing
+     they own, which means every effect and every parameter in the app was
+     already reachable — and undiscoverable. Nothing told a caller that the
+     reverb is `revType`/`revSize`/`revLvl`, that a pad's filter is
+     `ftype`/`fcut`/`fres`, or that the master chain is the `m`-prefixed
+     block. An agent cannot use a name it has to guess.
+
+     Read off the live objects rather than written out by hand, so it cannot
+     drift from what the app actually holds: add a field to a pad and it
+     appears here the same day. */
+  params(){
+    const plain=o=>{ const out={};
+      Object.keys(o).forEach(k=>{ const v=o[k], t=typeof v;
+        if(t==='number'||t==='string'||t==='boolean') out[k]=v;
+        else if(Array.isArray(v)) out[k]='['+v.length+']';
+        else if(v&&t==='object') out[k]='{…}';
+      }); return out; };
+    return {
+      session:plain(S),
+      pad:plain(S.pads[S.editPad]),
+      lane:plain(S.trax[0]),
+      live:plain(S.inst),
+      pattern:{plen:PATLENS.slice(), bpm:'null = follow the session',
+        len:'{pad: steps} — polymeter', sil:'[0|1 per step]'},
+      poly:{on:true, bpm:'the pad’s OWN hits per minute', cells:[POLY_MIN_CELLS,POLY_MAX_CELLS],
+        lock:'re-anchor every bar', trig:['step','free'], row:'[[cell,vel,locks]…]'},
+      stepLocks:{ pitch:'semitones', pitches:'[semitones] = a chord',
+        prob:'0..1', rat:'2..4 retriggers', nudge:'-0.5..0.5 of a step',
+        plain:'1 = ignore this pad’s poly figure', fx:LOCK_FX.slice() },
+      writtenBy:{ session:'set()', pad:'pad(i,props)', lane:'lane(i,props)',
+        live:'live(props)', pattern:'pattern(i,props)', poly:'poly(pad,props)',
+        step:'step(pad,i,vel,locks)' }
+    };
+  },
+
+  /* A PAD WITH ITS OWN BPM — the one thing the grid genuinely cannot do.
+
+     POLY was reachable from the panel and from a saved project and from
+     nowhere else: no song doc describes it, and the calls above all speak in
+     grid steps. So an agent could write polymeter (LEN per pad) but not
+     polyrhythm, and three-against-four was the one rhythm it had to ask a
+     person for.
+
+     The pad's BPM counts ITS OWN HITS per minute, so against a project at
+     100: pad 300 is triplets, pad 75 is three hits per bar against four
+     beats. CELLS is how long the figure is before it repeats, independent of
+     how fast it goes by.
+
+     row accepts either a dense array of velocities — index is the cell — or
+     a sparse list of [cell, vel] / [cell, vel, locks], which is what a figure
+     with five hits in forty-eight cells actually looks like when written out.
+     Those per-cell locks are where a pitch goes, and without them a figure
+     can only repeat one note, which is no use to anything melodic. */
+  poly(padIdx, props){
+    const pat=S.patterns[S.pattern], i=clamp(padIdx|0,0,NPADS-1);
+    const readBack=()=>{
+      const raw=pat.poly && pat.poly[i];
+      if(!raw) return null;
+      const cfg=polyCfg(pat,i);
+      const cells=cfg?cfg.cells:clamp(raw.cells|0,POLY_MIN_CELLS,POLY_MAX_CELLS);
+      const row=(polyRowOf(pat,i)||[]).slice(0,cells);
+      const locks={};
+      for(let c=0;c<cells;c++){ const lk=pat.locks[LK(i,c,true)]; if(lk) locks[c]=lk; }
+      return { on:!!raw.on, bpm:raw.bpm, cells, lock:raw.lock!==false,
+        trig:raw.trig==='free'?'free':'step', row,
+        hits:row.filter(v=>v>0).length, locks };
+    };
+    if(!props) return readBack();
+
+    pat.poly=pat.poly||{};
+    /* Built with a row from the start. A config without one looks to
+       polyRowOf like a project saved before the two lanes existed, and it
+       would MOVE the pad's first cells out of the grid row — taking hits out
+       of a part nobody asked it to touch. */
+    const c=pat.poly[i] || (pat.poly[i]={on:false, bpm:Math.round(bpmAbs()),
+      cells:4, lock:true, trig:'step', row:polyEmptyRow()});
+    if(!Array.isArray(c.row)) c.row=polyEmptyRow();
+    if('bpm'   in props) c.bpm  = clamp(+props.bpm||120, POLY_MIN_BPM, POLY_MAX_BPM);
+    if('cells' in props) c.cells= clamp(props.cells|0, POLY_MIN_CELLS, POLY_MAX_CELLS);
+    if('lock'  in props) c.lock = !!props.lock;
+    if('trig'  in props) c.trig = props.trig==='free' ? 'free' : 'step';
+    if('on'    in props) c.on   = !!props.on;
+    if(Array.isArray(props.row)){
+      const row=polyEmptyRow(), sparse=Array.isArray(props.row[0]);
+      /* Written fresh rather than merged: a row given in full is the figure,
+         and leaving yesterday's hits underneath it is the kind of surprise
+         this app keeps apologising for. */
+      for(let c2=0;c2<POLY_MAX_CELLS;c2++) delete pat.locks[LK(i,c2,true)];
+      if(sparse) props.row.forEach(e=>{
+        if(!Array.isArray(e)) return;
+        const ci=clamp(e[0]|0,0,POLY_MAX_CELLS-1);
+        row[ci]=clamp(+e[1]||0,0,1);
+        if(e[2]) pat.locks[LK(i,ci,true)]=Object.assign({},e[2]);
+      });
+      else props.row.forEach((v,ci)=>{ if(ci<POLY_MAX_CELLS) row[ci]=clamp(+v||0,0,1); });
+      c.row=row;
+    }
+    if(props.locks) Object.keys(props.locks).forEach(k=>{
+      const ci=clamp(k|0,0,POLY_MAX_CELLS-1);
+      if(props.locks[k]===null) delete pat.locks[LK(i,ci,true)];
+      else pat.locks[LK(i,ci,true)]=Object.assign(pat.locks[LK(i,ci,true)]||{},props.locks[k]);
+    });
+    /* Same rule the pattern length follows: cells past the end are removed
+       rather than left invisible and still sounding. */
+    const cut=polyTrimRow(c.row, c.cells);
+    if(cut) for(let c2=c.cells;c2<POLY_MAX_CELLS;c2++) delete pat.locks[LK(i,c2,true)];
+    bumpLocks();
+    try{ drawSeq(); drawPads(); }catch(e){}
+    dirty();
+    return readBack();
+  },
   /* One step, with its locks. vel 0 turns it off; locks null clears them. */
   step(padIdx, idx, vel, locks){
     const pat=S.patterns[S.pattern], p=clamp(padIdx|0,0,NPADS-1), i=clamp(idx|0,0,MAXSTEPS-1);

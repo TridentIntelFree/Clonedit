@@ -54,10 +54,15 @@ relay between two machines, and this is not that.
 | Tool | What it does |
 | --- | --- |
 | `jbh_state` | What is loaded and playing. Call it first, and after anything that should have changed something. |
+| `jbh_params` | **Every writable field and its current value**, read off the live objects. Call this instead of guessing that the reverb is `revType`. |
+| `jbh_clear` | An empty session. A freshly opened app holds a demo song, and pads you don't overwrite ride along in every file you save. |
 | `jbh_presets` / `jbh_load_preset` | The sounds the app synthesises in the page. No network, always work. |
 | `jbh_pack` / `jbh_load_sound` | Downloadable sample packs. Needs a connection once. |
 | `jbh_step` | One step, with its locks — pitch, probability, ratchet, nudge, and the sound locks (cutoff, level, pan, decay, start). |
 | `jbh_pad` / `jbh_lane` / `jbh_live` | Read or write a pad, a tape lane's clip, or the LIVE instrument. |
+| `jbh_pattern` | The pattern's own shape: length (16/32/48/64), a per-pattern tempo, the silencer row, and `len` — a track shorter than the pattern is **polymeter** and phases against it. Also copy and clear. |
+| `jbh_poly` | **A pad with its own BPM.** Against a project at 100: 300 is triplets, 500 is quintuplets, 75 is three hits per bar against four beats. Per-cell locks carry the pitch, so a figure can be a melody rather than one repeated note. |
+| `jbh_euclid` | N hits spread as evenly over K steps as a number allows. |
 | `jbh_set` / `jbh_transport` / `jbh_hit` | Tempo and the rest; play and stop; hit a pad in time. |
 | `jbh_render` | Bounce and report length, peak, RMS, clipping, silence. Optionally write a WAV. |
 | `jbh_save_session` / `jbh_load_session` | The file a person opens. |

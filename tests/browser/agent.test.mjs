@@ -342,6 +342,115 @@ export default async function ({ browser, base }) {
     t.ok('a sound that is not in the pack throws instead of reporting success',
       /no sound/.test(dl.unknown || '') && dl.pad53Empty, String(dl.unknown));
 
+    /* "Needs to reach every tool… needs access to all effects and
+       parameters."
+
+       It did not. Three kinds of gap, and they are different kinds:
+
+       UNREACHABLE — the pattern's own shape (how long it is, how long each
+       pad's track is before it repeats, its tempo, its silencer row) and
+       POLY, a pad with its own BPM. step() writes inside a pattern and set()
+       writes the session around it, and these sat between the two. POLY is
+       the sharper loss: polyrhythm was the one rhythm an agent had to ask a
+       person for.
+
+       UNDISCOVERABLE — every effect WAS reachable, because set(), pad(),
+       lane() and live() each write any field of the thing they own. But
+       nothing said the reverb is revType/revSize/revLvl or that the master
+       chain is the m-prefixed block, and a name you have to guess is not an
+       API.
+
+       UNASKABLE — a clean slate. An agent lands on the demo song and
+       everything it does not overwrite stays in the saved file. */
+    t.head('THE WHOLE APP, NOT A SHORTLIST');
+    const reach = await page.evaluate(async () => {
+      const o = {}, w = ms => new Promise(r => setTimeout(r, ms));
+      o.cleared = JBH.clear(); await w(300);
+      o.padsAfterClear = o.cleared.pads.loaded;
+
+      /* DISCOVERY: the names, read off the live objects */
+      const pr = JBH.params();
+      o.counts = { session: Object.keys(pr.session).length, pad: Object.keys(pr.pad).length,
+        live: Object.keys(pr.live).length, lane: Object.keys(pr.lane).length };
+      o.namesTheyHadToGuess = ['revType','revSize','revLvl','dlyMode','dlyTone','compAmt',
+        'mWidth','mCeil','mAir','mMud','scaleLock','silFade'].filter(k => k in pr.session);
+      o.padNames = ['ftype','fcut','fres','drv','crush','eqLo','eqHi','lfoTgt','lfoRate',
+        'grSize','grDens','fegAmt'].filter(k => k in pr.pad);
+      o.saysHowToWrite = !!(pr.writtenBy && pr.writtenBy.poly && pr.writtenBy.pattern);
+
+      /* and every one of those names must actually take a value */
+      JBH.set({ revType:'cath', revSize:4.2, dlyMode:'pingpong', mAir:0.4, compAmt:0.6 });
+      o.fxTook = S.revType === 'cath' && S.revSize === 4.2 && S.dlyMode === 'pingpong' &&
+        S.mAir === 0.4 && S.compAmt === 0.6;
+      await JBH.preset('dhat', 3);
+      JBH.pad(3, { ftype:'lp', fcut:0.4, crush:8, lfoOn:true, lfoTgt:'cutoff' });
+      o.padFxTook = S.pads[3].ftype === 'lp' && S.pads[3].crush === 8 && S.pads[3].lfoOn === true;
+
+      /* PATTERN SHAPE */
+      const p0 = JBH.pattern(0, { plen: 32, bpm: 96 });
+      o.plen = p0.plen; o.patBpm = p0.bpm;
+      /* growing a pattern must carry full-length tracks with it, or the new
+         half silently repeats the old one */
+      o.noPhantomPolymeter = Object.keys(p0.len).length === 0;
+      const p0b = JBH.pattern(0, { len: { 3: 7 } });
+      o.polymeter = p0b.len['3'];
+
+      /* EUCLID */
+      o.eu = JBH.euclid(3, 5, 7, 0, 0.6, { fcut: 0.3 });
+      o.euLockThere = !!(S.patterns[0].locks['3:0'] || {}).fcut;
+
+      /* POLY — a pad with its own BPM, and per-cell pitch */
+      JBH.set({ bpm: 100 });
+      const pol = JBH.poly(5, { on:true, bpm:300, cells:3, lock:true, trig:'step',
+        row: [[0,0.9,{pitch:0}], [1,0.6,{pitch:3}], [2,0.7,{pitch:7}]] });
+      o.poly = { bpm: pol.bpm, cells: pol.cells, hits: pol.hits,
+        pitch1: pol.locks['1'] && pol.locks['1'].pitch };
+      /* the scheduler's own arithmetic — the same functions the live player
+         and the offline bounce share, so this is what the WAV contains */
+      const bar = NSTEPS * stepDur(), cfg = polyCfg(S.patterns[0], 5);
+      o.perBeat = +(polyHitsPerBar(cfg, bar) / 4).toFixed(3);
+      o.quint = (() => { JBH.poly(6, { on:true, bpm:500, cells:5, lock:true, row:[[0,1],[2,1],[4,1]] });
+        return +(polyHitsPerBar(polyCfg(S.patterns[0], 6), bar) / 4).toFixed(3); })();
+      o.readsBackNull = JBH.poly(40);
+
+      /* COPY, then CLEAR */
+      JBH.pattern(1, { copyFrom: 0 });
+      o.copiedHits = JBH.pattern(1).hits;
+      o.copiedPoly = JBH.pattern(1).poly.length;
+      o.clearedHits = JBH.pattern(1, { clear: true }).hits;
+      return o;
+    });
+    t.ok('an agent can ask for a CLEAN SLATE rather than inheriting the demo',
+      reach.padsAfterClear === 0, reach.padsAfterClear + ' pads loaded after clear()');
+    t.note('    params(): ' + reach.counts.session + ' session · ' + reach.counts.pad +
+      ' pad · ' + reach.counts.live + ' live · ' + reach.counts.lane + ' lane');
+    t.ok('params() NAMES THE EFFECTS instead of leaving them to be guessed',
+      reach.namesTheyHadToGuess.length === 12 && reach.padNames.length === 12 &&
+      reach.saysHowToWrite,
+      reach.namesTheyHadToGuess.length + '/12 session · ' + reach.padNames.length + '/12 pad');
+    t.ok('and every one of those names really takes a value',
+      reach.fxTook && reach.padFxTook);
+    t.ok('the pattern’s own length and tempo can be set',
+      reach.plen === 32 && reach.patBpm === 96, 'plen ' + reach.plen + ' · bpm ' + reach.patBpm);
+    t.ok('GROWING A PATTERN CARRIES ITS TRACKS, rather than leaving them short',
+      reach.noPhantomPolymeter,
+      'tracks left at the old length would make the new half repeat the old, silently');
+    t.ok('and a single track can be shortened — polymeter', reach.polymeter === 7);
+    t.ok('euclid spreads hits and can lock them', reach.eu.hits === 5 &&
+      reach.eu.at.join(',') === '0,2,3,5,6' && reach.euLockThere, reach.eu.at.join(','));
+    t.ok('POLY GIVES A PAD ITS OWN BPM, with a pitch per cell',
+      reach.poly.bpm === 300 && reach.poly.cells === 3 && reach.poly.hits === 3 &&
+      reach.poly.pitch1 === 3, JSON.stringify(reach.poly));
+    t.ok('AND THE SCHEDULER AGREES: 300 against 100 is three to the beat, 500 is five',
+      reach.perBeat === 3 && reach.quint === 5,
+      reach.perBeat + ' and ' + reach.quint + ' per beat — 3:4:5 in one bar');
+    t.ok('a pad with no figure reads back as nothing, not as an empty one',
+      reach.readsBackNull === null);
+    t.ok('a pattern can be copied whole — steps, locks and figures',
+      reach.copiedHits > 0 && reach.copiedPoly === 2,
+      reach.copiedHits + ' hits, ' + reach.copiedPoly + ' poly pads');
+    t.ok('and cleared', reach.clearedHits === 0);
+
     t.head('AND IT TELLS YOU HOW TO CONNECT ONE — IN LINES THAT WORK');
     const how = await page.evaluate(async () => {
       const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));
