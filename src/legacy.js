@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R206 · 2026-10-20 · the agent link tells you how to connect one';
+const BUILD = 'JBH-88 · R207 · 2026-10-20 · downloadable sounds reach the agent at last';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -9412,22 +9412,46 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
   async pack(url){
     if(url) $('packUrl').value=url;
     await loadPack();
+    /* loadPack() reports to the LCD and falls back to the cached manifest; an
+       agent gets neither of those, so a pack that never arrived has to be an
+       exception rather than an empty list it might mistake for a small pack. */
+    if(!packManifest || !Array.isArray(packManifest.samples))
+      throw new Error('pack did not load: '+packBase());
     return window.MVX.sounds();
   },
   sounds(){
     if(!packManifest || !Array.isArray(packManifest.samples)) return [];
     return packManifest.samples.map(s=>({id:s.id, name:s.name, cat:s.cat,
-      have:haveKeys.has(LIBKEY(s.id))}));
+      have:packHaveKeys.has(LIBKEY(s.id))}));
   },
-  /* Downloads it if it is not already stored, then puts it on a pad — the
-     two steps an agent always wants together. */
+  /* Downloads it if it is not already stored, then puts it on THE PAD ASKED
+     FOR — the two steps an agent always wants together.
+
+     This used to hand off to libToPad(), which is the button's path, and the
+     button's path is wrong for a caller that named a pad: it runs
+     pickTargetPad() again, so a pad that already held a sound was quietly
+     passed over for the first empty one in the bank. An agent laying out a
+     kit — kick on 0, snare on 1 — got its sounds scattered. It also asks for
+     confirmation before overwriting, which no one is there to answer, and it
+     swallows every failure into an LCD line, so a download that never
+     happened still came back looking like success.
+
+     Naming a pad means that pad. No dialog, no relocation, and anything that
+     goes wrong leaves as an exception. */
   async sound(id, padIdx){
     const sm=(packManifest&&packManifest.samples||[]).find(s=>s.id===id);
     if(!sm) throw new Error('no sound "'+id+'" in the loaded pack — JBH.pack() then JBH.sounds()');
-    if(!haveKeys.has(LIBKEY(id))) await libDownload(sm,null);
-    if(padIdx!=null) S.editPad=clamp(padIdx|0,0,NPADS-1);
-    await libToPad(sm);
-    return {pad:S.editPad, id, name:sm.name};
+    ensureAudio();
+    if(!packHaveKeys.has(LIBKEY(id))) await libFetchStore(sm);
+    const rec=await idbGetS(IDB_LIB,LIBKEY(id));
+    if(!rec || !rec.bytes) throw new Error('"'+id+'" is not on the device after downloading it');
+    const buf=await decode(rec.bytes.slice(0));   // slice: decodeAudioData detaches the buffer
+    S.editPad=(padIdx==null)? pickTargetPad() : clamp(padIdx|0,0,NPADS-1);
+    const i=S.editPad;
+    if(loadIntoTarget(buf, sm.name, {keepTarget:true, noAsk:true})===false)
+      throw new Error('could not put "'+id+'" on '+padName(i));
+    try{ drawPackList(); drawDownloads(); updateStoreMeter(); }catch(e){}
+    return {pad:i, id, name:sm.name, seconds:+buf.duration.toFixed(3)};
   },
 
   /* ---- EVERYTHING ELSE THE APP HOLDS ----------------------------------
@@ -10187,18 +10211,28 @@ async function loadPack(){
     lcd('PACK LOAD FAILED: '+(err.message||'no connection & no cached pack'));
   }
 }
-async function libDownload(sm,btn){
+/* THE FETCH ITSELF, AND IT THROWS. Split out of the button handler because
+   two callers want opposite things from a failure: a finger wants the button
+   back and a line on the LCD, and an agent wants an exception — being told
+   "stored" when nothing was stored is how JBH.sound() came to report success
+   for a pad it had not touched. */
+async function libFetchStore(sm){
   const base=packManifest && packManifest._url ? packManifest._url : packBase();
   let fileUrl; try{ fileUrl=new URL(sm.file, base).href; }catch(e){ fileUrl=sm.file; }
+  const res=await fetch(fileUrl);
+  if(!res.ok) throw new Error('HTTP '+res.status+' fetching '+sm.id);
+  const bytes=await res.arrayBuffer();
+  await idbPutS(IDB_LIB,LIBKEY(sm.id),{id:sm.id,name:sm.name,cat:sm.cat,type:res.headers.get('content-type')||'audio/wav',bytes});
+  if(navigator.storage && navigator.storage.persist){ try{ await navigator.storage.persist(); }catch(e){} }
+  await refreshHaveKeys();
+  return bytes.byteLength;
+}
+async function libDownload(sm,btn){
   if(btn){ btn.textContent='…'; btn.disabled=true; }
   lcd('DOWNLOADING '+sm.name+' …');
   try{
-    const res=await fetch(fileUrl);
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const bytes=await res.arrayBuffer();
-    await idbPutS(IDB_LIB,LIBKEY(sm.id),{id:sm.id,name:sm.name,cat:sm.cat,type:res.headers.get('content-type')||'audio/wav',bytes});
-    if(navigator.storage && navigator.storage.persist){ try{ await navigator.storage.persist(); }catch(e){} }
-    await refreshHaveKeys(); drawPackList(); drawDownloads(); updateStoreMeter();
+    await libFetchStore(sm);
+    drawPackList(); drawDownloads(); updateStoreMeter();
     lcd('STORED '+sm.name+' — now available offline. Tap → PAD to use.');
   }catch(err){
     if(btn){ btn.textContent='GET'; btn.disabled=false; }

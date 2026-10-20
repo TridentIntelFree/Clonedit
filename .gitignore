@@ -3,3 +3,8 @@ dist/
 .vite/
 *.log
 index.next.html
+
+# Tracks rendered into the working directory for the user to open or play.
+# Deliverables, not sources — the repo ships no audio.
+hollow-ground.wav
+hollow-ground.json

@@ -43,6 +43,10 @@ await JBH.render()                // bounce and read peak/RMS back
 That last one matters: an agent that cannot hear what it made is composing
 blind. `render()` returns the measurements, and the WAV bytes if asked.
 
+`sound(id, pad)` puts it on **that** pad — it replaces what is there rather
+than wandering off to an empty one, asks nothing, and throws if the download
+or the decode fails. A kit laid out by index stays where it was put.
+
 **AGENT LINK** (PROJ) exposes the same API *outside* the page, over
 `postMessage` and `BroadcastChannel('jbh88')` — same device, no server,
 nothing sent anywhere. Envelope in: `{jbh:1, id, call, args}`. Out:

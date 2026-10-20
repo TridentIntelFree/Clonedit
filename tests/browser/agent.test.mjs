@@ -285,6 +285,63 @@ export default async function ({ browser, base }) {
        a same-origin frame, which is what a second tab is as far as
        BroadcastChannel is concerned. If the printed text drifts from the
        envelope the app actually speaks, the link never flips and this fails. */
+    /* "I'd like for the agent to be able to use everything in the app,
+       including downloadable sounds."
+
+       It could not. JBH.pack(), JBH.sounds() and JBH.sound() all read a
+       variable called haveKeys, and no such variable exists — the set is
+       called packHaveKeys. Every one of them threw ReferenceError on the
+       first call, over every route: MCP, the bus, the console. Nothing ever
+       called them, so nothing ever found out. The section above asserted
+       that 'pack' and 'sound' appear in JBH.calls(), which is a list of
+       names, not a claim that any of them works.
+
+       So these CALL them. And then the pad the caller named, because the old
+       path handed off to the button's loader, which picks its own
+       destination: a pad that already held a sound was passed over for the
+       first empty one in the bank, which scatters a kit an agent is trying
+       to lay out deliberately. */
+    t.head('DOWNLOADABLE SOUNDS — THE HALF THAT HAD NEVER RUN');
+    const dl = await page.evaluate(async () => {
+      const o = {};
+      const list = await JBH.pack('samples/jbh-drums.json');
+      o.listed = list.length;
+      o.shape = list[0] && Object.keys(list[0]).sort().join(',');
+
+      /* onto an empty pad past the sixteenth, which no song doc can describe */
+      o.far = await JBH.sound('jbh:kick_808', 50);
+      o.farName = S.pads[50].name;
+
+      /* and onto one that is ALREADY FULL — it must be replaced, in place,
+         with no dialog, and the pads either side left alone */
+      const before51 = S.pads[51].bufId, before52 = S.pads[52].bufId;
+      await JBH.sound('jbh:hat_open', 51);
+      o.second = await JBH.sound('jbh:snare_909', 51);
+      o.pad51 = S.pads[51].name;
+      o.neighboursUntouched = S.pads[52].bufId === before52;
+      o.wasOccupied = before51 < 0;
+
+      /* have-flags come back from the right set now */
+      o.haveFlag = JBH.sounds().find(s => s.id === 'jbh:kick_808').have;
+
+      /* and a name that is not in the pack is an error, not a shrug */
+      o.unknown = await JBH.sound('jbh:does-not-exist', 53).then(() => null, e => e.message);
+      o.pad53Empty = S.pads[53].bufId < 0;
+      return o;
+    });
+    t.ok('JBH.pack() LOADS A MANIFEST AT ALL — this threw ReferenceError before',
+      dl.listed > 20, dl.listed + ' sounds, fields: ' + dl.shape);
+    t.ok('and sounds() reports which are already on the device', dl.haveFlag === true);
+    t.ok('a downloaded sample lands on the pad that was asked for',
+      dl.far.pad === 50 && dl.farName === dl.far.name,
+      'pad ' + dl.far.pad + ' holds "' + dl.farName + '" (' + dl.far.seconds + 's)');
+    t.ok('AND ON AN OCCUPIED PAD IT REPLACES, rather than wandering to an empty one',
+      dl.wasOccupied && dl.second.pad === 51 && dl.pad51 === dl.second.name &&
+      dl.neighboursUntouched,
+      'pad 51 holds "' + dl.pad51 + '", pad 52 untouched: ' + dl.neighboursUntouched);
+    t.ok('a sound that is not in the pack throws instead of reporting success',
+      /no sound/.test(dl.unknown || '') && dl.pad53Empty, String(dl.unknown));
+
     t.head('AND IT TELLS YOU HOW TO CONNECT ONE — IN LINES THAT WORK');
     const how = await page.evaluate(async () => {
       const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));
