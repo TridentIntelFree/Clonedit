@@ -10299,7 +10299,7 @@ function loadIntoTarget(buf,name,opt){
   const p=S.pads[S.editPad];
   const cleared=voiceWords(resetPadVoice(p));
   p.bufId=bid; p.name=name.slice(0,14); p.warped=false;
-  delete warpOrig[S.editPad]; delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat;
+  delete warpOrig[S.editPad]; delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat; delete p.inst;
   drawPads(); drawEdit(); drawWave(); drawMixer(); dirty();
   try{ drawTraxFx(); }catch(e){}     // the TO PAD button names its target, which just moved
   lcd('LOADED \u2192 '+padName(S.editPad)+' · '+buf.duration.toFixed(2)+'s'
@@ -11428,7 +11428,7 @@ $('btnAssign').addEventListener('click',()=>{
     try{ stopPadVoices(idx); }catch(e){}
     voiceWords(resetPadVoice(p)).forEach(w=>{ if(cleared.indexOf(w)<0) cleared.push(w); });
     p.bufId=bid; p.start=sl.s; p.end=sl.e; p.warped=false;
-    dropWarpOrig(idx); delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat;
+    dropWarpOrig(idx); delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat; delete p.inst;
     p.name='slc'+String(i+1).padStart(2,'0');
     n++;
   });
@@ -11966,7 +11966,7 @@ function assignBufToPad(idx,buf,name){
   const p=S.pads[idx];
   resetPadVoice(p);
   p.bufId=bid; p.warped=false;
-  delete warpOrig[idx]; delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat;   // provenance is re-set by preset/kit/songdoc loaders
+  delete warpOrig[idx]; delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat; delete p.inst;   // provenance is re-set by preset/kit/songdoc loaders
   p.name=(name||'').slice(0,14);
   return bid;
 }
@@ -12386,6 +12386,159 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     try{ drawPackList(); drawDownloads(); updateStoreMeter(); }catch(e){}
     return {pad:i, id, name:sm.name, seconds:+buf.duration.toFixed(3),
       note:nn==null?null:nn};
+  },
+
+  /* ---- INSTRUMENTS: WRITE NOTES, NOT PADS -----------------------------
+
+     Everything above is pad-shaped, and music is not. Writing a piano part
+     means deciding which sample is nearest every note, loading a spread of
+     roots wide enough to cover the range without bending any of them far,
+     allocating a pad to each, resolving every note to a pad and a semitone
+     offset, and merging the notes that land on one pad at one step into a
+     chord instead of overwriting each other.
+
+     That is about eighty lines, it is the same eighty lines for anybody
+     writing melodic music, and getting it wrong does not fail loudly — it
+     comes out sounding like a cheap synthesiser. It was written by hand
+     twice here and was wrong both times, in different ways.
+
+     So the app does it. instrument() lays an instrument across as many pads
+     as it needs; note() writes a note or a chord and works out the rest;
+     figure() does the same for a poly figure, grouping its cells by
+     register so no cell is ever far from a real recording. */
+  async instrument(name, opt){
+    const o=opt||{};
+    if(!name) throw new Error('instrument(name, {match, lo, hi, …})');
+    if(o.pack) await window.MVX.pack(o.pack);
+    const ss=(packManifest&&packManifest.samples)||[];
+    if(!ss.length) throw new Error('no pack loaded — pass {pack:"samples/…json"} or call pack() first');
+    const re=new RegExp(o.match||name,'i');
+    let cand=ss.map(s=>({s, n:sampleNote(s)}))
+      .filter(x=>x.n!=null && re.test(x.s.id)
+        && (o.lo==null||x.n>=o.lo) && (o.hi==null||x.n<=o.hi))
+      .sort((a,b)=>a.n-b.n);
+    if(!cand.length) throw new Error('no pitched samples match /'+(o.match||name)+'/ in this pack');
+    /* THINNED EVENLY, NOT TRUNCATED. A piano is 49 samples and a project is
+       64 pads; taking the first N would give five octaves of bass and
+       nothing above. An even thinning keeps the whole range and only
+       widens the worst bend. */
+    const max=Math.min(o.max||cand.length, NPADS);
+    if(cand.length>max){
+      const keep=[], stride=(cand.length-1)/(max-1);
+      for(let i=0;i<max;i++) keep.push(cand[Math.round(i*stride)]);
+      cand=keep.filter((x,i,a)=>a.indexOf(x)===i);
+    }
+    const placed=[];
+    for(const x of cand){
+      const pad=firstEmptyPad();
+      if(pad<0) break;                 // out of pads: say what was managed
+      await window.MVX.sound(x.s.id, pad);
+      S.pads[pad].inst=name;
+      placed.push({pad, note:x.n, id:x.s.id});
+    }
+    /* The worst bend this layout will ever ask for is half the widest gap
+       between neighbouring roots — worth knowing BEFORE writing the part. */
+    let gap=0;
+    for(let i=1;i<placed.length;i++) gap=Math.max(gap, placed[i].note-placed[i-1].note);
+    return { name, pads:placed.map(p=>p.pad), roots:placed.map(p=>p.note),
+      lo:placed.length?placed[0].note:null, hi:placed.length?placed[placed.length-1].note:null,
+      worstBend:Math.ceil(gap/2), short:cand.length-placed.length || undefined };
+  },
+  /* The pads an instrument is laid across, nearest first for a given note. */
+  instPads(name){ const out=[];
+    for(let i=0;i<NPADS;i++) if(S.pads[i].inst===name && S.pads[i].bufId>=0 && S.pads[i].srcNote!=null)
+      out.push({pad:i, note:S.pads[i].srcNote});
+    return out; },
+  /* ONE NOTE, OR A CHORD, ANYWHERE IN THE RANGE.
+
+     midi may be a number or an array. Notes landing on one pad at one step
+     become a chord on that step rather than overwriting one another, which
+     is the bug anybody writing this by hand hits on their first four-part
+     chord. */
+  note(name, midi, step, vel, locks){
+    const pads=window.MVX.instPads(name);
+    if(!pads.length) throw new Error('no instrument "'+name+'" — call instrument() first');
+    const pat=S.patterns[S.pattern], L=patLen(pat);
+    const st=clamp(step|0,0,L-1), v=clamp(vel==null?0.8:+vel,0.01,1);
+    const want=Array.isArray(midi)?midi:[midi];
+    const per=new Map();
+    let worst=0;
+    for(const m of want){
+      const best=pads.reduce((a,p)=>Math.abs(p.note-m)<Math.abs(a.note-m)?p:a);
+      worst=Math.max(worst,Math.abs(best.note-m));
+      (per.get(best.pad)||per.set(best.pad,[]).get(best.pad)).push(m-best.note);
+    }
+    const out=[];
+    for(const [pad,offs] of per){
+      const k=LK(pad,st,false), cur=pat.locks[k]||{};
+      /* merge with whatever is already on this step for this pad */
+      const had=(cur.pitches&&cur.pitches.length)?cur.pitches:(cur.pitch!=null?[cur.pitch]:[]);
+      const all=[...new Set(had.concat(offs))].sort((a,b)=>a-b);
+      const lk=Object.assign({}, cur, locks||{});
+      if(all.length>1){ lk.pitches=all; lk.pitch=all[0]; }
+      else { lk.pitch=all[0]||0; delete lk.pitches; }
+      pat.steps[pad][st]=Math.max(pat.steps[pad][st]||0, v);
+      pat.locks[k]=lk;
+      out.push({pad, step:st, pitches:all});
+    }
+    bumpLocks(); try{ drawSeq(); drawPads(); }catch(e){} dirty();
+    return {wrote:out, bend:worst};
+  },
+  /* A POLY FIGURE IN NOTES.
+
+     Cells are grouped by register and each group gets a pad whose sample is
+     near them, so a run spanning an octave is never one sample stretched an
+     octave. Pads are reused across patterns — a figure belongs to a pattern,
+     not to a pad — and a new one is only taken when a register has none. */
+  async figure(name, opt){
+    const o=opt||{};
+    if(!Array.isArray(o.notes)||!o.notes.length) throw new Error('figure(name,{notes:[[cell,midi,vel]…]})');
+    const maxBend=o.maxBend==null?3:o.maxBend;
+    const tag=name+':fig';
+    const have=()=>{ const a=[]; for(let i=0;i<NPADS;i++)
+      if(S.pads[i].inst===tag && S.pads[i].bufId>=0 && S.pads[i].srcNote!=null)
+        a.push({pad:i, note:S.pads[i].srcNote}); return a; };
+    const src=window.MVX.instPads(name);
+    const byPad=new Map();
+    let worst=0;
+    for(const [cell,m,v,lk] of o.notes.map(n=>[n[0],n[1],n[2],n[3]])){
+      let pool=have();
+      /* a pad already carrying this figure's register, and not already
+         holding this cell for something else */
+      let pick=pool.filter(p=>Math.abs(p.note-m)<=maxBend)
+        .filter(p=>!(byPad.get(p.pad)||[]).some(c=>c[0]===cell))
+        .sort((a,b)=>Math.abs(a.note-m)-Math.abs(b.note-m))[0];
+      if(!pick){
+        /* take a new pad, loading the nearest sample to this note */
+        const near=window.MVX.nearest(m, o.match||name);
+        const pad=firstEmptyPad();
+        if(pad<0){ /* out of pads: fall back to the closest existing one and
+                      let the stretch show up in schedule().stretched rather
+                      than failing a piece halfway through */
+          pick=pool.sort((a,b)=>Math.abs(a.note-m)-Math.abs(b.note-m))[0];
+          if(!pick) throw new Error('no pads left for figure "'+name+'"');
+        } else if(near){
+          await window.MVX.sound(near.id, pad);
+          S.pads[pad].inst=tag;
+          if(src.length){ const t=src[0].pad;   // inherit the instrument's voicing
+            ['gain','pan','rev','dly','att','dec','sus','rel','keepTime']
+              .forEach(f=>{ S.pads[pad][f]=S.pads[t][f]; }); }
+          pick={pad, note:S.pads[pad].srcNote};
+        } else throw new Error('no sample near MIDI '+m+' for "'+name+'"');
+      }
+      worst=Math.max(worst,Math.abs(pick.note-m));
+      (byPad.get(pick.pad)||byPad.set(pick.pad,[]).get(pick.pad))
+        .push([cell, v==null?0.6:v, Object.assign({pitch:m-pick.note}, lk||{})]);
+    }
+    const made=[];
+    for(const [pad,row] of byPad){
+      window.MVX.poly(pad, {on:true, bpm:o.bpm||240, cells:o.cells||row.length,
+        lock:o.lock!==false, trig:'step', row});
+      for(const st of (o.fire||[0]))
+        window.MVX.step(pad, st, Math.max(0.3, Math.max(...row.map(r=>r[1]))));
+      made.push({pad, cells:row.map(r=>r[0])});
+    }
+    return {name, pads:made, bend:worst, bpm:o.bpm||240, cells:o.cells||o.notes.length};
   },
 
   /* ---- EVERYTHING ELSE THE APP HOLDS ----------------------------------
@@ -18511,7 +18664,7 @@ $('btnKitBuild').addEventListener('click',async ()=>{
       const p=S.pads[pad];
       p.bufId=S.buffers.length-1; p.start=0; p.end=1; p.name=def.id; p.warped=false;
       p.gain=0.9; p.pitch=0; p.fine=0; p.reverse=false; p.mode='one'; p.speed=1; p.keepPitch=false;
-      delete warpOrig[pad]; delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat;
+      delete warpOrig[pad]; delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat; delete p.inst;
       made.push(pad);
     }
     if($('kbBeat').checked){   // a simple, musical starter pattern using the new pads

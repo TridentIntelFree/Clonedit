@@ -568,6 +568,61 @@ export default async function ({ browser, base }) {
       /no such call/.test(sch.batch.err) && sch.batch.stillRan,
       'one bad call in eight hundred should not lose the other 799');
 
+    /* WRITE NOTES, NOT PADS.
+
+       Everything else here is pad-shaped and music is not. A piano part
+       means choosing a sample per note, loading a spread of roots wide
+       enough that none is bent far, allocating a pad to each, resolving
+       every note to a pad and an offset, and merging what lands on one pad
+       at one step into a chord instead of overwriting it. Eighty lines, the
+       same eighty for anybody, and it was written by hand twice here and
+       was wrong both times — in different ways, neither of which failed
+       loudly. */
+    t.head('AN INSTRUMENT, NOT SIXTY-FOUR PADS');
+    const inst = await page.evaluate(async () => {
+      const o = {}, w = ms => new Promise(r => setTimeout(r, ms));
+      JBH.clear(); await w(250);
+      JBH.set({ bpm: 96, human: 0, swing: 0 });
+      o.lay = await JBH.instrument('piano', { pack: 'samples/real-cc0-full.json',
+        match: 'vsco:piano', lo: 40, hi: 88, max: 22 });
+
+      /* a chord, then another note ON THE SAME STEP: it must merge */
+      JBH.note('piano', [50, 53, 57, 62], 0, 0.7);
+      JBH.note('piano', 69, 0, 0.8);
+      JBH.note('piano', 67, 4, 0.6);
+
+      /* a figure spanning an octave — grouped by register, so no one sample
+         is stretched across the whole run */
+      o.fig = await JBH.figure('piano', { bpm: 288, cells: 5, match: 'vsco:piano',
+        notes: [[0, 72, .5], [1, 77, .4], [2, 81, .45], [3, 84, .4], [4, 77, .35]],
+        fire: [0, 8] });
+
+      const s = await JBH.schedule({ src: 'pat' });
+      o.atStep0 = [...new Set(s.events.filter(e => e.t < 0.1).map(e => e.midi))].sort((a, b) => a - b);
+      o.stretched = s.stretched;
+      o.notes = s.notes;
+      o.noInstrument = (() => { try { JBH.note('tuba', 60, 0, 1); return null; }
+        catch (e) { return e.message; } })();
+      return o;
+    });
+    t.ok('instrument() lays a playable range across as many pads as it needs',
+      inst.lay.pads.length === 22 && inst.lay.lo <= 41 && inst.lay.hi >= 86,
+      inst.lay.pads.length + ' pads, MIDI ' + inst.lay.lo + '-' + inst.lay.hi +
+      ', worst bend ' + inst.lay.worstBend);
+    t.ok('note() RESOLVES PITCH TO A PAD, and merges a chord with what is there',
+      inst.atStep0.includes(50) && inst.atStep0.includes(62) && inst.atStep0.includes(69) &&
+      [50, 53, 57, 62, 69].every(m => inst.atStep0.includes(m)),
+      'step 0 sounds ' + inst.atStep0.join(',') +
+      ' — four written as a chord plus one written separately');
+    t.ok('figure() GROUPS ITS CELLS BY REGISTER rather than stretching one sample',
+      inst.fig.pads.length >= 2 && inst.fig.pads.length <= 5 && inst.fig.bend <= 3,
+      inst.fig.pads.length + ' pads for 5 cells spanning an octave, worst bend ' +
+      inst.fig.bend);
+    t.ok('and NOTHING COMES OUT OVER-STRETCHED — the renderer agrees',
+      inst.stretched.length === 0, JSON.stringify(inst.stretched));
+    t.ok('an instrument that was never laid out says so rather than guessing',
+      /no instrument/.test(inst.noInstrument || ''), String(inst.noInstrument));
+
     t.head('AND IT TELLS YOU HOW TO CONNECT ONE — IN LINES THAT WORK');
     const how = await page.evaluate(async () => {
       const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));

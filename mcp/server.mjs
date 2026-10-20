@@ -174,6 +174,35 @@ const TOOLS = [
       pad: { type: 'integer' }, hits: { type: 'integer' }, steps: { type: 'integer' },
       rot: { type: 'integer' }, vel: { type: 'number' }, locks: { type: 'object' } } } },
 
+  { name: 'jbh_instrument', description:
+      'LAY A PLAYABLE INSTRUMENT ACROSS PADS. Picks every sampled root in the loaded pack '
+      + 'matching `match` inside [lo,hi], thins them evenly to `max`, loads each onto its own '
+      + 'pad and tags them. Returns the pads, the range, and worstBend — the furthest any note '
+      + 'will ever be transposed with this layout, worth reading BEFORE writing the part.',
+    inputSchema: { type: 'object', required: ['name'], properties: {
+      name: { type: 'string' }, pack: { type: 'string' }, match: { type: 'string' },
+      lo: { type: 'integer' }, hi: { type: 'integer' }, max: { type: 'integer' } } } },
+
+  { name: 'jbh_note', description:
+      'WRITE A NOTE OR A CHORD BY MIDI NUMBER, on an instrument laid out by jbh_instrument. '
+      + 'Resolves the pad and the semitone offset itself, and notes landing on one pad at one '
+      + 'step become a chord rather than overwriting each other. midi is a number or an array.',
+    inputSchema: { type: 'object', required: ['name', 'midi', 'step'], properties: {
+      name: { type: 'string' },
+      midi: { oneOf: [{ type: 'integer' }, { type: 'array', items: { type: 'integer' } }] },
+      step: { type: 'integer' }, vel: { type: 'number' }, locks: { type: 'object' } } } },
+
+  { name: 'jbh_figure', description:
+      'A POLY FIGURE WRITTEN IN NOTES: {notes:[[cell, midi, vel]], bpm, cells, fire:[steps]}. '
+      + 'Cells are grouped by register and each group gets a pad whose sample is near them, so '
+      + 'a run spanning an octave is never one sample stretched an octave. Pads are reused '
+      + 'across patterns.',
+    inputSchema: { type: 'object', required: ['name', 'notes'], properties: {
+      name: { type: 'string' }, notes: { type: 'array', items: { type: 'array' } },
+      bpm: { type: 'number' }, cells: { type: 'integer' },
+      fire: { type: 'array', items: { type: 'integer' } },
+      match: { type: 'string' }, maxBend: { type: 'integer' } } } },
+
   { name: 'jbh_schedule', description:
       'WHEN EVERY NOTE LANDS — the bounce\'s own event list, returned from the same loop that '
       + 'builds the file: time, pad, pitch, MIDI note where the pad knows it, velocity. Use this '
@@ -302,6 +331,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_pattern':     return ok(await jbh('pattern', [a.pattern, a.props]));
       case 'jbh_euclid':      return ok(await jbh('euclid', [a.pad, a.hits, a.steps, a.rot, a.vel, a.locks]));
       case 'jbh_params':      return ok(await jbh('params'));
+      case 'jbh_instrument':  return ok(await jbh('instrument', [a.name, { pack: a.pack, match: a.match, lo: a.lo, hi: a.hi, max: a.max }]));
+      case 'jbh_note':        return ok(await jbh('note', [a.name, a.midi, a.step, a.vel, a.locks]));
+      case 'jbh_figure':      return ok(await jbh('figure', [a.name, { notes: a.notes, bpm: a.bpm, cells: a.cells, fire: a.fire, match: a.match, maxBend: a.maxBend }]));
       case 'jbh_schedule':    return ok(await jbh('schedule', [{ src: a.src, loops: a.loops, full: a.full }]));
       case 'jbh_levels':      return ok(await jbh('levels', [{ src: a.src, loops: a.loops }]));
       case 'jbh_nearest':     return ok(await jbh('nearest', [a.note, a.filter]));
