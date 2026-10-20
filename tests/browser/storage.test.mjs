@@ -403,6 +403,71 @@ export default async function ({ browser, base }) {
       && Math.abs(pk.str - pk.normal) < 1e-6,
       [pk.neg, pk.zero, pk.str, pk.normal].map(v => v.toFixed(4)).join(' / '));
 
+    /* A SAVED FILE CARRIES ITS AUDIO, WHATEVER OPENS IT.
+
+       Found building the MCP server. There are two saved shapes and they are
+       both correct: the library copy lives in IndexedDB, which structured-
+       clones, so its audio is ArrayBuffers; a .json FILE has to survive
+       JSON.stringify, so its audio is base64. What was wrong is that only one
+       of them had a reusable decoder. The file decoder was inlined in the
+       import handler, so the only way to open a file was to have a file input
+       and a person holding it. Anything else — an agent, a test, later code —
+       reached for docToBuffers, got Int16Array("<base64>"), which is empty,
+       and restored a project whose pads and patterns were perfect and whose
+       sound was gone. Structurally flawless and completely silent is the
+       worst way for a save to fail, because nothing looks wrong. */
+    t.head('A SESSION FILE ROUND-TRIPS ITS AUDIO');
+    const file = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));
+      ensureAudio(); await wait(300);
+      S.pads.forEach(p => { p.mute = false; });
+      S.masterVol = 0.9;
+      document.getElementById('bSrc').value = 'pat';
+      document.getElementById('bLoops').value = '1';
+      const sig = async () => { const b = await renderMix(null, null,
+          { loops: 1, src: 'pat', noTail: true });
+        if (!b) return null;
+        const d = b.getChannelData(0); let pk = 0, s2 = 0;
+        for (let i = 0; i < d.length; i++) { const a2 = Math.abs(d[i]); if (a2 > pk) pk = a2; s2 += d[i] * d[i]; }
+        return { peak: +pk.toFixed(4), rms: +Math.sqrt(s2 / d.length).toFixed(4) }; };
+      o.before = await sig();
+
+      /* The file as a person would get it: through the same builder SAVE uses,
+         then actually serialised, because the bug lives in the serialisation. */
+      const text = JSON.stringify(JBH.sessionFile('round trip'));
+      o.kb = Math.round(text.length / 1024);
+      const doc = JSON.parse(text);
+      o.buffersInFile = (doc.buffers || []).length;
+      o.audioIsText = typeof ((doc.buffers || [])[0] || {}).ch?.[0] === 'string';
+      o.padsInFile = (doc.pads || []).filter(p => p && p.bufId >= 0).length;
+
+      /* Wipe, prove it is wiped, then open the file. */
+      projNew(); await wait(500);
+      o.afterWipe = await sig();
+      o.loaded = !!JBH.loadFile(doc);
+      await wait(600);
+      o.after = await sig();
+      o.padsBack = S.pads.filter(p => p.bufId >= 0).length;
+      return o;
+    });
+    t.note('    file ' + file.kb + ' KB · ' + file.buffersInFile + ' buffers · ' +
+      file.padsInFile + ' pads');
+    t.ok('the audio in a FILE is text, because an ArrayBuffer does not survive JSON',
+      file.audioIsText, 'base64, not {}');
+    t.ok('and there is audio in there at all', file.buffersInFile > 0 && file.padsInFile > 0);
+    t.ok('a new project really does clear it first — the control',
+      !file.afterWipe || file.afterWipe.peak < 0.01,
+      file.afterWipe ? 'peak ' + file.afterWipe.peak : 'nothing to render');
+    t.ok('the file opens', file.loaded && file.padsBack === file.padsInFile,
+      file.padsBack + ' pads back');
+    t.note('    peak before ' + file.before.peak + ' → after ' + file.after.peak);
+    t.ok('AND IT SOUNDS THE SAME AFTERWARDS — not merely structurally intact',
+      file.after && file.before &&
+      Math.abs(file.after.peak - file.before.peak) < 0.02 &&
+      Math.abs(file.after.rms - file.before.rms) < 0.02 && file.after.peak > 0.05,
+      'peak ' + file.before.peak + ' → ' + file.after.peak +
+      ', rms ' + file.before.rms + ' → ' + file.after.rms);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

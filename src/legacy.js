@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R204 · 2026-10-20 · a melody that keeps its rhythm, and an agent that can play along';
+const BUILD = 'JBH-88 · R205 · 2026-10-20 · an MCP server, and a saved file that keeps its sound';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -15996,7 +15996,16 @@ function download(blob,name){
   document.body.appendChild(a); a.click();
   setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },4000);
 }
-$('btnSave').addEventListener('click',()=>{
+/* THE SAVED .JSON, IN ONE PLACE.
+
+   Pulled out of the SAVE button because an agent needs to produce exactly
+   this file and there must not be two versions of what "exactly this" means.
+   The audio is base64 here and NOT the ArrayBuffers snapshotSession() uses:
+   that one is for IndexedDB, which structured-clones and keeps them, while
+   JSON.stringify turns an ArrayBuffer into {} and silently drops every
+   sample. Found by saving a session over MCP, loading it back, and rendering
+   silence from a project whose pads and patterns all looked right. */
+function sessionFileDoc(){
   gcBuffers();
   const bufs=S.buffers.map(b=>{
     const chans=[], pk=[];
@@ -16006,7 +16015,7 @@ $('btnSave').addEventListener('click',()=>{
     }
     return {sr:b.sampleRate,len:b.length,ch:chans,pk};
   });
-  const doc={ fmt:DOC_FMT, v:DOC_V, build:BUILD, name:$('projName').value,
+  return { fmt:DOC_FMT, v:DOC_V, build:BUILD, name:$('projName').value,
     bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
@@ -16022,6 +16031,13 @@ $('btnSave').addEventListener('click',()=>{
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
+}
+window.MVX.sessionFile=function(name){
+  if(name) $('projName').value=String(name).slice(0,60);
+  return sessionFileDoc();
+};
+$('btnSave').addEventListener('click',()=>{
+  const doc=sessionFileDoc();
   const blob=new Blob([JSON.stringify(doc)],{type:'application/json'});
   download(blob, ($('projName').value||'mvx-session')+'.json');
   plog('Saved project JSON ('+Math.round(blob.size/1024)+' KB).');
@@ -16520,21 +16536,42 @@ function applySessionDoc(doc, bufs){
   drawPads(); drawEdit(); drawSeq(); drawCcMaps(); drawWave(); drawTrax(); drawLive(); drawSidechain(); drawSong(); drawMixer();
   return true;
 }
+/* A SAVED FILE AND A SAVED SESSION ARE NOT THE SAME SHAPE.
+
+   The library and crash-recovery copy live in IndexedDB, which structured-
+   clones, so their audio is ArrayBuffers and docToBuffers() unpacks them. A
+   .json FILE has to survive JSON.stringify, so its audio is base64 and needs
+   b64ToF32 instead. Both were true before; what was missing was anywhere to
+   say so once. The file decoder was inlined in the import handler, so the
+   only way to open a file was to have a file input and a user — which is
+   exactly what an agent does not have. Loading one over MCP picked the wrong
+   decoder, got Int16Array("<base64>") — an empty array — and restored a
+   project whose pads and patterns were perfect and whose audio was gone. */
+function fileDocToBuffers(doc){
+  return (doc.buffers||[]).map(b=>{
+    const ab=mkAudioBuf(b.len,b.sr,b.ch.length);
+    b.ch.forEach((c64,i)=>ab.copyToChannel(b64ToF32(c64, b.pk?b.pk[i]:1),i));
+    return ab;
+  });
+}
+function loadSessionFileDoc(doc, label){
+  if(!doc || doc.fmt!==DOC_FMT) throw new Error('not an MVX project');
+  /* The version is checked BEFORE the audio is decoded: a refusal should not
+     spend seconds unpacking megabytes it is going to throw away. */
+  if(!docAccept(doc, label||'file import')) return false;
+  if(!applySessionDoc(doc, fileDocToBuffers(doc))) return false;
+  curProjId=null;
+  try{ drawProjects(); }catch(e){}   // an imported file isn't a library entry yet — SAVE adds it
+  return true;
+}
+window.MVX.loadFile=function(doc){
+  const okd=loadSessionFileDoc(doc,'agent');
+  return okd ? window.MVX.state() : null;
+};
 $('jsonIn').addEventListener('change',async e=>{
   const f=e.target.files && e.target.files[0]; if(!f) return;
   try{
-    const doc=JSON.parse(await f.text());
-    if(doc.fmt!==DOC_FMT) throw new Error('not an MVX project');
-    /* Check the version BEFORE decoding the audio: a refusal should not spend
-       seconds unpacking megabytes it is going to throw away. */
-    if(!docAccept(doc,'file import: '+f.name)) return;
-    const bufs=doc.buffers.map(b=>{
-      const ab=mkAudioBuf(b.len,b.sr,b.ch.length);
-      b.ch.forEach((c64,i)=>ab.copyToChannel(b64ToF32(c64, b.pk?b.pk[i]:1),i));
-      return ab;
-    });
-    if(!applySessionDoc(doc,bufs)) return;
-    curProjId=null; drawProjects();   // an imported file isn't a library entry yet — SAVE adds it
+    if(!loadSessionFileDoc(JSON.parse(await f.text()), 'file import: '+f.name)) return;
     plog('Loaded project: '+f.name);
     lcd('PROJECT LOADED · tap SAVE AS NEW to keep it in the library.');
   }catch(err){ plog('Load failed: '+err.message); lcd('LOAD FAILED.'); }
