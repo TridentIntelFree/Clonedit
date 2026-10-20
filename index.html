@@ -10299,7 +10299,7 @@ function loadIntoTarget(buf,name,opt){
   const p=S.pads[S.editPad];
   const cleared=voiceWords(resetPadVoice(p));
   p.bufId=bid; p.name=name.slice(0,14); p.warped=false;
-  delete warpOrig[S.editPad]; delete p.srcPreset; delete p.srcNote;
+  delete warpOrig[S.editPad]; delete p.srcPreset; delete p.srcNote; delete p.srcSample;
   drawPads(); drawEdit(); drawWave(); drawMixer(); dirty();
   try{ drawTraxFx(); }catch(e){}     // the TO PAD button names its target, which just moved
   lcd('LOADED \u2192 '+padName(S.editPad)+' · '+buf.duration.toFixed(2)+'s'
@@ -11428,7 +11428,7 @@ $('btnAssign').addEventListener('click',()=>{
     try{ stopPadVoices(idx); }catch(e){}
     voiceWords(resetPadVoice(p)).forEach(w=>{ if(cleared.indexOf(w)<0) cleared.push(w); });
     p.bufId=bid; p.start=sl.s; p.end=sl.e; p.warped=false;
-    dropWarpOrig(idx); delete p.srcPreset; delete p.srcNote;
+    dropWarpOrig(idx); delete p.srcPreset; delete p.srcNote; delete p.srcSample;
     p.name='slc'+String(i+1).padStart(2,'0');
     n++;
   });
@@ -11966,7 +11966,7 @@ function assignBufToPad(idx,buf,name){
   const p=S.pads[idx];
   resetPadVoice(p);
   p.bufId=bid; p.warped=false;
-  delete warpOrig[idx]; delete p.srcPreset; delete p.srcNote;   // provenance is re-set by preset/kit/songdoc loaders
+  delete warpOrig[idx]; delete p.srcPreset; delete p.srcNote; delete p.srcSample;   // provenance is re-set by preset/kit/songdoc loaders
   p.name=(name||'').slice(0,14);
   return bid;
 }
@@ -12377,8 +12377,15 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const i=S.editPad;
     if(loadIntoTarget(buf, sm.name, {keepTarget:true, noAsk:true})===false)
       throw new Error('could not put "'+id+'" on '+padName(i));
+    /* Remember WHICH NOTE this is, where the pack says so. A pad that knows
+       its own pitch can report real MIDI in a schedule, and the distance a
+       lock is asking it to travel stops being invisible. */
+    const nn=sampleNote(sm);
+    if(nn!=null) S.pads[i].srcNote=nn;
+    S.pads[i].srcSample=id;
     try{ drawPackList(); drawDownloads(); updateStoreMeter(); }catch(e){}
-    return {pad:i, id, name:sm.name, seconds:+buf.duration.toFixed(3)};
+    return {pad:i, id, name:sm.name, seconds:+buf.duration.toFixed(3),
+      note:nn==null?null:nn};
   },
 
   /* ---- EVERYTHING ELSE THE APP HOLDS ----------------------------------
@@ -12411,6 +12418,120 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     dirty();
     return JSON.parse(JSON.stringify(S.inst));
   },
+  /* WHEN EVERY NOTE LANDS, said by the thing that places them.
+
+     render() hands back four numbers for a piece that may be three minutes
+     long, and an agent that wants to know anything else has to analyse the
+     audio — which means writing an onset detector, which means being wrong.
+     This is the bounce's own event list: every hit, with its time, pad,
+     pitch, velocity and the lock that shaped it, from the same loop that
+     builds the file, so it cannot be a second opinion about it. */
+  async schedule(opt){
+    const o=opt||{};
+    const r=await renderMix(null,null,{loops:o.loops||1, src:o.src||'pat',
+      eventsOnly:true, worstCase:o.worstCase!==false});
+    if(!r) return null;
+    const notes=r.schedule.map(e=>{
+      const p=S.pads[e.p], root=(p&&p.srcNote!=null)?p.srcNote:null;
+      return { t:+e.when.toFixed(4), pad:e.p, name:(p&&p.name)||'', vel:+e.v.toFixed(3),
+        pitch:e.pitch||0, midi:root==null?null:root+(e.pitch||0), chord:!!e.chord };
+    }).sort((a,b)=>a.t-b.t || a.pad-b.pad);
+    const byPad={};
+    notes.forEach(n=>{ (byPad[n.pad]=byPad[n.pad]||{n:0,lo:999,hi:-999,name:n.name});
+      const q=byPad[n.pad]; q.n++;
+      if(n.midi!=null){ q.lo=Math.min(q.lo,n.midi); q.hi=Math.max(q.hi,n.midi); } });
+    Object.values(byPad).forEach(q=>{ if(q.lo>q.hi){ delete q.lo; delete q.hi; } });
+    return { seconds:r.seconds, bars:r.bars, notes:notes.length, lanes:r.lanes,
+      silences:r.silences, byPad, events:o.full===false?undefined:notes };
+  },
+
+  /* WHAT A RENDER SOUNDS LIKE PER PAD, in one call.
+
+     Balancing a mix meant muting sixty-three pads, rendering, reading one
+     peak and doing it again — fifty renders for a table of fifty numbers,
+     which nobody is going to do, so mixes stay unbalanced. It is still one
+     bounce per pad underneath, because a convolution reverb cannot be
+     unmixed after the fact, but it is one CALL, and the pads with nothing
+     to play are skipped. */
+  async levels(opt){
+    const o=opt||{}, src=o.src||'pat', loops=o.loops||1;
+    const sch=await window.MVX.schedule({src, loops, full:false});
+    if(!sch) return null;
+    const pads=Object.keys(sch.byPad).map(Number)
+      .filter(p=>S.pads[p] && S.pads[p].bufId>=0);
+    const full=await renderMix(null,null,{loops,src,noTail:true});
+    const meas=buf=>{ if(!buf) return null;
+      const L=buf.getChannelData(0), R=buf.numberOfChannels>1?buf.getChannelData(1):L;
+      let pk=0,s=0; for(let i=0;i<L.length;i++){ const a=Math.abs(L[i]),b2=Math.abs(R[i]);
+        if(a>pk)pk=a; if(b2>pk)pk=b2; s+=L[i]*L[i]; }
+      return {peak:+pk.toFixed(4), rms:+Math.sqrt(s/L.length).toFixed(4)}; };
+    const mix=meas(full);
+    const out=[];
+    for(const p of pads){
+      const one=await renderMix(new Set([p]),new Set(),{loops,src,noTail:true});
+      const m=meas(one)||{peak:0,rms:0};
+      out.push({ pad:p, name:S.pads[p].name||'', hits:sch.byPad[p].n,
+        peak:m.peak, rms:m.rms,
+        /* dB against the full mix, which is the number a person actually
+           reasons in: "the cello is nine under" rather than "0.33". */
+        dbPeak:+(20*Math.log10(Math.max(m.peak,1e-6)/Math.max(mix.peak,1e-6))).toFixed(1),
+        dbRms:+(20*Math.log10(Math.max(m.rms,1e-6)/Math.max(mix.rms,1e-6))).toFixed(1),
+        silent:m.peak<0.004 });
+    }
+    out.sort((a,b)=>b.rms-a.rms);
+    return { mix, pads:out, buried:out.filter(x=>x.dbRms<-26).map(x=>x.pad) };
+  },
+
+  /* THE SAMPLE NEAREST A NOTE.
+
+     The piano pack holds every white key from C1 to B7, so every note in
+     music is at most a semitone from a real recording — but only if you
+     know which one, and the only way to know was to parse the ids yourself.
+     Getting that wrong is not a small error: pitch is playback rate here,
+     and a piano moved a fifth stops being a piano. A piece written with
+     real piano samples came out sounding electric for exactly this reason.
+
+     Give it a MIDI note and it names the closest sample in the loaded pack
+     and how far the bend is, so the mistake is hard to make. */
+  nearest(midiNote, filter){
+    const ss=(packManifest&&packManifest.samples)||[];
+    const re=filter?new RegExp(filter,'i'):null;
+    let best=null;
+    for(const s of ss){
+      const nn=sampleNote(s); if(nn==null) continue;
+      if(re && !re.test(s.id)) continue;
+      const d=Math.abs(nn-midiNote);
+      if(!best || d<best.off) best={id:s.id, name:s.name, note:nn, off:d,
+        have:packHaveKeys.has(LIBKEY(s.id))};
+    }
+    if(!best) return null;
+    return {id:best.id, name:best.name, note:best.note, have:best.have,
+      semitones:midiNote-best.note};
+  },
+
+  /* MANY CALLS, ONE CROSSING.
+
+     Writing a three-minute piece took about seven hundred calls, and most
+     of the wall time went on the round trip rather than on anything the
+     app did. Each entry is [name, ...args]; the answers come back in order,
+     and a failure is reported in place rather than taking the batch down —
+     a run of eight hundred step() calls should not be lost because the
+     four hundredth named a pad that does not exist. */
+  async batch(calls){
+    if(!Array.isArray(calls)) throw new Error('batch([[name, ...args], …])');
+    const out=[];
+    for(const c of calls){
+      const name=Array.isArray(c)?c[0]:c&&c.call;
+      const args=Array.isArray(c)?c.slice(1):(c&&c.args)||[];
+      const fn=window.MVX[name];
+      if(typeof fn!=='function'){ out.push({ok:false,error:'no such call: '+name}); continue; }
+      try{ const r=fn.apply(window.MVX,args);
+        out.push({ok:true, result:(r&&typeof r.then==='function')?await r:r}); }
+      catch(e){ out.push({ok:false,error:String(e&&e.message||e)}); }
+    }
+    return {n:out.length, failed:out.filter(r=>!r.ok).length, results:out};
+  },
+
   /* A CLEAN SLATE, which nothing but the NEW button could ask for.
 
      An agent arriving at a freshly opened app lands on the demo song, and
@@ -13284,6 +13405,23 @@ async function loadClaudeSong(){
    iOS won't evict the library under pressure. */
 let packManifest=null, packHaveKeys=new Set();
 const LIBKEY=id=>'s:'+id;
+/* WHAT NOTE A SAMPLE IS.
+
+   Manifests may say so outright; the packs here instead spell it in the id —
+   vsco:piano-C4, vsco:contrabass-Fs1, vsco:trombone-As2 — where s after the
+   letter is a sharp. Nothing read it, so nothing in the app knew that a pad
+   holding "Piano C4" was middle C, and every decision about how far to
+   transpose it had to be made somewhere else, by hand, from the filename.
+   That is how a piano ends up stretched a fifth and sounding like a synth. */
+const NOTE_LETTER={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+function sampleNote(sm){
+  if(!sm) return null;
+  if(typeof sm.note==='number') return sm.note;        // a manifest that says so wins
+  const m=/-([A-G])(s|b|#)?(-?\d)$/.exec(String(sm.id||''));
+  if(!m) return null;
+  const acc=m[2]==='s'||m[2]==='#' ? 1 : (m[2]==='b' ? -1 : 0);
+  return NOTE_LETTER[m[1]] + acc + (parseInt(m[3],10)+1)*12;
+}
 async function refreshHaveKeys(){
   try{ const keys=await idbKeysS(IDB_LIB); packHaveKeys=new Set(keys.filter(k=>typeof k==='string'&&k.indexOf('s:')===0)); }
   catch(e){ packHaveKeys=new Set(); }
@@ -18334,7 +18472,7 @@ $('btnKitBuild').addEventListener('click',async ()=>{
       const p=S.pads[pad];
       p.bufId=S.buffers.length-1; p.start=0; p.end=1; p.name=def.id; p.warped=false;
       p.gain=0.9; p.pitch=0; p.fine=0; p.reverse=false; p.mode='one'; p.speed=1; p.keepPitch=false;
-      delete warpOrig[pad]; delete p.srcPreset; delete p.srcNote;
+      delete warpOrig[pad]; delete p.srcPreset; delete p.srcNote; delete p.srcSample;
       made.push(pad);
     }
     if($('kbBeat').checked){   // a simple, musical starter pattern using the new pads
@@ -20704,11 +20842,38 @@ async function renderMixInner(padSet, traxSet, opt){
           /* the same gate the live scheduler applies, against the same pure
              function, so the file cannot disagree with what was played */
           if(pc && polyTrig(pc)==='step' && !(lk&&lk.plain)){
-            const prow=polyRowOf(pat,p), barDur=NSTEPS*sd;
+            const prow=polyRowOf(pat,p), barDur=NSTEPS*sd, pd=polyStepDur(pc,barDur);
             let any=false;
             for(const f of polyFigure(pc, when, barDur)){
               any=true;
-              events.push({when:f.when, p, v:clamp(f.v*hv,0.02,1), pitch:0, chord:false, lk, pat});
+              /* THE CELL'S OWN LOCK, NOT THE STEP'S — and this line is why.
+                 It used to push pitch:0, chord:false and the grid step's lock,
+                 so a step-fired figure bounced as one repeated note at the
+                 pad's root while polyFire() played the written melody live.
+                 Every per-cell pitch, chord, probability, ratchet, nudge and
+                 sound lock was dropped on the way to the file. A whole piece
+                 of music came out of here with its inner voices flattened.
+
+                 It is the fault this file keeps guarding against everywhere
+                 else — the bounce disagreeing with what was played — and it
+                 survived because nothing had ever put a pitch on a poly cell:
+                 the panel can, but no test did, and the agent API could not
+                 reach POLY at all until R208. Mirrors polyFire() step for
+                 step now, down to humanizing twice (once for the step, once
+                 for the cell) because that is what the live path does. */
+              const plk=pat.locks && pat.locks[LK(p,f.idx,true)];
+              if(!worst && plk && plk.prob!=null && takeRnd()>plk.prob) continue;
+              let pw=f.when; if(plk&&plk.nudge) pw+=plk.nudge*pd;
+              let pv=clamp(f.v*hv,0.02,1);
+              if(!worst && S.human>0){ pw=Math.max(0.01,pw+(takeRnd()*2-1)*S.human*0.012);
+                pv=clamp(pv*(1-takeRnd()*S.human*0.22),0.05,1); }
+              const pch=(plk&&plk.pitches&&plk.pitches.length)?plk.pitches:[(plk&&plk.pitch)||0];
+              const prat=(plk&&plk.rat>1)?plk.rat:1, pIsChord=pch.length>1;
+              pch.forEach(pitch=>{
+                if(prat>1){ const rd=pd/prat;
+                  for(let r=0;r<prat;r++) events.push({when:pw+r*rd,p,v:pv,pitch,chord:pIsChord,lk:plk,pat}); }
+                else events.push({when:pw,p,v:pv,pitch,chord:pIsChord,lk:plk,pat});
+              });
             }
             if(any) continue;
           }
@@ -20735,6 +20900,19 @@ async function renderMixInner(padSet, traxSet, opt){
     if(traxSet && !traxSet.has(i)) return;
     const b=S.buffers[tr.bufId]; if(b) trax.push({tr,b});
   });
+  /* THE SCHEDULE, WITHOUT THE AUDIO.
+
+     Returned from inside the bounce rather than worked out alongside it, so
+     it is the same list, built by the same loop, under the same seeded
+     randomness. A second implementation would be a second opinion, and the
+     whole reason this exists is that an agent analysing the rendered WAV is
+     analysing its own guesswork: an onset detector written to check these
+     very figures reported 146 hits for four piano notes, twice, before it
+     was abandoned for asking the scheduler directly. The app has always
+     known exactly when every note lands. Now it can say so. */
+  if(opt && opt.eventsOnly) return { schedule:events.filter(e=>!e.sil),
+    silences:events.filter(e=>e.sil).map(e=>+e.when.toFixed(4)),
+    bars:absB/NSTEPS, seconds:+t.toFixed(4), lanes:trax.length };
   if(!events.length && !trax.length) return null;
   /* A clip that starts at bar 9 makes the render longer by where it starts,
      not just by how long it is. Without this the bounce would be cut off at

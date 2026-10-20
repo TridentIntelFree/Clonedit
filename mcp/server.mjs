@@ -174,6 +174,36 @@ const TOOLS = [
       pad: { type: 'integer' }, hits: { type: 'integer' }, steps: { type: 'integer' },
       rot: { type: 'integer' }, vel: { type: 'number' }, locks: { type: 'object' } } } },
 
+  { name: 'jbh_schedule', description:
+      'WHEN EVERY NOTE LANDS — the bounce\'s own event list, returned from the same loop that '
+      + 'builds the file: time, pad, pitch, MIDI note where the pad knows it, velocity. Use this '
+      + 'instead of analysing the rendered WAV; the app already knows exactly, and an onset '
+      + 'detector does not.',
+    inputSchema: { type: 'object', properties: {
+      src: { type: 'string', enum: ['pat', 'song', 'chain', 'morph'] },
+      loops: { type: 'integer' }, full: { type: 'boolean' } } } },
+
+  { name: 'jbh_levels', description:
+      'A per-pad balance table in one call: peak, RMS, and dB relative to the full mix, plus a '
+      + 'list of pads that are buried. One bounce per sounding pad underneath, so it is not '
+      + 'cheap — but it is the difference between mixing and guessing.',
+    inputSchema: { type: 'object', properties: {
+      src: { type: 'string', enum: ['pat', 'song', 'chain', 'morph'] },
+      loops: { type: 'integer' } } } },
+
+  { name: 'jbh_nearest', description:
+      'The sample in the loaded pack closest to a MIDI note, and how many semitones away it is. '
+      + 'Pitch here is playback rate, so a piano moved a fifth stops sounding like a piano — '
+      + 'load a root near every note instead of stretching one across an octave.',
+    inputSchema: { type: 'object', required: ['note'], properties: {
+      note: { type: 'integer' }, filter: { type: 'string' } } } },
+
+  { name: 'jbh_batch', description:
+      'Several calls in one crossing: [["step",0,4,1], ["pad",0,{"gain":0.8}], …]. Answers come '
+      + 'back in order and a failure is reported in place rather than taking the batch down.',
+    inputSchema: { type: 'object', required: ['calls'], properties: {
+      calls: { type: 'array', items: { type: 'array' } } } } },
+
   { name: 'jbh_params', description:
       'EVERY writable field and what it is set to now, read off the live objects so it '
       + 'cannot drift: the session (reverb, delay, compressor, master chain, scale lock…), '
@@ -272,6 +302,10 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_pattern':     return ok(await jbh('pattern', [a.pattern, a.props]));
       case 'jbh_euclid':      return ok(await jbh('euclid', [a.pad, a.hits, a.steps, a.rot, a.vel, a.locks]));
       case 'jbh_params':      return ok(await jbh('params'));
+      case 'jbh_schedule':    return ok(await jbh('schedule', [{ src: a.src, loops: a.loops, full: a.full }]));
+      case 'jbh_levels':      return ok(await jbh('levels', [{ src: a.src, loops: a.loops }]));
+      case 'jbh_nearest':     return ok(await jbh('nearest', [a.note, a.filter]));
+      case 'jbh_batch':       return ok(await jbh('batch', [a.calls]));
       case 'jbh_clear':       return ok(await jbh('clear'));
       case 'jbh_set':         return ok(await jbh('set', [a.props]));
       case 'jbh_transport':   return ok(await jbh(a.action === 'stop' ? 'stop' : 'play'));

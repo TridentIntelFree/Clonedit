@@ -451,6 +451,86 @@ export default async function ({ browser, base }) {
       reach.copiedHits + ' hits, ' + reach.copiedPoly + ' poly pads');
     t.ok('and cleared', reach.clearedHits === 0);
 
+    /* "What would help you interface with it better" — and the answer was
+       not more control. It was that render() hands back four numbers for a
+       piece three minutes long, so anything else has to be read out of the
+       audio, which means writing an onset detector, which means being
+       wrong: one written to check these very figures reported 146 onsets
+       for four piano notes.
+
+       schedule() is the bounce's own event list, returned from inside the
+       same loop that builds the file rather than worked out beside it. The
+       first thing it was pointed at found a bug that had been in the
+       renderer the whole time. */
+    t.head('THE APP CAN SAY WHEN EVERY NOTE LANDS');
+    const sch = await page.evaluate(async () => {
+      const o = {}, w = ms => new Promise(r => setTimeout(r, ms));
+      JBH.clear(); await w(250);
+      JBH.set({ bpm: 100, human: 0, swing: 0 });
+      await JBH.pack('samples/real-cc0-full.json');
+
+      /* nearest(): the call that makes the transposition mistake hard */
+      o.near = [60, 61, 66].map(m => { const g = JBH.nearest(m, 'piano');
+        return { ask: m, id: g.id, by: g.semitones }; });
+      o.pickedViolin = JBH.nearest(62, 'violin').id;
+
+      const ld = await JBH.sound('vsco:piano-E4', 1);
+      o.sampleKnowsItsNote = ld.note;
+      o.padKnowsItsNote = JBH.pad(1).srcNote;
+
+      /* THE REGRESSION. A step-fired figure with a pitch on every cell.
+         The renderer used to push pitch:0 here and drop the cell's lock
+         entirely, so this bounced as one note three times while the live
+         player played the written figure. */
+      JBH.poly(1, { on: true, bpm: 300, cells: 3, lock: true, trig: 'step',
+        row: [[0, 0.9, { pitch: 0 }], [1, 0.8, { pitch: 3 }], [2, 0.7, { pitch: 7 }]] });
+      JBH.step(1, 0, 1);
+      const s = await JBH.schedule({ src: 'pat' });
+      o.fig = s.events.filter(e => e.pad === 1)
+        .map(e => ({ t: e.t, pitch: e.pitch, midi: e.midi, vel: e.vel }));
+      o.gaps = o.fig.slice(1).map((e, i) => +(e.t - o.fig[i].t).toFixed(3));
+
+      /* levels(): a balance table from one call */
+      await JBH.sound('vsco:piano-C4', 0);
+      JBH.step(0, 0, 1); JBH.step(0, 8, 0.9);
+      JBH.pad(0, { gain: 1.0 }); JBH.pad(1, { gain: 0.05 });
+      const lv = await JBH.levels({ src: 'pat' });
+      o.levels = lv.pads.map(x => ({ pad: x.pad, hits: x.hits, dbRms: x.dbRms }));
+      o.buried = lv.buried;
+
+      /* batch(): many calls, one crossing, failures reported in place */
+      const bt = await JBH.batch([['set', { bpm: 111 }], ['step', 0, 4, 0.5],
+        ['nope'], ['state']]);
+      o.batch = { n: bt.n, failed: bt.failed, err: bt.results[2].error,
+        stillRan: S.bpm === 111 && bt.results[3].ok === true };
+      return o;
+    });
+    t.ok('nearest() names the closest real sample and how far the bend is',
+      sch.near[0].by === 0 && Math.abs(sch.near[1].by) === 1 &&
+      Math.abs(sch.near[2].by) <= 1 && /violin/.test(sch.pickedViolin),
+      sch.near.map(x => x.ask + '→' + x.id + ' ' + x.by).join(' · '));
+    t.ok('a pad REMEMBERS WHAT NOTE ITS SAMPLE IS',
+      sch.sampleKnowsItsNote === 64 && sch.padKnowsItsNote === 64,
+      'nothing in the app knew that "Piano C4" was middle C');
+    t.ok('schedule() reports the figure’s times, three to the beat at 100bpm',
+      sch.fig.length === 3 && sch.gaps.every(g => Math.abs(g - 0.2) < 0.002),
+      sch.fig.map(e => e.t).join(' ') + ' · gaps ' + sch.gaps.join(' '));
+    t.ok('AND THE BOUNCE CARRIES EVERY CELL’S OWN PITCH — it used to carry none',
+      sch.fig.map(e => e.pitch).join(',') === '0,3,7' &&
+      sch.fig.map(e => e.midi).join(',') === '64,67,71',
+      'the renderer pushed pitch:0 for step-fired figures, so a written ' +
+      'melody bounced as one note repeated while it played correctly live');
+    t.ok('and the velocity of each cell survives too',
+      sch.fig.map(e => e.vel).join(',') === '0.9,0.8,0.7', sch.fig.map(e => e.vel).join(','));
+    t.ok('levels() gives a per-pad balance table in ONE call, in dB',
+      sch.levels.length === 2 && sch.levels.some(x => x.dbRms < -12),
+      sch.levels.map(x => 'pad' + x.pad + ' ' + x.dbRms + 'dB').join(' · '));
+    t.ok('and says outright which pads are buried', Array.isArray(sch.buried));
+    t.ok('batch() runs them all and reports a failure IN PLACE',
+      sch.batch.n === 4 && sch.batch.failed === 1 &&
+      /no such call/.test(sch.batch.err) && sch.batch.stillRan,
+      'one bad call in eight hundred should not lose the other 799');
+
     t.head('AND IT TELLS YOU HOW TO CONNECT ONE — IN LINES THAT WORK');
     const how = await page.evaluate(async () => {
       const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));
