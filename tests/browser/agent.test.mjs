@@ -352,10 +352,17 @@ export default async function ({ browser, base }) {
          long-press from a paste; nothing selected is a dead button. */
       getSelection().removeAllRanges();
       document.getElementById('btnCopyMcp').click();
-      await wait(250);
-      o.copyLeftSomething = (getSelection().toString().length > 20) ||
-        (await navigator.clipboard.readText().catch(() => '')).length > 20;
-      o.copySaidSo = /COPIED|CLIPBOARD/i.test(document.getElementById('lcdmsg').textContent);
+      await wait(300);
+      /* NOT read back off the clipboard. navigator.clipboard.readText() waits
+         on a permission prompt that headless never answers — the promise does
+         not reject, it simply never settles, and .catch() cannot rescue a
+         promise that never finishes. It hung this suite once already. The LCD
+         says which of the two paths ran, so check the consequence of that
+         one. */
+      const said = document.getElementById('lcdmsg').textContent;
+      o.copyWrote = /COPIED/i.test(said);
+      o.copyFellBack = /COULD NOT REACH THE CLIPBOARD/i.test(said);
+      o.copySelected = getSelection().toString().length > 20;
       getSelection().removeAllRanges();
 
       document.getElementById('btnAgentLink').click();
@@ -382,9 +389,12 @@ export default async function ({ browser, base }) {
       JSON.stringify(how.roundTrip));
     t.ok('and jbh(‘tell’,…) puts a line on this page, as promised',
       how.toldArrived);
-    t.ok('COPY leaves the text either on the clipboard or selected, and says which',
-      how.copyLeftSomething && how.copySaidSo,
-      'a copy button that does neither is the same dead button again');
+    t.ok('COPY takes one of its two paths and says which — never silence',
+      how.copyWrote || how.copyFellBack,
+      'a copy button that reports nothing is the same dead button again');
+    t.ok('and when the clipboard is out of reach it leaves the text selected',
+      how.copyWrote || how.copySelected,
+      how.copyFellBack ? 'fell back, selected: ' + how.copySelected : 'wrote to the clipboard');
 
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
