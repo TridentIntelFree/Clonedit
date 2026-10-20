@@ -2231,10 +2231,11 @@ Same notes, different performance. Keep whichever you prefer.</p>
   <h3>AI &amp; AGENTS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; let something play along, or paste a beat in</span></h3>
 
   <div class="row">
-    <button id="btnAgentLink" class="grow">&#9679; CONNECT AN AGENT</button>
+    <button id="btnAgentLink" class="grow">&#9679; OPEN AGENT LINK</button>
+    <button id="btnAgentPing" title="Ask whatever is out there to say it is there">PING</button>
   </div>
   <div id="agentStat" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px;line-height:1.45">
-    off &mdash; nothing can drive this page
+    closed &mdash; nothing can drive this page
   </div>
   <div id="agentLog" role="log" aria-live="polite" aria-label="Messages to and from the connected agent"
     style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
@@ -12378,8 +12379,31 @@ window.JBH=window.MVX;   // JBH-88 is the current name; window.MVX kept as a bac
    device unless you ask. JBH.listen() turns it on for the session; it is
    never persisted, so a reload is always back to silent. */
 let jbhBus=null, jbhPorts=new Set();
+/* IS ANYTHING ACTUALLY THERE?
+
+   The first version could not tell, and said "sent" either way. Pressing
+   CONNECT and typing hello produced a cheerful nothing: the link was open,
+   the message went out over BroadcastChannel, and there was no one on the
+   channel. That is the worst shape a feature can take — it reports success
+   for doing nothing.
+
+   Any inbound message proves a peer exists, so presence is just "when did we
+   last hear anything". A peer that has said nothing for half a minute is
+   treated as gone, which is wrong for a quiet one and right for a closed tab;
+   the ping below re-checks rather than guessing. */
+let jbhSeen=0, jbhPingT=0;
+function jbhPeers(){ return (jbhSeen && Date.now()-jbhSeen<30000) ? 1 : 0; }
 function jbhDispatch(msg, reply){
-  if(!msg || msg.jbh!==1 || typeof msg.call!=='string') return;
+  if(!msg || msg.jbh!==1) return;
+  /* A peer announcing itself, or answering our ping. Not a call. */
+  if(msg.event==='hello' || msg.event==='here'){
+    const fresh=!jbhPeers();
+    jbhSeen=Date.now(); drawAgentLink();
+    if(fresh){ agentLog('app','Something connected.'); lcd('AGENT CONNECTED — it can drive this page now.'); }
+    return;
+  }
+  if(typeof msg.call!=='string') return;
+  jbhSeen=Date.now(); drawAgentLink();
   const fn=window.MVX[msg.call];
   const send=(o)=>{ try{ reply(Object.assign({jbh:1,id:msg.id},o)); }catch(e){} };
   if(typeof fn!=='function' && !(msg.call in window.MVX)){
@@ -12405,15 +12429,20 @@ window.MVX.listen=function(on){
     window.addEventListener('message',jbhOnMessage);
     plog('AGENT CONTROL: listening on postMessage and BroadcastChannel("jbh88"). '
       +'Nothing is sent anywhere — this is same-device only, and it is off again on reload.');
-    lcd('AGENT CONTROL ON — another tab or an embedding page can now drive this one. '
-      +'It stops at reload, and nothing leaves the device.');
+    lcd('AGENT LINK OPEN — waiting for something to connect. Nothing is connected yet; '
+      +'the app has no agent inside it. It closes again on reload, and nothing leaves the device.');
   }else if(!want && jbhBus){
     try{ jbhBus.close(); }catch(e){}
-    jbhBus=null;
+    jbhBus=null; jbhSeen=0;
     window.removeEventListener('message',jbhOnMessage);
-    lcd('AGENT CONTROL OFF.');
+    lcd('AGENT LINK CLOSED.');
   }
-  return {listening:!!jbhBus, channel:'jbh88'};
+  /* Redrawn here rather than only in the button handler. listen() is part of
+     the public API and an agent may well call it; leaving the panel showing
+     the previous state would make the screen disagree with the app, which is
+     the same class of fault as the one this whole pass is about. */
+  try{ drawAgentLink(); }catch(e){}
+  return {listening:!!jbhBus, peers:jbhPeers(), channel:'jbh88'};
 };
 function jbhOnMessage(ev){
   if(!ev.data || ev.data.jbh!==1) return;
@@ -12454,8 +12483,15 @@ function jbhEmit(o){
 /* FROM the app, to whatever is listening. */
 window.MVX.say=function(text){
   const t=agentLog('you',text);
-  if(!jbhBus) { lcd('AGENT LINK is off — press CONNECT in PROJ first.'); return {sent:false,text:t}; }
+  if(!jbhBus) { lcd('AGENT LINK is off — open it in PROJ first.'); return {sent:false,text:t}; }
   jbhEmit({event:'say', text:t});
+  if(!jbhPeers()){
+    /* Said once, in the transcript, where the message they just typed is —
+       not only on the LCD, which scrolls away. */
+    agentLog('app','Nothing is connected, so that went nowhere. The link is open and '
+      +'listening; something still has to join it from this device.');
+    return {sent:false, noPeer:true, text:t};
+  }
   return {sent:true, text:t};
 };
 /* TO the app, from whatever is connected. Shows up in the transcript and on
@@ -12466,15 +12502,34 @@ window.MVX.tell=function(text){
   return {shown:true, text:t};
 };
 window.MVX.messages=function(){ return AGENT_LOG.slice(); };
+window.MVX.peers=function(){ return jbhPeers(); };
+/* Asks whoever is out there to say they exist. Anything implementing the
+   envelope answers by replying {jbh:1,event:'here'}; nothing else has to. */
+function jbhPing(){
+  if(!jbhBus) return 0;
+  jbhPingT=Date.now();
+  jbhEmit({event:'ping'});
+  setTimeout(drawAgentLink,900);
+  return 1;
+}
+window.MVX.ping=jbhPing;
 function drawAgentLink(){
   const st=$('agentStat'), lg=$('agentLog'), row=$('agentSayRow'), btn=$('btnAgentLink');
   if(!st||!lg||!row||!btn) return;
-  const on=!!jbhBus;
+  const on=!!jbhBus, peers=jbhPeers();
   btn.classList.toggle('on',on);
-  btn.textContent=on?'DISCONNECT':'CONNECT';
-  st.textContent=on
-    ? 'listening \u00b7 postMessage + BroadcastChannel("jbh88") \u00b7 same device only'
-    : 'off \u2014 nothing can drive this page';
+  /* THREE STATES, NOT TWO. "Open" and "something is actually on the other
+     end" are different things, and collapsing them is what made pressing the
+     button and typing hello feel like a broken app rather than an empty
+     room. */
+  btn.textContent = !on ? '\u25cf OPEN AGENT LINK' : peers ? 'DISCONNECT' : 'CLOSE LINK (waiting\u2026)';
+  st.textContent = !on
+    ? 'closed \u2014 nothing can drive this page'
+    : peers
+      ? '\u25cf CONNECTED \u2014 something is on the other end and can drive this page'
+      : 'open, but nothing has connected yet. The app has no agent inside it \u2014 '
+        + 'one has to join from this device, over BroadcastChannel("jbh88") or by embedding this page.';
+  st.style.color = (on && peers) ? 'var(--lcd)' : 'var(--txt-dim)';
   lg.style.display=on?'block':'none';
   row.style.display=on?'flex':'none';
   if(!on) return;
@@ -12492,8 +12547,10 @@ function drawAgentLink(){
   }else AGENT_LOG.forEach(m=>{
     const d=document.createElement('div'); d.style.margin='2px 0';
     const b2=document.createElement('b');
-    b2.style.color=(m.who==='you')?'var(--amber)':'var(--lcd)';
-    b2.textContent=(m.who==='you')?'YOU':'AGENT';
+    /* An app-generated line used to be labelled AGENT, so the greeting read
+       as though something had answered. It had not. */
+    b2.style.color=(m.who==='you')?'var(--amber)':(m.who==='app')?'var(--txt-dim)':'var(--lcd)';
+    b2.textContent=(m.who==='you')?'YOU':(m.who==='app')?'APP':'AGENT';
     d.appendChild(b2); d.appendChild(document.createTextNode(' '+m.text));
     lg.appendChild(d);
   });
@@ -12502,8 +12559,21 @@ function drawAgentLink(){
 $('btnAgentLink').addEventListener('click',()=>{
   const r=window.MVX.listen(!jbhBus);
   drawAgentLink();
-  if(r.listening) agentLog('agent','Link open. Call JBH.calls() for everything I can do, '
-    +'JBH.tell("…") to answer here.');
+  if(r.listening){
+    agentLog('app','Link open \u2014 waiting for something to connect. Nothing has yet. '
+      +'An agent reaches this page by driving a browser on THIS device: another tab on the '
+      +'same address, or a page embedding it. There is no agent inside the app.');
+    jbhPing();
+  }
+});
+$('btnAgentPing').addEventListener('click',()=>{
+  if(!jbhBus){ lcd('The link is closed — open it first.'); return; }
+  jbhPing();
+  setTimeout(()=>{
+    if(jbhPeers()) lcd('PING answered — something is connected.');
+    else { agentLog('app','Pinged, and nothing answered. Nothing is connected to this page.');
+      lcd('PING — no answer. Nothing is connected.'); }
+  },700);
 });
 $('btnAgentSay').addEventListener('click',()=>{
   const el=$('agentSay'); if(!el || !el.value.trim()) return;

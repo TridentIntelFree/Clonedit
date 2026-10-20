@@ -202,20 +202,76 @@ export default async function ({ browser, base }) {
     t.ok('IT IS OFF AT BOOT, and the panel says so',
       msg.offAtBoot.listening === false && msg.offAtBoot.logHidden,
       'an app that answers its origin unasked is a different proposition');
-    t.ok('CONNECT opens it and the button says how to close it',
+    t.ok('opening it shows the panel, and the button offers the way back',
       msg.afterConnect.listening && msg.afterConnect.logShown &&
-      msg.afterConnect.btn === 'DISCONNECT');
+      /CLOSE LINK|DISCONNECT/.test(msg.afterConnect.btn), msg.afterConnect.btn);
     t.ok('what you type reaches whatever is connected',
       msg.appSaid === 'make it darker', JSON.stringify(msg.appSaid));
     t.ok('and what it answers lands in the transcript, in order',
-      msg.transcript.length >= 3 && /^you: make it darker$/.test(msg.transcript[1]) &&
-      /lowering the cutoff/.test(msg.transcript[2]),
+      msg.transcript.length >= 3 && msg.transcript.some(l => /^you: make it darker$/.test(l)) &&
+      msg.transcript.some(l => /^agent: lowering the cutoff/.test(l)),
       msg.transcript.join(' | '));
+    t.ok('THE APP\u2019S OWN LINES ARE NOT LABELLED AS THE AGENT',
+      msg.transcript.some(l => l.startsWith('app:')) &&
+      !msg.transcript.some(l => /^agent: Link open/.test(l)),
+      'the greeting used to wear the AGENT badge, so an empty room looked like a reply');
     t.ok('TEXT FROM OUTSIDE CANNOT RUN AS SCRIPT IN HERE',
       msg.xss.pwned === false && msg.xss.imgInjected === false && msg.xss.shownAsText,
       'an injected <img onerror> is shown as the characters it is');
     t.ok('and DISCONNECT puts it all away again',
       msg.afterDisconnect.listening === false && msg.afterDisconnect.logHidden);
+
+    /* Reported, in exactly these words: "it said connect agent, I clicked it,
+       said hello, nothing happens." Nothing was SUPPOSED to happen — there was
+       no agent — but the app gave no sign of that. It reported the message
+       sent, and its own greeting carried the AGENT label, so an empty room
+       read as one that had answered and then gone quiet. A feature that
+       reports success for doing nothing is worse than one that is missing. */
+    t.head('AN EMPTY ROOM SAYS SO');
+    const empty = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));
+      document.querySelector('#tabs button[data-v="proj"]').click();
+      await wait(150);
+      if (jbhBus) document.getElementById('btnAgentLink').click();
+      await wait(100);
+      o.closedBtn = document.getElementById('btnAgentLink').textContent;
+      o.closedStat = document.getElementById('agentStat').textContent.trim();
+      document.getElementById('btnAgentLink').click();
+      await wait(200);
+      o.peersWhenNobodyThere = JBH.peers();
+      o.openBtn = document.getElementById('btnAgentLink').textContent;
+      o.openStat = document.getElementById('agentStat').textContent.trim();
+      o.sayIntoVoid = JBH.say('hello');
+      await wait(150);
+      o.toldThem = JBH.messages().some(m => m.who === 'app' && /went nowhere/.test(m.text));
+      /* now put a peer on the channel and watch it flip */
+      const bc = new BroadcastChannel('jbh88');
+      bc.postMessage({ jbh: 1, event: 'hello' });
+      await wait(250);
+      o.peersAfterJoin = JBH.peers();
+      o.joinedStat = document.getElementById('agentStat').textContent.trim();
+      o.sayWithPeer = JBH.say('now there is someone');
+      bc.close();
+      document.getElementById('btnAgentLink').click();
+      await wait(100);
+      return o;
+    });
+    t.ok('closed, the button offers to open it and the status says nothing can drive the page',
+      /OPEN AGENT LINK/.test(empty.closedBtn) && /closed/.test(empty.closedStat),
+      empty.closedBtn + ' · ' + empty.closedStat);
+    t.ok('OPEN IS NOT THE SAME AS CONNECTED, and the app no longer pretends it is',
+      empty.peersWhenNobodyThere === 0 && /waiting/i.test(empty.openBtn) &&
+      /nothing has connected yet/.test(empty.openStat),
+      empty.openBtn + ' · ' + empty.openStat.slice(0, 60));
+    t.ok('saying something into an empty room REPORTS FAILURE rather than success',
+      empty.sayIntoVoid.sent === false && empty.sayIntoVoid.noPeer === true,
+      JSON.stringify(empty.sayIntoVoid));
+    t.ok('and says so in the transcript, where the message they just typed is',
+      empty.toldThem);
+    t.ok('ONCE SOMETHING JOINS, it flips to connected',
+      empty.peersAfterJoin === 1 && /CONNECTED/.test(empty.joinedStat),
+      empty.joinedStat.slice(0, 60));
+    t.ok('and then a message really is sent', empty.sayWithPeer.sent === true);
 
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
