@@ -526,6 +526,43 @@ export default async function ({ browser, base }) {
       sch.levels.length === 2 && sch.levels.some(x => x.dbRms < -12),
       sch.levels.map(x => 'pad' + x.pad + ' ' + x.dbRms + 'dB').join(' · '));
     t.ok('and says outright which pads are buried', Array.isArray(sch.buried));
+    /* THE MISTAKE THE APP NOW CATCHES BY ITSELF.
+
+       Twice in a row, by someone who knew about it and was checking for it,
+       a piece written from real instrument samples came out stretched far
+       enough to stop sounding like the instrument. Once from writing notes
+       outside the sampled range; once from sharing one pad between two
+       registers so its root drifted a fifth from what it was asked to play.
+       Both times the per-note arithmetic said everything was fine. The
+       renderer knew and had no way to say so. Now it says so. */
+    const str = await page.evaluate(async () => {
+      const o = {}, w = ms => new Promise(r => setTimeout(r, ms));
+      JBH.clear(); await w(250);
+      JBH.set({ bpm: 100, human: 0 });
+      await JBH.pack('samples/real-cc0-full.json');
+      await JBH.sound('vsco:piano-C4', 0);      // a recording of middle C
+      await JBH.preset('dkick', 1);             // synthesised, not a recording
+      JBH.step(0, 0, 1, { pitch: 7 });          // a piano asked for a fifth
+      JBH.step(1, 8, 1, { pitch: 9 });          // a kick pitched up: ordinary
+      const a = await JBH.schedule({ src: 'pat' });
+      o.flagged = a.stretched;
+      o.limit = a.stretchLimit;
+      /* load a root near the note and it goes quiet */
+      await JBH.sound('vsco:piano-G4', 2);
+      JBH.step(0, 0, 0); JBH.step(2, 0, 1, { pitch: 0 });
+      o.after = (await JBH.schedule({ src: 'pat' })).stretched;
+      return o;
+    });
+    t.ok('schedule() SAYS WHEN A RECORDED INSTRUMENT IS BEING STRETCHED TOO FAR',
+      str.flagged.length === 1 && str.flagged[0].pad === 0 &&
+      str.flagged[0].semitones === 7 && str.flagged[0].root === 60,
+      JSON.stringify(str.flagged));
+    t.ok('and does NOT cry about a pitched drum, which is ordinary technique',
+      !str.flagged.some(x => x.pad === 1),
+      'the first version flagged a kick moved nine semitones; that is not a mistake');
+    t.ok('and goes quiet once a root near the note is loaded',
+      str.after.length === 0, JSON.stringify(str.after));
+
     t.ok('batch() runs them all and reports a failure IN PLACE',
       sch.batch.n === 4 && sch.batch.failed === 1 &&
       /no such call/.test(sch.batch.err) && sch.batch.stillRan,

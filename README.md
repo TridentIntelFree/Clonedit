@@ -67,11 +67,28 @@ pattern phases against it, and three divisions of the beat can run at once.
 than wandering off to an empty one, asks nothing, and throws if the download
 or the decode fails. A kit laid out by index stays where it was put.
 
+```js
+await JBH.schedule()              // every note the bounce will play: time,
+                                  // pad, pitch, real MIDI, velocity
+await JBH.levels()                // per-pad balance in dB, and what's buried
+JBH.nearest(61, 'piano')          // the closest real sample, and the bend
+await JBH.batch([['step',0,0,1], ['pad',0,{gain:.8}]])   // one crossing
+```
+
+`schedule()` is the renderer's own event list, returned from inside the same
+loop that builds the file — not a second opinion about it. Reach for it
+instead of analysing the rendered WAV: an onset detector written to check
+some tuplet figures reported 146 onsets for four piano notes, twice. The app
+has always known exactly when every note lands.
+
 **Transposing a sampled instrument is not free.** Pitch is playback rate
 unless `keepTime` is on, and a piano moved a fifth stops sounding like a
 piano — the hammer noise and the beating of the unisons move with it. For
 anything acoustic, load a root near every note you mean to play and bend it
-a semitone, rather than stretching one sample across an octave.
+a semitone, rather than stretching one sample across an octave. `nearest()`
+picks that root for you, and `schedule().stretched` names any recorded
+instrument being bent further than you meant — it ignores drums, where
+pitching a sample around is ordinary technique rather than a mistake.
 
 **AGENT LINK** (PROJ) exposes the same API *outside* the page, over
 `postMessage` and `BroadcastChannel('jbh88')` — same device, no server,

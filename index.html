@@ -10299,7 +10299,7 @@ function loadIntoTarget(buf,name,opt){
   const p=S.pads[S.editPad];
   const cleared=voiceWords(resetPadVoice(p));
   p.bufId=bid; p.name=name.slice(0,14); p.warped=false;
-  delete warpOrig[S.editPad]; delete p.srcPreset; delete p.srcNote; delete p.srcSample;
+  delete warpOrig[S.editPad]; delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat;
   drawPads(); drawEdit(); drawWave(); drawMixer(); dirty();
   try{ drawTraxFx(); }catch(e){}     // the TO PAD button names its target, which just moved
   lcd('LOADED \u2192 '+padName(S.editPad)+' · '+buf.duration.toFixed(2)+'s'
@@ -11428,7 +11428,7 @@ $('btnAssign').addEventListener('click',()=>{
     try{ stopPadVoices(idx); }catch(e){}
     voiceWords(resetPadVoice(p)).forEach(w=>{ if(cleared.indexOf(w)<0) cleared.push(w); });
     p.bufId=bid; p.start=sl.s; p.end=sl.e; p.warped=false;
-    dropWarpOrig(idx); delete p.srcPreset; delete p.srcNote; delete p.srcSample;
+    dropWarpOrig(idx); delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat;
     p.name='slc'+String(i+1).padStart(2,'0');
     n++;
   });
@@ -11966,7 +11966,7 @@ function assignBufToPad(idx,buf,name){
   const p=S.pads[idx];
   resetPadVoice(p);
   p.bufId=bid; p.warped=false;
-  delete warpOrig[idx]; delete p.srcPreset; delete p.srcNote; delete p.srcSample;   // provenance is re-set by preset/kit/songdoc loaders
+  delete warpOrig[idx]; delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat;   // provenance is re-set by preset/kit/songdoc loaders
   p.name=(name||'').slice(0,14);
   return bid;
 }
@@ -12382,7 +12382,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        lock is asking it to travel stops being invisible. */
     const nn=sampleNote(sm);
     if(nn!=null) S.pads[i].srcNote=nn;
-    S.pads[i].srcSample=id;
+    S.pads[i].srcSample=id; S.pads[i].srcCat=sm.cat||'';
     try{ drawPackList(); drawDownloads(); updateStoreMeter(); }catch(e){}
     return {pad:i, id, name:sm.name, seconds:+buf.duration.toFixed(3),
       note:nn==null?null:nn};
@@ -12437,12 +12437,51 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         pitch:e.pitch||0, midi:root==null?null:root+(e.pitch||0), chord:!!e.chord };
     }).sort((a,b)=>a.t-b.t || a.pad-b.pad);
     const byPad={};
-    notes.forEach(n=>{ (byPad[n.pad]=byPad[n.pad]||{n:0,lo:999,hi:-999,name:n.name});
+    notes.forEach(n=>{ (byPad[n.pad]=byPad[n.pad]||{n:0,lo:999,hi:-999,stretch:0,name:n.name});
       const q=byPad[n.pad]; q.n++;
+      q.stretch=Math.max(q.stretch,Math.abs(n.pitch||0));
       if(n.midi!=null){ q.lo=Math.min(q.lo,n.midi); q.hi=Math.max(q.hi,n.midi); } });
     Object.values(byPad).forEach(q=>{ if(q.lo>q.hi){ delete q.lo; delete q.hi; } });
+
+    /* HOW FAR EACH SAMPLE IS BEING BENT, said out loud.
+
+       Pitch here is playback rate unless KEEP TIME is on, so a transposed
+       sample is a sample played at the wrong speed: the attack, the noise
+       and the whole inharmonic structure move with it. A kick does not
+       care. A piano does — past a few semitones it stops sounding like a
+       piano at all, which is the single most common way a piece built from
+       real instruments comes out sounding like a synthesiser.
+
+       It is written here rather than left to the caller because it was
+       missed twice in a row by someone who knew about it and was checking
+       for it: once by writing notes outside the sampled range, and once by
+       sharing one pad between registers so the pad's root drifted a fifth
+       from what it was being asked to play. Both times the per-note
+       arithmetic said everything was fine. The renderer knew better and had
+       no way to say so. */
+    const limit=(o.stretchLimit==null)?4:o.stretchLimit;
+    /* ONLY RECORDED PITCHED INSTRUMENTS. The first version of this flagged a
+       kick for being pitched nine semitones, which is not a mistake — it is
+       Tuesday. Transposing a drum is ordinary technique, a synthesised
+       preset is rendered rather than stretched, and the warning is worth
+       nothing if it cries about both. A pack sample whose category is not
+       percussion is the case that actually goes wrong. */
+    const PERC=/^(DRUMS|PERC|FX)$/i;
+    const stretched=[];
+    Object.keys(byPad).forEach(k=>{
+      const p=S.pads[+k], q=byPad[k];
+      if(!p || p.bufId<0 || !p.srcSample || p.srcNote==null) return;
+      if(PERC.test(p.srcCat||'')) return;
+      if(q.stretch>limit) stretched.push({pad:+k, name:q.name,
+        sample:p.srcSample, root:p.srcNote, semitones:q.stretch});
+    });
+    stretched.sort((a,b)=>b.semitones-a.semitones);
     return { seconds:r.seconds, bars:r.bars, notes:notes.length, lanes:r.lanes,
-      silences:r.silences, byPad, events:o.full===false?undefined:notes };
+      silences:r.silences, byPad,
+      /* empty is the answer you want; a populated one names the pads and by
+         how much, so the fix is "load a root nearer those notes" */
+      stretched, stretchLimit:limit,
+      events:o.full===false?undefined:notes };
   },
 
   /* WHAT A RENDER SOUNDS LIKE PER PAD, in one call.
@@ -18472,7 +18511,7 @@ $('btnKitBuild').addEventListener('click',async ()=>{
       const p=S.pads[pad];
       p.bufId=S.buffers.length-1; p.start=0; p.end=1; p.name=def.id; p.warped=false;
       p.gain=0.9; p.pitch=0; p.fine=0; p.reverse=false; p.mode='one'; p.speed=1; p.keepPitch=false;
-      delete warpOrig[pad]; delete p.srcPreset; delete p.srcNote; delete p.srcSample;
+      delete warpOrig[pad]; delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat;
       made.push(pad);
     }
     if($('kbBeat').checked){   // a simple, musical starter pattern using the new pads

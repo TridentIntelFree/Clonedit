@@ -55,6 +55,10 @@ relay between two machines, and this is not that.
 | --- | --- |
 | `jbh_state` | What is loaded and playing. Call it first, and after anything that should have changed something. |
 | `jbh_params` | **Every writable field and its current value**, read off the live objects. Call this instead of guessing that the reverb is `revType`. |
+| `jbh_schedule` | **When every note lands** — the bounce's own event list, from the same loop that builds the file. Time, pad, pitch, real MIDI, velocity. Use it instead of analysing the WAV. Its `stretched` field names any recorded instrument being transposed too far to still sound like itself. |
+| `jbh_levels` | A per-pad balance table in one call: peak, RMS, dB against the full mix, and which pads are buried. |
+| `jbh_nearest` | The sample closest to a MIDI note, and how many semitones away. Pitch is playback rate here, so this is how you keep a piano sounding like one. |
+| `jbh_batch` | Several calls in one crossing; a failure is reported in place rather than taking the batch down. |
 | `jbh_clear` | An empty session. A freshly opened app holds a demo song, and pads you don't overwrite ride along in every file you save. |
 | `jbh_presets` / `jbh_load_preset` | The sounds the app synthesises in the page. No network, always work. |
 | `jbh_pack` / `jbh_load_sound` | Downloadable sample packs. Needs a connection once. |
