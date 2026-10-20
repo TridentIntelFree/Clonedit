@@ -532,6 +532,98 @@ export default async function ({ browser, base }) {
     t.ok('while the field that was fine is kept, so loading is not a reset',
       trip.healed.pan === -0.5);
 
+    /* R204. Reported as "timing gets changed when notes is changed in the
+       sequencer section", and that is precisely what was happening.
+
+       A sampler pitches by playback rate, so outDur is sliceDur/rate and a
+       note an octave up is half as long. That is correct for a sampler and
+       wrong for a melody, which is why the pad has a KEEP TIME switch. But
+       KEEP TIME read pitchRatio(p) — the PAD's transpose and fine tune and
+       nothing else. A melody written in the NOTES lane carries its pitch per
+       STEP, so the pad's transpose is zero, the ratio is 1, no stretch was
+       ever swapped in, and the one control meant to hold the timing did
+       nothing whatever on the one part that needed it. */
+    t.head('A MELODY KEEPS ITS RHYTHM');
+    const kt = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));
+      ensureAudio(); await wait(300);
+      const sr = AC.sampleRate;
+      S.bpm = 90; S.swing = 0; S.human = 0; S.songOn = false; S.chainOn = false;
+      const PAD = 5;
+      /* A 1.2s steady tone: its LENGTH in the render is unambiguous. */
+      const n = Math.round(sr * 1.2), b = AC.createBuffer(2, n, sr);
+      for (let c = 0; c < 2; c++) { const d = b.getChannelData(c);
+        for (let i = 0; i < n; i++) d[i] = Math.sin(2 * Math.PI * 330 * i / sr) * 0.6; }
+      S.buffers.push(b);
+      S.pads.forEach((p, i) => { p.mute = i !== PAD; });
+      S.pads[PAD] = newPad(PAD);
+      const p = S.pads[PAD];
+      p.bufId = S.buffers.indexOf(b); p.mute = false; p.gain = 1;
+      p.att = 0.001; p.rel = 0.005; p.dec = 0.12; p.sus = 1;
+      S.editPad = PAD; S.seqPad = PAD;
+      const pat = S.patterns[S.pattern];
+      setPatLen(16);
+      pat.steps.forEach(row => row.fill(0)); pat.locks = {}; pat.sil.fill(0);
+      /* four notes, a rising arpeggio: 0, +5, +12, +19 semitones */
+      const notes = [0, 5, 12, 19];
+      notes.forEach((semi, k) => { const st = k * 4;
+        pat.steps[PAD][st] = 1;
+        if (semi) pat.locks[PAD + ':' + st] = { pitch: semi }; });
+      bumpLocks(); reapplyLivePads(); await wait(200);
+
+      document.getElementById('bSrc').value = 'pat';
+      document.getElementById('bLoops').value = '1';
+      /* How long each note actually sounds, measured from the render. */
+      const lengths = async () => {
+        const buf = await renderMix(new Set([PAD]), new Set(), { loops: 1, src: 'pat', noTail: true });
+        const d = buf.getChannelData(0), stepSec = 60 / S.bpm / 4;
+        return notes.map((_, k) => {
+          const from = Math.round((0.05 + k * 4 * stepSec) * sr);
+          const to = Math.min(d.length, Math.round((0.05 + (k * 4 + 4) * stepSec) * sr));
+          let last = from;
+          for (let i = from; i < to; i++) if (Math.abs(d[i]) > 0.02) last = i;
+          return +((last - from) / sr).toFixed(3);
+        });
+      };
+      /* What the warm-up COSTS, on a sample long enough to matter: these are
+         built synchronously from a UI action, so a freeze here is a freeze
+         the person feels. */
+      const long = AC.createBuffer(2, Math.round(sr * 6), sr);
+      for (let c = 0; c < 2; c++) { const d = long.getChannelData(c);
+        for (let i = 0; i < d.length; i++) d[i] = Math.sin(2 * Math.PI * 220 * i / sr) * 0.5; }
+      S.buffers.push(long);
+      const keepBuf = p.bufId;
+      p.bufId = S.buffers.indexOf(long); p.keepTime = true;
+      const t0 = performance.now();
+      o.longWarmCount = warmKeepTime(PAD);
+      o.longWarmMs = Math.round(performance.now() - t0);
+      p.bufId = keepBuf; p.keepTime = false;
+
+      p.keepTime = false; p.keepPitch = false;
+      o.tapePitch = await lengths();
+      p.keepTime = true;
+      o.warmedBuffers = warmKeepTime(PAD);
+      o.keepTime = await lengths();
+      const spread = a => +(Math.max(...a) - Math.min(...a)).toFixed(3);
+      o.tapeSpread = spread(o.tapePitch);
+      o.keepSpread = spread(o.keepTime);
+      S.pads.forEach(x => { x.mute = false; });
+      pat.locks = {}; pat.steps.forEach(row => row.fill(0)); bumpLocks();
+      return o;
+    });
+    t.note('    note lengths, TAPE PITCH: ' + kt.tapePitch.join('s  ') + 's');
+    t.note('    note lengths, KEEP TIME:  ' + kt.keepTime.join('s  ') + 's');
+    t.ok('a sampler pitched by rate really does change note length — the control',
+      kt.tapeSpread > 0.1, kt.tapeSpread + 's between the longest and shortest');
+    t.ok('AND KEEP TIME NOW HOLDS IT ACROSS A MELODY, not just a transposed pad',
+      kt.keepSpread < 0.01,
+      kt.keepSpread + 's spread across 0, +5, +12 and +19 semitones');
+    t.ok('which needed a stretch built per pitch the steps ask for',
+      kt.warmedBuffers >= 2, kt.warmedBuffers + ' built');
+    t.note('    warming 3 pitches of a 6s sample took ' + kt.longWarmMs + 'ms');
+    t.ok('and warming stays inside a deliberate button press',
+      kt.longWarmMs < 900, kt.longWarmMs + 'ms for ' + kt.longWarmCount + ' stretches');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

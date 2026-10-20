@@ -1,16 +1,68 @@
 # JBH-88
 
-An offline sampler, sequencer and groovebox that runs in a browser. Build a drum
-kit from any sound, program euclidean rhythms, give one pad a tempo of its own,
-morph one pattern into another, record live takes to tape lanes, and bounce the result to WAV — with no
-connection and nothing sent anywhere.
+An offline sampler, sequencer, synthesiser and multitrack recorder that runs in
+a browser. Build a drum kit from any sound, program euclidean rhythms, give one
+pad a tempo of its own, give one *step* its own cutoff and decay, play thirteen
+synth voices through a pedalboard and a tuneable room, record live takes to tape
+lanes and punch in over them, then bounce the result to WAV — with no connection
+and nothing sent anywhere.
+
+Everything ships as **one self-contained HTML file**. No server, no install, no
+account; open it from a file:// URL if you like. It is about 1.3 MB.
+
+### The sections
+
+| Tab | What it does |
+| --- | --- |
+| **PADS / SMPL** | 64 pads across four banks. Import, record from the mic, or synthesise a sound from PRESETS; chop, trim, warp, reverse, slice on transients. BUILD KIT carves a whole kit out of one sample. |
+| **SEQ** | 16–64 steps, grid or circle view. Per-track lengths for polymeter, euclidean fills, groove templates, a NOTES lane for melodies, POLY for a pad at its own tempo, and **step locks** — give one step its own pitch, probability, ratchet, nudge, cutoff, level, pan, decay or start point. |
+| **TRAX** | Eight tape lanes with a **Track View**: headers left, bar ruler on top, clips drawn where they play. Drag to move, drag the edges to trim, fades, and **punch in/out** that replaces a span and keeps the rest. |
+| **LIVE** | Thirteen synth voices — including phase distortion, PWM, a partial cluster, formant, ring modulation and a per-note **grand piano** — through DRIVE, CHORUS, PHASER, TREMOLO and a tuneable ROOM. Nine ways to play them, a keyboard that is always on screen, and a tombola where notes bounce inside a spinning shape. |
+| **MIC / AMP** | Record a voice, or play a guitar or line input through an amp simulation. |
+| **MIX / OUT / DJ** | Per-pad faders and sends, a mastering chain, performance filters, and WAV bounce or stem export. |
+| **MIDI** | USB MIDI where the browser has it, plus BLE MIDI over Web Bluetooth; clock in and out at 24 PPQN, notes out to hardware, CC mapping. |
+| **PROJ** | Named projects, undo history, autosave to IndexedDB, a portable text **song document** format, and **AGENT LINK**. |
+
+### Driving it from an agent
+
+`window.JBH` is the whole app as an API — sounds, pads, steps, tape lanes, the
+LIVE instrument, the transport — and it works *while the thing is playing*.
+
+```js
+JBH.calls()                       // everything callable
+JBH.presets()                     // synthesised sounds, no network
+await JBH.preset('dkick', 0)      // render one onto pad 1
+await JBH.pack(); await JBH.sound('kick_acoustic', 1)   // downloadable packs
+JBH.step(0, 4, 1, { fcut: 0.2 })  // a step, with its sound lock
+JBH.lane(2, { start: 4.0 })       // move a tape clip
+JBH.live({ voice: 'piano' })
+JBH.set({ bpm: 128 }); JBH.play(); JBH.hit(0, 0.9)      // live, in time
+await JBH.render()                // bounce and read peak/RMS back
+```
+
+That last one matters: an agent that cannot hear what it made is composing
+blind. `render()` returns the measurements, and the WAV bytes if asked.
+
+**AGENT LINK** (PROJ) exposes the same API *outside* the page, over
+`postMessage` and `BroadcastChannel('jbh88')` — same device, no server,
+nothing sent anywhere. Envelope in: `{jbh:1, id, call, args}`. Out:
+`{jbh:1, id, ok, result}`. `JBH.say()` and `JBH.tell()` carry a line of text
+each way so you can talk to whatever is driving it.
+
+It is **off until you switch it on, and off again on reload** — an app that
+answers to any tab on its origin the moment it loads is a different
+proposition. Text arriving over the link is rendered as text, never as markup.
+
+The older **AI JAM** paste-a-document flow still works and still needs no
+connection of any kind, but it is one-way and only reaches sixteen pads; the
+link above is the live path.
 
 ## What is what
 
 | Path | What it is |
 | --- | --- |
 | `src/` | **The source.** Edit here. `index.html` (markup), `app.css`, `legacy.js` (the engine), `pure/` (logic, unit-tested), `lib/*.svelte` (components). |
-| `tests/` | Node unit tests for `src/pure/` (no browser, under a second), plus `tests/browser/` — nine suites that drive the real app in Chromium. |
+| `tests/` | Node unit tests for `src/pure/` (no browser, under a second), plus `tests/browser/` — eighteen suites that drive the real app in Chromium, including a stress suite that property-tests, soaks and fuzzes rather than asking questions somebody already thought of. |
 | `index.html` | **The app — generated.** One self-contained file: open it, serve it, or install it as a PWA. Built from `src/`; do not edit by hand. |
 | `standalone.html` | A frozen, hand-written snapshot of R96, kept as a build-free fallback. See below. |
 | `samples/` | CC0 sound packs, served **beside** the app rather than inside it. Loading one is a network fetch and each sound is downloaded to IndexedDB before it can be used — the app itself ships no audio. |
@@ -55,8 +107,8 @@ A plain `file://` open works too, except that service-worker install and a few
 ### Testing
 
 ```sh
-npm test                      # 70 unit tests, well under a second, no browser
-node scripts/browser-tests.mjs   # 9 suites against the built index.html, ~90s
+npm test                      # 81 unit tests, well under a second, no browser
+node scripts/browser-tests.mjs   # 18 suites against the built index.html, ~8 min
 node scripts/browser-tests.mjs guides   # or just one
 ```
 
@@ -106,7 +158,7 @@ would break sample loading and PWA install.
 
 ## Migrating to Svelte
 
-The app grew to ~9,000 lines in one file, which is why `src/` exists. The
+The app grew past 18,000 lines in one file, which is why `src/` exists. The
 migration is deliberately incremental and is guarded by a browser-driven
 verification suite that drives the real UI by element ID — as long as the IDs
 stay stable, those scripts validate every step.
@@ -117,7 +169,7 @@ stay stable, those scripts validate every step.
    before and after to prove nothing went missing.
 2. ~~Extract the pure logic into modules that can be unit-tested in Node.~~
    **Started (R99)** — euclid, groove, pattern model, scale, morph, IR sizing
-   and numeric helpers are in `src/pure/` with 70 tests. Still to move: the WAV
+   and numeric helpers are in `src/pure/` with 81 tests. Still to move: the WAV
    encoder's byte packing and the DSP maths (time-stretch,
    peak/RMS analysis) once buffer access is abstracted.
 3. Convert the UI tab by tab into Svelte components.

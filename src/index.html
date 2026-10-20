@@ -2225,6 +2225,38 @@ the description.</p>
 talk to an assistant, it sends nothing anywhere on its own, and it is not tied
 to any particular AI outliving any other.</p>
   </div></details>
+  <!-- AGENT LINK — a live two-way connection to something driving the app
+       from outside, and a place to talk to it. Off until switched on. -->
+  <h3>AGENT LINK <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; live control, same device, nothing sent anywhere</span></h3>
+  <div class="row">
+    <button id="btnAgentLink">CONNECT</button>
+    <span class="grow" id="agentStat" style="font-size:10px;color:var(--txt-dim)">off &mdash; nothing can drive this page</span>
+  </div>
+  <div id="agentLog" role="log" aria-live="polite" aria-label="Messages to and from the connected agent"
+    style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
+           padding:8px;margin:4px 0;font-size:11px;line-height:1.5;max-height:160px;overflow-y:auto;color:var(--txt-dim)"></div>
+  <div class="row" id="agentSayRow" style="display:none">
+    <input type="text" id="agentSay" class="grow" placeholder="say something to the agent&hellip;"
+      aria-label="Message to the connected agent" autocomplete="off">
+    <button id="btnAgentSay">SEND</button>
+  </div>
+  <details class="ex"><summary>What AGENT LINK is</summary><div class="ex-body">
+    <p>AI JAM above is a <em>document</em>: you paste a description in and the app
+builds it. This is the other thing &mdash; a live connection, so something can
+drive the app <b>while it plays</b>: hit pads, move the tempo, write steps,
+load sounds, bounce the result and read the level back.</p>
+<p>It works over <b>postMessage</b> (an embedding page or an iframe) and
+<b>BroadcastChannel</b> (another tab on this origin). Both are same-device
+browser plumbing &mdash; there is no server, no socket, and nothing leaves the
+machine. An agent that can drive a browser can also just call
+<span style="color:var(--lcd)">window.JBH</span> directly.</p>
+<p><b>It is off until you switch it on, and off again on reload.</b> An app that
+answered to any tab on its origin the moment it loaded would be a different
+proposition from this one, so turning it on is always a deliberate act.</p>
+<p>The box below the switch is a two-way line: what you type goes to whatever is
+connected, and what it says back appears here. <span style="color:var(--lcd)">window.JBH.calls()</span>
+lists everything it can do.</p>
+  </div></details>
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>

@@ -2241,6 +2241,38 @@ the description.</p>
 talk to an assistant, it sends nothing anywhere on its own, and it is not tied
 to any particular AI outliving any other.</p>
   </div></details>
+  <!-- AGENT LINK — a live two-way connection to something driving the app
+       from outside, and a place to talk to it. Off until switched on. -->
+  <h3>AGENT LINK <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; live control, same device, nothing sent anywhere</span></h3>
+  <div class="row">
+    <button id="btnAgentLink">CONNECT</button>
+    <span class="grow" id="agentStat" style="font-size:10px;color:var(--txt-dim)">off &mdash; nothing can drive this page</span>
+  </div>
+  <div id="agentLog" role="log" aria-live="polite" aria-label="Messages to and from the connected agent"
+    style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
+           padding:8px;margin:4px 0;font-size:11px;line-height:1.5;max-height:160px;overflow-y:auto;color:var(--txt-dim)"></div>
+  <div class="row" id="agentSayRow" style="display:none">
+    <input type="text" id="agentSay" class="grow" placeholder="say something to the agent&hellip;"
+      aria-label="Message to the connected agent" autocomplete="off">
+    <button id="btnAgentSay">SEND</button>
+  </div>
+  <details class="ex"><summary>What AGENT LINK is</summary><div class="ex-body">
+    <p>AI JAM above is a <em>document</em>: you paste a description in and the app
+builds it. This is the other thing &mdash; a live connection, so something can
+drive the app <b>while it plays</b>: hit pads, move the tempo, write steps,
+load sounds, bounce the result and read the level back.</p>
+<p>It works over <b>postMessage</b> (an embedding page or an iframe) and
+<b>BroadcastChannel</b> (another tab on this origin). Both are same-device
+browser plumbing &mdash; there is no server, no socket, and nothing leaves the
+machine. An agent that can drive a browser can also just call
+<span style="color:var(--lcd)">window.JBH</span> directly.</p>
+<p><b>It is off until you switch it on, and off again on reload.</b> An app that
+answered to any tab on its origin the moment it loaded would be a different
+proposition from this one, so turning it on is always a deliberate act.</p>
+<p>The box below the switch is a two-way line: what you type goes to whatever is
+connected, and what it says back appears here. <span style="color:var(--lcd)">window.JBH.calls()</span>
+lists everything it can do.</p>
+  </div></details>
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
     <button id="btnSave" class="grow">SAVE PROJECT .JSON</button>
@@ -5652,7 +5684,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R203 · 2026-10-19 · audit fixes, and punch that fails closed';
+const BUILD = 'JBH-88 · R204 · 2026-10-20 · a melody that keeps its rhythm, and an agent that can play along';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -6293,6 +6325,49 @@ function padSpeed(p){ return clamp(p.speed||1,0.25,4); }
    Only the semitone/fine PITCH is compensated. SPEED is left alone — it is the
    control whose entire job is to change the length. */
 function pitchRatio(p){ return Math.pow(2,((p.pitch||0)+(p.fine||0)/100)/12); }
+/* The ratio a particular HIT will play at: the pad's transpose and fine tune,
+   plus the step's own pitch lock, plus the layer's. VARY is deliberately left
+   out — it is a fresh random few cents per hit, so folding it in would mean a
+   different stretch per hit and a cache that never hits twice. A pad with VARY
+   on is asking for the length to wander anyway. */
+function noteRatio(p,pitchOff,lay){
+  return Math.pow(2,((p.pitch||0)+(pitchOff||0)+((p.fine||0)/100)+((lay&&lay.pitch)||0))/12);
+}
+/* Every distinct pitch a pad's steps ask for, across all patterns — which is
+   the set of stretches KEEP TIME needs built if a melody is to hold its
+   timing. Capped, because a chromatic run over four patterns could ask for
+   forty buffers and each one is a copy of the sample. */
+const KT_MAX_STRETCH=16;
+function padNotePitches(padIdx){
+  const out=new Set();
+  S.patterns.forEach(pt=>{
+    if(!pt || !pt.steps || !pt.steps[padIdx]) return;
+    const row=pt.steps[padIdx];
+    for(let i=0;i<MAXSTEPS;i++){
+      if(!(row[i]>0)) continue;
+      const lk=pt.locks && pt.locks[padIdx+':'+i];
+      const set=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0];
+      set.forEach(x=>out.add(Math.round(x)));
+    }
+  });
+  return [...out].slice(0,KT_MAX_STRETCH);
+}
+/* Built off the audio thread, ahead of being needed. A stretch that is not
+   cached when the step fires falls through to varispeed — which is the very
+   thing KEEP TIME exists to avoid, so "it holds its timing once you have
+   played it through a few times" would be a worse bug than not having it. */
+function warmKeepTime(padIdx){
+  const p=S.pads[padIdx];
+  if(!p || !p.keepTime || p.keepPitch || p.bufId<0) return 0;
+  let built=0;
+  padNotePitches(padIdx).forEach(semi=>{
+    const r=noteRatio(p,semi,padLayer(p,0));
+    if(Math.abs(r-1)<=0.001) return;
+    if(speedCache[pitchKey(p.bufId,!!p.reverse,r)]) return;
+    try{ buildPitchStretch(p.bufId,!!p.reverse,r); built++; }catch(e){}
+  });
+  return built;
+}
 function buildPitchStretch(bufId,reverse,ratio){
   if(bufId<0 || Math.abs(ratio-1)<=0.001) return null;
   const key=pitchKey(bufId,reverse,ratio);
@@ -6496,7 +6571,17 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
      varispeed if the stretch is not built yet, exactly like KEEP PITCH does. */
   let ktSlice=0;
   if(p.keepTime && !p.keepPitch){
-    const pr=pitchRatio(p);
+    /* THE STEP'S OWN PITCH COUNTS TOO.
+
+       This used pitchRatio(p), which is the PAD's pitch and fine tune and
+       nothing else. So KEEP TIME held the length of a pad transposed in EDIT,
+       and did nothing whatever for a melody written in the NOTES lane — where
+       the pitch is per step. Every note of that melody came out a different
+       length, because outDur is sliceDur/rate and the rate carries pitchOff.
+       Reported as the timing changing when the notes change, and that is
+       exactly what it was: the one control meant to prevent it was looking at
+       the wrong number. The ratio has to be the one actually being played. */
+    const pr=noteRatio(p,pitchOff||0,lay);
     if(Math.abs(pr-1)>0.001){
       const pb=speedCache[pitchKey(lay.bufId,!!p.reverse,pr)];
       if(pb){ buf=pb; ktSlice=1; }
@@ -7778,12 +7863,20 @@ $('epKeepTime').addEventListener('click',()=>{
   const p=S.pads[S.editPad];
   if(p.keepPitch){ lcd('KEEP TIME is unavailable while KEEP PITCH is on — both stretch the same buffer.'); return; }
   p.keepTime=!p.keepTime;
-  if(p.keepTime && p.bufId>=0) buildPitchStretch(p.bufId,!!p.reverse,pitchRatio(p));
+  /* Every pitch this pad's STEPS ask for, not only the pad's own transpose —
+     otherwise a melody written in NOTES falls through to varispeed and the
+     control appears to do nothing on the one part that needed it most. */
+  let warmed=0;
+  if(p.keepTime && p.bufId>=0){
+    buildPitchStretch(p.bufId,!!p.reverse,pitchRatio(p));
+    warmed=warmKeepTime(S.editPad);
+  }
   stopPadVoices(S.editPad);
   drawEdit(); dirty();
   const semi=(p.pitch||0)+(p.fine||0)/100;
   lcd(p.keepTime
     ? 'KEEP TIME — PITCH no longer changes how long the sound lasts'+(semi?'; at '+semi.toFixed(2)+' semitones it stays its original length.':'.')
+      +(warmed?' Held for '+warmed+' more pitch'+(warmed===1?'':'es')+' this pad plays in the sequencer, so a melody keeps its rhythm too.':'')
     : 'TAPE PITCH — pitching up now makes the sound shorter and pitching down makes it longer, the way a sampler does.');
 });
 /* A new pitch needs a new stretch, and it has to exist before the next hit or
@@ -12068,9 +12161,340 @@ function exportSongDoc(){
     sidechain:{on:S.scOn,trig:S.scTrig,depth:S.scDepth,rel:S.scRel},
     loop:S.songLoop, song:S.song.map(x=>[x.pat,x.reps]), pads, patterns };
 }
+/* ---------------- THE API AN AGENT DRIVES ---------------------------------
+   load / export / play / stop have been here a while and are enough to write
+   a beat. They are not enough to KNOW ANYTHING ABOUT IT — which is the whole
+   difference between an agent that composes blind and one that can check its
+   own work, hear that the hats are inaudible, and fix them.
+
+   So two more. `state()` says what is loaded and what is playing. `render()`
+   bounces and hands back the measurements, with the WAV bytes only if asked
+   for, because a base64 minute of audio is megabytes of string and most
+   questions ("is it clipping", "did anything sound at all") are answered by
+   the numbers alone.
+
+   Both are READ-ONLY and neither needs the transport running. */
 window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
-  load:d=>loadSongDoc(d), export:exportSongDoc, play:()=>startSeq(), stop:()=>stopSeq() };
+  load:d=>loadSongDoc(d), export:exportSongDoc, play:()=>startSeq(), stop:()=>stopSeq(),
+  state(){
+    const pat=S.patterns[S.pattern];
+    return {
+      version:BUILD,
+      bpm:S.bpm, swing:S.swing, human:S.human,
+      playing:!!playing, pattern:S.pattern+1, patterns:S.patterns.length,
+      patternSteps:patLen(pat),
+      song:{on:!!S.songOn, steps:S.song.length, loop:!!S.songLoop},
+      pads:{loaded:S.pads.filter(p=>p.bufId>=0).length, total:S.pads.length,
+        muted:S.pads.filter(p=>p.mute).length, selected:S.editPad},
+      /* What the CURRENT pattern actually asks for, which is the thing an
+         agent most often wants to verify after a load. */
+      hits:(()=>{ let n=0; for(let p=0;p<NPADS;p++){ const row=pat.steps[p];
+        for(let i=0;i<patLen(pat);i++) if(row[i]>0) n++; } return n; })(),
+      trax:{lanes:S.trax.filter(t=>t.bufId>=0).length,
+        punch:punchOn()?{in:S.punchIn,out:S.punchOut}:null},
+      live:{mode:S.inst.mode, voice:S.inst.voice},
+      audio:AC?{state:AC.state, rate:AC.sampleRate}:null,
+      /* Said plainly rather than left for an agent to infer from silence. */
+      notInTheSongDoc:['tape lanes','the LIVE instrument','pads 17-64']
+    };
+  },
+  async render(opt){
+    const o=opt||{};
+    const buf=await renderMix(null,null,
+      {loops:o.loops||1, src:o.src||'pat', noTail:o.noTail!==false});
+    if(!buf) return null;
+    const L=buf.getChannelData(0), R=buf.numberOfChannels>1?buf.getChannelData(1):L;
+    let pk=0, sum=0;
+    for(let i=0;i<L.length;i++){
+      const a=Math.abs(L[i]), b=Math.abs(R[i]);
+      if(a>pk) pk=a; if(b>pk) pk=b;
+      sum+=L[i]*L[i];
+    }
+    const out={ seconds:+buf.duration.toFixed(3), rate:buf.sampleRate,
+      peak:+pk.toFixed(4), rms:+Math.sqrt(sum/L.length).toFixed(4),
+      clipping:pk>0.999, silent:pk<0.004 };
+    if(o.wav){
+      /* encodeWav hands back a BLOB, not an ArrayBuffer — wrapping it in a
+         Uint8Array gives a zero-length array and a base64 string of nothing,
+         which is what the first version of this returned. And the base64 is
+         built in chunks: String.fromCharCode.apply over a whole multi-megabyte
+         render overflows the argument limit, and appending a character at a
+         time is quadratic. */
+      const ab=await encodeWav(buf,o.depth||16).arrayBuffer();
+      const by=new Uint8Array(ab), parts=[];
+      for(let i=0;i<by.length;i+=0x8000) parts.push(String.fromCharCode.apply(null,by.subarray(i,i+0x8000)));
+      out.wavBase64=btoa(parts.join('')); out.bytes=by.length;
+    }
+    return out;
+  },
+
+  /* ---- SOUNDS ---------------------------------------------------------
+     Three ways audio gets onto a pad, and an agent could reach none of
+     them: it could name a PRESET inside a song doc and hope. These are the
+     same calls the buttons make. */
+
+  /* Everything synthesised in the page. No network, no files — the list to
+     reach for first, and the only one that works offline. */
+  presets(){ return PRESETS.map(p=>({id:p.id, cat:p.cat, name:p.name, note:p.note})); },
+  async preset(id, padIdx, midi){
+    const d=PRESETS.find(p=>p.id===id);
+    if(!d) throw new Error('no preset "'+id+'" — JBH.presets() lists them');
+    ensureAudio();
+    const i=(padIdx==null)?S.editPad:clamp(padIdx|0,0,NPADS-1);
+    const note=(midi==null)?d.note:(midi|0);
+    const buf=await renderPreset(d,note);
+    S.buffers.push(buf);
+    const p=S.pads[i]; resetPadVoice(p);
+    p.bufId=S.buffers.length-1; p.name=d.name.slice(0,14);
+    p.srcPreset=d.id; p.srcNote=note; p.warped=false;
+    delete warpOrig[i];
+    reapplyLivePads(); drawPads(); drawEdit(); dirty();
+    return {pad:i, name:p.name, seconds:+buf.duration.toFixed(3), note};
+  },
+
+  /* THE DOWNLOADABLE PACKS. These need a connection once; after that the
+     sound lives in IndexedDB and works offline forever. sounds() is empty
+     until a manifest has been fetched, which is what pack() does. */
+  async pack(url){
+    if(url) $('packUrl').value=url;
+    await loadPack();
+    return window.MVX.sounds();
+  },
+  sounds(){
+    if(!packManifest || !Array.isArray(packManifest.samples)) return [];
+    return packManifest.samples.map(s=>({id:s.id, name:s.name, cat:s.cat,
+      have:haveKeys.has(LIBKEY(s.id))}));
+  },
+  /* Downloads it if it is not already stored, then puts it on a pad — the
+     two steps an agent always wants together. */
+  async sound(id, padIdx){
+    const sm=(packManifest&&packManifest.samples||[]).find(s=>s.id===id);
+    if(!sm) throw new Error('no sound "'+id+'" in the loaded pack — JBH.pack() then JBH.sounds()');
+    if(!haveKeys.has(LIBKEY(id))) await libDownload(sm,null);
+    if(padIdx!=null) S.editPad=clamp(padIdx|0,0,NPADS-1);
+    await libToPad(sm);
+    return {pad:S.editPad, id, name:sm.name};
+  },
+
+  /* ---- EVERYTHING ELSE THE APP HOLDS ----------------------------------
+     Pads past the sixteenth, the tape lanes and the LIVE instrument are all
+     outside the song-doc format, so a doc could never describe them. Rather
+     than grow that format — which would break every doc already written —
+     they are reachable here, under the field names the app itself uses.
+     Called with no props each one READS; called with props it writes and
+     returns what it ended up as. */
+  pad(i, props){
+    const p=S.pads[clamp(i|0,0,NPADS-1)];
+    if(!props) return JSON.parse(JSON.stringify(p));
+    Object.keys(props).forEach(k=>{ if(k!=='bufId') p[k]=props[k]; });
+    reapplyLivePads(); drawPads(); drawEdit(); dirty();
+    return JSON.parse(JSON.stringify(p));
+  },
+  lane(i, props){
+    const tr=S.trax[clamp(i|0,0,S.trax.length-1)];
+    if(!props) return JSON.parse(JSON.stringify(tr));
+    Object.keys(props).forEach(k=>{ if(k!=='bufId') tr[k]=props[k]; });
+    try{ applyTraxMix(); drawTrax(); }catch(e){}
+    dirty();
+    return JSON.parse(JSON.stringify(tr));
+  },
+  live(props){
+    if(!props) return JSON.parse(JSON.stringify(S.inst));
+    Object.keys(props).forEach(k=>{ S.inst[k]=props[k]; });
+    try{ drawLive(); drawInstShape(); }catch(e){}
+    if(S.inst.voice==='piano') try{ pianoWarm(); }catch(e){}
+    dirty();
+    return JSON.parse(JSON.stringify(S.inst));
+  },
+  /* One step, with its locks. vel 0 turns it off; locks null clears them. */
+  step(padIdx, idx, vel, locks){
+    const pat=S.patterns[S.pattern], p=clamp(padIdx|0,0,NPADS-1), i=clamp(idx|0,0,MAXSTEPS-1);
+    pat.steps[p][i]=clamp(+vel||0,0,1);
+    const k=p+':'+i;
+    if(locks===null) delete pat.locks[k];
+    else if(locks) pat.locks[k]=Object.assign(pat.locks[k]||{},locks);
+    bumpLocks(); try{ drawSeq(); }catch(e){}
+    dirty();
+    return {pad:p, step:i, vel:pat.steps[p][i], locks:pat.locks[k]||null};
+  },
+  /* Play a pad RIGHT NOW, the way a finger does — the one thing a song doc
+     can never express, and the whole point of live control. */
+  hit(padIdx, vel, pitch){
+    ensureAudio();
+    const i=clamp(padIdx|0,0,NPADS-1);
+    hitLive(i, clamp(vel==null?0.9:+vel,0.01,1), pitch|0);
+    return {pad:i};
+  },
+  /* Top-level session fields — tempo, swing, master volume and the rest —
+     by the names S uses. */
+  set(props){
+    if(!props) return window.MVX.state();
+    Object.keys(props).forEach(k=>{ if(k in S) S[k]=props[k]; });
+    if('bpm' in props) try{ setBpm(S.bpm); }catch(e){}
+    try{ applyMaster(); reapplyLivePads(); }catch(e){}
+    dirty();
+    return window.MVX.state();
+  }
+};
 window.JBH=window.MVX;   // JBH-88 is the current name; window.MVX kept as a back-compat alias
+
+/* ---------------- LIVE CONTROL FROM OUTSIDE THE PAGE ----------------------
+   window.JBH is complete, but reaching it means being INSIDE the page — a
+   console, or a browser the agent drives itself. That covers an agent with
+   browser automation and nobody else, and it does not cover the case the
+   app is actually interesting for: something out there playing along while
+   you play, in time, on the same device.
+
+   So the same API is exposed over two channels that need no server and send
+   nothing anywhere:
+
+     postMessage   — an iframe, an opener, or a parent window
+     BroadcastChannel('jbh88') — any other tab on this origin
+
+   Both carry the same envelope: {jbh:1, id, call, args} in, and
+   {jbh:1, id, ok, result} or {jbh:1, id, ok:false, error} back. Every method
+   on window.JBH is callable, including hit() and set(), so a controller can
+   play pads and move the tempo while the transport is rolling.
+
+   OFF BY DEFAULT, and deliberately. An app that answers to any tab on its
+   origin the moment it loads is a different security proposition from one
+   that does not, and this app's entire premise is that nothing leaves the
+   device unless you ask. JBH.listen() turns it on for the session; it is
+   never persisted, so a reload is always back to silent. */
+let jbhBus=null, jbhPorts=new Set();
+function jbhDispatch(msg, reply){
+  if(!msg || msg.jbh!==1 || typeof msg.call!=='string') return;
+  const fn=window.MVX[msg.call];
+  const send=(o)=>{ try{ reply(Object.assign({jbh:1,id:msg.id},o)); }catch(e){} };
+  if(typeof fn!=='function' && !(msg.call in window.MVX)){
+    send({ok:false,error:'no such call: '+msg.call}); return;
+  }
+  try{
+    const out=(typeof fn==='function') ? fn.apply(window.MVX, msg.args||[]) : window.MVX[msg.call];
+    /* A promise is resolved before replying, so the caller's `await` lands on
+       the real answer rather than on an empty object — render() and the pack
+       calls are all async and they are the ones worth waiting for. */
+    if(out && typeof out.then==='function')
+      out.then(r=>send({ok:true,result:r}), e=>send({ok:false,error:String(e&&e.message||e)}));
+    else send({ok:true,result:out});
+  }catch(e){ send({ok:false,error:String(e&&e.message||e)}); }
+}
+window.MVX.listen=function(on){
+  const want=(on!==false);
+  if(want && !jbhBus){
+    try{
+      jbhBus=new BroadcastChannel('jbh88');
+      jbhBus.onmessage=ev=>jbhDispatch(ev.data,(o)=>jbhBus.postMessage(o));
+    }catch(e){ jbhBus=null; }
+    window.addEventListener('message',jbhOnMessage);
+    plog('AGENT CONTROL: listening on postMessage and BroadcastChannel("jbh88"). '
+      +'Nothing is sent anywhere — this is same-device only, and it is off again on reload.');
+    lcd('AGENT CONTROL ON — another tab or an embedding page can now drive this one. '
+      +'It stops at reload, and nothing leaves the device.');
+  }else if(!want && jbhBus){
+    try{ jbhBus.close(); }catch(e){}
+    jbhBus=null;
+    window.removeEventListener('message',jbhOnMessage);
+    lcd('AGENT CONTROL OFF.');
+  }
+  return {listening:!!jbhBus, channel:'jbh88'};
+};
+function jbhOnMessage(ev){
+  if(!ev.data || ev.data.jbh!==1) return;
+  /* Replies go back the way the message came, to the specific window that
+     sent it — not broadcast to everything listening. */
+  jbhDispatch(ev.data,(o)=>{ try{ ev.source && ev.source.postMessage(o,'*'); }catch(e){} });
+}
+/* What a controller needs to know to talk to it, in one call. */
+window.MVX.calls=function(){
+  return Object.keys(window.MVX).filter(k=>typeof window.MVX[k]==='function').sort();
+};
+
+/* ---------------- TALKING TO WHATEVER IS CONNECTED -----------------------
+   A control channel that can only be issued orders is a remote, not a
+   collaborator. If something is going to play along, there has to be a way
+   to tell it what you want and for it to answer — otherwise every exchange
+   has to happen somewhere else, in another window, about a thing neither of
+   you is looking at.
+
+   So the same bus carries a line of text each way. JBH.say() sends one out,
+   JBH.tell() is what the other end calls to put one on screen here, and both
+   land in the same transcript so the conversation reads in order. */
+const AGENT_LOG=[];
+function agentLog(who,text){
+  const t=String(text==null?'':text).slice(0,600);
+  AGENT_LOG.push({who,text:t,at:Date.now()});
+  while(AGENT_LOG.length>60) AGENT_LOG.shift();
+  drawAgentLink();
+  return t;
+}
+function jbhEmit(o){
+  const m=Object.assign({jbh:1},o);
+  if(jbhBus) try{ jbhBus.postMessage(m); }catch(e){}
+  /* Also upward, so an embedding page hears it without needing a channel. */
+  try{ if(window.parent && window.parent!==window) window.parent.postMessage(m,'*'); }catch(e){}
+  try{ if(window.opener) window.opener.postMessage(m,'*'); }catch(e){}
+}
+/* FROM the app, to whatever is listening. */
+window.MVX.say=function(text){
+  const t=agentLog('you',text);
+  if(!jbhBus) { lcd('AGENT LINK is off — press CONNECT in PROJ first.'); return {sent:false,text:t}; }
+  jbhEmit({event:'say', text:t});
+  return {sent:true, text:t};
+};
+/* TO the app, from whatever is connected. Shows up in the transcript and on
+   the LCD, because a reply nobody notices is not a reply. */
+window.MVX.tell=function(text){
+  const t=agentLog('agent',text);
+  lcd('AGENT: '+t.slice(0,140));
+  return {shown:true, text:t};
+};
+window.MVX.messages=function(){ return AGENT_LOG.slice(); };
+function drawAgentLink(){
+  const st=$('agentStat'), lg=$('agentLog'), row=$('agentSayRow'), btn=$('btnAgentLink');
+  if(!st||!lg||!row||!btn) return;
+  const on=!!jbhBus;
+  btn.classList.toggle('on',on);
+  btn.textContent=on?'DISCONNECT':'CONNECT';
+  st.textContent=on
+    ? 'listening \u00b7 postMessage + BroadcastChannel("jbh88") \u00b7 same device only'
+    : 'off \u2014 nothing can drive this page';
+  lg.style.display=on?'block':'none';
+  row.style.display=on?'flex':'none';
+  if(!on) return;
+  /* BUILT FROM NODES, NOT FROM A STRING. This text arrives from whatever is
+     connected — another tab, an embedding page — and putting that through
+     innerHTML would be handing any of them script execution in here. There is
+     no escape helper in this file and adding one to guard a single spot is
+     the weaker answer: textContent cannot be talked out of being text. */
+  lg.textContent='';
+  if(!AGENT_LOG.length){
+    const e=document.createElement('span');
+    e.style.opacity='.6';
+    e.textContent='Nothing said yet. Whatever is connected can call JBH.tell("\u2026") to answer here.';
+    lg.appendChild(e);
+  }else AGENT_LOG.forEach(m=>{
+    const d=document.createElement('div'); d.style.margin='2px 0';
+    const b2=document.createElement('b');
+    b2.style.color=(m.who==='you')?'var(--amber)':'var(--lcd)';
+    b2.textContent=(m.who==='you')?'YOU':'AGENT';
+    d.appendChild(b2); d.appendChild(document.createTextNode(' '+m.text));
+    lg.appendChild(d);
+  });
+  lg.scrollTop=lg.scrollHeight;
+}
+$('btnAgentLink').addEventListener('click',()=>{
+  const r=window.MVX.listen(!jbhBus);
+  drawAgentLink();
+  if(r.listening) agentLog('agent','Link open. Call JBH.calls() for everything I can do, '
+    +'JBH.tell("…") to answer here.');
+});
+$('btnAgentSay').addEventListener('click',()=>{
+  const el=$('agentSay'); if(!el || !el.value.trim()) return;
+  window.MVX.say(el.value.trim()); el.value='';
+});
+$('agentSay').addEventListener('keydown',e=>{ if(e.key==='Enter') $('btnAgentSay').click(); });
+try{ drawAgentLink(); }catch(e){}
 
 /* ============ "Mirrors for Machines" — composition #2 by Claude ============
    Melodic techno, D minor, 126 BPM: Dm | Bb | F | C. Written AS a song doc —
@@ -17000,6 +17424,12 @@ function toggleNote(i,off){
   const had=set.includes(off);
   set = had ? set.filter(x=>x!==off) : set.concat(off);
   setNotePitches(pat,k,row,i,set);
+  /* Build the stretch for the note just written, before it is ever played. An
+     uncached pitch falls through to varispeed, so without this the first pass
+     of a new melody would come out at varispeed lengths and later passes at
+     held ones — the timing settling down after a few bars is worse than it
+     never holding at all. */
+  try{ warmKeepTime(S.seqPad); }catch(e){}
   if(playing) stopPadVoices(S.seqPad);
   else if(!had) hitLive(S.seqPad,(row[i]>0?row[i]:parseFloat($('stepVel').value)),off);   // audition the added note
   drawSteps(); dirty();
