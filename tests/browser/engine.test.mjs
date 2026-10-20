@@ -727,9 +727,32 @@ export default async function ({ browser, base }) {
     t.ok('a negative amount closes downward instead',
       feg.down.d.some(v => v < -1000) && feg.down.hi - feg.down.lo > 400,
       'detune reached ' + Math.min(...feg.down.d) + ' cents');
+    /* 1.15, AND THE MARGIN IS MEASURED RATHER THAN CHOSEN.
+
+       This asserted 1.3 and went red about one run in five. Five runs of
+       identical code gave 1.23, 1.42, 1.45, 1.76 and 2.21 — straddling it.
+       The note above says an earlier version was phase-dependent and was
+       rewritten; the rewrite fixed the direction-change count and left the
+       peak comparison just as exposed, because the LFO free-runs at 9Hz
+       and the trace is sampled every 35ms.
+
+       Dropping the rate to 3Hz was tried and was WORSE (1.28): fewer
+       crests means fewer chances for one to land early, while the
+       envelope is still open, and a crest that arrives late is flattened
+       by the envelope's own decay. The deeper reason the margin cannot be
+       large is that a centroid is not a cutoff — the source has finite
+       energy up top, so pushing the filter higher stops moving the
+       centroid proportionally. 1.3 was never supported by the
+       measurement.
+
+       1.15 still separates cleanly from a dead LFO, which would read
+       about 1.0: the two traces would be the same envelope twice. It is a
+       weaker claim than it looks, and saying so is better than a check
+       that fails on a coin toss. */
     t.ok('THE CUTOFF LFO STILL RIDES ON TOP OF THE ENVELOPE',
-      feg.lfoRides.swept && feg.lfoRides.hi > feg.up.hi * 1.3,
-      'reached ' + feg.lfoRides.hi + ' Hz against ' + feg.up.hi + ' Hz from the envelope alone');
+      feg.lfoRides.swept && feg.lfoRides.hi > feg.up.hi * 1.15,
+      'reached ' + feg.lfoRides.hi + ' Hz against ' + feg.up.hi + ' Hz from the envelope alone'
+      + ' (ratio ' + (feg.lfoRides.hi / feg.up.hi).toFixed(2) + ', needs 1.15)');
     t.ok('raising AMOUNT with no filter opens one rather than doing nothing',
       feg.trap.ftype === 'lowpass' && /FILTER . LP/.test(feg.trap.said),
       '"' + feg.trap.said + '"');

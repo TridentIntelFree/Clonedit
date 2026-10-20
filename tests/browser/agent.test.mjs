@@ -674,6 +674,86 @@ export default async function ({ browser, base }) {
     t.ok('beats are converted to seconds at the tempo they are written at',
       dur.sched.len === 0.25, 'half a beat at 120bpm · reported len ' + dur.sched.len);
 
+    /* THE REST OF WHAT A FINISHED RECORD NEEDS.
+
+       Three things the portal could not do, each of which the app could.
+       It could build an arrangement but not a PERFORMANCE — no crescendo,
+       no filter opening across eight bars — because the automation lanes
+       were reachable only by dragging a finger across the AUTO tab. It
+       could bounce the mix but never a STEM, though renderMix has always
+       taken a pad set. And it was judging its own masters on peak and RMS
+       while the BOUNCE button computed a properly gated LUFS and a true
+       peak and wrote them to a log nothing outside the page can read. */
+    t.head('A PERFORMANCE, STEMS, AND THE NUMBERS A RELEASE IS JUDGED ON');
+    const fin = await page.evaluate(async () => {
+      const o = {}, w = ms => new Promise(r => setTimeout(r, ms));
+      JBH.clear(); await w(250);
+      JBH.set({ bpm: 110, human: 0, swing: 0 });
+      await JBH.preset('dkick', 0); await JBH.preset('dsnare', 1); await JBH.preset('dhat', 2);
+      [0, 4, 8, 12].forEach(s => JBH.step(0, s, 1));
+      [4, 12].forEach(s => JBH.step(1, s, .9));
+      [0, 2, 4, 6, 8, 10, 12, 14].forEach(s => JBH.step(2, s, .5));
+
+      o.targets = Object.keys(JBH.autoTargets());
+      o.liveOnly = JBH.automate('scd', [[0, .2], [15, .9]]).inTheBounce;
+
+      /* brightness of the first half against the second, measured off the
+         rendered file — the only way to know a sweep is in the audio and
+         not merely in the data */
+      const bright = async () => {
+        const r = await JBH.render({ src: 'pat', loops: 1, wav: true, depth: 16 });
+        const bin = atob(r.wavBase64), dv = new DataView(new ArrayBuffer(bin.length));
+        for (let i = 0; i < bin.length; i++) dv.setUint8(i, bin.charCodeAt(i));
+        let off = 12, data = null, rate = 48000, ch = 2;
+        while (off < bin.length - 8) {
+          const id = String.fromCharCode(dv.getUint8(off), dv.getUint8(off + 1),
+            dv.getUint8(off + 2), dv.getUint8(off + 3));
+          const sz = dv.getUint32(off + 4, true);
+          if (id === 'fmt ') { ch = dv.getUint16(off + 10, true); rate = dv.getUint32(off + 12, true); }
+          if (id === 'data') { data = { start: off + 8, size: sz }; break; }
+          off += 8 + sz + (sz & 1);
+        }
+        const n = Math.floor(data.size / (2 * ch));
+        const zc = (a, b2) => { let z = 0, prev = 0;
+          for (let i = a; i < b2; i++) { const v = dv.getInt16(data.start + i * 2 * ch, true);
+            if ((v >= 0) !== (prev >= 0)) z++; prev = v; }
+          return Math.round(z / ((b2 - a) / rate)); };
+        const half = Math.floor(n / 2);
+        return { early: zc(0, half), late: zc(half, n) };
+      };
+      o.flat = await bright();
+      JBH.automate('mfilt', [[0, 0.08], [15, 1.0]]);
+      o.swept = await bright();
+      o.sweepInfo = JBH.automate('mfilt', [[0, 0.08], [8, 0.4], [15, 1.0]]);
+
+      /* loudness, and stems */
+      o.master = await JBH.render({ src: 'pat', loops: 2, loudness: true });
+      o.kick = await JBH.render({ src: 'pat', loops: 2, only: [0] });
+      o.hat = await JBH.render({ src: 'pat', loops: 2, only: [2] });
+      o.cleared = JBH.automate('mfilt', null).cleared;
+      return o;
+    });
+    t.ok('every automation target is listed with its current value',
+      fin.targets.length >= 5 && fin.targets.includes('mfilt') && fin.targets.includes('mvol'),
+      fin.targets.join(' '));
+    t.ok('AND A SWEPT FILTER IS IN THE AUDIO, not just in the data',
+      fin.swept.late - fin.swept.early > (fin.flat.late - fin.flat.early) + 300,
+      'zero crossings early→late: ' + fin.flat.early + '→' + fin.flat.late + ' flat, ' +
+      fin.swept.early + '→' + fin.swept.late + ' swept');
+    t.ok('a lane says whether it is baked into the bounce or live only',
+      fin.liveOnly === false && fin.sweepInfo.inTheBounce === true,
+      'sidechain depth is read at trigger time; the master filter is baked');
+    t.ok('THE MEASUREMENTS A RELEASE IS JUDGED ON, not just peak and RMS',
+      fin.master.lufs < 0 && fin.master.truePeakDb < 0 && fin.master.crestDb > 3 &&
+      typeof fin.master.vsStreaming === 'number',
+      fin.master.lufs + ' LUFS · ' + fin.master.truePeakDb + ' dBTP · crest ' +
+      fin.master.crestDb + ' dB · ' + fin.master.vsStreaming + ' vs streaming');
+    t.ok('STEMS: one instrument at a time, the same length as the master',
+      fin.kick.only.join() === '0' && fin.kick.seconds === fin.master.seconds &&
+      fin.hat.rms < fin.kick.rms / 4 && !fin.hat.silent,
+      'kick rms ' + fin.kick.rms + ' · hat rms ' + fin.hat.rms);
+    t.ok('and a lane can be cleared again', fin.cleared === true);
+
     t.head('AND IT TELLS YOU HOW TO CONNECT ONE — IN LINES THAT WORK');
     const how = await page.evaluate(async () => {
       const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));

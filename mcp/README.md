@@ -68,7 +68,10 @@ relay between two machines, and this is not that.
 | `jbh_poly` | **A pad with its own BPM.** Against a project at 100: 300 is triplets, 500 is quintuplets, 75 is three hits per bar against four beats. Per-cell locks carry the pitch, so a figure can be a melody rather than one repeated note. |
 | `jbh_euclid` | N hits spread as evenly over K steps as a number allows. |
 | `jbh_set` / `jbh_transport` / `jbh_hit` | Tempo and the rest; play and stop; hit a pad in time. |
-| `jbh_render` | Bounce and report length, peak, RMS, clipping, silence. Optionally write a WAV. |
+| `jbh_render` | Bounce and report length, peak, RMS, clipping, silence. `only` renders a STEM; `loudness` adds integrated LUFS, true peak and crest — the terms a release is judged on. Optionally write a WAV. |
+| `jbh_automate` | A line that moves while the bar plays: crescendo, a filter opening across the pattern. Says whether the target is baked into the bounce or live only. |
+| `jbh_auto_targets` | What can be automated, and where each sits now. |
+| `jbh_instrument` / `jbh_note` / `jbh_figure` | **Write notes, not pads.** Lay an instrument across a range, then write notes and chords by MIDI number; the pad and the semitone offset are worked out for you, and a figure's cells are grouped by register so nothing is stretched far. |
 | `jbh_save_session` / `jbh_load_session` | The file a person opens. |
 | `jbh_song_doc` | The compact text format — smaller, readable, but sixteen pads only and no tape lanes or instrument. |
 | `jbh_call` | Any `window.JBH` method by name. Covers anything added after these tools were written. |

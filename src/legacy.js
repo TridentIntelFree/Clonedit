@@ -9367,7 +9367,13 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
   },
   async render(opt){
     const o=opt||{};
-    const buf=await renderMix(null,null,
+    /* STEMS. renderMix has always taken a pad set — that is how levels()
+       measures one voice at a time — and nothing could ask for it from
+       outside, so an agent could bounce the mix and never the parts. A
+       stem is the same render with everything else absent, which is the
+       only kind that lines up sample for sample with the master. */
+    const only=Array.isArray(o.only)&&o.only.length ? new Set(o.only.map(n=>n|0)) : null;
+    const buf=await renderMix(only, only?new Set():null,
       {loops:o.loops||1, src:o.src||'pat', noTail:o.noTail!==false});
     if(!buf) return null;
     const L=buf.getChannelData(0), R=buf.numberOfChannels>1?buf.getChannelData(1):L;
@@ -9380,6 +9386,26 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const out={ seconds:+buf.duration.toFixed(3), rate:buf.sampleRate,
       peak:+pk.toFixed(4), rms:+Math.sqrt(sum/L.length).toFixed(4),
       clipping:pk>0.999, silent:pk<0.004 };
+    if(only) out.only=[...only];
+    /* THE TERMS A RELEASE IS ACTUALLY JUDGED ON. The app has computed a
+       properly gated integrated loudness and a true peak since the BOUNCE
+       button existed, and reported them to a log nobody outside the page
+       can read. Peak and RMS cannot tell you that a mix is loud but dead,
+       or that it will clip once it is an MP3; LUFS and dBTP can. Opt-in,
+       because the gating walks the whole buffer twice. */
+    if(o.loudness){
+      try{
+        const li=lufsIntegrated(buf), tp=truePeakOf(buf);
+        out.lufs = li.lufs===-Infinity ? null : +li.lufs.toFixed(2);
+        out.truePeakDb = tp>0 ? +(20*Math.log10(tp)).toFixed(2) : null;
+        out.overZeroDbtp = tp>1;
+        /* loudest 50ms against the integrated loudness: how much life is
+           left in the dynamics. Under ~6dB and it has been squashed. */
+        out.crestDb = (out.lufs==null) ? null
+          : +((20*Math.log10(Math.max(pk,1e-6))) - out.lufs).toFixed(2);
+        out.vsStreaming = out.lufs==null ? null : +(out.lufs+14).toFixed(2);
+      }catch(e){ out.loudnessError=String(e&&e.message||e); }
+    }
     if(o.wav){
       /* encodeWav hands back a BLOB, not an ArrayBuffer — wrapping it in a
          Uint8Array gives a zero-length array and a base64 string of nothing,
@@ -9817,6 +9843,56 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       catch(e){ out.push({ok:false,error:String(e&&e.message||e)}); }
     }
     return {n:out.length, failed:out.filter(r=>!r.ok).length, results:out};
+  },
+
+  /* A LINE THAT MOVES WHILE THE BAR PLAYS.
+
+     Every control above is a value, and a piece that never changes one of
+     them while it is sounding is a piece with no shape — no crescendo, no
+     filter opening across eight bars, no delay swelling into a gap. The
+     app has had automation lanes since the AUTO tab, recorded by dragging
+     a finger, stored per pattern and baked into the bounce. Nothing could
+     write one from outside, so the portal could build an arrangement and
+     not a performance.
+
+     Points are [stepPosition, 0..1], and the value is NORMALISED because
+     every target has a different unit — 120..18500 Hz for the master
+     filter, 0..0.85 for delay feedback — and an agent should not have to
+     carry that table. autoTargets converts. Pass null to clear a lane. */
+  automate(target, points, opt){
+    const o=opt||{};
+    const t=autoTargets[target];
+    if(!t) throw new Error('no automation target "'+target+'" — try '+
+      Object.keys(autoTargets).join(', '));
+    const pat=S.patterns[(o.pattern==null)?S.pattern:clamp(o.pattern|0,0,NPAT-1)];
+    pat.autom=pat.autom||{};
+    if(points===null){ delete pat.autom[target]; dirty(); try{ drawAuto(); }catch(e){}
+      return {target, cleared:true}; }
+    if(!Array.isArray(points)||!points.length)
+      throw new Error('automate(target, [[step, 0..1], …]) — or null to clear');
+    const L=patLen(pat);
+    const lane=points.map(pt=>{
+      const st=Array.isArray(pt)?pt[0]:pt.p, nv=Array.isArray(pt)?pt[1]:pt.v;
+      return { p:clamp(+st||0,0,L), v:t.fromNorm(clamp(+nv||0,0,1)) };
+    }).sort((a,b)=>a.p-b.p);
+    pat.autom[target]=lane;
+    dirty(); try{ drawAuto(); }catch(e){}
+    return { target, name:t.name, points:lane.length,
+      from:t.fmt?t.fmt(lane[0].v):lane[0].v,
+      to:t.fmt?t.fmt(lane[lane.length-1].v):lane[lane.length-1].v,
+      /* two of them are read live at trigger time and are NOT baked into a
+         bounce; saying so beats a silent difference between the speakers
+         and the file */
+      inTheBounce: typeof t.applyG==='function' };
+  },
+  /* What can be automated, what it is called, and where it currently sits. */
+  autoTargets(){
+    const o={};
+    Object.keys(autoTargets).forEach(k=>{ const t=autoTargets[k];
+      let now=null; try{ now=t.get(); }catch(e){}
+      o[k]={ name:t.name, now:now==null?null:(t.fmt?t.fmt(now):now),
+        inTheBounce: typeof t.applyG==='function' }; });
+    return o;
   },
 
   /* A CLEAN SLATE, which nothing but the NEW button could ask for.

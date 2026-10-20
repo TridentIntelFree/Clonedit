@@ -212,6 +212,21 @@ const TOOLS = [
       src: { type: 'string', enum: ['pat', 'song', 'chain', 'morph'] },
       loops: { type: 'integer' }, full: { type: 'boolean' } } } },
 
+  { name: 'jbh_automate', description:
+      'A LINE THAT MOVES WHILE THE BAR PLAYS — crescendo, a filter opening across the pattern, '
+      + 'a delay swelling into a gap. points are [[stepPosition, 0..1], …] and the value is '
+      + 'NORMALISED, because every target has its own unit. Pass null to clear a lane. The '
+      + 'result says whether that target is baked into the bounce or read live only.',
+    inputSchema: { type: 'object', required: ['target'], properties: {
+      target: { type: 'string' },
+      points: { type: 'array', items: { type: 'array' } },
+      pattern: { type: 'integer' } } } },
+
+  { name: 'jbh_auto_targets', description:
+      'What can be automated, what each is called, where it sits now, and whether it is baked '
+      + 'into a bounce.',
+    inputSchema: { type: 'object', properties: {} } },
+
   { name: 'jbh_levels', description:
       'A per-pad balance table in one call: peak, RMS, and dB relative to the full mix, plus a '
       + 'list of pads that are buried. One bounce per sounding pad underneath, so it is not '
@@ -272,10 +287,16 @@ const TOOLS = [
   { name: 'jbh_render', description:
       'Bounce the pattern or the song and report what came out: length, peak, RMS, whether it '
       + 'clipped and whether it was silent. THIS IS HOW YOU CHECK YOUR OWN WORK — a part you '
-      + 'cannot hear is the most common thing to get wrong. Give a path to also write a .wav.',
+      + 'cannot hear is the most common thing to get wrong. Give a path to also write a .wav. '
+      + '`only` renders just those pads, which is a STEM, the same length as the master. '
+      + '`loudness` adds the terms a release is judged on: integrated LUFS, true peak in dBTP, '
+      + 'crest, and how it sits against the -14 LUFS streaming target — peak and RMS cannot '
+      + 'tell you a mix is loud but dead.',
     inputSchema: { type: 'object', properties: {
-      src: { type: 'string', enum: ['pat', 'song'], description: 'default pat' },
+      src: { type: 'string', enum: ['pat', 'song', 'chain', 'morph'], description: 'default pat' },
       loops: { type: 'integer', description: 'default 1' },
+      only: { type: 'array', items: { type: 'integer' }, description: 'pads to render alone — a stem' },
+      loudness: { type: 'boolean' },
       wav_path: { type: 'string', description: 'write the audio here as a 16-bit WAV' } } } },
 
   { name: 'jbh_save_session', description:
@@ -336,6 +357,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_figure':      return ok(await jbh('figure', [a.name, { notes: a.notes, bpm: a.bpm, cells: a.cells, fire: a.fire, match: a.match, maxBend: a.maxBend }]));
       case 'jbh_schedule':    return ok(await jbh('schedule', [{ src: a.src, loops: a.loops, full: a.full }]));
       case 'jbh_levels':      return ok(await jbh('levels', [{ src: a.src, loops: a.loops }]));
+      case 'jbh_automate':    return ok(await jbh('automate', [a.target, a.points === undefined ? null : a.points, { pattern: a.pattern }]));
+      case 'jbh_auto_targets':return ok(await jbh('autoTargets'));
       case 'jbh_nearest':     return ok(await jbh('nearest', [a.note, a.filter]));
       case 'jbh_batch':       return ok(await jbh('batch', [a.calls]));
       case 'jbh_clear':       return ok(await jbh('clear'));
@@ -347,7 +370,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       case 'jbh_render': {
         const r = await jbh('render', [{ src: a.src || 'pat', loops: a.loops || 1,
-          wav: !!a.wav_path }]);
+          only: a.only, loudness: !!a.loudness, wav: !!a.wav_path }]);
         if (!r) return ok({ rendered: false, why: 'nothing to render — no pattern hits and no tape lanes' });
         if (a.wav_path && r.wavBase64) {
           const p = outPath(a.wav_path);

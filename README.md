@@ -68,12 +68,27 @@ than wandering off to an empty one, asks nothing, and throws if the download
 or the decode fails. A kit laid out by index stays where it was put.
 
 ```js
-await JBH.schedule()              // every note the bounce will play: time,
-                                  // pad, pitch, real MIDI, velocity
+await JBH.instrument('piano', { pack, match:'vsco:piano', lo:36, hi:89 })
+JBH.note('piano', [50,53,57], 0, .7, { beats: 2 })  // a chord, held two beats
+await JBH.figure('flute', { bpm:345, cells:5, notes:[[0,74,.3],…] })
+JBH.automate('mfilt', [[0,.1],[15,1]])              // a filter across the bar
+await JBH.schedule()              // every note the bounce will play
 await JBH.levels()                // per-pad balance in dB, and what's buried
+await JBH.render({ only:[0,1], loudness:true })     // a stem, and LUFS
 JBH.nearest(61, 'piano')          // the closest real sample, and the bend
 await JBH.batch([['step',0,0,1], ['pad',0,{gain:.8}]])   // one crossing
 ```
+
+`instrument()` / `note()` / `figure()` are the ones to reach for. Everything
+else here is pad-shaped and music is not: a part means choosing a sample per
+note, loading enough roots that none is bent far, allocating pads, and
+merging what lands on one pad at one step into a chord. That is the same
+eighty lines for everybody, and getting it wrong does not fail loudly — it
+just comes out sounding like a cheap synthesiser.
+
+A note can say when it **ends**, too: `{ beats: 2 }` or `{ len: 1.2 }`.
+Without that a step says when a note starts and nothing about when it stops,
+so a crotchet and a semiquaver come out identical.
 
 `schedule()` is the renderer's own event list, returned from inside the same
 loop that builds the file — not a second opinion about it. Reach for it
