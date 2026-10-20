@@ -2221,6 +2221,69 @@ Same notes, different performance. Keep whichever you prefer.</p>
   <div id="agentStat" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px;line-height:1.45">
     closed &mdash; nothing can drive this page
   </div>
+  <!-- OPENING THE LINK AND THEN SAYING NOTHING IS THE BUG THIS ANSWERS.
+       Reported in exactly those words: "I click open agent link and it doesn't
+       do anything or provide anything or suggest I put in anything or connect
+       to anything." It did do something — it started listening — but listening
+       is invisible, and the panel never once said what the other end of the
+       link was supposed to be or where it comes from. A door with no sign on
+       it is indistinguishable from a wall. drawAgentLink() opens this the
+       first time the link goes live with nobody on it. -->
+  <details id="agentHow" class="ex"><summary>How do I connect one?</summary><div class="ex-body">
+    <p><b>Nothing can reach this screen from another device.</b> There is no
+server anywhere in this app, which is why it works on a plane and why nothing
+you make here leaves the phone. The price is that an agent has to be running on
+<em>this same machine</em>. On a phone there is nothing to connect yet &mdash;
+all three routes below are computer routes.</p>
+
+    <h4>1 &middot; A coding agent, over MCP &mdash; the usual way</h4>
+    <p>The repo ships a server for it. On a computer with the repo:</p>
+    <div class="cmd" id="cmdMcpInstall">cd Clonedit/mcp &amp;&amp; npm install</div>
+    <p>then add this to your agent's MCP config, with the real path filled in:</p>
+    <div class="cmd" id="cmdMcpCfg">{"mcpServers":{"jbh88":{"command":"node","args":["/path/to/Clonedit/mcp/server.mjs"]}}}</div>
+    <div class="row"><button id="btnCopyMcp" class="grow">COPY THAT CONFIG</button></div>
+    <p><b>It drives its own copy of the app, not this screen.</b> The server
+opens its own browser, builds the track in there, and hands the result back as
+a file: a <span style="color:var(--lcd)">.json</span> you open with <b>LOAD
+.JSON</b> below, or a <span style="color:var(--lcd)">.wav</span> you can just
+play. You will not hear it happening and this panel will not light up. It is
+the route that works today, and the one worth starting with.</p>
+
+    <h4>2 &middot; Another tab, on a computer</h4>
+    <p>This is what the link above is for, and the only route that turns the
+status line green. Open this same address in a second tab, open that tab's
+console, and paste:</p>
+    <div class="cmd" id="cmdTab">const b=new BroadcastChannel('jbh88'),w={};let n=0;
+b.onmessage=e=>{const d=e.data||{};
+  if(d.event==='ping')return b.postMessage({jbh:1,event:'here'});
+  if(d.event==='say')return console.log('APP:',d.text);
+  if(d.id&amp;&amp;w[d.id]){w[d.id](d);delete w[d.id];}};
+window.jbh=(call,...args)=>new Promise(r=>{
+  const id=++n;w[id]=r;b.postMessage({jbh:1,id,call,args});});
+b.postMessage({jbh:1,event:'hello'});</div>
+    <div class="row"><button id="btnCopyTab" class="grow">COPY THAT SNIPPET</button></div>
+    <p>The status line above turns green the moment it lands. Then, from that
+console: <span style="color:var(--lcd)">await jbh('calls')</span> lists
+everything, <span style="color:var(--lcd)">await jbh('state')</span> reports
+what is loaded, <span style="color:var(--lcd)">jbh('set',{bpm:120})</span> and
+<span style="color:var(--lcd)">jbh('play')</span> drive it, and
+<span style="color:var(--lcd)">jbh('tell','hello')</span> writes a line into
+the box on this page. Anything that can drive a browser &mdash; a script, an
+extension, an agent with a browser tool &mdash; goes the same way.</p>
+
+    <h4>3 &middot; A page that embeds this one</h4>
+    <p>In an iframe, the same envelope over
+<span style="color:var(--lcd)">postMessage</span>:</p>
+    <div class="cmd">frame.contentWindow.postMessage(
+  {jbh:1, id:1, call:'state', args:[]}, '*');
+// answer arrives on the parent's message event:
+// {jbh:1, id:1, ok:true, result:{&hellip;}}</div>
+
+    <p><b>What would fix the phone.</b> Live control of <em>this</em> screen
+from somewhere else needs a relay in the middle &mdash; a small server both
+sides connect to. That is a real thing to build and it is not built; saying so
+is better than another button that opens a door onto nothing.</p>
+  </div></details>
   <div id="agentLog" role="log" aria-live="polite" aria-label="Messages to and from the connected agent"
     style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
            padding:8px;margin:4px 0;font-size:11px;line-height:1.5;max-height:160px;overflow-y:auto;color:var(--txt-dim)"></div>
@@ -2241,7 +2304,8 @@ whether the hats came out inaudible and fix them.</p>
 browser plumbing: no server, no socket, nothing leaves the machine. Anything
 that can drive a browser can skip all of it and call
 <span style="color:var(--lcd)">window.JBH</span> directly &mdash;
-<span style="color:var(--lcd)">JBH.calls()</span> lists the lot.</p>
+<span style="color:var(--lcd)">JBH.calls()</span> lists the lot.
+<b>How do I connect one?</b> above has the exact steps for each route.</p>
 <p><b>Off until you switch it on, and off again on reload.</b> An app that
 answered to any tab on its origin the moment it loaded would be a different
 proposition from this one, so turning it on stays a deliberate act. Anything it
@@ -2255,7 +2319,7 @@ what it answers appears above it.</p>
 <b>SPEC</b> writes a prompt into the box, you hand that to any assistant in its
 own window, and paste the reply back. One-way, between takes, and it describes
 the first sixteen pads only &mdash; no tape lanes, no LIVE instrument, no
-downloaded sounds. Use CONNECT above where you can.</p>
+downloaded sounds. Use <b>OPEN AGENT LINK</b> above where you can.</p>
     <div class="row">
       <button id="btnDocSpec" class="grow">SPEC &#8594; BOX</button>
       <button id="btnDocLoad" class="grow">LOAD DOC</button>

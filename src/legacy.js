@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R205 · 2026-10-20 · an MCP server, and a saved file that keeps its sound';
+const BUILD = 'JBH-88 · R206 · 2026-10-20 · the agent link tells you how to connect one';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -9650,6 +9650,7 @@ function jbhPing(){
   return 1;
 }
 window.MVX.ping=jbhPing;
+let howShown=false;
 function drawAgentLink(){
   const st=$('agentStat'), lg=$('agentLog'), row=$('agentSayRow'), btn=$('btnAgentLink');
   if(!st||!lg||!row||!btn) return;
@@ -9665,10 +9666,18 @@ function drawAgentLink(){
     : peers
       ? '\u25cf CONNECTED \u2014 something is on the other end and can drive this page'
       : 'open, but nothing has connected yet. The app has no agent inside it \u2014 '
-        + 'one has to join from this device, over BroadcastChannel("jbh88") or by embedding this page.';
+        + 'one has to join from this device. Open "How do I connect one?" just below '
+        + 'for the three ways, with the lines to copy.';
   st.style.color = (on && peers) ? 'var(--lcd)' : 'var(--txt-dim)';
   lg.style.display=on?'block':'none';
   row.style.display=on?'flex':'none';
+  /* OPENED FOR YOU, ONCE. The link going live with nobody on the other end is
+     exactly the moment the question "connect WHAT?" arrives, so that is the
+     moment the answer is unfolded. Once only: it stays open or closed as the
+     person left it afterwards, and a panel that keeps reopening itself is its
+     own kind of broken. */
+  const how=$('agentHow');
+  if(how && on && !peers && !howShown){ howShown=true; how.open=true; }
   if(!on) return;
   /* BUILT FROM NODES, NOT FROM A STRING. This text arrives from whatever is
      connected — another tab, an embedding page — and putting that through
@@ -9697,12 +9706,37 @@ $('btnAgentLink').addEventListener('click',()=>{
   const r=window.MVX.listen(!jbhBus);
   drawAgentLink();
   if(r.listening){
-    agentLog('app','Link open \u2014 waiting for something to connect. Nothing has yet. '
-      +'An agent reaches this page by driving a browser on THIS device: another tab on the '
-      +'same address, or a page embedding it. There is no agent inside the app.');
+    agentLog('app','Link open \u2014 waiting for something to connect. Nothing has yet, and '
+      +'there is no agent inside the app. "How do I connect one?" just above has the three '
+      +'routes and the exact lines to copy.');
     jbhPing();
+    /* Put the directions in front of the eye that just pressed the button.
+       The panel sits below the fold on a phone and an answer you have to go
+       looking for is the same as no answer. */
+    try{ const how=$('agentHow'); if(how) how.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){}
   }
 });
+/* Copying a path or a config by hand on a phone is the step people give up on,
+   and both of these are meant to be pasted somewhere else. Same fallback as
+   the DIAG copy: clipboard.writeText wants a secure context and a fresh
+   gesture, and when it is not there, selecting the block leaves one long-press
+   between the person and a paste. */
+async function copyBlock(id,label){
+  const el=$(id); if(!el) return;
+  const txt=el.textContent;
+  try{
+    if(!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('no clipboard API');
+    await navigator.clipboard.writeText(txt);
+    lcd(label+' COPIED \u2014 paste it on the computer running the agent.');
+  }catch(e){
+    try{ const r=document.createRange(); r.selectNodeContents(el);
+      const s=getSelection(); s.removeAllRanges(); s.addRange(r); }catch(e2){}
+    lcd('COULD NOT REACH THE CLIPBOARD \u2014 '+label.toLowerCase()
+      +' is selected above, long-press \u2192 Copy.');
+  }
+}
+$('btnCopyMcp').addEventListener('click',()=>copyBlock('cmdMcpCfg','MCP CONFIG'));
+$('btnCopyTab').addEventListener('click',()=>copyBlock('cmdTab','SNIPPET'));
 $('btnAgentPing').addEventListener('click',()=>{
   if(!jbhBus){ lcd('The link is closed — open it first.'); return; }
   jbhPing();

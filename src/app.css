@@ -583,6 +583,22 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
 .ex{margin:0 0 var(--sp-2)}
 .ex-body{padding-bottom:6px}
 
+/* A line to copy rather than to read: a shell command, a config blob, a
+   snippet. It wraps instead of scrolling sideways, because a phone has
+   nowhere to scroll to and a half-visible path is a path nobody can type.
+   user-select:all turns the whole block into one tap-and-hold selection,
+   which is the only reliable copy gesture on iOS when the clipboard API
+   is unavailable. */
+.cmd{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:11px; line-height:1.5; color:var(--lcd);
+  background:var(--lcd-bg); border:1px solid var(--line); border-radius:6px;
+  padding:7px 8px; margin:0 0 .7em;
+  white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere;
+  user-select:all; -webkit-user-select:all;
+}
+body.sz-big .cmd{font-size:13px}
+
 /* ---- SCREEN SIZE --------------------------------------------------------
    Reported from an Android phone: "scaling and size issues, and the text at
    the top obscured things". Measured at 360x640, which is an ordinary Android

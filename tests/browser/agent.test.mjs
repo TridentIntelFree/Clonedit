@@ -273,6 +273,119 @@ export default async function ({ browser, base }) {
       empty.joinedStat.slice(0, 60));
     t.ok('and then a message really is sent', empty.sayWithPeer.sent === true);
 
+    /* Reported next, after the empty room was fixed: "I click open agent link
+       and it doesn't do anything or provide anything or suggest I put in
+       anything or connect to anything." It did do something — it started
+       listening, and the panel said so honestly — but it never once said what
+       the other end was supposed to BE or where one comes from. Honest about
+       being empty is only half the job; a door still needs a sign.
+
+       So this section does not check that the directions exist. It RUNS them.
+       The snippet printed on screen is lifted out of the page and executed in
+       a same-origin frame, which is what a second tab is as far as
+       BroadcastChannel is concerned. If the printed text drifts from the
+       envelope the app actually speaks, the link never flips and this fails. */
+    t.head('AND IT TELLS YOU HOW TO CONNECT ONE — IN LINES THAT WORK');
+    const how = await page.evaluate(async () => {
+      const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));
+      document.querySelector('#tabs button[data-v="proj"]').click();
+      await wait(150);
+      if (jbhBus) document.getElementById('btnAgentLink').click();
+      await wait(100);
+      const d = document.getElementById('agentHow');
+      o.present = !!d;
+      if (!d) return o;
+      /* The unfold is once-per-page on purpose — a panel that keeps
+         reopening itself is its own kind of broken — and the sections above
+         already spent it on this page. Put the page back to how it meets a
+         person who has just arrived. */
+      d.open = false; howShown = false;
+      document.getElementById('btnAgentLink').click();
+      await wait(250);
+      o.openedItself = d.open === true;
+      /* …and having read them, you get to put them away. */
+      d.open = false;
+      document.getElementById('btnAgentLink').click(); await wait(120);
+      document.getElementById('btnAgentLink').click(); await wait(250);
+      o.stayedClosed = d.open === false;
+      o.statPointsAtIt = /How do I connect one/i.test(
+        document.getElementById('agentStat').textContent);
+      o.transcriptPointsAtIt = JBH.messages().some(
+        m => m.who === 'app' && /How do I connect one/i.test(m.text));
+
+      /* THE MCP CONFIG MUST BE CONFIG, not prose that looks like it. */
+      const cfg = document.getElementById('cmdMcpCfg').textContent;
+      try {
+        const j = JSON.parse(cfg);
+        const s = j.mcpServers && j.mcpServers.jbh88;
+        o.mcp = { parsed: true, cmd: s && s.command, arg: s && s.args && s.args[0] };
+      } catch (e) { o.mcp = { parsed: false, err: String(e.message), raw: cfg.slice(0, 80) }; }
+
+      /* THE SNIPPET MUST CONNECT. Run the printed text, unedited, in a
+         same-origin frame and watch the app's own presence flip. */
+      const snip = document.getElementById('cmdTab').textContent;
+      o.peersBefore = JBH.peers();
+      const f = document.createElement('iframe');
+      f.style.display = 'none'; document.body.appendChild(f);
+      try { f.contentWindow.eval(snip); } catch (e) { o.evalErr = String(e.message); }
+      await wait(400);
+      o.peersAfter = JBH.peers();
+      o.statAfter = document.getElementById('agentStat').textContent.trim();
+
+      /* and the call plumbing it prints must round-trip */
+      try {
+        const r = await f.contentWindow.jbh('state');
+        o.roundTrip = { ok: r && r.ok === true, bpm: r && r.result && r.result.bpm };
+      } catch (e) { o.roundTrip = { ok: false, err: String(e.message) }; }
+      /* the line it tells you to type to talk back must land on screen */
+      try { await f.contentWindow.jbh('tell', 'connected from the console'); } catch (e) {}
+      await wait(200);
+      o.toldArrived = document.getElementById('agentLog').textContent
+        .includes('connected from the console');
+
+      f.remove();
+
+      /* THE COPY BUTTONS MUST LEAVE SOMETHING BEHIND. Headless has no
+         clipboard permission, which is the same position as a phone on an
+         insecure origin — so this exercises the fallback, and the fallback is
+         the one that has to work when it matters. Selected text is one
+         long-press from a paste; nothing selected is a dead button. */
+      getSelection().removeAllRanges();
+      document.getElementById('btnCopyMcp').click();
+      await wait(250);
+      o.copyLeftSomething = (getSelection().toString().length > 20) ||
+        (await navigator.clipboard.readText().catch(() => '')).length > 20;
+      o.copySaidSo = /COPIED|CLIPBOARD/i.test(document.getElementById('lcdmsg').textContent);
+      getSelection().removeAllRanges();
+
+      document.getElementById('btnAgentLink').click();
+      await wait(100);
+      return o;
+    });
+    t.ok('the panel carries the directions at all', how.present,
+      'the whole complaint was that it carried none');
+    t.ok('AND OPENS THEM ITSELF the moment the link goes live with nobody on it',
+      how.openedItself, 'the question arrives at that exact moment');
+    t.ok('and then LEAVES THEM ALONE — closed once, it stays closed',
+      how.stayedClosed, 'a panel that keeps reopening itself is its own fault');
+    t.ok('the status line and the transcript both point at them',
+      how.statPointsAtIt && how.transcriptPointsAtIt);
+    t.ok('the MCP block is real config and names the server in this repo',
+      how.mcp.parsed === true && how.mcp.cmd === 'node' &&
+      /mcp\/server\.mjs$/.test(how.mcp.arg || ''), JSON.stringify(how.mcp));
+    t.ok('THE PRINTED SNIPPET ACTUALLY CONNECTS — run unedited, the link flips',
+      how.peersBefore === 0 && how.peersAfter === 1 && /CONNECTED/.test(how.statAfter || ''),
+      'peers ' + how.peersBefore + '→' + how.peersAfter +
+      (how.evalErr ? ' · eval: ' + how.evalErr : ''));
+    t.ok('and the call it prints round-trips a real answer',
+      how.roundTrip && how.roundTrip.ok === true && how.roundTrip.bpm > 0,
+      JSON.stringify(how.roundTrip));
+    t.ok('and jbh(‘tell’,…) puts a line on this page, as promised',
+      how.toldArrived);
+    t.ok('COPY leaves the text either on the clipboard or selected, and says which',
+      how.copyLeftSomething && how.copySaidSo,
+      'a copy button that does neither is the same dead button again');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

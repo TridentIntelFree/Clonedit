@@ -53,6 +53,14 @@ It is **off until you switch it on, and off again on reload** — an app that
 answers to any tab on its origin the moment it loads is a different
 proposition. Text arriving over the link is rendered as text, never as markup.
 
+The directions are **in the app**, not only here: PROJ → AI & AGENTS →
+*How do I connect one?* carries the MCP config and the console snippet with
+copy buttons, and unfolds itself the first time you open the link with nothing
+on the other end. It is also honest about the limit — nothing can reach the
+copy of the app on your phone from another device, because there is no server
+anywhere in this project. Live control of *that* screen needs a relay in the
+middle, and there isn't one.
+
 The older **AI JAM** paste-a-document flow still works and still needs no
 connection of any kind, but it is one-way and only reaches sixteen pads; the
 link above is the live path.
