@@ -52,7 +52,13 @@ export function stepLock(pat, p, st) { return pat.locks && pat.locks[p + ':' + s
 /* The sound fields a step can hold on top of its hit. Kept here rather than in
    the engine so the grid and the scheduler cannot drift apart about what
    counts as a lock. */
-export const LOCK_FX = ['fcut', 'gain', 'pan', 'rel', 'start'];
+/* `len` is here with the others because it changes what the step PLAYS —
+   how long the note lasts — and a step that rings for a bar beside one that
+   stops in a quaver has to look different or the grid is lying. It is the
+   only way to write rhythm on a sustaining instrument: without it every note
+   on a pad lasts exactly as long as its sample, so a part can say when a
+   note starts and nothing about when it ends. */
+export const LOCK_FX = ['fcut', 'gain', 'pan', 'rel', 'start', 'len'];
 /* `plain` is in here because it changes what the step PLAYS — it opts the step
    out of the pad's poly figure — and a step whose sound differs from its
    neighbours has to be marked or the grid is lying about itself. The five

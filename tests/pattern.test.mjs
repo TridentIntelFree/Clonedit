@@ -62,6 +62,8 @@ test('stepHasLock marks a step that holds a sound', () => {
   assert.equal(stepHasLock({ pan: 0 }), true, 'a step locked to centre on a panned pad is a lock');
   assert.equal(stepHasLock({ start: 0 }), true);
   assert.equal(stepHasLock({ fcut: null }), false, 'null means the step is not overriding');
-  assert.deepEqual(LOCK_FX, ['fcut', 'gain', 'pan', 'rel', 'start'],
+  assert.deepEqual(LOCK_FX, ['fcut', 'gain', 'pan', 'rel', 'start', 'len'],
     'DRIVE stays out: it is a waveshaper table, not an AudioParam');
+  assert.equal(stepHasLock({ len: 0.25 }), true,
+    'a note cut to a quaver sounds different from one left to ring');
 });

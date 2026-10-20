@@ -2522,7 +2522,7 @@ var __JBH_PURE = (() => {
   function stepLock(pat, p, st) {
     return pat.locks && pat.locks[p + ":" + st];
   }
-  var LOCK_FX = ["fcut", "gain", "pan", "rel", "start"];
+  var LOCK_FX = ["fcut", "gain", "pan", "rel", "start", "len"];
   function stepHasLock(lk) {
     if (!lk) return false;
     if (lk.pitch || lk.prob != null || lk.rat > 1 || lk.nudge || lk.plain) return true;
@@ -6674,7 +6674,20 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
   const off=s0*buf.duration;
   const sliceDur=Math.max(0.005,(e0-s0)*buf.duration);
   void ktSlice;   // the stretched buffer is longer; start/end are fractions, so they still land right
-  const outDur=sliceDur/rate;
+  /* HOW LONG THIS NOTE LASTS.
+
+     Without a per-step length, a note rings for exactly as long as its
+     sample and nothing else — so a part can say when a note starts and
+     has no way to say when it stops. On a drum that is the whole truth.
+     On anything sustaining it means a crotchet and a semiquaver come out
+     the same length, which is not a rhythm, it is a list of attack times.
+
+     The envelope's release and the source's stop both hang off outDur, so
+     cutting it here is enough to make the note end — with its own release
+     rather than a click. A note longer than its sample cannot be made to
+     last longer, so this only ever shortens. */
+  let outDur=sliceDur/rate;
+  if(lk && lk.len>0) outDur=Math.min(outDur, +lk.len);
   const src=ctx.createBufferSource(); src.buffer=buf; src.playbackRate.value=rate;
   if(live){
     src._base=effBase;
@@ -12163,7 +12176,7 @@ async function loadSongDoc(doc){
         /* Clamped rather than dropped, because a song doc is hand-writable and
            a cutoff of 2 is a typo with an obvious intent — but only once it is
            known to be a number at all. */
-        { const rng={fcut:[0,1],gain:[0,2],pan:[-1,1],rel:[0.005,1],start:[0,0.99]};
+        { const rng={fcut:[0,1],gain:[0,2],pan:[-1,1],rel:[0.005,1],start:[0,0.99],len:[0.01,30]};
           LOCK_FX.forEach(f=>{ if(src[f]==null) return; const v=+src[f];
             if(isFinite(v)) lk[f]=clamp(v,rng[f][0],rng[f][1]); }); }
         if(Object.keys(lk).length) P[pi].locks[kk]=lk;
@@ -12475,6 +12488,11 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       const had=(cur.pitches&&cur.pitches.length)?cur.pitches:(cur.pitch!=null?[cur.pitch]:[]);
       const all=[...new Set(had.concat(offs))].sort((a,b)=>a-b);
       const lk=Object.assign({}, cur, locks||{});
+      /* `beats` is the musical way to say it and `len` is what the engine
+         wants, so it is converted here, at the tempo the note is written
+         at. A tempo change afterwards does not rescale it — say beats
+         again if the part moves. */
+      if(lk.beats!=null){ lk.len=Math.max(0.01,(60/Math.abs(S.bpm))*(+lk.beats)); delete lk.beats; }
       if(all.length>1){ lk.pitches=all; lk.pitch=all[0]; }
       else { lk.pitch=all[0]||0; delete lk.pitches; }
       pat.steps[pad][st]=Math.max(pat.steps[pad][st]||0, v);
@@ -12587,7 +12605,11 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const notes=r.schedule.map(e=>{
       const p=S.pads[e.p], root=(p&&p.srcNote!=null)?p.srcNote:null;
       return { t:+e.when.toFixed(4), pad:e.p, name:(p&&p.name)||'', vel:+e.v.toFixed(3),
-        pitch:e.pitch||0, midi:root==null?null:root+(e.pitch||0), chord:!!e.chord };
+        pitch:e.pitch||0, midi:root==null?null:root+(e.pitch||0), chord:!!e.chord,
+        /* how long it is held, when the step says so; absent means "as long
+           as the sample runs", which is the default and usually right for
+           anything percussive */
+        len:(e.lk&&e.lk.len>0)?+(+e.lk.len).toFixed(3):undefined };
     }).sort((a,b)=>a.t-b.t || a.pad-b.pad);
     const byPad={};
     notes.forEach(n=>{ (byPad[n.pad]=byPad[n.pad]||{n:0,lo:999,hi:-999,stretch:0,name:n.name});
@@ -19909,7 +19931,7 @@ function applySessionDoc(doc, bufs){
        silently corrected value is a step that plays something the editor is
        not showing. */
     for(const k in pt.locks){ const lk=pt.locks[k]; if(!lk||typeof lk!=='object'){ delete pt.locks[k]; continue; }
-      const rng={fcut:[0,1],gain:[0,2],pan:[-1,1],rel:[0.005,1],start:[0,0.99]};
+      const rng={fcut:[0,1],gain:[0,2],pan:[-1,1],rel:[0.005,1],start:[0,0.99],len:[0.01,30]};
       LOCK_FX.forEach(f=>{ if(!(f in lk)) return;
         /* null is checked before the coercion, not with ==null: JSON.stringify
            writes NaN as null and +null is 0, which is a perfectly valid cutoff.

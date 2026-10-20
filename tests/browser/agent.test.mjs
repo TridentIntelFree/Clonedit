@@ -623,6 +623,57 @@ export default async function ({ browser, base }) {
     t.ok('an instrument that was never laid out says so rather than guessing',
       /no instrument/.test(inst.noInstrument || ''), String(inst.noInstrument));
 
+    /* HOW LONG A NOTE LASTS.
+
+       A step said when a note STARTED and nothing about when it stopped: it
+       rang for exactly as long as its sample. On a drum that is the whole
+       truth. On anything sustaining it means a crotchet and a semiquaver
+       come out identical, which is not a rhythm — it is a list of attack
+       times, and it is why the chamber pieces written here before this all
+       had the same legato. */
+    const dur = await page.evaluate(async () => {
+      const o = {}, w = ms => new Promise(r => setTimeout(r, ms));
+      const tail = async () => {       // energy well after the note should have gone
+        const r = await JBH.render({ src: 'pat', loops: 1, wav: true, depth: 16 });
+        const bin = atob(r.wavBase64);
+        const dv = new DataView(new ArrayBuffer(bin.length));
+        for (let i = 0; i < bin.length; i++) dv.setUint8(i, bin.charCodeAt(i));
+        let off = 12, data = null, rate = 48000, ch = 2;
+        while (off < bin.length - 8) {
+          const id = String.fromCharCode(dv.getUint8(off), dv.getUint8(off + 1),
+            dv.getUint8(off + 2), dv.getUint8(off + 3));
+          const sz = dv.getUint32(off + 4, true);
+          if (id === 'fmt ') { ch = dv.getUint16(off + 10, true); rate = dv.getUint32(off + 12, true); }
+          if (id === 'data') { data = { start: off + 8, size: sz }; break; }
+          off += 8 + sz + (sz & 1);
+        }
+        const n = Math.floor(data.size / (2 * ch));
+        const from = Math.floor(rate * 0.9), to = Math.min(n, Math.floor(rate * 1.8));
+        let s = 0, c = 0;
+        for (let i = from; i < to; i++) { const v = dv.getInt16(data.start + i * 2 * ch, true) / 32768; s += v * v; c++; }
+        return { tail: +Math.sqrt(s / c).toFixed(5), peak: r.peak };
+      };
+      const lay = async () => { JBH.clear(); await w(200);
+        JBH.set({ bpm: 120, human: 0, swing: 0 });
+        await JBH.instrument('pf', { pack: 'samples/real-cc0-full.json',
+          match: 'vsco:piano', lo: 55, hi: 72, max: 6 }); };
+
+      await lay(); JBH.note('pf', 60, 0, 0.9);
+      o.ring = await tail();
+      await lay(); JBH.note('pf', 60, 0, 0.9, { beats: 0.5 });   // a quaver at 120
+      o.cut = await tail();
+      o.sched = (await JBH.schedule({ src: 'pat' })).events[0];
+      return o;
+    });
+    t.ok('A NOTE CAN BE CUT SHORT — it rang for its whole sample before',
+      dur.ring.tail > 0.004 && dur.cut.tail < dur.ring.tail / 20,
+      'tail RMS ' + dur.ring.tail + ' ringing vs ' + dur.cut.tail + ' cut to a quaver');
+    t.ok('and the ATTACK is untouched — it is shorter, not quieter',
+      Math.abs(dur.ring.peak - dur.cut.peak) < 0.004,
+      'peak ' + dur.ring.peak + ' vs ' + dur.cut.peak);
+    t.ok('beats are converted to seconds at the tempo they are written at',
+      dur.sched.len === 0.25, 'half a beat at 120bpm · reported len ' + dur.sched.len);
+
     t.head('AND IT TELLS YOU HOW TO CONNECT ONE — IN LINES THAT WORK');
     const how = await page.evaluate(async () => {
       const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));
