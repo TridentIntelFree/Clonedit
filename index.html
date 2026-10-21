@@ -425,6 +425,7 @@ someone else's.</p>
   <div class="row">
     <select aria-label="Sample pack" id="packPick" class="grow">
       <option value="samples/salamander.json">&#9733; Salamander Grand Piano &mdash; 6 dynamics (CC-BY)</option>
+      <option value="samples/vsco-orch.json">&#9733; VSCO-2 Orchestra &mdash; 18 instruments, velocity layers (CC0)</option>
       <option value="samples/vsco-real.json">Cello + Acoustic Drums (CC0)</option>
       <option value="samples/real-cc0-full.json">Full Kit &mdash; Drums + Real Instruments (CC0)</option>
       <option value="samples/real-cc0.json">Real Instruments &middot; Core (CC0)</option>
@@ -2229,6 +2230,26 @@ socket. Anything driving a browser can call
 <span class="lit">window.JBH</span> directly.</p>
 <p><b>Off until enabled, and off again on reload.</b> Text arriving over the
 link renders as text, never as markup.</p>
+  </div></details>
+
+  <details class="ex" style="margin-top:8px"><summary>Checking a mix</summary><div class="ex-body">
+    <p style="margin-top:0"><span class="lit">critique()</span> runs the checks
+below and returns only what is wrong. Empty is the good answer.</p>
+    <p><span class="lit">spectrum()</span> &mdash; tonal balance in nine octave
+bands, plus loudness, crest and width.<br>
+<span class="lit">reference(url)</span> &mdash; measure a finished recording and
+hold it as the target. Accepts a URL, <span class="lit">{base64}</span> or
+<span class="lit">{pad}</span>; only the measurement is kept.<br>
+<span class="lit">compare()</span> &mdash; the mix against that reference, band
+by band, with level removed.<br>
+<span class="lit">vsDry(pad)</span> &mdash; the same pad rendered twice, once
+with its filter, EQ and sends bypassed, so the difference is the processing.<br>
+<span class="lit">checkMix()</span> &mdash; settings that read as set and do
+nothing: a value below audibility, or one outside the range a reload will
+clamp it to.</p>
+    <p>Tone is judged only against a reference. Without one,
+<span class="lit">critique()</span> says so rather than assuming a target
+curve.</p>
   </div></details>
 
   <details id="songDocBox" class="ex" style="margin-top:8px"><summary>Song document (no client required)</summary><div class="ex-body">
@@ -5931,7 +5952,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R207 · 2026-10-20 · downloadable sounds reach the agent at last';
+const BUILD = 'JBH-88 · R220 · 2026-10-21 · it can hear the difference now';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -13072,6 +13093,292 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     return { mix, pads:out, buried:out.filter(x=>x.dbRms<-26).map(x=>x.pad) };
   },
 
+  /* ---- EARS -----------------------------------------------------------
+
+     levels() answers "is anything buried", and loudness answers "is it
+     too quiet". Neither answers the question that actually decided every
+     rejected mix here, which is "does it sound right" — and the attempts
+     to answer that by eye were wrong often enough to be worse than
+     nothing. These three are the measured version.
+
+     spectrum()  — the mix's own tonal balance, nine octave bands.
+     reference() — the same measurement taken from somebody else's finished
+                   recording, held for the session as the target.
+     compare()   — the difference, band by band, with the level taken out.
+
+     The point of the reference is to stop inventing target curves from
+     memory. A curve recalled from memory put the fault in the bass when
+     the measurement put it at 2-4kHz; a real recording of the same
+     instrumentation does not have opinions. */
+
+  async spectrum(opt){
+    const o=opt||{};
+    const buf=await renderMix(null,null,
+      {loops:o.loops||1, src:o.src||'pat', noTail:o.noTail!==false});
+    if(!buf) return null;
+    return await specReport(sliceBuf(buf, o.from||0, o.seconds||120));
+  },
+
+  /* LOAD A TARGET.
+
+     reference(url)              fetch and measure
+     reference({base64, name})   bytes handed straight in
+     reference({pad:n})          a sample already on a pad
+     reference()                 what is loaded now
+     reference(null)             forget it
+
+     A URL is fetched by the page, so it is subject to CORS like anything
+     else: raw.githubusercontent.com allows it, most hosts do not, and a
+     file served beside the app always will. When the fetch is blocked the
+     error says so rather than reporting an empty reference.
+
+     Only the measurement is kept — nine band numbers, a loudness and a
+     width. The decoded audio is dropped on the way out, so a reference
+     cannot be played, bounced, or saved into a project. */
+  async reference(src, opt){
+    if(src===null){ const had=refSpec; refSpec=null;
+      return had?{cleared:had.name}:{cleared:null}; }
+    if(src===undefined) return refSpec;
+    const o=opt||{};
+    let buf=null, name='';
+    if(typeof src==='string'){
+      name=src.replace(/^.*\//,'') || src;
+      let r;
+      try{ r=await fetch(src); }
+      catch(e){ throw new Error('could not fetch the reference ('+String(e&&e.message||e)
+        +'). A cross-origin host must send Access-Control-Allow-Origin; pass '
+        +'reference({base64}) instead if it does not.'); }
+      if(!r.ok) throw new Error('reference fetch failed: HTTP '+r.status+' for '+src);
+      buf=await decode(await r.arrayBuffer());
+    } else if(src && typeof src.base64==='string'){
+      name=src.name||'(bytes)';
+      const bin=atob(src.base64), by=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++) by[i]=bin.charCodeAt(i);
+      buf=await decode(by.buffer);
+    } else if(src && src.pad!=null){
+      const p=S.pads[src.pad|0];
+      if(!p || p.bufId<0) throw new Error('pad '+(src.pad|0)+' has no sample on it');
+      buf=S.buffers[p.bufId]; name=p.name||('pad '+(src.pad|0));
+    } else throw new Error('reference(url) | reference({base64,name}) | reference({pad}) | reference(null)');
+    if(!buf || !buf.length) throw new Error('the reference decoded to nothing');
+    const full=+buf.duration.toFixed(1);
+    const cut=sliceBuf(buf, o.from||0, o.seconds||120);
+    refSpec=await specReport(cut);
+    refSpec.name=name;
+    refSpec.ofSeconds=full;
+    if(cut!==buf) refSpec.measuredFrom=(o.from||0)+'s for '+refSpec.seconds+'s of '+full+'s';
+    return refSpec;
+  },
+
+  async compare(opt){
+    const o=opt||{};
+    if(!refSpec) throw new Error('no reference loaded — call reference(url) first');
+    const buf=await renderMix(null,null,
+      {loops:o.loops||1, src:o.src||'song', noTail:o.noTail!==false});
+    if(!buf) return null;
+    const mine=await specReport(sliceBuf(buf, o.from||0, o.seconds||120));
+    return diffSpec(mine, refSpec);
+  },
+
+  /* WHAT THE PAD'S OWN CHAIN DID TO IT.
+
+     This answers the question that went wrong here over and over: a real
+     piano went in and an electric keyboard came out, and for several
+     versions the samples got the blame. The cause the one time it was
+     finally tracked down was a lowpass that took everything above 8kHz
+     from -70dB to -90dB — a setting, not a sample.
+
+     NOT AGAINST THE RAW FILE, and the first version of this was and was
+     useless. A Salamander note is fifteen seconds of mostly decay, while a
+     stem is repeated attacks cut off at a beat and a half, so the honest
+     chain colouring came back buried under +33dB at 2-4kHz that was
+     nothing but the difference between an attack and a tail. Two different
+     signals cannot be compared by measuring both.
+
+     So it renders the pad TWICE over the same bars with the same seed, once
+     as it is and once with the filter, drive, crusher, EQ and sends
+     bypassed. Same notes, same velocity layers, same transposition, same
+     envelope: the only difference left is the processing, and whatever the
+     answer shows is therefore the processing. */
+  async vsDry(padIdx, opt){
+    const o=opt||{}, i=padIdx|0, p=S.pads[i];
+    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    const ro={loops:o.loops||1, src:o.src||'pat', noTail:false};
+    const wetBuf=await renderMix(new Set([i]), new Set(), ro);
+    /* renderMix answers null for an empty event list, so a pad that simply
+       is not played in this pattern used to come back as a bare null with
+       nothing to read. Say which pad and which source. */
+    if(!wetBuf) throw new Error('pad '+i+(p.name?' ('+p.name+')':'')+' plays nothing in '
+      +(o.src==='song'?'the song':'pattern '+(S.pattern+1))
+      +' — there is nothing to compare. levels() lists the pads that sound.');
+    const FX={ftype:'off', drv:0, crush:16, eqLo:0, eqMid:0, eqHi:0, rev:0, dly:0};
+    const save={}; for(const k in FX) save[k]=p[k];
+    let dryBuf=null;
+    try{
+      for(const k in FX) p[k]=FX[k];
+      dryBuf=await renderMix(new Set([i]), new Set(), ro);
+    } finally {
+      for(const k in save) p[k]=save[k];
+      try{ reapplyLivePads(); }catch(e){}
+    }
+    if(!dryBuf) throw new Error('the bypassed render came back empty');
+    const wet=await specReport(wetBuf), dryR=await specReport(dryBuf);
+    if(wet.peak<0.004) throw new Error('pad '+i+' is silent over this '
+      +(o.src||'pat')+' — it has no hits, or it is muted');
+    const d=diffSpec(wet, Object.assign({name:(p.name||('pad '+i))+' with its chain bypassed'}, dryR));
+    d.pad=i;
+    d.bypassed=Object.keys(FX).filter(k=>String(save[k])!==String(FX[k]));
+    d.levelDb=(wet.lufs!=null&&dryR.lufs!=null)?+(wet.lufs-dryR.lufs).toFixed(1):null;
+    if(!d.bypassed.length) d.notes=['this pad has no processing on it — nothing was bypassed, so the two renders are the same audio'];
+    return d;
+  },
+
+  /* EVERYTHING THAT IS WRONG WITH THIS MIX, IN ONE ANSWER.
+
+     Nearly every fault that shipped from here was already visible in a
+     call that existed. schedule() had been naming over-stretched samples
+     since the day a violin got played five semitones off its nearest
+     recording; levels() had been listing buried pads; render({loudness})
+     had the dynamics. The information was in five places and the person
+     who needed it read none of them, because finding out meant five calls
+     and remembering which field in each one carried the bad news.
+
+     So this runs them, keeps only what is actually wrong, and returns that.
+     An empty list is the good answer.
+
+     IT WILL NOT JUDGE TONE WITHOUT A REFERENCE. The temptation is to bake
+     in a target curve — a pink tilt, a "scooped mids" rule — and the one
+     time that was tried from memory it put the fault in the bass when the
+     measurement put it at 2-4kHz. A curve recalled from memory is a guess
+     wearing a number. Load a reference and the tone is judged against it;
+     load nothing and this says so rather than inventing one.
+
+     Balance and stems are one render per pad, so the default source is the
+     current pattern. Pass {src:'song'} when there is time for it. */
+  async critique(opt){
+    const o=opt||{}, src=o.src||'pat';
+    const found=[];
+    const add=(area,severity,says,extra)=>found.push(
+      Object.assign({area,severity,says},extra||{}));
+
+    for(const w of window.MVX.checkMix())
+      add('settings', w.severity, w.says, {field:w.field, value:w.value});
+
+    const sch=await window.MVX.schedule({src, full:false});
+    if(!sch || !sch.notes){
+      add('arrangement','empty','nothing plays in '
+        +(src==='song'?'the song':'this pattern')+'.');
+      return {src, ok:false, found, checked:['arrangement']};
+    }
+    for(const s of (sch.stretched||[]))
+      add('samples','stretched','pad '+s.pad+(s.name?' ('+s.name+')':'')
+        +' is played up to '+s.semitones+' semitones from '+s.sample
+        +', whose root is '+s.root+'. Past about four, pitch-shifting stops '
+        +'sounding like the instrument and starts sounding like a synthesiser. '
+        +'nearest() will name a closer sample.', {pad:s.pad, semitones:s.semitones});
+
+    if(o.balance!==false){
+      const lv=await window.MVX.levels({src});
+      /* BURIED BY RMS IS NOT BURIED BY EAR, and reporting it as though it
+         were is how a tool teaches people to ignore it. A hi-hat is sparse,
+         short and bright: against a dense sustained mix its broadband RMS
+         reads near thirty under while it is perfectly audible, because all
+         of its energy is in one octave that nothing else occupies. The
+         first run of this flagged the hats and the ride on a piece whose
+         spectrogram showed both of them plainly.
+
+         So a pad that RMS calls buried gets a second question: does it own
+         a band? Its stem is put through the same filterbank as the mix, and
+         if it is within 3dB of the mix's level anywhere then it is the
+         thing making that part of the sound and it is not buried. It is
+         narrow, which is what a cymbal is. */
+      if(lv && lv.buried.length){
+        const mixBuf=await renderMix(null,null,{loops:o.loops||1, src, noTail:true});
+        const mixB=mixBuf?await bandEnergy(mixBuf):null;
+        for(const b of lv.buried){
+          const row=lv.pads.find(x=>x.pad===b);
+          let owns=null;
+          if(mixB){
+            const st=await renderMix(new Set([b]),new Set(),{loops:o.loops||1, src, noTail:true});
+            const pb=st?await bandEnergy(st):null;
+            if(pb) pb.forEach((q,i)=>{ const gap=q.db-mixB[i].db;
+              if(gap>=-3 && (!owns || gap>owns.gap)) owns={band:q.band, gap:+gap.toFixed(1)}; });
+          }
+          if(owns) add('balance','narrow','pad '+b+(row&&row.name?' ('+row.name+')':'')
+            +' is '+(row?row.dbRms:'?')+'dB under the mix broadband, but it owns '
+            +owns.band+'Hz. That is what a cymbal looks like, not a fault — '
+            +'worth a glance, not a fix.', {pad:b, band:owns.band});
+          else add('balance','buried','pad '+b+(row&&row.name?' ('+row.name+')':'')
+            +' is '+(row?row.dbRms:'?')+'dB under the mix and is not the loudest '
+            +'thing in any band. It is playing and it cannot be heard.', {pad:b});
+        }
+      }
+    }
+
+    const sp=await window.MVX.spectrum({src, loops:o.loops||1});
+    if(sp){
+      if(sp.peak>0.999) add('master','clipping','the render clips at full scale.');
+      if(sp.lufs!=null){
+        if(sp.lufs<-24) add('master','quiet','integrated loudness is '+sp.lufs
+          +' LUFS, which is very quiet'+(src==='song'?'':' — though this is one pattern, not the song')+'.');
+        if(sp.crestDb!=null && sp.crestDb<6) add('master','squashed',
+          'crest is only '+sp.crestDb+'dB. Dynamics have been flattened.');
+      }
+      if(sp.width===0) add('master','mono','the render is mono — nothing is panned.');
+      if(refSpec && refSpec.seconds<10){
+        /* diffSpec says this in its notes and critique reads the bands, so
+           without this the short-reference warning was written and then
+           thrown away — and a 0.9s piano note produced five confident
+           findings about the tone of a four-bar mix. Caught by a test that
+           had passed for the wrong reason. */
+        add('tone','no-reference','the loaded reference ('+refSpec.name+') is only '
+          +refSpec.seconds+'s long. A single note or hit cannot be compared with a '
+          +'mix, so tone was not judged. Load a passage of music instead.');
+      } else if(refSpec){
+        const buf=await renderMix(null,null,{loops:o.loops||1, src, noTail:true});
+        if(buf){
+          const d=diffSpec(await specReport(sliceBuf(buf,0,120)), refSpec);
+          if(!d.matched) for(const b of d.bands) if(Math.abs(b.delta)>=3)
+            add('tone','off-reference',b.band+'Hz sits '+(b.delta>0?'+':'')+b.delta
+              +'dB against '+refSpec.name+'.', {band:b.band, delta:b.delta});
+        }
+      } else {
+        add('tone','no-reference','tonal balance was not judged: no reference is '
+          +'loaded. reference(url) takes a finished recording of comparable '
+          +'material and compare() then reports the difference band by band.');
+      }
+    }
+
+    const sev={clipping:0,'out-of-range':1,stretched:2,buried:3,squashed:4,
+      quiet:5,mono:6,'off-reference':7,inaudible:8,ignored:9,narrow:10,'no-reference':11};
+    found.sort((a,b)=>(sev[a.severity]==null?99:sev[a.severity])
+                     -(sev[b.severity]==null?99:sev[b.severity]));
+    /* 'narrow' and 'no-reference' are remarks, not faults: a run that turns
+       up nothing but those is a clean one, and saying otherwise would make
+       ok:false the normal state and therefore worth nothing. */
+    const FYI={narrow:1,'no-reference':1};
+    return { src, ok:!found.some(f=>!FYI[f.severity]),
+      notes:sch.notes, seconds:sch.seconds, found,
+      checked:['settings','samples','balance','master','tone'] };
+  },
+
+  /* EVERY MIX SETTING THAT IS NOT DOING WHAT IT LOOKS LIKE IT IS DOING.
+     Cheap, exact, and needs no render — see MIXRANGE for why it exists. */
+  checkMix(){
+    const out=mixWarnings(null);
+    for(let i=0;i<NPADS;i++){
+      const p=S.pads[i]; if(!p || p.bufId<0) continue;
+      for(const k of PADDB){
+        const v=p[k];
+        if(typeof v==='number' && v!==0 && Math.abs(v)<0.5)
+          out.push({field:'pad '+i+' '+k, value:v, severity:'inaudible',
+            says:'pad '+i+(p.name?' ('+p.name+')':'')+' has '+k+' at '+v
+              +'dB, which is not an audible move.'});
+      }
+    }
+    return out;
+  },
+
   /* THE SAMPLE NEAREST A NOTE.
 
      The piano pack holds every white key from C1 to B7, so every note in
@@ -13412,11 +13719,21 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      by the names S uses. */
   set(props){
     if(!props) return window.MVX.state();
+    /* A key that is not a setting was silently dropped, so set({masterVolume:1})
+       — the plural, the camelCase, the near miss — reported success and did
+       nothing at all. It is named now. */
+    const unknown=Object.keys(props).filter(k=>!(k in S));
     Object.keys(props).forEach(k=>{ if(k in S) S[k]=props[k]; });
     if('bpm' in props) try{ setBpm(S.bpm); }catch(e){}
     try{ applyMaster(); reapplyLivePads(); }catch(e){}
     dirty();
-    return window.MVX.state();
+    const st=window.MVX.state();
+    const w=mixWarnings(props);
+    if(unknown.length) w.push({field:unknown.join(', '), value:null, severity:'ignored',
+      says:'no such setting: '+unknown.join(', ')+'. Nothing was changed for '
+        +(unknown.length>1?'those keys':'that key')+'. params() lists the real names.'});
+    if(w.length) st.warnings=w;
+    return st;
   }
 };
 window.JBH=window.MVX;   // JBH-88 is the current name; window.MVX kept as a back-compat alias
@@ -21208,6 +21525,247 @@ function biquadRun(x,c,outArr){
   }
   return y;
 }
+/* ---- WHAT A MIX SOUNDS LIKE, IN NINE NUMBERS ---------------------------
+
+   Every tonal judgement made about a bounce here was made by looking at a
+   spectrogram and guessing, and the guesses were wrong in both directions.
+   A piece whose bottom two octaves looked like a solid wall measured, band
+   by band, as having LESS low end than a pink tilt would predict: the real
+   hole was at 2-4kHz, which is piano hammer and snare crack, and no amount
+   of staring at the picture found it. A colour map is a log inside a log
+   and the eye reads area, not energy.
+
+   So: nine octave bands, RMS in each, and the numbers do the arguing.
+
+   WHY THIS IS NOT AN FFT. Hand-rolled DSP has been the single largest
+   source of wrong answers in this file's history — a zero-crossing count
+   that was really counting dither at -42dBFS and declared a loud note the
+   darker one, a Goertzel that drifted over sixteen thousand samples, a
+   "difference" that compared base64 characters instead of decoded samples
+   and reported 0.45 where the truth was 0.07. The browser already ships
+   filters that are correct. So the band split is four cascaded
+   BiquadFilterNodes per band at Butterworth Q, run through an
+   OfflineAudioContext, and nothing here computes a filter coefficient.
+
+   ONE RENDER, NOT NINE. Each band's chain ends at its own input of a
+   ChannelMerger and the offline context is given as many output channels
+   as there are bands, so the whole filterbank runs in a single pass and
+   the bands come back as channels. A ChannelMerger input is mono by
+   definition, so a stereo mix is downmixed going in — which is what is
+   wanted here: this measures tone, not image. Width is measured apart.
+
+   AND THE Q IS IN DECIBELS. For 'lowpass' and 'highpass' the Web Audio
+   spec reads Q as dB — the formula is sin(w0)/(2*10^(Q/20)) — while for
+   every other filter type it is linear. Setting Q=0.7071 on a lowpass
+   therefore does NOT give Butterworth, it gives a mild resonance. The
+   conversion below is the whole difference, and the browser suite proves
+   it with sines rather than trusting this paragraph. */
+const SPEC_BANDS=[[20,60],[60,120],[120,250],[250,500],[500,1000],
+                  [1000,2000],[2000,4000],[4000,8000],[8000,16000]];
+const SPEC_NAMES=SPEC_BANDS.map(([a,b])=>{
+  const s=n=>n>=1000?(n/1000)+'k':''+n; return s(a)+'-'+s(b); });
+/* The two section Qs that make a cascaded pair a 4th-order Butterworth
+   rather than two Butterworths in a row, which would sag 6dB at the
+   corner instead of 3 — expressed in dB because that is what the two
+   filter types involved actually read. */
+const BUTTER4=[0.54119610, 1.30656296].map(q=>20*Math.log10(q));
+
+async function bandEnergy(buf){
+  if(!buf || !buf.length) return null;
+  const sr=buf.sampleRate, nyq=sr/2;
+  /* A band that reaches past Nyquist is dropped rather than quietly
+     reported as empty: a 32k reference has no 8-16k band to speak of and
+     should say so instead of reading -120dB and dragging a comparison. */
+  const use=[];
+  SPEC_BANDS.forEach(([lo,hi],i)=>{
+    if(lo<nyq*0.9) use.push({lo, hi:Math.min(hi,nyq*0.95), i}); });
+  if(!use.length) return [];
+  const oc=new OfflineAudioContext(use.length, buf.length, sr);
+  const mg=oc.createChannelMerger(use.length);
+  mg.connect(oc.destination);
+  const src=oc.createBufferSource(); src.buffer=buf;
+  use.forEach((b,ci)=>{
+    let node=src;
+    BUTTER4.forEach(q=>{ const f=oc.createBiquadFilter();
+      f.type='highpass'; f.frequency.value=b.lo; f.Q.value=q;
+      node.connect(f); node=f; });
+    BUTTER4.forEach(q=>{ const f=oc.createBiquadFilter();
+      f.type='lowpass'; f.frequency.value=b.hi; f.Q.value=q;
+      node.connect(f); node=f; });
+    node.connect(mg,0,ci);
+  });
+  src.start();
+  const out=await oc.startRendering();
+  return use.map((b,ci)=>{
+    const d=out.getChannelData(ci);
+    let s=0; for(let j=0;j<d.length;j++) s+=d[j]*d[j];
+    const rms=Math.sqrt(s/Math.max(1,d.length));
+    return { band:SPEC_NAMES[b.i], lo:b.lo, hi:+b.hi.toFixed(0),
+             db:+(20*Math.log10(Math.max(rms,1e-9))).toFixed(1) };
+  });
+}
+
+/* THE SHAPE, WHICH IS THE PART WORTH COMPARING.
+
+   Two mixes at different volumes have different band levels and the same
+   tone, so comparing absolute dB answers the wrong question. Each band is
+   therefore reported against its own mix's broadband total, which makes
+   the result a level-invariant fingerprint: turn the whole thing up 6dB
+   and every number here is unchanged.
+
+   WHAT THAT COSTS, because it is not free and it will mislead anybody who
+   does not know it. The numbers are relative to a total that every band
+   contributes to, so a change in a LOUD band moves all the others the
+   opposite way. Lifting a 6dB shelf over white noise — whose top octave
+   holds half the energy — reads as +1.5dB up top and -4dB across the mids,
+   which looks like a broadband cut and is nothing of the kind. The honest
+   way to read a comparison is as a tilt between bands rather than as nine
+   independent verdicts; diffSpec says so out loud when the spread is wide
+   enough for it to matter. */
+function specShape(bands){
+  let tot=0; for(const b of bands) tot+=Math.pow(10,b.db/10);
+  const ref=10*Math.log10(Math.max(tot,1e-12));
+  return bands.map(b=>({band:b.band, lo:b.lo, hi:b.hi, rel:+(b.db-ref).toFixed(1)}));
+}
+/* Side against mid. Plain arithmetic on purpose — there is no filter here
+   to get wrong, and 0 means mono. */
+function widthOf(buf){
+  if(!buf || buf.numberOfChannels<2) return 0;
+  const L=buf.getChannelData(0), R=buf.getChannelData(1);
+  let m=0,s=0;
+  for(let i=0;i<L.length;i++){ const mi=(L[i]+R[i])*0.5, si=(L[i]-R[i])*0.5; m+=mi*mi; s+=si*si; }
+  return +(Math.sqrt(s/Math.max(1,L.length))/Math.max(1e-9,Math.sqrt(m/Math.max(1,L.length)))).toFixed(3);
+}
+function sliceBuf(buf, from, secs){
+  const sr=buf.sampleRate;
+  const a=Math.max(0, Math.floor((from||0)*sr));
+  const n=Math.min(buf.length-a, Math.ceil((secs||1e9)*sr));
+  if(a<=0 && n>=buf.length) return buf;
+  const ctx=decodeCtx()||new OfflineAudioContext(1,1,sr);
+  const out=ctx.createBuffer(buf.numberOfChannels, Math.max(1,n), sr);
+  for(let c=0;c<buf.numberOfChannels;c++)
+    out.copyToChannel(buf.getChannelData(c).subarray(a,a+n), c);
+  return out;
+}
+async function specReport(buf){
+  const bands=await bandEnergy(buf);
+  const L=buf.getChannelData(0), R=buf.numberOfChannels>1?buf.getChannelData(1):L;
+  let pk=0; for(let i=0;i<L.length;i++){
+    const a=Math.abs(L[i]), b=Math.abs(R[i]); if(a>pk)pk=a; if(b>pk)pk=b; }
+  let lufs=null, crest=null;
+  try{ const li=lufsIntegrated(buf);
+    if(li.lufs>-Infinity){ lufs=+li.lufs.toFixed(2);
+      crest=+((20*Math.log10(Math.max(pk,1e-6)))-li.lufs).toFixed(2); } }catch(e){}
+  return { seconds:+buf.duration.toFixed(2), rate:buf.sampleRate, bands,
+    shape:specShape(bands), width:widthOf(buf), peak:+pk.toFixed(4),
+    lufs, crestDb:crest };
+}
+/* The reference lives for the session only. It is a measurement, not a
+   recording: the audio is analysed and dropped, so nothing of somebody
+   else's track is kept, saved into a project, or available to be bounced. */
+let refSpec=null;
+
+function diffSpec(mine, ref){
+  const byBand={}; ref.shape.forEach(b=>{ byBand[b.band]=b.rel; });
+  const bands=mine.shape.filter(b=>byBand[b.band]!=null).map(b=>({
+    band:b.band, mix:b.rel, ref:byBand[b.band],
+    delta:+(b.rel-byBand[b.band]).toFixed(1) }));
+  const worst=bands.filter(b=>Math.abs(b.delta)>=2)
+    .sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+  const notes=worst.map(b=>b.band+'Hz is '+(b.delta>0?'+':'')+b.delta+'dB '
+    +(b.delta>0?'louder':'quieter')+' than the reference');
+  if(mine.lufs!=null && ref.lufs!=null){
+    const d=+(mine.lufs-ref.lufs).toFixed(1);
+    if(Math.abs(d)>=1) notes.push('overall level is '+(d>0?'+':'')+d+' LUFS against it');
+  }
+  if(mine.crestDb!=null && ref.crestDb!=null){
+    const d=+(mine.crestDb-ref.crestDb).toFixed(1);
+    if(d>=2) notes.push('crest is '+d+'dB wider — more peaky, which usually reads as under-mixed rather than dynamic');
+    else if(d<=-2) notes.push('crest is '+(-d)+'dB tighter — more squashed than the reference');
+  }
+  const dw=+(mine.width-ref.width).toFixed(2);
+  if(Math.abs(dw)>=0.1) notes.push('stereo is '+(dw>0?'wider':'narrower')+' by '+Math.abs(dw).toFixed(2)+' side/mid');
+  /* The caveat, attached to the answer rather than buried in a comment:
+     these deltas are normalised against each mix's own total, so one band
+     being badly out drags the sign of the rest. Said only when the spread
+     is wide enough to actually mislead. */
+  /* A single note is not a mix reference, and reference({pad}) makes it easy
+     to point this at one by accident. Comparing a four-bar mix against one
+     piano note reads as +35dB in the upper mids and means nothing at all —
+     the same apples-to-oranges that made the first vsSource useless. Said
+     here rather than refused, because referencing an imported LOOP on a pad
+     is a perfectly good thing to want. */
+  if(ref.seconds!=null && ref.seconds<10)
+    notes.unshift('the reference is only '+ref.seconds+'s long. If that is a '
+      +'single note or hit rather than a passage of music, these numbers are '
+      +'comparing two different kinds of signal and none of them mean anything.');
+  const spread=bands.length ? Math.max.apply(null,bands.map(b=>b.delta))
+                            - Math.min.apply(null,bands.map(b=>b.delta)) : 0;
+  if(spread>=5) notes.push('read these as a tilt, not as nine separate faults: '
+    +'the bands are normalised against each mix\'s own total, so one band being '
+    +'far out pushes the others the other way. The gap between the ends is '
+    +spread.toFixed(1)+'dB.');
+  return { reference:ref.name||'(unnamed)', bands,
+    worst:worst.map(b=>b.band), matched:worst.length===0,
+    lufs:{mix:mine.lufs, ref:ref.lufs},
+    crestDb:{mix:mine.crestDb, ref:ref.crestDb},
+    width:{mix:mine.width, ref:ref.width},
+    notes:notes.length?notes:['tonal balance is within 2dB of the reference in every band'] };
+}
+
+/* ---- SETTINGS THAT LIE ABOUT HAVING DONE SOMETHING ---------------------
+
+   set() assigns straight into S with no clamp — the clamps live only in
+   the document loader — so two whole classes of silent failure were
+   possible and both of them happened while writing a piece for this app.
+
+   MUD was passed as +0.14. It is a 300Hz bell whose useful range is -9..0
+   because it is a CUT; a positive value is a boost of a seventh of a
+   decibel. AIR was passed as 0.16, a pad's low shelf as -0.8. Every one of
+   those reads back exactly as it was set, and not one of them is audible:
+   several versions of a track were "re-EQed" with moves that did nothing,
+   after which the samples got the blame.
+
+   The second class is worse. A value outside the loader's range is applied
+   live and clamped on reload, so the project sounds one way now and a
+   different way tomorrow — and nothing says so at any point.
+
+   Both are cheap to catch, so they are caught, and set() answers with what
+   it quietly refused to do. */
+const MIXRANGE={
+  mEqLo:[-12,12,'dB','low shelf at 110Hz'],
+  mEqMid:[-12,12,'dB','bell at 1kHz, Q 0.7'],
+  mEqHi:[-12,12,'dB','high shelf at 6.5kHz'],
+  mMud:[-9,0,'dB','bell at 300Hz, and it is a CUT — a positive value is not a boost here'],
+  mAir:[0,9,'dB','shelf at 12kHz, and it is a LIFT — a negative value does nothing'],
+  mTrim:[-24,12,'dB',''], mCeil:[-12,0,'dB','limiter ceiling'],
+  mWidth:[0,2,'x',''], mMono:[0,300,'Hz',''],
+  mFocus:[-1,1,'',''], mDeess:[0,1,'',''],
+  masterVol:[0,2,'x',''], compAmt:[0,1,''],
+  revLvl:[0,1,''], delayFb:[0,0.95,''], swing:[0,1,''], human:[0,1,''],
+  scDepth:[0,1,''], scRel:[0.01,2,'s','']
+};
+const PADDB=['eqLo','eqMid','eqHi'];
+function mixWarnings(only){
+  const out=[];
+  for(const k in MIXRANGE){
+    if(only && !(k in only)) continue;
+    const r=MIXRANGE[k], lo=r[0], hi=r[1], unit=r[2], note=r[3]||'';
+    const v=S[k];
+    if(v==null || typeof v!=='number' || !isFinite(v)) continue;
+    if(v<lo-1e-9 || v>hi+1e-9)
+      out.push({field:k, value:v, severity:'out-of-range', says:k+' is '+v
+        +', outside '+lo+'..'+hi+'. It applies now and a save/reload clamps it to '
+        +clamp(v,lo,hi)+', so the project will not sound the same twice.'
+        +(note?' '+note+'.':'')});
+    else if(unit==='dB' && v!==0 && Math.abs(v)<0.5)
+      out.push({field:k, value:v, severity:'inaudible', says:k+' is '+v
+        +'dB. Below about half a decibel a broadband move is not audible — '
+        +'it reads back as set and changes nothing.'+(note?' '+note+'.':'')});
+  }
+  return out;
+}
+
 /* Integrated loudness of a finished buffer, to the standard. */
 function lufsIntegrated(buf){
   const sr=buf.sampleRate, c=k1770Coeffs(sr), chans=[];

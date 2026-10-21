@@ -409,6 +409,7 @@ someone else's.</p>
   <div class="row">
     <select aria-label="Sample pack" id="packPick" class="grow">
       <option value="samples/salamander.json">&#9733; Salamander Grand Piano &mdash; 6 dynamics (CC-BY)</option>
+      <option value="samples/vsco-orch.json">&#9733; VSCO-2 Orchestra &mdash; 18 instruments, velocity layers (CC0)</option>
       <option value="samples/vsco-real.json">Cello + Acoustic Drums (CC0)</option>
       <option value="samples/real-cc0-full.json">Full Kit &mdash; Drums + Real Instruments (CC0)</option>
       <option value="samples/real-cc0.json">Real Instruments &middot; Core (CC0)</option>
@@ -2213,6 +2214,26 @@ socket. Anything driving a browser can call
 <span class="lit">window.JBH</span> directly.</p>
 <p><b>Off until enabled, and off again on reload.</b> Text arriving over the
 link renders as text, never as markup.</p>
+  </div></details>
+
+  <details class="ex" style="margin-top:8px"><summary>Checking a mix</summary><div class="ex-body">
+    <p style="margin-top:0"><span class="lit">critique()</span> runs the checks
+below and returns only what is wrong. Empty is the good answer.</p>
+    <p><span class="lit">spectrum()</span> &mdash; tonal balance in nine octave
+bands, plus loudness, crest and width.<br>
+<span class="lit">reference(url)</span> &mdash; measure a finished recording and
+hold it as the target. Accepts a URL, <span class="lit">{base64}</span> or
+<span class="lit">{pad}</span>; only the measurement is kept.<br>
+<span class="lit">compare()</span> &mdash; the mix against that reference, band
+by band, with level removed.<br>
+<span class="lit">vsDry(pad)</span> &mdash; the same pad rendered twice, once
+with its filter, EQ and sends bypassed, so the difference is the processing.<br>
+<span class="lit">checkMix()</span> &mdash; settings that read as set and do
+nothing: a value below audibility, or one outside the range a reload will
+clamp it to.</p>
+    <p>Tone is judged only against a reference. Without one,
+<span class="lit">critique()</span> says so rather than assuming a target
+curve.</p>
   </div></details>
 
   <details id="songDocBox" class="ex" style="margin-top:8px"><summary>Song document (no client required)</summary><div class="ex-body">
