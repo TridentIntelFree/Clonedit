@@ -73,11 +73,22 @@ const WANT = [
   { dir: 'Brass/Tenor Trombone/sus',          tag: 'trombone', cat: 'TBN',     name: 'Trombone' },
   { dir: 'Brass/Tuba/sus',                    tag: 'tuba',     cat: 'TUBA',    name: 'Tuba' },
   { dir: 'Strings/Harp',                      tag: 'harp',     cat: 'HARP',    name: 'Harp' },
+  /* SHORT BOW STROKES, CARRIED FOR THEIR ATTACKS RATHER THAN THEIR NOTES.
+     The sustains here were recorded with soft eased-in entries: measured,
+     their first 90ms is about 1.8dB DARKER and up to 22dB quieter than
+     their own steady bowing, so a line built from them has no bite
+     anywhere and reads as an organ. The spiccato takes do have it — 8dB
+     more upper-mid at the attack — and are carried so they can be layered
+     under a sustain as the moment the hair catches the string. */
+  { dir: 'Strings/Cello Section/spic',   tag: 'cellospic',  cat: 'CELLO',  name: 'Cello spic' },
+  { dir: 'Strings/Solo Violin/spic',     tag: 'violinspic', cat: 'VIOLIN', name: 'Violin spic' },
+  { dir: 'Strings/Viola Section/spic',   tag: 'violaspic',  cat: 'VIOLA',  name: 'Viola spic' },
+  { dir: 'Strings/Solo Contrabass/Spic', tag: 'basspic',    cat: 'BASS',   name: 'Contrabass spic' },
 ];
 
 /* Short, loud or otherwise unmelodic takes inside an otherwise wanted
    folder. Matched on the whole path, case-insensitively. */
-const SKIP = /(stac|spic|trem|mute|fluttr|gliss|_rr[2-9]|sfz|marc)/i;
+const SKIP = /(stac|trem|mute|fluttr|gliss|_rr[3-9]|sfz|marc)/i;
 
 const files = execFileSync('git', ['-C', SRC, 'ls-tree', '-r', '--name-only', 'HEAD'],
   { encoding: 'utf8', maxBuffer: 1 << 28 }).split('\n').filter(f => /\.wav$/i.test(f));

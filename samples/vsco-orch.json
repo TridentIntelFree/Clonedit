@@ -464,10 +464,397 @@
    "inst": "bassoon"
   },
   {
+   "id": "vo:basspic-BKCtbss_Spic_A#0_v1_rr1",
+   "name": "Contrabass spic 22",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_A%230_v1_rr1.wav",
+   "note": 22,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_A#0_v1_rr2",
+   "name": "Contrabass spic 22",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_A%230_v1_rr2.wav",
+   "note": 22,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_A#0_v3_rr1",
+   "name": "Contrabass spic 22",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_A%230_v3_rr1.wav",
+   "note": 22,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_A#0_v3_rr2",
+   "name": "Contrabass spic 22",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_A%230_v3_rr2.wav",
+   "note": 22,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_A1_v1_rr1",
+   "name": "Contrabass spic 33",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_A1_v1_rr1.wav",
+   "note": 33,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_A1_v1_rr2",
+   "name": "Contrabass spic 33",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_A1_v1_rr2.wav",
+   "note": 33,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_B2_v1_rr1",
+   "name": "Contrabass spic 47",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_B2_v1_rr1.wav",
+   "note": 47,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_B2_v1_rr2",
+   "name": "Contrabass spic 47",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_B2_v1_rr2.wav",
+   "note": 47,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_C#2_v1_rr1",
+   "name": "Contrabass spic 37",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_C%232_v1_rr1.wav",
+   "note": 37,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_C#2_v1_rr2",
+   "name": "Contrabass spic 37",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_C%232_v1_rr2.wav",
+   "note": 37,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_C1_v1_rr1",
+   "name": "Contrabass spic 24",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_C1_v1_rr1.wav",
+   "note": 24,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_C1_v1_rr2",
+   "name": "Contrabass spic 24",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_C1_v1_rr2.wav",
+   "note": 24,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_C1_v3_rr1",
+   "name": "Contrabass spic 24",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_C1_v3_rr1.wav",
+   "note": 24,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_C1_v3_rr2",
+   "name": "Contrabass spic 24",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_C1_v3_rr2.wav",
+   "note": 24,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_D1_v1_rr1",
+   "name": "Contrabass spic 26",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_D1_v1_rr1.wav",
+   "note": 26,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_D1_v1_rr2",
+   "name": "Contrabass spic 26",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_D1_v1_rr2.wav",
+   "note": 26,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_D1_v3_rr1",
+   "name": "Contrabass spic 26",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_D1_v3_rr1.wav",
+   "note": 26,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_D1_v3_rr2",
+   "name": "Contrabass spic 26",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_D1_v3_rr2.wav",
+   "note": 26,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_E0_v1_rr1",
+   "name": "Contrabass spic 16",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_E0_v1_rr1.wav",
+   "note": 16,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_E0_v1_rr2",
+   "name": "Contrabass spic 16",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_E0_v1_rr2.wav",
+   "note": 16,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_E0_v3_rr1",
+   "name": "Contrabass spic 16",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_E0_v3_rr1.wav",
+   "note": 16,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_E0_v3_rr2",
+   "name": "Contrabass spic 16",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_E0_v3_rr2.wav",
+   "note": 16,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_E1_v1_rr1",
+   "name": "Contrabass spic 28",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_E1_v1_rr1.wav",
+   "note": 28,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_E1_v1_rr2",
+   "name": "Contrabass spic 28",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_E1_v1_rr2.wav",
+   "note": 28,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_E1_v3_rr1",
+   "name": "Contrabass spic 28",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_E1_v3_rr1.wav",
+   "note": 28,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_E1_v3_rr2",
+   "name": "Contrabass spic 28",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_E1_v3_rr2.wav",
+   "note": 28,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_E2_v1_rr1",
+   "name": "Contrabass spic 40",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_E2_v1_rr1.wav",
+   "note": 40,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_E2_v1_rr2",
+   "name": "Contrabass spic 40",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_E2_v1_rr2.wav",
+   "note": 40,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_F#0_v1_rr1",
+   "name": "Contrabass spic 18",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_F%230_v1_rr1.wav",
+   "note": 18,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_F#0_v1_rr2",
+   "name": "Contrabass spic 18",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_F%230_v1_rr2.wav",
+   "note": 18,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_F#0_v3_rr1",
+   "name": "Contrabass spic 18",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_F%230_v3_rr1.wav",
+   "note": 18,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_F#0_v3_rr2",
+   "name": "Contrabass spic 18",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_F%230_v3_rr2.wav",
+   "note": 18,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_F#1_v1_rr1",
+   "name": "Contrabass spic 30",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_F%231_v1_rr1.wav",
+   "note": 30,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_F#1_v1_rr2",
+   "name": "Contrabass spic 30",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_F%231_v1_rr2.wav",
+   "note": 30,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_G#1_v1_rr1",
+   "name": "Contrabass spic 32",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_G%231_v1_rr1.wav",
+   "note": 32,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_G#1_v1_rr2",
+   "name": "Contrabass spic 32",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_G%231_v1_rr2.wav",
+   "note": 32,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_G#2_v1_rr1",
+   "name": "Contrabass spic 44",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_G%232_v1_rr1.wav",
+   "note": 44,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_G#2_v1_rr2",
+   "name": "Contrabass spic 44",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_G%232_v1_rr2.wav",
+   "note": 44,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_G0_v1_rr1",
+   "name": "Contrabass spic 19",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_G0_v1_rr1.wav",
+   "note": 19,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_G0_v1_rr2",
+   "name": "Contrabass spic 19",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_G0_v1_rr2.wav",
+   "note": 19,
+   "vel": 0.285,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_G0_v3_rr1",
+   "name": "Contrabass spic 19",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_G0_v3_rr1.wav",
+   "note": 19,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
+   "id": "vo:basspic-BKCtbss_Spic_G0_v3_rr2",
+   "name": "Contrabass spic 19",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Spic/BKCtbss_Spic_G0_v3_rr2.wav",
+   "note": 19,
+   "vel": 0.755,
+   "inst": "basspic"
+  },
+  {
    "id": "vo:basspizz-BKCtbss_Pizz_A#0_v1_rr1",
    "name": "Contrabass pizz 22",
    "cat": "BASS",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_A%230_v1_rr1.wav",
+   "note": 22,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
+   "id": "vo:basspizz-BKCtbss_Pizz_A#0_v1_rr2",
+   "name": "Contrabass pizz 22",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_A%230_v1_rr2.wav",
    "note": 22,
    "vel": 0.285,
    "inst": "basspizz"
@@ -482,10 +869,28 @@
    "inst": "basspizz"
   },
   {
+   "id": "vo:basspizz-BKCtbss_Pizz_A#0_v3_rr2",
+   "name": "Contrabass pizz 22",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_A%230_v3_rr2.wav",
+   "note": 22,
+   "vel": 0.755,
+   "inst": "basspizz"
+  },
+  {
    "id": "vo:basspizz-BKCtbss_Pizz_A1_v1_rr1",
    "name": "Contrabass pizz 33",
    "cat": "BASS",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_A1_v1_rr1.wav",
+   "note": 33,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
+   "id": "vo:basspizz-BKCtbss_Pizz_A1_v1_rr2",
+   "name": "Contrabass pizz 33",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_A1_v1_rr2.wav",
    "note": 33,
    "vel": 0.285,
    "inst": "basspizz"
@@ -500,10 +905,28 @@
    "inst": "basspizz"
   },
   {
+   "id": "vo:basspizz-BKCtbss_Pizz_B2_v1_rr2",
+   "name": "Contrabass pizz 47",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_B2_v1_rr2.wav",
+   "note": 47,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
    "id": "vo:basspizz-BKCtbss_Pizz_C#2_v1_rr1",
    "name": "Contrabass pizz 37",
    "cat": "BASS",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_C%232_v1_rr1.wav",
+   "note": 37,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
+   "id": "vo:basspizz-BKCtbss_Pizz_C#2_v1_rr2",
+   "name": "Contrabass pizz 37",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_C%232_v1_rr2.wav",
    "note": 37,
    "vel": 0.285,
    "inst": "basspizz"
@@ -518,10 +941,28 @@
    "inst": "basspizz"
   },
   {
+   "id": "vo:basspizz-BKCtbss_Pizz_C1_v1_rr2",
+   "name": "Contrabass pizz 24",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_C1_v1_rr2.wav",
+   "note": 24,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
    "id": "vo:basspizz-BKCtbss_Pizz_C1_v3_rr1",
    "name": "Contrabass pizz 24",
    "cat": "BASS",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_C1_v3_rr1.wav",
+   "note": 24,
+   "vel": 0.755,
+   "inst": "basspizz"
+  },
+  {
+   "id": "vo:basspizz-BKCtbss_Pizz_C1_v3_rr2",
+   "name": "Contrabass pizz 24",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_C1_v3_rr2.wav",
    "note": 24,
    "vel": 0.755,
    "inst": "basspizz"
@@ -536,10 +977,28 @@
    "inst": "basspizz"
   },
   {
+   "id": "vo:basspizz-BKCtbss_Pizz_D1_v1_rr2",
+   "name": "Contrabass pizz 26",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_D1_v1_rr2.wav",
+   "note": 26,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
    "id": "vo:basspizz-BKCtbss_Pizz_E0_v1_rr1",
    "name": "Contrabass pizz 16",
    "cat": "BASS",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_E0_v1_rr1.wav",
+   "note": 16,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
+   "id": "vo:basspizz-BKCtbss_Pizz_E0_v1_rr2",
+   "name": "Contrabass pizz 16",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_E0_v1_rr2.wav",
    "note": 16,
    "vel": 0.285,
    "inst": "basspizz"
@@ -554,10 +1013,28 @@
    "inst": "basspizz"
   },
   {
+   "id": "vo:basspizz-BKCtbss_Pizz_E0_v3_rr2",
+   "name": "Contrabass pizz 16",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_E0_v3_rr2.wav",
+   "note": 16,
+   "vel": 0.755,
+   "inst": "basspizz"
+  },
+  {
    "id": "vo:basspizz-BKCtbss_Pizz_E1_v1_rr1",
    "name": "Contrabass pizz 28",
    "cat": "BASS",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_E1_v1_rr1.wav",
+   "note": 28,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
+   "id": "vo:basspizz-BKCtbss_Pizz_E1_v1_rr2",
+   "name": "Contrabass pizz 28",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_E1_v1_rr2.wav",
    "note": 28,
    "vel": 0.285,
    "inst": "basspizz"
@@ -572,10 +1049,28 @@
    "inst": "basspizz"
   },
   {
+   "id": "vo:basspizz-BKCtbss_Pizz_E1_v3_rr2",
+   "name": "Contrabass pizz 28",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_E1_v3_rr2.wav",
+   "note": 28,
+   "vel": 0.755,
+   "inst": "basspizz"
+  },
+  {
    "id": "vo:basspizz-BKCtbss_Pizz_E2_v1_rr1",
    "name": "Contrabass pizz 40",
    "cat": "BASS",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_E2_v1_rr1.wav",
+   "note": 40,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
+   "id": "vo:basspizz-BKCtbss_Pizz_E2_v1_rr2",
+   "name": "Contrabass pizz 40",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_E2_v1_rr2.wav",
    "note": 40,
    "vel": 0.285,
    "inst": "basspizz"
@@ -590,10 +1085,28 @@
    "inst": "basspizz"
   },
   {
+   "id": "vo:basspizz-BKCtbss_Pizz_F#0_v1_rr2",
+   "name": "Contrabass pizz 18",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_F%230_v1_rr2.wav",
+   "note": 18,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
    "id": "vo:basspizz-BKCtbss_Pizz_F#0_v3_rr1",
    "name": "Contrabass pizz 18",
    "cat": "BASS",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_F%230_v3_rr1.wav",
+   "note": 18,
+   "vel": 0.755,
+   "inst": "basspizz"
+  },
+  {
+   "id": "vo:basspizz-BKCtbss_Pizz_F#0_v3_rr2",
+   "name": "Contrabass pizz 18",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_F%230_v3_rr2.wav",
    "note": 18,
    "vel": 0.755,
    "inst": "basspizz"
@@ -608,10 +1121,28 @@
    "inst": "basspizz"
   },
   {
+   "id": "vo:basspizz-BKCtbss_Pizz_F#1_v1_rr2",
+   "name": "Contrabass pizz 30",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_F%231_v1_rr2.wav",
+   "note": 30,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
    "id": "vo:basspizz-BKCtbss_Pizz_G#1_v1_rr1",
    "name": "Contrabass pizz 32",
    "cat": "BASS",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_G%231_v1_rr1.wav",
+   "note": 32,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
+   "id": "vo:basspizz-BKCtbss_Pizz_G#1_v1_rr2",
+   "name": "Contrabass pizz 32",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_G%231_v1_rr2.wav",
    "note": 32,
    "vel": 0.285,
    "inst": "basspizz"
@@ -626,6 +1157,15 @@
    "inst": "basspizz"
   },
   {
+   "id": "vo:basspizz-BKCtbss_Pizz_G#2_v1_rr2",
+   "name": "Contrabass pizz 44",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_G%232_v1_rr2.wav",
+   "note": 44,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
    "id": "vo:basspizz-BKCtbss_Pizz_G0_v1_rr1",
    "name": "Contrabass pizz 19",
    "cat": "BASS",
@@ -635,10 +1175,28 @@
    "inst": "basspizz"
   },
   {
+   "id": "vo:basspizz-BKCtbss_Pizz_G0_v1_rr2",
+   "name": "Contrabass pizz 19",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_G0_v1_rr2.wav",
+   "note": 19,
+   "vel": 0.285,
+   "inst": "basspizz"
+  },
+  {
    "id": "vo:basspizz-BKCtbss_Pizz_G0_v3_rr1",
    "name": "Contrabass pizz 19",
    "cat": "BASS",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_G0_v3_rr1.wav",
+   "note": 19,
+   "vel": 0.755,
+   "inst": "basspizz"
+  },
+  {
+   "id": "vo:basspizz-BKCtbss_Pizz_G0_v3_rr2",
+   "name": "Contrabass pizz 19",
+   "cat": "BASS",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Contrabass/Pizz/BKCtbss_Pizz_G0_v3_rr2.wav",
    "note": 19,
    "vel": 0.755,
    "inst": "basspizz"
@@ -885,6 +1443,474 @@
    "note": 55,
    "vel": 0.755,
    "inst": "cello"
+  },
+  {
+   "id": "vo:cellospic-spic_A2_v1_RR1",
+   "name": "Cello spic 45",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_A2_v1_RR1.wav",
+   "note": 45,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_A2_v1_RR2",
+   "name": "Cello spic 45",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_A2_v1_RR2.wav",
+   "note": 45,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_A2_v2_RR1",
+   "name": "Cello spic 45",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_A2_v2_RR1.wav",
+   "note": 45,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_A2_v2_RR2",
+   "name": "Cello spic 45",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_A2_v2_RR2.wav",
+   "note": 45,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_B1_v1_RR1",
+   "name": "Cello spic 35",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_B1_v1_RR1.wav",
+   "note": 35,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_B1_v1_RR2",
+   "name": "Cello spic 35",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_B1_v1_RR2.wav",
+   "note": 35,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_B1_v2_RR1",
+   "name": "Cello spic 35",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_B1_v2_RR1.wav",
+   "note": 35,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_B1_v2_RR2",
+   "name": "Cello spic 35",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_B1_v2_RR2.wav",
+   "note": 35,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_B3_v1_RR1",
+   "name": "Cello spic 59",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_B3_v1_RR1.wav",
+   "note": 59,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_B3_v1_RR2",
+   "name": "Cello spic 59",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_B3_v1_RR2.wav",
+   "note": 59,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_B3_v2_RR1",
+   "name": "Cello spic 59",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_B3_v2_RR1.wav",
+   "note": 59,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_B3_v2_RR2",
+   "name": "Cello spic 59",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_B3_v2_RR2.wav",
+   "note": 59,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_C1_v1_RR1",
+   "name": "Cello spic 24",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_C1_v1_RR1.wav",
+   "note": 24,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_C1_v1_RR2",
+   "name": "Cello spic 24",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_C1_v1_RR2.wav",
+   "note": 24,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_C1_v2_RR1",
+   "name": "Cello spic 24",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_C1_v2_RR1.wav",
+   "note": 24,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_C1_v2_RR2",
+   "name": "Cello spic 24",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_C1_v2_RR2.wav",
+   "note": 24,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_C3_v1_RR1",
+   "name": "Cello spic 48",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_C3_v1_RR1.wav",
+   "note": 48,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_C3_v1_RR2",
+   "name": "Cello spic 48",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_C3_v1_RR2.wav",
+   "note": 48,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_C3_v2_RR1",
+   "name": "Cello spic 48",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_C3_v2_RR1.wav",
+   "note": 48,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_C3_v2_RR2",
+   "name": "Cello spic 48",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_C3_v2_RR2.wav",
+   "note": 48,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_D2_v1_RR1",
+   "name": "Cello spic 38",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_D2_v1_RR1.wav",
+   "note": 38,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_D2_v1_RR2",
+   "name": "Cello spic 38",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_D2_v1_RR2.wav",
+   "note": 38,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_D2_v2_RR1",
+   "name": "Cello spic 38",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_D2_v2_RR1.wav",
+   "note": 38,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_D2_v2_RR2",
+   "name": "Cello spic 38",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_D2_v2_RR2.wav",
+   "note": 38,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_D4_v1_RR1",
+   "name": "Cello spic 62",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_D4_v1_RR1.wav",
+   "note": 62,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_D4_v1_RR2",
+   "name": "Cello spic 62",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_D4_v1_RR2.wav",
+   "note": 62,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_D4_v2_RR1",
+   "name": "Cello spic 62",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_D4_v2_RR1.wav",
+   "note": 62,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_D4_v2_RR2",
+   "name": "Cello spic 62",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_D4_v2_RR2.wav",
+   "note": 62,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_E1_v1_RR1",
+   "name": "Cello spic 28",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_E1_v1_RR1.wav",
+   "note": 28,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_E1_v1_RR2",
+   "name": "Cello spic 28",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_E1_v1_RR2.wav",
+   "note": 28,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_E1_v2_RR1",
+   "name": "Cello spic 28",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_E1_v2_RR1.wav",
+   "note": 28,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_E1_v2_RR2",
+   "name": "Cello spic 28",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_E1_v2_RR2.wav",
+   "note": 28,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_E3_v1_RR1",
+   "name": "Cello spic 52",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_E3_v1_RR1.wav",
+   "note": 52,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_E3_v1_RR2",
+   "name": "Cello spic 52",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_E3_v1_RR2.wav",
+   "note": 52,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_E3_v2_RR1",
+   "name": "Cello spic 52",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_E3_v2_RR1.wav",
+   "note": 52,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_E3_v2_RR2",
+   "name": "Cello spic 52",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_E3_v2_RR2.wav",
+   "note": 52,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_F2_v1_RR1",
+   "name": "Cello spic 41",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_F2_v1_RR1.wav",
+   "note": 41,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_F2_v1_RR2",
+   "name": "Cello spic 41",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_F2_v1_RR2.wav",
+   "note": 41,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_F2_v2_RR1",
+   "name": "Cello spic 41",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_F2_v2_RR1.wav",
+   "note": 41,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_F2_v2_RR2",
+   "name": "Cello spic 41",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_F2_v2_RR2.wav",
+   "note": 41,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_F4_v1_RR1",
+   "name": "Cello spic 65",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_F4_v1_RR1.wav",
+   "note": 65,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_F4_v1_RR2",
+   "name": "Cello spic 65",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_F4_v1_RR2.wav",
+   "note": 65,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_F4_v2_RR1",
+   "name": "Cello spic 65",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_F4_v2_RR1.wav",
+   "note": 65,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_F4_v2_RR2",
+   "name": "Cello spic 65",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_F4_v2_RR2.wav",
+   "note": 65,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_G1_v1_RR1",
+   "name": "Cello spic 31",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_G1_v1_RR1.wav",
+   "note": 31,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_G1_v1_RR2",
+   "name": "Cello spic 31",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_G1_v1_RR2.wav",
+   "note": 31,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_G1_v2_RR1",
+   "name": "Cello spic 31",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_G1_v2_RR1.wav",
+   "note": 31,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_G1_v2_RR2",
+   "name": "Cello spic 31",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_G1_v2_RR2.wav",
+   "note": 31,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_G3_v1_RR1",
+   "name": "Cello spic 55",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_G3_v1_RR1.wav",
+   "note": 55,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_G3_v1_RR2",
+   "name": "Cello spic 55",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_G3_v1_RR2.wav",
+   "note": 55,
+   "vel": 0.285,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_G3_v2_RR1",
+   "name": "Cello spic 55",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_G3_v2_RR1.wav",
+   "note": 55,
+   "vel": 0.755,
+   "inst": "cellospic"
+  },
+  {
+   "id": "vo:cellospic-spic_G3_v2_RR2",
+   "name": "Cello spic 55",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/spic/spic_G3_v2_RR2.wav",
+   "note": 55,
+   "vel": 0.755,
+   "inst": "cellospic"
   },
   {
    "id": "vo:clarinet-DCClar_susLong_A#2_v1_rr1_sum",
@@ -1193,10 +2219,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_A2_v1_RR2",
+   "name": "Cello pizz 45",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_A2_v1_RR2.wav",
+   "note": 45,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_A2_v2_RR1",
    "name": "Cello pizz 45",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_A2_v2_RR1.wav",
+   "note": 45,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_A2_v2_RR2",
+   "name": "Cello pizz 45",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_A2_v2_RR2.wav",
    "note": 45,
    "vel": 0.755,
    "inst": "clopizz"
@@ -1211,10 +2255,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_B1_v1_RR2",
+   "name": "Cello pizz 35",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_B1_v1_RR2.wav",
+   "note": 35,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_B1_v2_RR1",
    "name": "Cello pizz 35",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_B1_v2_RR1.wav",
+   "note": 35,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_B1_v2_RR2",
+   "name": "Cello pizz 35",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_B1_v2_RR2.wav",
    "note": 35,
    "vel": 0.755,
    "inst": "clopizz"
@@ -1229,10 +2291,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_B3_v1_RR2",
+   "name": "Cello pizz 59",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_B3_v1_RR2.wav",
+   "note": 59,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_B3_v2_RR1",
    "name": "Cello pizz 59",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_B3_v2_RR1.wav",
+   "note": 59,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_B3_v2_RR2",
+   "name": "Cello pizz 59",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_B3_v2_RR2.wav",
    "note": 59,
    "vel": 0.755,
    "inst": "clopizz"
@@ -1247,10 +2327,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_C1_v1_RR2",
+   "name": "Cello pizz 24",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_C1_v1_RR2.wav",
+   "note": 24,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_C1_v2_RR1",
    "name": "Cello pizz 24",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_C1_v2_RR1.wav",
+   "note": 24,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_C1_v2_RR2",
+   "name": "Cello pizz 24",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_C1_v2_RR2.wav",
    "note": 24,
    "vel": 0.755,
    "inst": "clopizz"
@@ -1265,10 +2363,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_C3_v1_RR2",
+   "name": "Cello pizz 48",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_C3_v1_RR2.wav",
+   "note": 48,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_C3_v2_RR1",
    "name": "Cello pizz 48",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_C3_v2_RR1.wav",
+   "note": 48,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_C3_v2_RR2",
+   "name": "Cello pizz 48",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_C3_v2_RR2.wav",
    "note": 48,
    "vel": 0.755,
    "inst": "clopizz"
@@ -1283,10 +2399,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_D2_v1_RR2",
+   "name": "Cello pizz 38",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_D2_v1_RR2.wav",
+   "note": 38,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_D2_v2_RR1",
    "name": "Cello pizz 38",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_D2_v2_RR1.wav",
+   "note": 38,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_D2_v2_RR2",
+   "name": "Cello pizz 38",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_D2_v2_RR2.wav",
    "note": 38,
    "vel": 0.755,
    "inst": "clopizz"
@@ -1301,10 +2435,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_D4_v1_RR2",
+   "name": "Cello pizz 62",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_D4_v1_RR2.wav",
+   "note": 62,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_D4_v2_RR1",
    "name": "Cello pizz 62",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_D4_v2_RR1.wav",
+   "note": 62,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_D4_v2_RR2",
+   "name": "Cello pizz 62",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_D4_v2_RR2.wav",
    "note": 62,
    "vel": 0.755,
    "inst": "clopizz"
@@ -1319,10 +2471,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_E1_v1_RR2",
+   "name": "Cello pizz 28",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_E1_v1_RR2.wav",
+   "note": 28,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_E1_v2_RR1",
    "name": "Cello pizz 28",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_E1_v2_RR1.wav",
+   "note": 28,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_E1_v2_RR2",
+   "name": "Cello pizz 28",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_E1_v2_RR2.wav",
    "note": 28,
    "vel": 0.755,
    "inst": "clopizz"
@@ -1337,10 +2507,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_E3_v1_RR2",
+   "name": "Cello pizz 52",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_E3_v1_RR2.wav",
+   "note": 52,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_E3_v2_RR1",
    "name": "Cello pizz 52",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_E3_v2_RR1.wav",
+   "note": 52,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_E3_v2_RR2",
+   "name": "Cello pizz 52",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_E3_v2_RR2.wav",
    "note": 52,
    "vel": 0.755,
    "inst": "clopizz"
@@ -1355,10 +2543,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_F2_v1_RR2",
+   "name": "Cello pizz 41",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_F2_v1_RR2.wav",
+   "note": 41,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_F2_v2_RR1",
    "name": "Cello pizz 41",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_F2_v2_RR1.wav",
+   "note": 41,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_F2_v2_RR2",
+   "name": "Cello pizz 41",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_F2_v2_RR2.wav",
    "note": 41,
    "vel": 0.755,
    "inst": "clopizz"
@@ -1373,10 +2579,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_F4_v1_RR2",
+   "name": "Cello pizz 65",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_F4_v1_RR2.wav",
+   "note": 65,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_F4_v2_RR1",
    "name": "Cello pizz 65",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_F4_v2_RR1.wav",
+   "note": 65,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_F4_v2_RR2",
+   "name": "Cello pizz 65",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_F4_v2_RR2.wav",
    "note": 65,
    "vel": 0.755,
    "inst": "clopizz"
@@ -1391,10 +2615,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_G1_v1_RR2",
+   "name": "Cello pizz 31",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_G1_v1_RR2.wav",
+   "note": 31,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_G1_v2_RR1",
    "name": "Cello pizz 31",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_G1_v2_RR1.wav",
+   "note": 31,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_G1_v2_RR2",
+   "name": "Cello pizz 31",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_G1_v2_RR2.wav",
    "note": 31,
    "vel": 0.755,
    "inst": "clopizz"
@@ -1409,10 +2651,28 @@
    "inst": "clopizz"
   },
   {
+   "id": "vo:clopizz-pizzT_G3_v1_RR2",
+   "name": "Cello pizz 55",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_G3_v1_RR2.wav",
+   "note": 55,
+   "vel": 0.285,
+   "inst": "clopizz"
+  },
+  {
    "id": "vo:clopizz-pizzT_G3_v2_RR1",
    "name": "Cello pizz 55",
    "cat": "CELLO",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_G3_v2_RR1.wav",
+   "note": 55,
+   "vel": 0.755,
+   "inst": "clopizz"
+  },
+  {
+   "id": "vo:clopizz-pizzT_G3_v2_RR2",
+   "name": "Cello pizz 55",
+   "cat": "CELLO",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Cello%20Section/pizzT/pizzT_G3_v2_RR2.wav",
    "note": 55,
    "vel": 0.755,
    "inst": "clopizz"
@@ -3236,6 +4496,438 @@
    "inst": "viola"
   },
   {
+   "id": "vo:violaspic-Violas_spic_A3_v1_rr1",
+   "name": "Viola spic 57",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_A3_v1_rr1.wav",
+   "note": 57,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_A3_v1_rr2",
+   "name": "Viola spic 57",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_A3_v1_rr2.wav",
+   "note": 57,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_A3_v2_rr1",
+   "name": "Viola spic 57",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_A3_v2_rr1.wav",
+   "note": 57,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_A3_v2_rr2",
+   "name": "Viola spic 57",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_A3_v2_rr2.wav",
+   "note": 57,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_B2_v1_rr1",
+   "name": "Viola spic 47",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_B2_v1_rr1.wav",
+   "note": 47,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_B2_v1_rr2",
+   "name": "Viola spic 47",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_B2_v1_rr2.wav",
+   "note": 47,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_B2_v2_rr1",
+   "name": "Viola spic 47",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_B2_v2_rr1.wav",
+   "note": 47,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_B2_v2_rr2",
+   "name": "Viola spic 47",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_B2_v2_rr2.wav",
+   "note": 47,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_B4_v1_rr1",
+   "name": "Viola spic 71",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_B4_v1_rr1.wav",
+   "note": 71,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_B4_v1_rr2",
+   "name": "Viola spic 71",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_B4_v1_rr2.wav",
+   "note": 71,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_B4_v2_rr1",
+   "name": "Viola spic 71",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_B4_v2_rr1.wav",
+   "note": 71,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_B4_v2_rr2",
+   "name": "Viola spic 71",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_B4_v2_rr2.wav",
+   "note": 71,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_C2_v1_rr1",
+   "name": "Viola spic 36",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_C2_v1_rr1.wav",
+   "note": 36,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_C2_v1_rr2",
+   "name": "Viola spic 36",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_C2_v1_rr2.wav",
+   "note": 36,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_C2_v2_rr1",
+   "name": "Viola spic 36",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_C2_v2_rr1.wav",
+   "note": 36,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_C2_v2_rr2",
+   "name": "Viola spic 36",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_C2_v2_rr2.wav",
+   "note": 36,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_C4_v1_rr1",
+   "name": "Viola spic 60",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_C4_v1_rr1.wav",
+   "note": 60,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_C4_v1_rr2",
+   "name": "Viola spic 60",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_C4_v1_rr2.wav",
+   "note": 60,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_C4_v2_rr1",
+   "name": "Viola spic 60",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_C4_v2_rr1.wav",
+   "note": 60,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_C4_v2_rr2",
+   "name": "Viola spic 60",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_C4_v2_rr2.wav",
+   "note": 60,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_D3_v1_rr1",
+   "name": "Viola spic 50",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_D3_v1_rr1.wav",
+   "note": 50,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_D3_v1_rr2",
+   "name": "Viola spic 50",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_D3_v1_rr2.wav",
+   "note": 50,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_D3_v2_rr1",
+   "name": "Viola spic 50",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_D3_v2_rr1.wav",
+   "note": 50,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_D3_v2_rr2",
+   "name": "Viola spic 50",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_D3_v2_rr2.wav",
+   "note": 50,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_D5_v1_rr1",
+   "name": "Viola spic 74",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_D5_v1_rr1.wav",
+   "note": 74,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_D5_v1_rr2",
+   "name": "Viola spic 74",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_D5_v1_rr2.wav",
+   "note": 74,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_D5_v2_rr1",
+   "name": "Viola spic 74",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_D5_v2_rr1.wav",
+   "note": 74,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_D5_v2_rr2",
+   "name": "Viola spic 74",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_D5_v2_rr2.wav",
+   "note": 74,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_E2_v1_rr1",
+   "name": "Viola spic 40",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_E2_v1_rr1.wav",
+   "note": 40,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_E2_v1_rr2",
+   "name": "Viola spic 40",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_E2_v1_rr2.wav",
+   "note": 40,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_E2_v2_rr1",
+   "name": "Viola spic 40",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_E2_v2_rr1.wav",
+   "note": 40,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_E2_v2_rr2",
+   "name": "Viola spic 40",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_E2_v2_rr2.wav",
+   "note": 40,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_E4_v1_rr1",
+   "name": "Viola spic 64",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_E4_v1_rr1.wav",
+   "note": 64,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_E4_v1_rr2",
+   "name": "Viola spic 64",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_E4_v1_rr2.wav",
+   "note": 64,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_E4_v2_rr1",
+   "name": "Viola spic 64",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_E4_v2_rr1.wav",
+   "note": 64,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_E4_v2_rr2",
+   "name": "Viola spic 64",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_E4_v2_rr2.wav",
+   "note": 64,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_F3_v1_rr1",
+   "name": "Viola spic 53",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_F3_v1_rr1.wav",
+   "note": 53,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_F3_v1_rr2",
+   "name": "Viola spic 53",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_F3_v1_rr2.wav",
+   "note": 53,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_F3_v2_rr1",
+   "name": "Viola spic 53",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_F3_v2_rr1.wav",
+   "note": 53,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_F3_v2_rr2",
+   "name": "Viola spic 53",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_F3_v2_rr2.wav",
+   "note": 53,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_G2_v1_rr1",
+   "name": "Viola spic 43",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_G2_v1_rr1.wav",
+   "note": 43,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_G2_v1_rr2",
+   "name": "Viola spic 43",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_G2_v1_rr2.wav",
+   "note": 43,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_G2_v2_rr1",
+   "name": "Viola spic 43",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_G2_v2_rr1.wav",
+   "note": 43,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_G2_v2_rr2",
+   "name": "Viola spic 43",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_G2_v2_rr2.wav",
+   "note": 43,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_G4_v1_rr1",
+   "name": "Viola spic 67",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_G4_v1_rr1.wav",
+   "note": 67,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_G4_v1_rr2",
+   "name": "Viola spic 67",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_G4_v1_rr2.wav",
+   "note": 67,
+   "vel": 0.285,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_G4_v2_rr1",
+   "name": "Viola spic 67",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_G4_v2_rr1.wav",
+   "note": 67,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
+   "id": "vo:violaspic-Violas_spic_G4_v2_rr2",
+   "name": "Viola spic 67",
+   "cat": "VIOLA",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Viola%20Section/spic/Violas_spic_G4_v2_rr2.wav",
+   "note": 67,
+   "vel": 0.755,
+   "inst": "violaspic"
+  },
+  {
    "id": "vo:violin-LLVln_ArcoVib_A3_f",
    "name": "Violin 57",
    "cat": "VIOLIN",
@@ -3704,10 +5396,559 @@
    "inst": "violins"
   },
   {
+   "id": "vo:violinspic-LLVln_spic_A2_v1_rr1",
+   "name": "Violin spic 45",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A2_v1_rr1.wav",
+   "note": 45,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A2_v1_rr2",
+   "name": "Violin spic 45",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A2_v1_rr2.wav",
+   "note": 45,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A2_v2_rr1",
+   "name": "Violin spic 45",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A2_v2_rr1.wav",
+   "note": 45,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A2_v2_rr2",
+   "name": "Violin spic 45",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A2_v2_rr2.wav",
+   "note": 45,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A3_v1_rr1",
+   "name": "Violin spic 57",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A3_v1_rr1.wav",
+   "note": 57,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A3_v1_rr2",
+   "name": "Violin spic 57",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A3_v1_rr2.wav",
+   "note": 57,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A3_v2_rr1",
+   "name": "Violin spic 57",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A3_v2_rr1.wav",
+   "note": 57,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A3_v2_rr2",
+   "name": "Violin spic 57",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A3_v2_rr2.wav",
+   "note": 57,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A4_v1_rr1",
+   "name": "Violin spic 69",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A4_v1_rr1.wav",
+   "note": 69,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A4_v1_rr2",
+   "name": "Violin spic 69",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A4_v1_rr2.wav",
+   "note": 69,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A4_v2_rr1",
+   "name": "Violin spic 69",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A4_v2_rr1.wav",
+   "note": 69,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A4_v2_rr2",
+   "name": "Violin spic 69",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A4_v2_rr2.wav",
+   "note": 69,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A5_v1_rr1",
+   "name": "Violin spic 81",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A5_v1_rr1.wav",
+   "note": 81,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A5_v1_rr2",
+   "name": "Violin spic 81",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A5_v1_rr2.wav",
+   "note": 81,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A5_v2_rr1",
+   "name": "Violin spic 81",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A5_v2_rr1.wav",
+   "note": 81,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_A5_v2_rr2",
+   "name": "Violin spic 81",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_A5_v2_rr2.wav",
+   "note": 81,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C3_v1_rr1",
+   "name": "Violin spic 48",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C3_v1_rr1.wav",
+   "note": 48,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C3_v1_rr2",
+   "name": "Violin spic 48",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C3_v1_rr2.wav",
+   "note": 48,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C3_v2_rr1",
+   "name": "Violin spic 48",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C3_v2_rr1.wav",
+   "note": 48,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C3_v2_rr2",
+   "name": "Violin spic 48",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C3_v2_rr2.wav",
+   "note": 48,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C4_v1_rr1",
+   "name": "Violin spic 60",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C4_v1_rr1.wav",
+   "note": 60,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C4_v1_rr2",
+   "name": "Violin spic 60",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C4_v1_rr2.wav",
+   "note": 60,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C4_v2_rr1",
+   "name": "Violin spic 60",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C4_v2_rr1.wav",
+   "note": 60,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C4_v2_rr2",
+   "name": "Violin spic 60",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C4_v2_rr2.wav",
+   "note": 60,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C5_v1_rr1",
+   "name": "Violin spic 72",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C5_v1_rr1.wav",
+   "note": 72,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C5_v1_rr2",
+   "name": "Violin spic 72",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C5_v1_rr2.wav",
+   "note": 72,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C5_v2_rr1",
+   "name": "Violin spic 72",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C5_v2_rr1.wav",
+   "note": 72,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C5_v2_rr2",
+   "name": "Violin spic 72",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C5_v2_rr2.wav",
+   "note": 72,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C6_v1_rr1",
+   "name": "Violin spic 84",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C6_v1_rr1.wav",
+   "note": 84,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C6_v1_rr2",
+   "name": "Violin spic 84",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C6_v1_rr2.wav",
+   "note": 84,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C6_v2_rr1",
+   "name": "Violin spic 84",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C6_v2_rr1.wav",
+   "note": 84,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_C6_v2_rr2",
+   "name": "Violin spic 84",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_C6_v2_rr2.wav",
+   "note": 84,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_E3_v1_rr1",
+   "name": "Violin spic 52",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_E3_v1_rr1.wav",
+   "note": 52,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_E3_v1_rr2",
+   "name": "Violin spic 52",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_E3_v1_rr2.wav",
+   "note": 52,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_E3_v2_rr1",
+   "name": "Violin spic 52",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_E3_v2_rr1.wav",
+   "note": 52,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_E3_v2_rr2",
+   "name": "Violin spic 52",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_E3_v2_rr2.wav",
+   "note": 52,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_E4_v1_rr1",
+   "name": "Violin spic 64",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_E4_v1_rr1.wav",
+   "note": 64,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_E4_v1_rr2",
+   "name": "Violin spic 64",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_E4_v1_rr2.wav",
+   "note": 64,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_E4_v2_rr1",
+   "name": "Violin spic 64",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_E4_v2_rr1.wav",
+   "note": 64,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_E4_v2_rr2",
+   "name": "Violin spic 64",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_E4_v2_rr2.wav",
+   "note": 64,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_E5_v1_rr1",
+   "name": "Violin spic 76",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_E5_v1_rr1.wav",
+   "note": 76,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_E5_v1_rr2",
+   "name": "Violin spic 76",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_E5_v1_rr2.wav",
+   "note": 76,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_E5_v2_rr1",
+   "name": "Violin spic 76",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_E5_v2_rr1.wav",
+   "note": 76,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_E5_v2_rr2",
+   "name": "Violin spic 76",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_E5_v2_rr2.wav",
+   "note": 76,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G2_v1_rr1",
+   "name": "Violin spic 43",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G2_v1_rr1.wav",
+   "note": 43,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G2_v1_rr2",
+   "name": "Violin spic 43",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G2_v1_rr2.wav",
+   "note": 43,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G2_v2_rr1",
+   "name": "Violin spic 43",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G2_v2_rr1.wav",
+   "note": 43,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G2_v2_rr2",
+   "name": "Violin spic 43",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G2_v2_rr2.wav",
+   "note": 43,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G3_v1_rr1",
+   "name": "Violin spic 55",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G3_v1_rr1.wav",
+   "note": 55,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G3_v1_rr2",
+   "name": "Violin spic 55",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G3_v1_rr2.wav",
+   "note": 55,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G3_v2_rr1",
+   "name": "Violin spic 55",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G3_v2_rr1.wav",
+   "note": 55,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G3_v2_rr2",
+   "name": "Violin spic 55",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G3_v2_rr2.wav",
+   "note": 55,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G4_v1_rr1",
+   "name": "Violin spic 67",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G4_v1_rr1.wav",
+   "note": 67,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G4_v1_rr2",
+   "name": "Violin spic 67",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G4_v1_rr2.wav",
+   "note": 67,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G4_v2_rr1",
+   "name": "Violin spic 67",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G4_v2_rr1.wav",
+   "note": 67,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G4_v2_rr2",
+   "name": "Violin spic 67",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G4_v2_rr2.wav",
+   "note": 67,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G5_v1_rr1",
+   "name": "Violin spic 79",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G5_v1_rr1.wav",
+   "note": 79,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G5_v1_rr2",
+   "name": "Violin spic 79",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G5_v1_rr2.wav",
+   "note": 79,
+   "vel": 0.285,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G5_v2_rr1",
+   "name": "Violin spic 79",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G5_v2_rr1.wav",
+   "note": 79,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
+   "id": "vo:violinspic-LLVln_spic_G5_v2_rr2",
+   "name": "Violin spic 79",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/spic/LLVln_spic_G5_v2_rr2.wav",
+   "note": 79,
+   "vel": 0.755,
+   "inst": "violinspic"
+  },
+  {
    "id": "vo:vlnpizz-LLVln_Pizz_A3_f_RR1",
    "name": "Violin pizz 57",
    "cat": "VIOLIN",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_A3_f_RR1.wav",
+   "note": 57,
+   "vel": 0.755,
+   "inst": "vlnpizz"
+  },
+  {
+   "id": "vo:vlnpizz-LLVln_Pizz_A3_f_RR2",
+   "name": "Violin pizz 57",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_A3_f_RR2.wav",
    "note": 57,
    "vel": 0.755,
    "inst": "vlnpizz"
@@ -3722,10 +5963,28 @@
    "inst": "vlnpizz"
   },
   {
+   "id": "vo:vlnpizz-LLVln_Pizz_A3_p_RR2",
+   "name": "Violin pizz 57",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_A3_p_RR2.wav",
+   "note": 57,
+   "vel": 0.285,
+   "inst": "vlnpizz"
+  },
+  {
    "id": "vo:vlnpizz-LLVln_Pizz_A4_f_RR1",
    "name": "Violin pizz 69",
    "cat": "VIOLIN",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_A4_f_RR1.wav",
+   "note": 69,
+   "vel": 0.755,
+   "inst": "vlnpizz"
+  },
+  {
+   "id": "vo:vlnpizz-LLVln_Pizz_A4_f_RR2",
+   "name": "Violin pizz 69",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_A4_f_RR2.wav",
    "note": 69,
    "vel": 0.755,
    "inst": "vlnpizz"
@@ -3740,10 +5999,28 @@
    "inst": "vlnpizz"
   },
   {
+   "id": "vo:vlnpizz-LLVln_Pizz_A4_p_RR2",
+   "name": "Violin pizz 69",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_A4_p_RR2.wav",
+   "note": 69,
+   "vel": 0.285,
+   "inst": "vlnpizz"
+  },
+  {
    "id": "vo:vlnpizz-LLVln_Pizz_A5_f_RR1",
    "name": "Violin pizz 81",
    "cat": "VIOLIN",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_A5_f_RR1.wav",
+   "note": 81,
+   "vel": 0.755,
+   "inst": "vlnpizz"
+  },
+  {
+   "id": "vo:vlnpizz-LLVln_Pizz_A5_f_RR2",
+   "name": "Violin pizz 81",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_A5_f_RR2.wav",
    "note": 81,
    "vel": 0.755,
    "inst": "vlnpizz"
@@ -3758,10 +6035,28 @@
    "inst": "vlnpizz"
   },
   {
+   "id": "vo:vlnpizz-LLVln_Pizz_A5_p_RR2",
+   "name": "Violin pizz 81",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_A5_p_RR2.wav",
+   "note": 81,
+   "vel": 0.285,
+   "inst": "vlnpizz"
+  },
+  {
    "id": "vo:vlnpizz-LLVln_Pizz_A6_f_RR1",
    "name": "Violin pizz 93",
    "cat": "VIOLIN",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_A6_f_RR1.wav",
+   "note": 93,
+   "vel": 0.755,
+   "inst": "vlnpizz"
+  },
+  {
+   "id": "vo:vlnpizz-LLVln_Pizz_A6_f_RR2",
+   "name": "Violin pizz 93",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_A6_f_RR2.wav",
    "note": 93,
    "vel": 0.755,
    "inst": "vlnpizz"
@@ -3776,10 +6071,28 @@
    "inst": "vlnpizz"
   },
   {
+   "id": "vo:vlnpizz-LLVln_Pizz_C4_f_RR2",
+   "name": "Violin pizz 60",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_C4_f_RR2.wav",
+   "note": 60,
+   "vel": 0.755,
+   "inst": "vlnpizz"
+  },
+  {
    "id": "vo:vlnpizz-LLVln_Pizz_C4_p_RR1",
    "name": "Violin pizz 60",
    "cat": "VIOLIN",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_C4_p_RR1.wav",
+   "note": 60,
+   "vel": 0.285,
+   "inst": "vlnpizz"
+  },
+  {
+   "id": "vo:vlnpizz-LLVln_Pizz_C4_p_RR2",
+   "name": "Violin pizz 60",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_C4_p_RR2.wav",
    "note": 60,
    "vel": 0.285,
    "inst": "vlnpizz"
@@ -3794,10 +6107,28 @@
    "inst": "vlnpizz"
   },
   {
+   "id": "vo:vlnpizz-LLVln_Pizz_C5_f_RR2",
+   "name": "Violin pizz 72",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_C5_f_RR2.wav",
+   "note": 72,
+   "vel": 0.755,
+   "inst": "vlnpizz"
+  },
+  {
    "id": "vo:vlnpizz-LLVln_Pizz_C5_p_RR1",
    "name": "Violin pizz 72",
    "cat": "VIOLIN",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_C5_p_RR1.wav",
+   "note": 72,
+   "vel": 0.285,
+   "inst": "vlnpizz"
+  },
+  {
+   "id": "vo:vlnpizz-LLVln_Pizz_C5_p_RR2",
+   "name": "Violin pizz 72",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_C5_p_RR2.wav",
    "note": 72,
    "vel": 0.285,
    "inst": "vlnpizz"
@@ -3821,10 +6152,28 @@
    "inst": "vlnpizz"
   },
   {
+   "id": "vo:vlnpizz-LLVln_Pizz_E4_f_RR2",
+   "name": "Violin pizz 64",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_E4_f_RR2.wav",
+   "note": 64,
+   "vel": 0.755,
+   "inst": "vlnpizz"
+  },
+  {
    "id": "vo:vlnpizz-LLVln_Pizz_E4_p_RR1",
    "name": "Violin pizz 64",
    "cat": "VIOLIN",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_E4_p_RR1.wav",
+   "note": 64,
+   "vel": 0.285,
+   "inst": "vlnpizz"
+  },
+  {
+   "id": "vo:vlnpizz-LLVln_Pizz_E4_p_RR2",
+   "name": "Violin pizz 64",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_E4_p_RR2.wav",
    "note": 64,
    "vel": 0.285,
    "inst": "vlnpizz"
@@ -3839,10 +6188,28 @@
    "inst": "vlnpizz"
   },
   {
+   "id": "vo:vlnpizz-LLVln_Pizz_E5_f_RR2",
+   "name": "Violin pizz 76",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_E5_f_RR2.wav",
+   "note": 76,
+   "vel": 0.755,
+   "inst": "vlnpizz"
+  },
+  {
    "id": "vo:vlnpizz-LLVln_Pizz_E5_p_RR1",
    "name": "Violin pizz 76",
    "cat": "VIOLIN",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_E5_p_RR1.wav",
+   "note": 76,
+   "vel": 0.285,
+   "inst": "vlnpizz"
+  },
+  {
+   "id": "vo:vlnpizz-LLVln_Pizz_E5_p_RR2",
+   "name": "Violin pizz 76",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_E5_p_RR2.wav",
    "note": 76,
    "vel": 0.285,
    "inst": "vlnpizz"
@@ -3857,10 +6224,28 @@
    "inst": "vlnpizz"
   },
   {
+   "id": "vo:vlnpizz-LLVln_Pizz_E6_f_RR2",
+   "name": "Violin pizz 88",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_E6_f_RR2.wav",
+   "note": 88,
+   "vel": 0.755,
+   "inst": "vlnpizz"
+  },
+  {
    "id": "vo:vlnpizz-LLVln_Pizz_G3_f_RR1",
    "name": "Violin pizz 55",
    "cat": "VIOLIN",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_G3_f_RR1.wav",
+   "note": 55,
+   "vel": 0.755,
+   "inst": "vlnpizz"
+  },
+  {
+   "id": "vo:vlnpizz-LLVln_Pizz_G3_f_RR2",
+   "name": "Violin pizz 55",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_G3_f_RR2.wav",
    "note": 55,
    "vel": 0.755,
    "inst": "vlnpizz"
@@ -3884,10 +6269,28 @@
    "inst": "vlnpizz"
   },
   {
+   "id": "vo:vlnpizz-LLVln_Pizz_G4_f_RR2",
+   "name": "Violin pizz 67",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_G4_f_RR2.wav",
+   "note": 67,
+   "vel": 0.755,
+   "inst": "vlnpizz"
+  },
+  {
    "id": "vo:vlnpizz-LLVln_Pizz_G4_p_RR1",
    "name": "Violin pizz 67",
    "cat": "VIOLIN",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_G4_p_RR1.wav",
+   "note": 67,
+   "vel": 0.285,
+   "inst": "vlnpizz"
+  },
+  {
+   "id": "vo:vlnpizz-LLVln_Pizz_G4_p_RR2",
+   "name": "Violin pizz 67",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_G4_p_RR2.wav",
    "note": 67,
    "vel": 0.285,
    "inst": "vlnpizz"
@@ -3902,10 +6305,28 @@
    "inst": "vlnpizz"
   },
   {
+   "id": "vo:vlnpizz-LLVln_Pizz_G5_f_RR2",
+   "name": "Violin pizz 79",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_G5_f_RR2.wav",
+   "note": 79,
+   "vel": 0.755,
+   "inst": "vlnpizz"
+  },
+  {
    "id": "vo:vlnpizz-LLVln_Pizz_G5_p_RR1",
    "name": "Violin pizz 79",
    "cat": "VIOLIN",
    "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_G5_p_RR1.wav",
+   "note": 79,
+   "vel": 0.285,
+   "inst": "vlnpizz"
+  },
+  {
+   "id": "vo:vlnpizz-LLVln_Pizz_G5_p_RR2",
+   "name": "Violin pizz 79",
+   "cat": "VIOLIN",
+   "file": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/Strings/Solo%20Violin/Pizz/LLVln_Pizz_G5_p_RR2.wav",
    "note": 79,
    "vel": 0.285,
    "inst": "vlnpizz"

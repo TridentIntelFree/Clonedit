@@ -5974,7 +5974,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R223 · 2026-10-21 · the bow stays on the string';
+const BUILD = 'JBH-88 · R224 · 2026-10-21 · a bow is seventy centimetres long';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -6033,9 +6033,11 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   att:0.002, dec:0.12, sus:1, rel:0.06,
   grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grPos:0, grBurst:0.45,
   choke:0, note:36+i, reverse:false, mode:'one', bowSlur:0.045, bowMaxSt:7, bowIn:0.30,
+  bowLen:2.1, bowBite:0.035,
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
   fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12, velFlt:0, velEnv:0,
   layers:[], layMode:'rr', layRR:0, layXf:0, relBufs:[], relGain:0.5, vary:0,
+  atkBufs:[], atkGain:0.5, atkLen:0.085,
   eqLo:0, eqMid:0, eqHi:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
   warpBeats:4, warpBpm:0, mute:false, solo:false }; }
@@ -6947,6 +6949,39 @@ function humanTimeOffset(t, rnd){
    divergence that has caused more wrong notes in this file than any
    other single cause. */
 function bowKey(p, idx){ return p.inst ? ('i:'+p.inst) : ('p:'+idx); }
+/* THE MOMENT THE HAIR CATCHES THE STRING.
+
+   Measured on this library's cello sustains, the first 90ms of a note is
+   1.8dB DARKER and as much as 22dB quieter than its own steady bowing:
+   they were recorded with the bow eased in. So there is no attack in the
+   sustains to uncover, and every line built from them starts each note
+   with a soft swell — which is why a legato part made of them sounds
+   like an organ and was described as having no character.
+
+   The bite does exist in the library, in the spiccato takes, 8dB brighter
+   in the upper mids at the attack. So a short stroke is layered UNDER the
+   sustain at the instant a bow lands: at a fresh stroke, and at every bow
+   change. It is real recorded rosin from the same section, not a
+   synthesised transient, and it is gone in a tenth of a second — long
+   enough to be the attack, too short to be a note. */
+function bowAttackHit(ctx, g, idx, p, when, rate, vel){
+  const ab=p.atkBufs;
+  if(!ab || !ab.length) return;
+  const buf=S.buffers[ab[Math.floor(takeRnd()*ab.length)%ab.length]];
+  if(!buf) return;
+  const src=ctx.createBufferSource(); src.buffer=buf;
+  src.playbackRate.value=rate;
+  const gn=ctx.createGain();
+  const lv=clamp(p.atkGain==null?0.5:+p.atkGain,0,2)*(0.4+0.6*clamp(vel,0,1));
+  const hold=clamp(p.atkLen==null?0.085:+p.atkLen,0.01,0.5);
+  gn.gain.setValueAtTime(0.0001,when);
+  gn.gain.linearRampToValueAtTime(Math.max(0.0001,lv),when+0.004);
+  gn.gain.setValueAtTime(Math.max(0.0001,lv),when+hold*0.45);
+  gn.gain.linearRampToValueAtTime(0.0001,when+hold);
+  src.connect(gn); gn.connect(g.pads[idx].in);
+  src.start(when);
+  src.stop(when+hold+0.05);
+}
 function rateOf(p, lay, pitchOff, cents){
   return Math.pow(2,(p.pitch+(pitchOff||0)+(p.fine+(cents||0))/100+lay.pitch)/12);
 }
@@ -6987,29 +7022,69 @@ function triggerBow(ctx, g, idx, vel, when, pitchOff, lk){
      playing the same line, correlated enough that a linear crossfade
      dips audibly in the middle of every slur. */
   if(cur && when < cur.until-0.004){
+    /* A BOW IS ABOUT SEVENTY CENTIMETRES LONG.
+
+       The version before this one had no bow length at all: it
+       crossfaded onward for as long as the notes kept overlapping, which
+       is a player drawing one stroke in one direction for ever. Described
+       exactly that way by the first person to hear it, which is the kind
+       of fault no spectrum reveals — the sound is continuous and smooth
+       and nothing is physically possible about it.
+
+       A real player reverses every couple of seconds, and the reversal is
+       audible: the hair momentarily stops driving the string, so there is
+       a small dip, and then it catches again with a bite. That bite is
+       the character. It is also recorded — it is the first few tens of
+       milliseconds of every sample in the library — and the smooth
+       version threw all of it away by entering each note 300ms in, well
+       past the attack, on purpose.
+
+       So at a bow change the incoming sample is entered NEAR ITS ATTACK
+       instead, the pair cross with a gap rather than equal power so the
+       sum dips, and the direction flips. Down-bow carries fractionally
+       more weight than up, which is true of the instrument and is the
+       difference between alternating and merely repeating. */
     const bowIn=clamp(p.bowIn==null?0.30:+p.bowIn, 0, Math.max(0,buf.duration-0.3));
+    const bowLen=clamp(p.bowLen==null?2.1:+p.bowLen, 0.25, 30);
+    const bite=clamp(p.bowBite==null?0.035:+p.bowBite, 0, 0.4);
+    const change=(when-(cur.strokeStart==null?when:cur.strokeStart))>=bowLen;
+    const dir=change ? -(cur.dir||1) : (cur.dir||1);
+    /* down-bow is the stronger one; about a decibel, not a gesture */
+    const dirGain=change ? (dir>0?1.06:0.95) : 1;
+    const entry=change ? bite : bowIn;
+    const lvl2=lvl*dirGain;
     const nsrc=ctx.createBufferSource(); nsrc.buffer=buf;
     nsrc.playbackRate.value=rateOf(p,lay,pitchOff||0,0);
     const nenv=ctx.createGain();
     const N=17, up=new Float32Array(N), dn=new Float32Array(N);
-    for(let i=0;i<N;i++){ const t=i/(N-1);
-      up[i]=Math.max(0.0001, lvl*Math.sin(t*Math.PI/2));
-      dn[i]=Math.max(0.0001, cur.lastLvl*Math.cos(t*Math.PI/2)); }
-    try{ nenv.gain.setValueCurveAtTime(up, when, slur); }
+    if(change){
+      /* crossed with a gap: the sum falls through the middle, which is
+         the moment the bow is not driving anything */
+      for(let i=0;i<N;i++){ const t=i/(N-1);
+        up[i]=Math.max(0.0001, lvl2*Math.pow(Math.max(0,(t-0.42)/0.58),1.4));
+        dn[i]=Math.max(0.0001, cur.lastLvl*Math.pow(Math.max(0,1-t/0.55),1.2)); }
+    } else {
+      for(let i=0;i<N;i++){ const t=i/(N-1);
+        up[i]=Math.max(0.0001, lvl2*Math.sin(t*Math.PI/2));
+        dn[i]=Math.max(0.0001, cur.lastLvl*Math.cos(t*Math.PI/2)); }
+    }
+    const xf=change?Math.max(slur,0.055):slur;
+    try{ nenv.gain.setValueCurveAtTime(up, when, xf); }
     catch(e){ try{ nenv.gain.setValueAtTime(0.0001,when);
-      nenv.gain.linearRampToValueAtTime(Math.max(0.0001,lvl),when+slur); }catch(e2){} }
-    nenv.gain.setValueAtTime(Math.max(0.0001,lvl), when+dur);
+      nenv.gain.linearRampToValueAtTime(Math.max(0.0001,lvl2),when+xf); }catch(e2){} }
+    nenv.gain.setValueAtTime(Math.max(0.0001,lvl2), when+dur);
     nenv.gain.linearRampToValueAtTime(0.0001, when+dur+relT);
     nsrc.connect(nenv); nenv.connect(g.pads[idx].in);
-    nsrc.start(when, bowIn);
-    nsrc.stop(when+Math.max(0.2,(buf.duration-bowIn)/Math.max(0.05,nsrc.playbackRate.value))+0.1);
+    if(change) bowAttackHit(ctx,g,idx,p,when+xf*0.42,nsrc.playbackRate.value,vel);
+    nsrc.start(when, entry);
+    nsrc.stop(when+Math.max(0.2,(buf.duration-entry)/Math.max(0.05,nsrc.playbackRate.value))+0.1);
     /* the outgoing take leaves, sliding towards where the line has gone */
     try{
       cur.env.gain.cancelScheduledValues(when);
-      cur.env.gain.setValueCurveAtTime(dn, when, slur);
+      cur.env.gain.setValueCurveAtTime(dn, when, xf);
     }catch(e){ try{ cur.env.gain.cancelScheduledValues(when);
       cur.env.gain.setValueAtTime(cur.lastLvl,when);
-      cur.env.gain.linearRampToValueAtTime(0.0001,when+slur); }catch(e2){} }
+      cur.env.gain.linearRampToValueAtTime(0.0001,when+xf); }catch(e2){} }
     const glide=clamp(myMidi-cur.rootMidi,-maxSt,maxSt);
     try{
       cur.src.playbackRate.cancelScheduledValues(when);
@@ -7017,11 +7092,13 @@ function triggerBow(ctx, g, idx, vel, when, pitchOff, lk){
       cur.src.playbackRate.linearRampToValueAtTime(
         cur.baseRate*Math.pow(2,glide/12), when+slur);
     }catch(e){}
-    try{ cur.src.stop(when+slur+0.08); }catch(e){}
+    try{ cur.src.stop(when+xf+0.08); }catch(e){}
     const voice={src:nsrc, env:nenv, baseRate:rateOf(p,lay,0,0),
       rootMidi:(p.srcNote!=null?p.srcNote:60),
-      lastRate:nsrc.playbackRate.value, lastLvl:Math.max(0.0001,lvl),
-      until:when+dur, notes:cur.notes+1, pad:idx};
+      lastRate:nsrc.playbackRate.value, lastLvl:Math.max(0.0001,lvl2),
+      until:when+dur, notes:cur.notes+1, pad:idx, dir,
+      strokeStart: change ? when : (cur.strokeStart==null?when:cur.strokeStart),
+      bowChanges:(cur.bowChanges||0)+(change?1:0)};
     reg[key]=voice;
     const act0=g.pads[idx].act||(g.pads[idx].act=[]);
     act0.push({env:nenv, src:nsrc});
@@ -7050,10 +7127,12 @@ function triggerBow(ctx, g, idx, vel, when, pitchOff, lk){
      alternative and it is a trap: once a stop time has passed the voice
      is gone and no later call brings it back, so a phrase longer than
      its first note would cut off mid-slur. */
+  bowAttackHit(ctx,g,idx,p,when,rate,vel);
   src.start(when, s0);
   src.stop(when+Math.max(0.2,(buf.duration-lay.start*buf.duration)/Math.max(0.05,rate))+0.1);
   const voice={src, env, baseRate, rootMidi:(p.srcNote!=null?p.srcNote:60),
-    lastRate:rate, lastLvl:Math.max(0.0001,lvl), until:when+dur, notes:1, pad:idx};
+    lastRate:rate, lastLvl:Math.max(0.0001,lvl), until:when+dur, notes:1, pad:idx,
+    dir:1, strokeStart:when, bowChanges:0};
   reg[key]=voice;
   const act=g.pads[idx].act||(g.pads[idx].act=[]);
   act.push({env,src});
@@ -13080,6 +13159,69 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     if(gain!=null) p.relGain=clamp(+gain,0,2);
     dirty();
     return {pad:i, released:bufs.length, gain:p.relGain};
+  },
+
+  /* GIVE A SUSTAINED INSTRUMENT ITS OWN ATTACK.
+
+     bowAttack('vc','vcSpic') walks every pad of the first instrument and
+     hands it the nearest-pitched recording from the second, to be played
+     under the note at the instant the bow lands. Both are built with
+     instrument() in the normal way, so the attacks are real takes of the
+     same section at the same pitch rather than anything invented.
+
+     Why it is needed at all is in bowAttackHit: this library's sustains
+     were recorded with the bow eased in, so they have no onset of their
+     own to uncover — 1.8dB darker and up to 22dB quieter across their
+     first 90ms than their own steady bowing. The spiccato takes carry the
+     bite the sustains lack. */
+  bowAttack(name, fromName, opt){
+    const o=opt||{};
+    const mine=window.MVX.instPads(name), src=window.MVX.instPads(fromName);
+    if(!mine.length) throw new Error('no instrument "'+name+'"');
+    if(!src.length) throw new Error('no instrument "'+fromName+'" to take attacks from');
+    let wired=0, worst=0;
+    for(const q of mine){
+      const best=src.reduce((a,b)=>Math.abs(b.note-q.note)<Math.abs(a.note-q.note)?b:a);
+      const sp=S.pads[best.pad];
+      if(!sp || sp.bufId<0) continue;
+      const p=S.pads[q.pad];
+      /* every layer of the spiccato pad, so repeated strokes are not
+         the identical click twice running */
+      const ids=[];
+      for(let L=0;L<padLayerCount(sp);L++){
+        const lay=padLayer(sp,L); if(lay && lay.bufId>=0) ids.push(lay.bufId);
+      }
+      p.atkBufs=ids.length?ids:[sp.bufId];
+      p.atkGain=(o.gain==null)?0.5:clamp(+o.gain,0,2);
+      if(o.len!=null) p.atkLen=clamp(+o.len,0.01,0.5);
+      worst=Math.max(worst,Math.abs(best.note-q.note));
+      wired++;
+    }
+    dirty();
+    return {instrument:name, from:fromName, pads:wired,
+      gain:(o.gain==null)?0.5:+o.gain, worstBendSemitones:worst};
+  },
+
+  /* The same thing for one pad, by sample id, mirroring release(). */
+  async attack(padIdx, ids, gain){
+    const i=clamp(padIdx|0,0,NPADS-1), p=S.pads[i];
+    const list=Array.isArray(ids)?ids:(ids==null?[]:[ids]);
+    if(!list.length){ p.atkBufs=[]; dirty(); return {pad:i, attacks:0}; }
+    ensureAudio();
+    const bufs=[];
+    for(const id of list){
+      const sm=(packManifest&&packManifest.samples||[]).find(x=>x.id===id);
+      if(!sm) throw new Error('no sound "'+id+'" in the loaded pack');
+      if(!packHaveKeys.has(LIBKEY(id))) await libFetchStore(sm);
+      const rec=await idbGetS(IDB_LIB,LIBKEY(id));
+      if(!rec||!rec.bytes) throw new Error('"'+id+'" is not on the device');
+      S.buffers.push(await decode(rec.bytes.slice(0)));
+      bufs.push(S.buffers.length-1);
+    }
+    p.atkBufs=bufs;
+    if(gain!=null) p.atkGain=clamp(+gain,0,2);
+    dirty();
+    return {pad:i, attacks:bufs.length, gain:p.atkGain};
   },
 
   /* ---- INSTRUMENTS: WRITE NOTES, NOT PADS -----------------------------
@@ -21435,7 +21577,8 @@ function applySessionDoc(doc, bufs){
      change how every pitched pad in it sounds — so an older document keeps what
      it was made with. */
   S.pads.forEach(p=>{ if(p.keepTime==null) p.keepTime=true;   // pre-v2 docs were stamped in migrateDoc
-    if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.bowSlur==null)p.bowSlur=0.045; if(p.bowMaxSt==null)p.bowMaxSt=7; if(p.bowIn==null)p.bowIn=0.30; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16;
+    if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.bowSlur==null)p.bowSlur=0.045; if(p.bowMaxSt==null)p.bowMaxSt=7; if(p.bowIn==null)p.bowIn=0.30; if(p.bowLen==null)p.bowLen=2.1; if(p.bowBite==null)p.bowBite=0.035;
+    if(!Array.isArray(p.atkBufs))p.atkBufs=[]; if(p.atkGain==null)p.atkGain=0.5; if(p.atkLen==null)p.atkLen=0.085; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16;
     if(p.mute==null)p.mute=false; if(p.solo==null)p.solo=false;   // pre-R43/R44 docs lack these
     if(p.lfoOn==null)p.lfoOn=false; if(p.lfoTgt==null)p.lfoTgt='cutoff'; if(p.lfoShape==null)p.lfoShape='sine';
     if(p.lfoSync==null)p.lfoSync='free'; if(p.lfoRate==null)p.lfoRate=2; if(p.lfoDepth==null)p.lfoDepth=0.5;
