@@ -598,6 +598,9 @@ footer{font-size:9px;color:var(--txt-dim);text-align:center;padding:10px;line-he
   user-select:all; -webkit-user-select:all;
 }
 body.sz-big .cmd{font-size:13px}
+/* An identifier or a call named in running text. Was an inline style
+   repeated at every mention. */
+.ex-body .lit, .hint-body .lit{ color:var(--lcd); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.94em }
 
 /* ---- SCREEN SIZE --------------------------------------------------------
    Reported from an Android phone: "scaling and size issues, and the text at

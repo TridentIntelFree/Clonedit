@@ -9131,11 +9131,11 @@ const SONGDOC_EXAMPLE={
   ]
 };
 const SONGDOC_SPEC=
-`JBH-88 SONG DOC — jam with an AI in 3 steps:
-1) Copy this ENTIRE message.  2) Paste it to any AI (Claude, ChatGPT, Grok…) and ask for a beat.
-3) Paste the AI's reply back here (PROJ → AI JAM box) and tap LOAD.  (Fences / extra text are fine — the loader digs the JSON out.)
+`JBH-88 SONG DOC
+Copy this whole message to an assistant, then paste its reply into PROJ → song
+document → LOAD DOC. Code fences and surrounding text are fine.
 
-===== INSTRUCTIONS FOR THE AI =====
+===== INSTRUCTIONS FOR THE ASSISTANT =====
 Compose a beat for the JBH-88 groovebox. Reply with ONE JSON object that matches the schema below. Do not invent field names. Prose around it is tolerated, but the JSON object must be complete and valid.
 
 REQUIRED top-level keys: "fmt":"mvx-songdoc-1", "pads":[…], "patterns":[…].
@@ -10243,7 +10243,7 @@ function jbhDispatch(msg, reply){
   if(msg.event==='hello' || msg.event==='here'){
     const fresh=!jbhPeers();
     jbhSeen=Date.now(); drawAgentLink();
-    if(fresh){ agentLog('app','Something connected.'); lcd('AGENT CONNECTED — it can drive this page now.'); }
+    if(fresh){ agentLog('app','Client attached.'); lcd('CLIENT ATTACHED'); }
     return;
   }
   if(typeof msg.call!=='string') return;
@@ -10271,15 +10271,14 @@ window.MVX.listen=function(on){
       jbhBus.onmessage=ev=>jbhDispatch(ev.data,(o)=>jbhBus.postMessage(o));
     }catch(e){ jbhBus=null; }
     window.addEventListener('message',jbhOnMessage);
-    plog('AGENT CONTROL: listening on postMessage and BroadcastChannel("jbh88"). '
-      +'Nothing is sent anywhere — this is same-device only, and it is off again on reload.');
-    lcd('AGENT LINK OPEN — waiting for something to connect. Nothing is connected yet; '
-      +'the app has no agent inside it. It closes again on reload, and nothing leaves the device.');
+    plog('AGENT LINK: listening on postMessage and BroadcastChannel("jbh88"). '
+      +'Same device only; closes on reload.');
+    lcd('AGENT LINK OPEN — no client attached yet.');
   }else if(!want && jbhBus){
     try{ jbhBus.close(); }catch(e){}
     jbhBus=null; jbhSeen=0;
     window.removeEventListener('message',jbhOnMessage);
-    lcd('AGENT LINK CLOSED.');
+    lcd('AGENT LINK CLOSED');
   }
   /* Redrawn here rather than only in the button handler. listen() is part of
      the public API and an agent may well call it; leaving the panel showing
@@ -10327,13 +10326,12 @@ function jbhEmit(o){
 /* FROM the app, to whatever is listening. */
 window.MVX.say=function(text){
   const t=agentLog('you',text);
-  if(!jbhBus) { lcd('AGENT LINK is off — open it in PROJ first.'); return {sent:false,text:t}; }
+  if(!jbhBus) { lcd('AGENT LINK is closed.'); return {sent:false,text:t}; }
   jbhEmit({event:'say', text:t});
   if(!jbhPeers()){
     /* Said once, in the transcript, where the message they just typed is —
        not only on the LCD, which scrolls away. */
-    agentLog('app','Nothing is connected, so that went nowhere. The link is open and '
-      +'listening; something still has to join it from this device.');
+    agentLog('app','Not sent \u2014 no client attached.');
     return {sent:false, noPeer:true, text:t};
   }
   return {sent:true, text:t};
@@ -10367,14 +10365,12 @@ function drawAgentLink(){
      end" are different things, and collapsing them is what made pressing the
      button and typing hello feel like a broken app rather than an empty
      room. */
-  btn.textContent = !on ? '\u25cf OPEN AGENT LINK' : peers ? 'DISCONNECT' : 'CLOSE LINK (waiting\u2026)';
+  btn.textContent = !on ? '\u25cf OPEN AGENT LINK' : peers ? 'DISCONNECT' : 'CLOSE LINK';
   st.textContent = !on
-    ? 'closed \u2014 nothing can drive this page'
+    ? 'closed'
     : peers
-      ? '\u25cf CONNECTED \u2014 something is on the other end and can drive this page'
-      : 'open, but nothing has connected yet. The app has no agent inside it \u2014 '
-        + 'one has to join from this device. Open "How do I connect one?" just below '
-        + 'for the three ways, with the lines to copy.';
+      ? '\u25cf CONNECTED'
+      : 'open \u2014 no client attached. See "Connecting a client" below.';
   st.style.color = (on && peers) ? 'var(--lcd)' : 'var(--txt-dim)';
   lg.style.display=on?'block':'none';
   row.style.display=on?'flex':'none';
@@ -10395,7 +10391,7 @@ function drawAgentLink(){
   if(!AGENT_LOG.length){
     const e=document.createElement('span');
     e.style.opacity='.6';
-    e.textContent='Nothing said yet. Whatever is connected can call JBH.tell("\u2026") to answer here.';
+    e.textContent='No messages. A client replies with JBH.tell("\u2026").';
     lg.appendChild(e);
   }else AGENT_LOG.forEach(m=>{
     const d=document.createElement('div'); d.style.margin='2px 0';
@@ -10413,9 +10409,7 @@ $('btnAgentLink').addEventListener('click',()=>{
   const r=window.MVX.listen(!jbhBus);
   drawAgentLink();
   if(r.listening){
-    agentLog('app','Link open \u2014 waiting for something to connect. Nothing has yet, and '
-      +'there is no agent inside the app. "How do I connect one?" just above has the three '
-      +'routes and the exact lines to copy.');
+    agentLog('app','Link open. No client attached \u2014 see "Connecting a client" above.');
     jbhPing();
     /* Put the directions in front of the eye that just pressed the button.
        The panel sits below the fold on a phone and an answer you have to go
@@ -10434,23 +10428,22 @@ async function copyBlock(id,label){
   try{
     if(!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('no clipboard API');
     await navigator.clipboard.writeText(txt);
-    lcd(label+' COPIED \u2014 paste it on the computer running the agent.');
+    lcd(label+' COPIED');
   }catch(e){
     try{ const r=document.createRange(); r.selectNodeContents(el);
       const s=getSelection(); s.removeAllRanges(); s.addRange(r); }catch(e2){}
-    lcd('COULD NOT REACH THE CLIPBOARD \u2014 '+label.toLowerCase()
-      +' is selected above, long-press \u2192 Copy.');
+    lcd('CLIPBOARD UNAVAILABLE \u2014 '+label.toLowerCase()+' selected above; long-press \u2192 Copy.');
   }
 }
 $('btnCopyMcp').addEventListener('click',()=>copyBlock('cmdMcpCfg','MCP CONFIG'));
 $('btnCopyTab').addEventListener('click',()=>copyBlock('cmdTab','SNIPPET'));
 $('btnAgentPing').addEventListener('click',()=>{
-  if(!jbhBus){ lcd('The link is closed — open it first.'); return; }
+  if(!jbhBus){ lcd('AGENT LINK is closed.'); return; }
   jbhPing();
   setTimeout(()=>{
-    if(jbhPeers()) lcd('PING answered — something is connected.');
-    else { agentLog('app','Pinged, and nothing answered. Nothing is connected to this page.');
-      lcd('PING — no answer. Nothing is connected.'); }
+    if(jbhPeers()) lcd('PING answered — client attached.');
+    else { agentLog('app','Ping unanswered.');
+      lcd('PING — no reply.'); }
   },700);
 });
 $('btnAgentSay').addEventListener('click',()=>{

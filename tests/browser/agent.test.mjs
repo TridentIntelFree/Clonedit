@@ -243,7 +243,7 @@ export default async function ({ browser, base }) {
       o.openStat = document.getElementById('agentStat').textContent.trim();
       o.sayIntoVoid = JBH.say('hello');
       await wait(150);
-      o.toldThem = JBH.messages().some(m => m.who === 'app' && /went nowhere/.test(m.text));
+      o.toldThem = JBH.messages().some(m => m.who === 'app' && /Not sent/i.test(m.text));
       /* now put a peer on the channel and watch it flip */
       const bc = new BroadcastChannel('jbh88');
       bc.postMessage({ jbh: 1, event: 'hello' });
@@ -260,8 +260,8 @@ export default async function ({ browser, base }) {
       /OPEN AGENT LINK/.test(empty.closedBtn) && /closed/.test(empty.closedStat),
       empty.closedBtn + ' · ' + empty.closedStat);
     t.ok('OPEN IS NOT THE SAME AS CONNECTED, and the app no longer pretends it is',
-      empty.peersWhenNobodyThere === 0 && /waiting/i.test(empty.openBtn) &&
-      /nothing has connected yet/.test(empty.openStat),
+      empty.peersWhenNobodyThere === 0 && /CLOSE LINK/i.test(empty.openBtn) &&
+      /no client attached/i.test(empty.openStat),
       empty.openBtn + ' · ' + empty.openStat.slice(0, 60));
     t.ok('saying something into an empty room REPORTS FAILURE rather than success',
       empty.sayIntoVoid.sent === false && empty.sayIntoVoid.noPeer === true,
@@ -828,10 +828,10 @@ export default async function ({ browser, base }) {
       document.getElementById('btnAgentLink').click(); await wait(120);
       document.getElementById('btnAgentLink').click(); await wait(250);
       o.stayedClosed = d.open === false;
-      o.statPointsAtIt = /How do I connect one/i.test(
+      o.statPointsAtIt = /Connecting a client/i.test(
         document.getElementById('agentStat').textContent);
       o.transcriptPointsAtIt = JBH.messages().some(
-        m => m.who === 'app' && /How do I connect one/i.test(m.text));
+        m => m.who === 'app' && /Connecting a client/i.test(m.text));
 
       /* THE MCP CONFIG MUST BE CONFIG, not prose that looks like it. */
       const cfg = document.getElementById('cmdMcpCfg').textContent;

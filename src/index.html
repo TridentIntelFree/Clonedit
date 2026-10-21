@@ -767,87 +767,65 @@ where they come back into alignment. On a grid that relationship is invisible.</
       <div id="polygrid"></div>
     </div>
     <details class="ex"><summary>Giving a pad its own BPM</summary><div class="ex-body">
-      <p>Every pad normally plays one hit per lit step. Switch one to
-      <b>OWN BPM</b> and you give it a <em>figure</em> instead: a short run of
-      cells at a tempo of its own. Every lit step of that pad then plays the
-      whole figure rather than a single hit. Two pulses at once — a
-      polyrhythm.</p>
+      <p>A pad on <b>OWN BPM</b> plays a <em>figure</em> &mdash; a short run of
+      cells at its own tempo &mdash; instead of a single hit. Every lit step of
+      that pad fires the whole figure. Two pulses at once: polyrhythm.</p>
 
       <h4>The grid still says when</h4>
-      <p>This is the part worth being clear about, because it is what most
-      people expect and it is what the app does: <b>no step, no sound</b>. The
-      figure does not run on its own. It is fired by the steps you have already
-      written, so emptying the row silences the pad exactly the way it always
-      did, and the grid above never stops being the truth about when this pad
-      plays.</p>
-      <p>The figure <em>replaces</em> the step's single hit rather than
-      decorating it — three lit cells on a step is three hits, not four — and
-      the step's own velocity scales the whole figure, so turning a step down
-      turns its figure down with it.</p>
+      <p><b>No step, no sound.</b> The figure is fired by the steps already
+      written; emptying the row silences the pad. The figure replaces the
+      step&rsquo;s hit rather than adding to it &mdash; three lit cells is three
+      hits, not four &mdash; and the step&rsquo;s velocity scales the whole
+      figure.</p>
 
-      <h4>One step at a time can opt out</h4>
-      <p><b>LOCK</b> plus a step gives that step a <b>PLAIN HIT</b> switch: it
-      plays one ordinary hit and skips the figure. Useful for a part that is
-      mostly tuplets with a couple of straight hits in it. A step set that way is
-      marked on the grid, like any other lock.</p>
+      <h4>PLAIN HIT</h4>
+      <p><b>LOCK</b> + a step gives that step a <b>PLAIN HIT</b> switch: one
+      ordinary hit, figure skipped. Marked on the grid like any other lock.</p>
 
-      <h4>ON ITS OWN — the other option</h4>
-      <p><b>PLAYS ▸ ON ITS OWN</b> unties the figure from the grid: it runs
-      continuously for as long as the sequence plays, whether or not the pad has
-      any steps. That is what you want for <em>phasing</em> — two pulses sliding
-      against each other for minutes at a time — and it is the only setting where
-      the pad can sound with an empty row, so the app says so plainly whenever it
-      is on.</p>
+      <h4>ON ITS OWN</h4>
+      <p><b>PLAYS &#9654; ON ITS OWN</b> unties the figure from the grid: it
+      runs for as long as the sequence plays, with or without steps. Required
+      for <em>phasing</em>, and the only setting where a pad sounds with an
+      empty row.</p>
 
-      <h4>The number means what you think it means</h4>
-      <p>The project's BPM counts beats per minute. A pad's BPM counts
-      <em>its own hits</em> per minute. So a pad set to the same number as the
-      project hits once per beat, and everything else follows from there:</p>
+      <h4>What the number means</h4>
+      <p>Project BPM counts beats per minute; a pad&rsquo;s BPM counts
+      <em>its own hits</em> per minute. A pad matching the project hits once per
+      beat.</p>
       <ul>
-        <li><b>Same as the project</b> — one hit per beat.</li>
-        <li><b>Double</b> — eighths. <b>Four times</b> — sixteenths.</li>
-        <li><b>Three times</b> — triplets, three per beat.</li>
-        <li><b>Three quarters</b> — three hits per bar against four beats. This
-        is the classic <b>3-against-4</b>, and it is the one you cannot write on
-        the step grid at all: a bar is 16 steps and 16 does not divide by 3.</li>
+        <li><b>Same as project</b> &mdash; one hit per beat.</li>
+        <li><b>Double</b> &mdash; eighths. <b>Four times</b> &mdash; sixteenths.</li>
+        <li><b>Three times</b> &mdash; triplets.</li>
+        <li><b>Three quarters</b> &mdash; three hits per bar against four beats.
+        3-against-4, which the step grid cannot express: 16 does not divide by 3.</li>
       </ul>
-      <p>The QUICK buttons are those relationships, so you can hear them before
-      you work out the arithmetic.</p>
+      <p>The QUICK buttons set these directly.</p>
 
       <h4>LOCK TO BAR</h4>
-      <p>On, the pad's tempo is nudged to the nearest rate that fits a whole
-      number of hits into a bar, so it returns to the downbeat every time and
-      stays that way forever. This is what you want for a tuplet. The panel
-      shows the tempo it actually settled on.</p>
-      <p>Off, the pad runs at exactly the BPM you set. Unless that happens to
-      divide the bar evenly it will never come back into line — it drifts
-      through every relationship with the beat and keeps going. That is called
-      <b>phasing</b>, it is a technique rather than a fault, and Steve Reich
-      built whole pieces out of it. Because it never repeats, a drifting pad is
-      cut wherever the bounce ends rather than finishing a cycle.</p>
+      <p>On: the tempo is nudged to the nearest rate fitting a whole number of
+      hits into a bar, so it returns to the downbeat indefinitely. The panel
+      shows the rate it settled on. Use this for tuplets.</p>
+      <p>Off: the pad runs at exactly the BPM set and drifts against the beat
+      &mdash; <b>phasing</b>. A drifting pad is cut wherever the bounce ends
+      rather than completing a cycle.</p>
 
       <h4>CELLS</h4>
-      <p>How many cells the row has before it starts again — separate from how
-      fast they go by. Three hits per bar with a five-cell row gives you a
-      rhythm that takes five hits to come round and a bar to line up, which is
-      polyrhythm and polymeter at the same time.</p>
+      <p>Row length before it repeats, independent of rate. Three hits per bar
+      with five cells is polyrhythm and polymeter at once.</p>
 
       <h4>Nested tuplets</h4>
-      <p>Use <b>LOCK</b> ▸ <b>RATCHET</b> on one cell. A cell of a three-per-bar
-      pad ratcheted by five is five hits inside one third of a bar — a
-      quintuplet nested in a triplet. Ratchets subdivide this pad's own pulse,
-      so they nest as deep as you stack them.</p>
+      <p><b>LOCK</b> &#9654; <b>RATCHET</b> on a cell subdivides this
+      pad&rsquo;s pulse. A cell of a three-per-bar pad ratcheted by five is a
+      quintuplet inside a triplet.</p>
 
-      <h4>Two things it deliberately does not do</h4>
-      <p><b>Swing is not applied</b> to a pad on its own BPM: delaying every
-      second hit of a triplet is not a shuffle, it is a worse rhythm.
-      <b>REV plays it forwards</b> — a reversed tuplet is not a meaningful thing
-      to want, and faking one would put a difference between what you hear and
-      what the bounce contains.</p>
+      <h4>Deliberate omissions</h4>
+      <p><b>Swing is not applied</b> here: delaying every second hit of a
+      triplet is not a shuffle. <b>REV plays figures forwards</b>, so the bounce
+      matches what was heard.</p>
 
-      <p class="try"><b>Try this:</b> put a kick on the ordinary grid at 0, 4, 8
-      and 12. Then pick a shaker, switch it to OWN BPM, and tap <b>3:4</b>.
-      They should collide on the downbeat and nowhere else.</p>
+      <p class="try"><b>Try this:</b> kick on the grid at 0, 4, 8, 12. Switch a
+      shaker to OWN BPM and tap <b>3:4</b>. They collide on the downbeat and
+      nowhere else.</p>
     </div></details>
   </div>
 
@@ -958,14 +936,12 @@ the bounce and export as real chords in the MIDI file.</p>
   <div id="silrow"></div>
   <div class="pslider"><span class="lbl">FADE</span><input type="range" id="silFade" min="0.005" max="0.6" step="0.005" value="0.06"><span class="val" id="silFadeV">60ms</span></div>
   <details class="ex"><summary>What the silencer is for</summary><div class="ex-body">
-    <p>Left = abrupt CUT, right = soft fade. Cuts pads + live instruments and chokes the reverb/delay tails; sound returns on the next programmed or played hit. Bakes into the bounce. (TRAX tape lanes keep rolling.)</p>
-<p>Nearly every dance record is built on taking things away. A breakdown is not
-new material, it is the same loop with most of it removed, and it works because
-the return feels enormous by contrast.</p>
-<p>The hard cut is a rhythmic device — a single silent beat before a drop is one
-of the oldest tricks there is. The soft fade is for transitions between
-sections. Choking the reverb tail matters: letting a big reverb ring on through
-a silence gives the gap away.</p>
+    <p>Left = abrupt CUT, right = soft fade. Cuts pads and live instruments and
+chokes the reverb/delay tails; sound returns on the next hit. Bakes into the
+bounce. TRAX tape lanes keep rolling.</p>
+    <p>The hard cut is a rhythmic device; the soft fade suits transitions
+between sections. Choking the tail matters &mdash; a reverb ringing through a
+silence gives the gap away.</p>
   </div></details>
   <div id="steplock" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
     <div class="row"><span class="lbl">STEP</span><span id="slTitle" style="color:var(--amber);font-size:12px">—</span><span class="grow"></span><button id="slClr">CLEAR LOCKS</button></div>
@@ -1104,15 +1080,12 @@ hum a bassline into the mic over your beat. Then set the lane to loop with the
     <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="tfxDly" min="0" max="1" step="0.01"><span class="val" id="tfxDlyV"></span></div>
   </div>
   <details class="ex"><summary>Lanes versus the grid</summary><div class="ex-body">
-    <p>Tape lanes roll from bar 1 with the sequencer, save with the session, and mix into the
-    WAV bounce. BUS records everything you hear except the tracks themselves — overdub freely.</p>
-<p>The sequencer stores instructions; a lane stores audio. Instructions stay
-editable forever — swap the sample and every hit changes. Audio is fixed once
-recorded, but captures what instructions cannot: a voice, a room, a performance
-with its imperfections intact.</p>
-<p>Recording one part while hearing the others is <b>overdubbing</b>, and it is
-how records have been made since the 1950s. Each pass adds a layer that stays
-independent of the rest, so any one of them can be muted or redone.</p>
+    <p>Tape lanes roll from bar 1 with the sequencer, save with the session and
+mix into the WAV bounce. BUS records everything you hear except the lanes
+themselves, so overdubbing is safe.</p>
+    <p>The sequencer stores instructions, editable forever &mdash; swap the
+sample and every hit changes. A lane stores audio: fixed once recorded, but it
+captures what instructions cannot.</p>
   </div></details>
 </div>
 
@@ -1216,16 +1189,13 @@ larger than it looks on the slider.</p>
   <div class="pslider"><span class="lbl">PRESENCE</span><input type="range" id="micPres" min="0" max="12" step="0.5" value="0"><span class="val" id="micPresV">0dB</span></div>
   <div class="pslider"><span class="lbl">BODY</span><input type="range" id="micBody" min="0" max="1" step="0.01" value="0"><span class="val" id="micBodyV">0%</span></div>
   <details class="ex"><summary>The missing fundamental</summary><div class="ex-body">
-    <p>For playback on a phone. <b>PRESENCE</b> lifts around 3kHz, where consonants live and where a small speaker
-    actually works. <b>BODY</b> builds harmonics of the low fundamental a phone speaker cannot reproduce at all,
-    and lets your ear put the missing pitch back &mdash; weight without bass the speaker would swallow.</p>
-<p>BODY works on a genuine quirk of hearing. Given the harmonics of a low note
-but not the note itself, the ear reconstructs the pitch that <em>should</em> be
-underneath them — you hear a bass note that is not physically present. It is why
-a phone speaker with no low-end response can still convey a bassline at all.</p>
-<p>So rather than boosting frequencies a small speaker cannot produce, which
-only wastes headroom, BODY generates the harmonics that let your ear supply the
-missing pitch itself. Weight without bass the speaker would swallow.</p>
+    <p>For playback on a phone. <b>PRESENCE</b> lifts around 3kHz, where
+consonants live and a small speaker works. <b>BODY</b> builds harmonics of a low
+fundamental the speaker cannot reproduce.</p>
+    <p>Given the harmonics of a low note but not the note itself, the ear
+reconstructs the pitch underneath them. BODY generates those harmonics rather
+than boosting frequencies the speaker would swallow &mdash; weight without
+wasted headroom.</p>
   </div></details>
   <div class="pslider"><span class="lbl">CHARACTER</span><input type="range" id="micDrive" min="0" max="1" step="0.01" value="0"><span class="val" id="micDriveV">0%</span></div>
   <div class="pslider"><span class="lbl">DOUBLE</span><input type="range" id="micDbl" min="0" max="1" step="0.01" value="0"><span class="val" id="micDblV">0%</span></div>
@@ -1522,17 +1492,16 @@ how most recorded guitar keeps its definition.</p>
   <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="ampDly" min="0" max="1" step="0.01" value="0"><span class="val" id="ampDlyV">0%</span></div>
   <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="ampRev" min="0" max="1" step="0.01" value="0"><span class="val" id="ampRevV">0%</span></div>
   <details class="ex"><summary>Why a guitar sounds thin direct</summary><div class="ex-body">
-    <p>Plug a guitar in via an audio interface / adapter (or use the mic). <b>Use headphones</b> —
-    mic + speaker will feed back. DELAY/REVERB use the MIX engine (6 verbs, 3 delay modes).
-    The processed signal feeds the master, so record it with TRAX (BUS) or DJ REC OUT.</p>
-<p>Half of an electric guitar's sound is the amplifier and speaker. Recorded
-straight, you get the pickup alone: brittle, thin, and nothing like what a guitar
-sounds like in a room. The amp section supplies the missing half — overload for
-distortion, the amp's tone stack, and the top-end roll-off a speaker in a wooden
-box produces.</p>
-<p>Drive and level interact, because the distortion <em>is</em> the signal being
-driven past what the stage can hold. As you add dirt you will usually need to
-take the output back down to keep the balance.</p>
+    <p>Plug in via an audio interface or adapter, or use the mic.
+<b>Use headphones</b> &mdash; mic plus speaker will feed back. DELAY and REVERB
+use the MIX engine. The processed signal feeds the master, so record it with
+TRAX (BUS) or DJ REC OUT.</p>
+    <p>Half an electric guitar&rsquo;s sound is the amplifier and speaker.
+Recorded direct you get the pickup alone. The amp section supplies the rest:
+overload, a tone stack, and the top-end roll-off of a speaker in a cabinet.</p>
+    <p>Drive and level interact &mdash; the distortion is the signal being
+driven past what the stage holds, so adding dirt usually means taking the output
+back down.</p>
   </div></details>
 </div>
 
@@ -1781,43 +1750,26 @@ louder, you are probably losing more than you gain.</p>
   </div>
   <div id="hapWhat" style="font-size:10px;color:var(--txt-dim);margin:0 0 6px">&mdash;</div>
   <details class="ex"><summary>Why the phone keeps the sound</summary><div class="ex-body">
-    <p>iOS decides where audio goes when the audio session becomes active, and
-    it does not move afterwards just because something changed its mind. Two
-    things push it onto the handset&rsquo;s own speaker:</p>
+    <p>iOS fixes the audio route when the session becomes active and does not
+revisit it. Two things force the handset speaker:</p>
     <ul>
-    <li><b>An open input.</b> While anything is recording &mdash; the MIC panel,
-    AMP INPUT, BREATH, or a tape lane rolling with MIC as its source &mdash; the
-    session is in record mode, and record mode carries no Bluetooth audio at
-    all. The <b>&#9679; PHONE OUT</b> badge shows whenever this is the case.</li>
-    <li><b>A stream that was never released.</b> If a microphone request failed
-    or a capture ended badly, the input can stay open with nothing visibly
-    using it. Then the route stays on the phone and nothing in the app reaches
-    Bluetooth, while every other app is unaffected because each app has its own
-    session.</li>
+      <li><b>An open input.</b> While anything records &mdash; MIC, AMP INPUT,
+BREATH, or a tape lane with MIC as source &mdash; the session is in record mode,
+which carries no Bluetooth audio. The <b>&#9679; PHONE OUT</b> badge marks this.</li>
+      <li><b>A stream never released.</b> A failed microphone request or a bad
+capture can leave an input open with nothing visibly using it.</li>
     </ul>
-    <p><b>RESET OUTPUT</b> handles both: it stops every input the app can be
-    holding, then opens a fresh audio context, because a context keeps the
-    route it was given and only a new one makes the system choose again. It is
-    the same move the low sample-rate <b>RETRY</b> makes, for the same
-    reason.</p>
-    <p>It costs you nothing but a moment of silence &mdash; your samples,
-    patterns and takes are untouched.</p>
-
-    <h4>If a connected speaker is being ignored entirely</h4>
-    <p>The app asks the phone for the <b>playback</b> audio category whenever
-    it is not recording. That is an explicit request, and on some phones and
-    some versions an explicit request is honoured less well than simply letting
-    the browser decide &mdash; which is what <b>LET THE BROWSER CHOOSE</b>
-    does.</p>
-    <p>If sound comes out of the handset while a Bluetooth speaker is paired
-    and other apps reach it fine, switch this to <b>LET THE BROWSER CHOOSE</b>,
-    then tap <b>RESET OUTPUT</b>. If that fixes it, the explicit request was
-    the problem. The setting is remembered on this device and does not travel
-    with your projects.</p>
-    <p>This one is genuinely an experiment rather than a known fix: it cannot
-    be tested anywhere except on a phone with a speaker paired to it, so if you
-    find out which setting works, that is real information and worth
-    reporting.</p>
+    <p><b>RESET OUTPUT</b> stops every input the app may hold and opens a fresh
+audio context, since a context keeps the route it was given. Samples, patterns
+and takes are untouched.</p>
+    <h4>If a paired speaker is ignored</h4>
+    <p>The app requests the <b>playback</b> category when not recording. Some
+phones honour an explicit request less well than letting the browser decide,
+which is what <b>LET THE BROWSER CHOOSE</b> does. Switch to it, then tap
+<b>RESET OUTPUT</b>. The setting is per-device and does not travel with
+projects.</p>
+    <p>Untested: this cannot be reproduced without a phone and a paired speaker.
+Reports of which setting works are useful.</p>
   </div></details>
 
   <div class="row">
@@ -1826,44 +1778,31 @@ louder, you are probably losing more than you gain.</p>
     <span style="font-size:10px;color:var(--txt-dim);flex:1">always keeps the last 30 seconds so nothing is lost &mdash; the one thing running whether or not you are recording</span>
   </div>
   <details class="ex"><summary>Crackle, and why no filter removes it</summary><div class="ex-body">
-    <p>An occasional pop or buzz that has nothing to do with your settings is
-    almost never distortion. Distortion is a shape the audio was given &mdash;
-    something too loud, something driven, something clipped &mdash; and it
-    happens in the same place every time you play the part. This is not that.</p>
-
+    <p>An occasional pop or buzz unrelated to your settings is a dropout, not
+distortion. Distortion is a shape given to the audio and recurs in the same
+place every time; a dropout does not.</p>
     <h4>What a dropout is</h4>
-    <p>The audio thread has about <b>2.6 milliseconds</b> to compute each block
-    of sound at 48kHz. Miss that deadline and there is nothing to send to the
-    speaker, so the output jumps from wherever it was to wherever the next block
-    starts. A step discontinuity like that contains every frequency at once,
-    which is why it is heard as a click, a pop, or &mdash; when it happens
-    repeatedly &mdash; a buzz.</p>
-    <p>It arrives at unpredictable moments because it is timed by whatever
-    stole the deadline (a garbage collection, another app, the screen waking),
-    not by the music. That is exactly the &ldquo;spontaneous&rdquo; quality
-    people describe.</p>
-
+    <p>The audio thread has about <b>2.6ms</b> to compute each block at 48kHz.
+Miss that and the output jumps from one block to the next. A step discontinuity
+contains every frequency at once, heard as a click or &mdash; repeated &mdash; a
+buzz. It is timed by whatever stole the deadline, not by the music, which is why
+it seems random.</p>
     <h4>Why there is no filter for it</h4>
-    <p>A filter can only reshape audio that exists. A dropout is audio that was
-    never computed &mdash; the information is not there to clean up. Anything
-    that hid the click would do it by smearing the music on either side of it,
-    which costs you the thing you were trying to protect. So this panel
-    <em>counts</em> dropouts instead of pretending to remove them, and the fix
-    is to stop causing them.</p>
-    <p>The bounce is a different matter and is never affected: it renders
-    offline, faster than realtime, with no deadline to miss. If a part sounds
-    clean in the exported WAV and crackly live, that is a dropout and nothing is
-    wrong with your mix.</p>
-
-    <h4>What actually helps</h4>
+    <p>The audio was never computed, so there is nothing to clean up. Hiding the
+click would mean smearing the music either side of it. This panel counts
+dropouts instead.</p>
+    <p>The bounce renders offline with no deadline, so it is never affected. A
+part that is clean in the WAV and crackly live is a dropout, not a mix
+problem.</p>
+    <h4>What helps</h4>
     <ul>
-    <li><b>Fewer voices at once.</b> Long samples on dense steps stack up; a
-    shorter RELEASE or a CHOKE group costs nothing musically and a lot of CPU.</li>
-    <li><b>Turn the BLACK BOX off</b> above if you are not going to use it. It
-    is the only thing in the app that runs constantly.</li>
-    <li><b>A smaller reverb.</b> SIZE in the mixer is a convolution; halving it
-    halves the work.</li>
-    <li><b>Close other tabs and apps.</b> They share the same processor.</li>
+      <li><b>Fewer voices at once.</b> Long samples on dense steps stack up; a
+      shorter RELEASE or a CHOKE group costs nothing musically.</li>
+      <li><b>Turn the BLACK BOX off</b> if unused &mdash; it is the only thing
+      running constantly.</li>
+      <li><b>A smaller reverb.</b> SIZE is a convolution; halving it halves the
+      work.</li>
+      <li><b>Close other tabs and apps.</b> They share the processor.</li>
     </ul>
   </div></details>
 
@@ -1884,95 +1823,61 @@ louder, you are probably losing more than you gain.</p>
   <div class="pslider"><span class="lbl">DE-ESS</span><input type="range" id="mDeess" min="0" max="1" step="0.01" value="0"><span class="val" id="mDeessV">off</span></div>
   <div class="pslider"><span class="lbl">AIR</span><input type="range" id="mAir" min="0" max="9" step="0.5" value="0"><span class="val" id="mAirV">off</span></div>
   <details class="ex"><summary>What these four actually do &mdash; and what FOCUS is not</summary><div class="ex-body">
-    <p>Every one of them is <b>exactly transparent at its default</b>, so this
-    section costs you nothing until you move something. That is measured rather
-    than assumed: noise rendered through the stage and subtracted from itself
-    comes back as silence.</p>
-
-    <h4>MUD &mdash; a cut at 300Hz</h4>
-    <p>The most effective single move on a crowded mix, and the least obvious.
-    Almost every instrument has energy around 300Hz, it all adds up, and the
-    result is a mix that sounds thick and tiring with the voice buried inside
-    it. Taking 3&ndash;5dB out there usually reads as the voice getting
-    <em>louder</em>, though nothing about the voice changed.</p>
-
+    <p>All four are <b>transparent at their defaults</b> &mdash; verified by
+rendering noise through the stage and subtracting it from itself.</p>
+    <h4>MUD &mdash; cut at 300Hz</h4>
+    <p>Most instruments carry energy around 300Hz and it accumulates, leaving a
+mix thick and tiring with the voice buried. Removing 3&ndash;5dB there usually
+reads as the voice getting louder.</p>
     <h4>FOCUS &mdash; centre against sides</h4>
-    <p>A stereo mix can be split into what the two channels have in common
-    (the <b>mid</b>) and what differs between them (the <b>side</b>). Lead
-    vocals are almost always panned dead centre, so they live in the mid.
-    FOCUS lifts the mid in the vocal range and drops the side by the same
-    amount &mdash; turn it up and the voice steps forward, turn it down and it
-    sinks back toward an instrumental.</p>
-    <p><b>This is emphasis, not isolation.</b> It is worth being straight about
-    that. There is no source separation here &mdash; no model is picking the
-    voice out. Anything else sitting in the centre in that frequency range,
-    typically the snare and the lead, moves along with it. It is a real
-    mastering technique and it will not turn a mix into an acapella; anyone
-    telling you a slider can do that is selling something.</p>
-    <p>It is deliberately band-limited around 1.8kHz. A broadband centre lift
-    would drag the kick and the bass with it, since those are centred too.</p>
-
-    <h4>DE-ESS &mdash; taming <i>sss</i></h4>
-    <p>Close-miked voices put far more energy into S and T sounds than the ear
-    expects, and every stage after that &mdash; compression, limiting, MP3
-    &mdash; makes it worse. This splits the mix at 6.5kHz, compresses only what
-    is above, and puts the two back together, so the sibilance comes down and
-    nothing else does.</p>
-    <p>Turn it up until the harshness goes and then back off slightly. Too much
-    is audible as a lisp.</p>
-
-    <h4>AIR &mdash; a shelf at 12kHz</h4>
-    <p>Higher than TONE&rsquo;s HIGH, on purpose. Lifting 6.5kHz for
-    &ldquo;brightness&rdquo; is what makes a mix harsh; 12kHz is above where
-    voices get shrill, so it adds openness instead. Try AIR first and reach for
-    HIGH second.</p>
-
-    <h4>A note on the 6ms</h4>
-    <p>The de-esser rejoins its two bands after a compressor, and this
-    browser&rsquo;s compressor carries a fixed 6ms delay whether or not it is
-    working. Recombining without accounting for that tears a &minus;7dB notch
-    at 5kHz, so the other band is delayed to match &mdash; which makes the sum
-    read 0.00dB at every frequency, at the price of 6ms of monitoring latency
-    that is there whether or not DE-ESS is up. The compressor and limiter each
-    already cost the same, and the bounce is offline so it never applies
-    there.</p>
+    <p>A stereo mix splits into what the channels share (<b>mid</b>) and what
+differs (<b>side</b>). Lead vocals sit in the mid. FOCUS lifts the mid in the
+vocal range and drops the side by the same amount.</p>
+    <p><b>Emphasis, not isolation.</b> There is no source separation: anything
+else centred in that range, typically snare and lead, moves with it. Band-limited
+around 1.8kHz, since a broadband centre lift would drag the kick and bass too.</p>
+    <h4>DE-ESS &mdash; sibilance</h4>
+    <p>Splits at 6.5kHz, compresses only the upper band, recombines. Raise until
+the harshness goes, then back off &mdash; too much reads as a lisp.</p>
+    <h4>AIR &mdash; shelf at 12kHz</h4>
+    <p>Above TONE&rsquo;s HIGH on purpose. Lifting 6.5kHz for brightness is what
+makes a mix harsh; 12kHz adds openness instead. Try AIR before HIGH.</p>
+    <h4>The 6ms</h4>
+    <p>This browser&rsquo;s compressor carries a fixed 6ms delay whether or not
+it is working, so the de-esser&rsquo;s other band is delayed to match &mdash;
+without that, recombining tears a &minus;7dB notch at 5kHz. The sum measures
+0.00dB at every frequency. Costs 6ms of monitoring latency, present whether or
+not DE-ESS is up, and never applied to the offline bounce.</p>
   </div></details>
 
   <h3>IMAGE <span style="color:var(--txt-dim);letter-spacing:0">&mdash; how wide it sits</span></h3>
   <div class="pslider"><span class="lbl">WIDTH</span><input type="range" id="mWidth" min="0" max="2" step="0.01" value="1"><span class="val" id="mWidthV">100%</span></div>
   <div class="pslider"><span class="lbl">BASS MONO</span><input type="range" id="mMono" min="0" max="300" step="5" value="0"><span class="val" id="mMonoV">off</span></div>
   <details class="ex"><summary>Width, and why bass is centred</summary><div class="ex-body">
-    <p>100% width is untouched; 0% is mono. <b>BASS MONO</b> centres everything below the chosen frequency &mdash;
-    wide bass smears on a big system and thins out on a phone speaker. 120Hz is a safe habit.</p>
-<p>Widening works by increasing the difference between the two channels. When
-something plays back in mono those channels are added together, and whatever was
-different between them partly cancels — so a heavily widened mix can lose
-material entirely on a phone speaker, a club system or a Bluetooth speaker.
-Check in mono before trusting a wide mix.</p>
-<p>Bass is the worst case, and the reason is physical as well as electrical: on
-vinyl, out-of-phase low frequencies move the cutting stylus vertically and can
-throw the needle out of the groove. Centring the low end has been standard
-practice since long before anything was digital.</p>
+    <p>100% is untouched, 0% is mono. <b>BASS MONO</b> centres everything below
+the chosen frequency; 120Hz is a safe default.</p>
+    <p>Widening increases the difference between channels. Played in mono those
+channels sum, and whatever differed partly cancels &mdash; so a heavily widened
+mix can lose material on a phone, a club system or a Bluetooth speaker. Check in
+mono.</p>
+    <p>Bass is the worst case: out-of-phase low frequencies move a cutting
+stylus vertically and can throw the needle from the groove. Centring the low end
+predates digital audio.</p>
   </div></details>
 
   <h3>OUTPUT <span style="color:var(--txt-dim);letter-spacing:0">&mdash; the last thing before it leaves</span></h3>
   <div class="pslider"><span class="lbl">CEILING</span><input type="range" id="mCeil" min="-12" max="0" step="0.1" value="-1"><span class="val" id="mCeilV">-1.0dB</span></div>
   <details class="ex"><summary>Ceiling, limiting and true peak</summary><div class="ex-body">
-    <p>The limiter grips here, so pushing gain makes the mix louder instead of breaking it, and a soft clipper
-    after it means the output can never reach 0dBFS whatever you do. Anything already below this level is
-    left alone. &minus;1dB is a good default; &minus;0.3dB is as close to the edge as is sensible for a file
-    that will be converted to MP3 or AAC later.</p>
-<p>A <b>limiter</b> is a compressor with a very high ratio: below the threshold
-it does nothing, above it the signal is held back hard. It lets you raise the
-whole mix without the peaks breaking through, which is how masters get loud.</p>
-<p>The reason to stop short of 0dBFS is <b>true peak</b>. Between any two samples
-the real waveform can rise higher than either of them, and converting to MP3 or
-AAC turns that in-between level into something real that can clip — even though
-every sample in your file looked legal. A decibel of margin costs nothing
-audible and removes the problem.</p>
-<p>If the limiter is working hard all the time, the fix is in the mix rather
-than here. A limiter catching occasional peaks is mastering; a limiter holding
-down everything is a balance problem with a lid on it.</p>
+    <p>The limiter grips here, so added gain makes the mix louder rather than
+breaking it; a soft clipper after it keeps the output below 0dBFS. Anything
+already below this level is untouched. &minus;1dB is a sensible default;
+&minus;0.3dB is as close to the edge as is wise for a file destined for MP3 or
+AAC.</p>
+    <p><b>True peak</b> is why you stop short of 0dBFS: between two samples the
+real waveform can rise above both, and lossy encoding makes that in-between
+level real. A decibel of margin removes the problem inaudibly.</p>
+    <p>A limiter catching occasional peaks is mastering. A limiter working
+constantly is a balance problem &mdash; fix it in the mix.</p>
   </div></details>
   <div class="pslider"><span class="lbl">TRIM</span><input type="range" id="mTrim" min="-24" max="12" step="0.1" value="0"><span class="val" id="mTrimV">0.0dB</span></div>
   <div class="row">
@@ -2212,47 +2117,34 @@ Same notes, different performance. Keep whichever you prefer.</p>
        by side they read as alternatives of equal standing, which sent people
        to the worse one first. The live link leads now; the paste box is the
        fallback, folded away, and honest about being one. -->
-  <h3>AI &amp; AGENTS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; let something play along, or paste a beat in</span></h3>
+  <h3>AI &amp; AGENTS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; external control</span></h3>
 
   <div class="row">
     <button id="btnAgentLink" class="grow">&#9679; OPEN AGENT LINK</button>
-    <button id="btnAgentPing" title="Ask whatever is out there to say it is there">PING</button>
+    <button id="btnAgentPing" title="Ask a connected client to identify itself">PING</button>
   </div>
   <div id="agentStat" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px;line-height:1.45">
-    closed &mdash; nothing can drive this page
+    closed
   </div>
-  <!-- OPENING THE LINK AND THEN SAYING NOTHING IS THE BUG THIS ANSWERS.
-       Reported in exactly those words: "I click open agent link and it doesn't
-       do anything or provide anything or suggest I put in anything or connect
-       to anything." It did do something — it started listening — but listening
-       is invisible, and the panel never once said what the other end of the
-       link was supposed to be or where it comes from. A door with no sign on
-       it is indistinguishable from a wall. drawAgentLink() opens this the
-       first time the link goes live with nobody on it. -->
-  <details id="agentHow" class="ex"><summary>How do I connect one?</summary><div class="ex-body">
-    <p><b>Nothing can reach this screen from another device.</b> There is no
-server anywhere in this app, which is why it works on a plane and why nothing
-you make here leaves the phone. The price is that an agent has to be running on
-<em>this same machine</em>. On a phone there is nothing to connect yet &mdash;
-all three routes below are computer routes.</p>
+  <!-- Opening the link starts a listener, which is invisible. Without the
+       panel below, the button appeared to do nothing. Shown automatically
+       the first time the link opens with no client attached. -->
+  <details id="agentHow" class="ex"><summary>Connecting a client</summary><div class="ex-body">
+    <p>Clients run on this device. The app has no server, so nothing can reach
+this screen from elsewhere; all three routes below need a computer.</p>
 
-    <h4>1 &middot; A coding agent, over MCP &mdash; the usual way</h4>
-    <p>The repo ships a server for it. On a computer with the repo:</p>
+    <h4>1 &middot; MCP</h4>
+    <p>Install the server shipped in the repo:</p>
     <div class="cmd" id="cmdMcpInstall">cd Clonedit/mcp &amp;&amp; npm install</div>
-    <p>then add this to your agent's MCP config, with the real path filled in:</p>
+    <p>Add to your agent&rsquo;s MCP config, with the real path:</p>
     <div class="cmd" id="cmdMcpCfg">{"mcpServers":{"jbh88":{"command":"node","args":["/path/to/Clonedit/mcp/server.mjs"]}}}</div>
-    <div class="row"><button id="btnCopyMcp" class="grow">COPY THAT CONFIG</button></div>
-    <p><b>It drives its own copy of the app, not this screen.</b> The server
-opens its own browser, builds the track in there, and hands the result back as
-a file: a <span style="color:var(--lcd)">.json</span> you open with <b>LOAD
-.JSON</b> below, or a <span style="color:var(--lcd)">.wav</span> you can just
-play. You will not hear it happening and this panel will not light up. It is
-the route that works today, and the one worth starting with.</p>
+    <div class="row"><button id="btnCopyMcp" class="grow">COPY CONFIG</button></div>
+    <p>Drives its own instance, not this screen. Results come back as a
+<span class="lit">.json</span> for <b>LOAD .JSON</b> below, or a
+<span class="lit">.wav</span>. The status line here stays closed.</p>
 
-    <h4>2 &middot; Another tab, on a computer</h4>
-    <p>This is what the link above is for, and the only route that turns the
-status line green. Open this same address in a second tab, open that tab's
-console, and paste:</p>
+    <h4>2 &middot; Another tab</h4>
+    <p>Open this address in a second tab and paste into its console:</p>
     <div class="cmd" id="cmdTab">const b=new BroadcastChannel('jbh88'),w={};let n=0;
 b.onmessage=e=>{const d=e.data||{};
   if(d.event==='ping')return b.postMessage({jbh:1,event:'here'});
@@ -2261,74 +2153,58 @@ b.onmessage=e=>{const d=e.data||{};
 window.jbh=(call,...args)=>new Promise(r=>{
   const id=++n;w[id]=r;b.postMessage({jbh:1,id,call,args});});
 b.postMessage({jbh:1,event:'hello'});</div>
-    <div class="row"><button id="btnCopyTab" class="grow">COPY THAT SNIPPET</button></div>
-    <p>The status line above turns green the moment it lands. Then, from that
-console: <span style="color:var(--lcd)">await jbh('calls')</span> lists
-everything, <span style="color:var(--lcd)">await jbh('state')</span> reports
-what is loaded, <span style="color:var(--lcd)">jbh('set',{bpm:120})</span> and
-<span style="color:var(--lcd)">jbh('play')</span> drive it, and
-<span style="color:var(--lcd)">jbh('tell','hello')</span> writes a line into
-the box on this page. Anything that can drive a browser &mdash; a script, an
-extension, an agent with a browser tool &mdash; goes the same way.</p>
+    <div class="row"><button id="btnCopyTab" class="grow">COPY SNIPPET</button></div>
+    <p>Then <span class="lit">await jbh('calls')</span>,
+<span class="lit">jbh('set',{bpm:120})</span>,
+<span class="lit">jbh('play')</span>,
+<span class="lit">jbh('tell','hello')</span>. This is the only route that
+reports as connected.</p>
 
-    <h4>3 &middot; A page that embeds this one</h4>
-    <p>In an iframe, the same envelope over
-<span style="color:var(--lcd)">postMessage</span>:</p>
+    <h4>3 &middot; Embedded</h4>
+    <p>Same envelope over <span class="lit">postMessage</span>:</p>
     <div class="cmd">frame.contentWindow.postMessage(
   {jbh:1, id:1, call:'state', args:[]}, '*');
-// answer arrives on the parent's message event:
+// reply on the parent's message event:
 // {jbh:1, id:1, ok:true, result:{&hellip;}}</div>
 
-    <p><b>What would fix the phone.</b> Live control of <em>this</em> screen
-from somewhere else needs a relay in the middle &mdash; a small server both
-sides connect to. That is a real thing to build and it is not built; saying so
-is better than another button that opens a door onto nothing.</p>
+    <p>Live control of this screen from another device would need a relay
+server. Not implemented.</p>
   </div></details>
-  <div id="agentLog" role="log" aria-live="polite" aria-label="Messages to and from the connected agent"
+  <div id="agentLog" role="log" aria-live="polite" aria-label="Messages to and from the connected client"
     style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
            padding:8px;margin:4px 0;font-size:11px;line-height:1.5;max-height:160px;overflow-y:auto;color:var(--txt-dim)"></div>
   <div class="row" id="agentSayRow" style="display:none">
-    <input type="text" id="agentSay" class="grow" placeholder="say something to the agent&hellip;"
-      aria-label="Message to the connected agent" autocomplete="off">
+    <input type="text" id="agentSay" class="grow" placeholder="message the client&hellip;"
+      aria-label="Message to the connected client" autocomplete="off">
     <button id="btnAgentSay">SEND</button>
   </div>
-  <details class="ex"><summary>What a connected agent can do</summary><div class="ex-body">
-    <p>Everything you can, while the transport is rolling: load sounds &mdash;
-synthesised, downloaded, or recorded &mdash; write steps and their locks, move
-clips on the tape lanes, change the LIVE instrument, hit pads in time, move the
-tempo, bounce the result and <em>read the level back</em>. That last one is the
-difference between an assistant that suggests a beat and one that can hear
-whether the hats came out inaudible and fix them.</p>
-<p>It connects over <b>postMessage</b> (an embedding page or iframe) and
-<b>BroadcastChannel</b> (another tab on this origin). Both are same-device
-browser plumbing: no server, no socket, nothing leaves the machine. Anything
-that can drive a browser can skip all of it and call
-<span style="color:var(--lcd)">window.JBH</span> directly &mdash;
-<span style="color:var(--lcd)">JBH.calls()</span> lists the lot.
-<b>How do I connect one?</b> above has the exact steps for each route.</p>
-<p><b>Off until you switch it on, and off again on reload.</b> An app that
-answered to any tab on its origin the moment it loaded would be a different
-proposition from this one, so turning it on stays a deliberate act. Anything it
-says to you is shown as text and never as markup.</p>
-<p>The box is a two-way line: what you type goes to whatever is connected, and
-what it answers appears above it.</p>
+  <details class="ex"><summary>What a client can control</summary><div class="ex-body">
+    <p>The full surface, while the transport runs: load sounds (synthesised,
+downloaded or recorded), write steps and locks, place tape clips, set the LIVE
+instrument, trigger pads, change tempo, bounce, and read the resulting level
+back. <span class="lit">JBH.calls()</span> lists every method;
+<span class="lit">JBH.params()</span> lists every writable field.</p>
+<p>Transports: <b>postMessage</b> (iframe or opener) and
+<b>BroadcastChannel</b> on this origin. Same device only &mdash; no server, no
+socket. Anything driving a browser can call
+<span class="lit">window.JBH</span> directly.</p>
+<p><b>Off until enabled, and off again on reload.</b> Text arriving over the
+link renders as text, never as markup.</p>
   </div></details>
 
-  <details id="songDocBox" class="ex" style="margin-top:8px"><summary>No agent? Paste a song document instead</summary><div class="ex-body">
-    <p style="margin-top:0">The original way, and it still works with no connection of any kind:
-<b>SPEC</b> writes a prompt into the box, you hand that to any assistant in its
-own window, and paste the reply back. One-way, between takes, and it describes
-the first sixteen pads only &mdash; no tape lanes, no LIVE instrument, no
-downloaded sounds. Use <b>OPEN AGENT LINK</b> above where you can.</p>
+  <details id="songDocBox" class="ex" style="margin-top:8px"><summary>Song document (no client required)</summary><div class="ex-body">
+    <p style="margin-top:0"><b>SPEC</b> writes a prompt into the box; paste the
+assistant&rsquo;s reply back and press <b>LOAD DOC</b>. One-way, between takes,
+and limited to the first sixteen pads &mdash; no tape lanes, LIVE instrument or
+downloaded sounds. Prefer the agent link above.</p>
     <div class="row">
       <button id="btnDocSpec" class="grow">SPEC &#8594; BOX</button>
       <button id="btnDocLoad" class="grow">LOAD DOC</button>
       <button id="btnDocExport">EXPORT CURRENT</button>
     </div>
-    <textarea id="docText" spellcheck="false" placeholder="Tap SPEC &#8594; BOX, hand the whole thing to an assistant, paste its reply here, tap LOAD DOC. Code fences and chatter are fine."></textarea>
-    <p>The loader pulls the JSON out even when it is wrapped in a code fence or
-buried in conversation. EXPORT CURRENT goes the other way, so an assistant can
-remix what you already made.</p>
+    <textarea id="docText" spellcheck="false" placeholder="SPEC &#8594; BOX, hand it to an assistant, paste the reply here, LOAD DOC."></textarea>
+    <p>The loader extracts JSON from code fences or surrounding text. EXPORT
+CURRENT writes the present session out in the same format.</p>
   </div></details>
 
   <div class="row" style="margin-top:8px">
