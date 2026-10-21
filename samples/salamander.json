@@ -1441,6 +1441,27 @@
    "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C8v16.mp3",
    "note": 108,
    "vel": 0.96875
+  },
+  {
+   "id": "sal:rel1",
+   "name": "Damper 1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/rel1.mp3",
+   "rel": true
+  },
+  {
+   "id": "sal:rel2",
+   "name": "Damper 2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/rel2.mp3",
+   "rel": true
+  },
+  {
+   "id": "sal:rel3",
+   "name": "Damper 3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/rel3.mp3",
+   "rel": true
   }
  ]
 }

@@ -805,6 +805,107 @@ export default async function ({ browser, base }) {
       vel.dynamics === 3 && vel.layered === 2,
       'counting samples instead shredded a six-dynamic piano down to four');
 
+    /* THREE THINGS A SAMPLER DOES THAT THIS ONE DID NOT.
+
+       A note ended in perfect silence, which no instrument does — a key
+       coming up puts the damper back on the string and that is audible.
+       Velocity layers, added a day ago, switched HARD, so two notes a hair
+       apart in velocity came out as audibly different instruments; that
+       was a defect I introduced. And a pad could choose a layer by how
+       hard the note was struck OR cycle through alternates, never both,
+       so a hi-hat at one dynamic was the same waveform every time. */
+    t.head('DAMPERS, ALTERNATES, AND NOT STEPPING BETWEEN LAYERS');
+    const smp = await page.evaluate(async () => {
+      const o = {}, w = ms => new Promise(r => setTimeout(r, ms));
+      JBH.clear(); await w(250);
+      JBH.set({ bpm: 60, human: 0, swing: 0, revLvl: 0, compAmt: 0 });
+
+      /* round robin inside a velocity band — the arithmetic, not the audio */
+      const fake = { bufId: 0, layers: [1,2,3,4,5,6,7].map(b => ({ bufId: b })),
+        layMode: 'velrr', layRR: 2 };
+      /* ONE graph object across the calls: the round-robin counter lives on
+         it, which is what makes a bounce repeatable and a fresh one start
+         at the top. Passing {} each time measured nothing. */
+      const g0 = {};
+      o.velrr = [0.1, 0.1, 0.6, 0.6, 0.95].map(v => pickLayerIdx(g0, fake, 0, v));
+      fake.layMode = 'vel';
+      o.velOnly = [0.1, 0.6, 0.95].map(v => pickLayerIdx({}, fake, 0, v));
+
+      /* and the real thing, on a real instrument */
+      o.lay = await JBH.instrument('pf', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 55, hi: 64 });
+      const pad = JBH.instPads('pf')[0].pad;
+      o.relCount = (S.pads[pad].relBufs || []).length;
+
+      const base = { ftype: 'off', drv: 0, att: 0.001, dec: 4, sus: 1, rel: 0.12,
+        keepTime: false, pan: 0, gain: 1, rev: 0, vary: 0 };
+      /* DECODED, NOT COMPARED AS BASE64. Two different 24-bit streams differ
+         in almost every base64 character whatever the audio does, so a diff
+         taken there reports nonsense — it read 0.45 where the samples
+         themselves differ by 0.07. */
+      const pcm = (b64) => {
+        const bin = atob(b64), dv = new DataView(new ArrayBuffer(bin.length));
+        for (let i = 0; i < bin.length; i++) dv.setUint8(i, bin.charCodeAt(i));
+        let off = 12, data = null, rate = 48000, ch = 2, bits = 24;
+        while (off < bin.length - 8) {
+          const id = String.fromCharCode(dv.getUint8(off), dv.getUint8(off+1),
+            dv.getUint8(off+2), dv.getUint8(off+3));
+          const sz = dv.getUint32(off + 4, true);
+          if (id === 'fmt ') { ch = dv.getUint16(off+10,true); rate = dv.getUint32(off+12,true);
+            bits = dv.getUint16(off+22,true); }
+          if (id === 'data') { data = { start: off + 8, size: sz }; break; }
+          off += 8 + sz + (sz & 1);
+        }
+        const by = bits/8, n = Math.floor(data.size/(by*ch)), a = new Float64Array(n);
+        for (let i = 0; i < n; i++) { const q = data.start + i*by*ch;
+          a[i] = by===2 ? dv.getInt16(q,true)/32768
+            : (dv.getUint8(q)|(dv.getUint8(q+1)<<8)|(dv.getInt8(q+2)<<16))/8388608; }
+        return { a, rate };
+      };
+      const rms = (b64, t0, t1) => { const { a, rate } = pcm(b64);
+        let s = 0, c = 0;
+        for (let i = Math.floor(rate*t0); i < Math.min(a.length, Math.floor(rate*t1)); i++) { s += a[i]*a[i]; c++; }
+        return c ? Math.sqrt(s/c) : 0; };
+      const shot = async (cfg, vel, lk) => { JBH.pad(pad, cfg);
+        JBH.pattern(0, { clear: true }); JBH.step(pad, 0, vel, lk || {});
+        return (await JBH.render({ src:'pat', loops:1, wav:true, depth:24 })).wavBase64; };
+
+      o.withRel = rms(await shot({ ...base, relGain: 1.0 }, 0.7, { len: 0.45 }), 0.52, 0.95);
+      o.noRel   = rms(await shot({ ...base, relGain: 0   }, 0.7, { len: 0.45 }), 0.52, 0.95);
+
+      /* two velocities either side of a band edge, hard then crossfaded */
+      const n = 1 + (S.pads[pad].layers || []).length, edge = 1/n;
+      const diff = (x, y) => {
+        const A = pcm(x).a, B = pcm(y).a, L = Math.min(A.length, B.length);
+        let num = 0, den = 0;
+        for (let i = 0; i < L; i++) { const d = A[i]-B[i]; num += d*d; den += A[i]*A[i]+B[i]*B[i]; }
+        return Math.sqrt(num / Math.max(den, 1e-12));
+      };
+      const hA = await shot({ ...base, relGain:0, layXf:0 },    edge-0.004);
+      const hB = await shot({ ...base, relGain:0, layXf:0 },    edge+0.004);
+      const sA = await shot({ ...base, relGain:0, layXf:0.35 }, edge-0.004);
+      const sB = await shot({ ...base, relGain:0, layXf:0.35 }, edge+0.004);
+      o.hard = diff(hA, hB); o.soft = diff(sA, sB);
+      return o;
+    });
+    t.ok('ROUND ROBIN INSIDE A VELOCITY BAND — both at once, which is what a kit needs',
+      smp.velrr[0] !== smp.velrr[1] && Math.floor(smp.velrr[0]/2) === Math.floor(smp.velrr[1]/2) &&
+      smp.velrr[2] > smp.velrr[1] && smp.velrr[4] >= 6,
+      'velocity 0.1 twice → layers ' + smp.velrr.slice(0,2).join(',') +
+      ' (same band, different take); 0.6 → ' + smp.velrr[2] + '; 0.95 → ' + smp.velrr[4]);
+    t.ok('and plain velocity mode is unchanged',
+      smp.velOnly.join(',') === '0,4,7', smp.velOnly.join(','));
+    t.ok('an instrument picks up the pack’s release recordings',
+      smp.relCount === 3 && smp.lay.releases === 3);
+    t.ok('A NOTE NOW ENDS WITH A DAMPER instead of perfect silence',
+      smp.withRel > smp.noRel * 20,
+      (20*Math.log10(Math.max(smp.withRel,1e-9)/Math.max(smp.noRel,1e-9))).toFixed(1) +
+      ' dB more energy after the note stops');
+    t.ok('AND LAYERS NO LONGER STEP — two velocities 0.008 apart across a band edge',
+      smp.soft < smp.hard / 3,
+      'hard ' + smp.hard.toFixed(3) + ' vs crossfaded ' + smp.soft.toFixed(3) +
+      ' (1.0 would be completely different audio)');
+
     t.head('AND IT TELLS YOU HOW TO CONNECT ONE — IN LINES THAT WORK');
     const how = await page.evaluate(async () => {
       const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));

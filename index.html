@@ -5702,7 +5702,7 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   choke:0, note:36+i, reverse:false, mode:'one',
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
   fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12, velFlt:0, velEnv:0,
-  layers:[], layMode:'rr', vary:0,
+  layers:[], layMode:'rr', layRR:0, layXf:0, relBufs:[], relGain:0.5, vary:0,
   eqLo:0, eqMid:0, eqHi:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
   warpBeats:4, warpBpm:0, mute:false, solo:false }; }
@@ -6479,9 +6479,40 @@ function padLayer(p,li){
 function pickLayerIdx(g,p,idx,v){
   const n=padLayerCount(p);
   if(n<2 || p.layMode==='off' || p.layMode==='stack') return 0;
+  /* VELOCITY BANDS, EACH WITH ALTERNATES.
+
+     A hi-hat struck sixteen times in a bar was sixteen identical waveforms,
+     which no player has ever managed and the ear catches immediately. The
+     two existing modes each fixed half of it: 'vel' chooses by how hard,
+     'rr' chooses something different each time, and a real kit needs both
+     at once. layRR says how many alternates sit in each band; the layers
+     are laid out band by band. */
+  if(p.layMode==='velrr' && p.layRR>1){
+    const per=Math.min(p.layRR|0, n), bands=Math.max(1,Math.floor(n/per));
+    const b=Math.min(bands-1, Math.floor(clamp(v,0,0.9999)*bands));
+    const rr=g.rr||(g.rr={});
+    const k=(rr[idx]||0)%per; rr[idx]=k+1;
+    return Math.min(n-1, b*per+k);
+  }
   if(p.layMode==='vel') return Math.min(n-1, Math.floor(clamp(v,0,0.9999)*n));
   const rr=g.rr||(g.rr={});
   const k=(rr[idx]||0)%n; rr[idx]=k+1; return k;
+}
+/* HOW FAR INTO THE NEXT LAYER A VELOCITY SITS.
+
+   Switching layers hard puts a step in the timbre at every boundary: two
+   notes a hair apart in velocity come out audibly different instruments.
+   Returns the neighbouring layer and how much of it to mix, or null when
+   the note is comfortably inside one band. */
+function layerBlend(p,v,li){
+  const xf=clamp(+p.layXf||0,0,0.5);
+  if(!(xf>0) || p.layMode!=='vel') return null;
+  const n=padLayerCount(p); if(n<2) return null;
+  const pos=clamp(v,0,0.9999)*n, frac=pos-Math.floor(pos);
+  if(frac>xf && frac<1-xf) return null;
+  if(frac<=xf && li>0)   return {idx:li-1, mix:0.5-frac/(2*xf)};
+  if(frac>=1-xf && li<n-1) return {idx:li+1, mix:0.5-(1-frac)/(2*xf)};
+  return null;
 }
 function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLayer, lk){
   const p=S.pads[idx]; if(p.bufId<0) return null;
@@ -6498,6 +6529,17 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
       triggerPad(ctx,g,idx,vel,when,null,pitchOff,liveTap,li,lk);
   }
   const li = forceLayer!=null ? forceLayer : pickLayerIdx(g,p,idx,clamp(vel,0,1));
+  /* At a band edge both recordings sound, their gains summing to one, so
+     the timbre slides between them instead of stepping. Only ever one extra
+     voice, and only for notes actually near a boundary. */
+  if(forceLayer==null){
+    const bl=layerBlend(p,clamp(vel,0,1),li);
+    if(bl && bl.mix>0.01){
+      const keep=Math.sqrt(1-bl.mix), add=Math.sqrt(bl.mix);
+      triggerPad(ctx,g,idx,clamp(vel,0,1)*add,when,null,pitchOff,liveTap,bl.idx,lk);
+      vel=clamp(vel,0,1)*keep;
+    }
+  }
   const lay = padLayer(p,li) || padLayer(p,0);
   if(lay.bufId<0) return null;
   let buf=S.buffers[lay.bufId]; if(!buf) return null;
@@ -6637,6 +6679,35 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
   }
   src.start(when,off,sliceDur);
   src.stop(when+outDur+relT+0.25);
+  /* THE SOUND A NOTE MAKES WHEN IT STOPS.
+
+     A key coming up puts the damper back on the string, and that is a real
+     noise — on a quiet passage it is a good part of what you hear. Without
+     it, notes end in perfect silence, which is one of the things that reads
+     as "sampler" however good the attack is.
+
+     Scheduled at the end of the note rather than mixed into it: the length
+     is per-step now, so where a note stops is a musical decision and the
+     damper has to follow it. Round-robined through the same seeded random
+     as everything else, so the bounce stays repeatable. */
+  const rb=p.relBufs;
+  if(rb && rb.length && !p.reverse){
+    const rbuf=S.buffers[rb[Math.floor(takeRnd()*rb.length)%rb.length]];
+    if(rbuf){
+      const rs=ctx.createBufferSource(); rs.buffer=rbuf;
+      /* it follows the note's pitch, because the damper of a high string is
+         not the damper of a low one */
+      rs.playbackRate.value=rate;
+      const rg=ctx.createGain();
+      /* harder notes leave the string moving more, so there is more to damp,
+         but the relationship is weak — this is a noise, not a note */
+      const rv=clamp((p.relGain==null?0.5:+p.relGain),0,2)*(0.55+0.45*clamp(vel,0,1));
+      rg.gain.setValueAtTime(rv,when);
+      rs.connect(rg); rg.connect(g.pads[idx].in);
+      const rAt=when+outDur;
+      rs.start(rAt); rs.stop(rAt+rbuf.duration/Math.max(0.05,rate)+0.05);
+    }
+  }
   src.onended=()=>{
     const i=act.indexOf(env._v); if(i>=0) act.splice(i,1);
     liveVoices.delete(src);
@@ -12335,6 +12406,33 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     return {pad:i, id, layers:p.layers.length, mode:p.layMode};
   },
 
+  /* THE NOISE A KEY MAKES COMING BACK UP.
+
+     Attaches one or more release recordings to a pad. They sound where the
+     note ends — which, now that length is per-step, is wherever the part
+     says it ends. Several are round-robined, because a damper does not
+     land identically twice either. */
+  async release(padIdx, ids, gain){
+    const i=clamp(padIdx|0,0,NPADS-1), p=S.pads[i];
+    const list=Array.isArray(ids)?ids:(ids==null?[]:[ids]);
+    if(!list.length){ p.relBufs=[]; dirty(); return {pad:i, released:0}; }
+    ensureAudio();
+    const bufs=[];
+    for(const id of list){
+      const sm=(packManifest&&packManifest.samples||[]).find(x=>x.id===id);
+      if(!sm) throw new Error('no sound "'+id+'" in the loaded pack');
+      if(!packHaveKeys.has(LIBKEY(id))) await libFetchStore(sm);
+      const rec=await idbGetS(IDB_LIB,LIBKEY(id));
+      if(!rec||!rec.bytes) throw new Error('"'+id+'" is not on the device');
+      S.buffers.push(await decode(rec.bytes.slice(0)));
+      bufs.push(S.buffers.length-1);
+    }
+    p.relBufs=bufs;
+    if(gain!=null) p.relGain=clamp(+gain,0,2);
+    dirty();
+    return {pad:i, released:bufs.length, gain:p.relGain};
+  },
+
   /* ---- INSTRUMENTS: WRITE NOTES, NOT PADS -----------------------------
 
      Everything above is pad-shaped, and music is not. Writing a piano part
@@ -12361,7 +12459,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     if(!ss.length) throw new Error('no pack loaded — pass {pack:"samples/…json"} or call pack() first');
     const re=new RegExp(o.match||name,'i');
     let cand=ss.map(s=>({s, n:sampleNote(s)}))
-      .filter(x=>x.n!=null && re.test(x.s.id)
+      .filter(x=>x.n!=null && !x.s.rel && re.test(x.s.id)
         && (o.lo==null||x.n>=o.lo) && (o.hi==null||x.n<=o.hi))
       .sort((a,b)=>a.n-b.n);
     if(!cand.length) throw new Error('no pitched samples match /'+(o.match||name)+'/ in this pack');
@@ -12405,6 +12503,11 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     }
     /* The worst bend this layout will ever ask for is half the widest gap
        between neighbouring roots — worth knowing BEFORE writing the part. */
+    /* A pack may carry release recordings — not notes, so they are kept out
+       of the candidate list and hung on every pad instead. */
+    const rels=ss.filter(x=>x.rel && re.test(x.id)).map(x=>x.id);
+    if(rels.length) for(const pl of placed)
+      await window.MVX.release(pl.pad, rels, o.relGain);
     let gap=0;
     for(let i=1;i<placed.length;i++) gap=Math.max(gap, placed[i].note-placed[i-1].note);
     return { name, pads:placed.map(p=>p.pad), roots:placed.map(p=>p.note),
@@ -12412,6 +12515,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       worstBend:Math.ceil(gap/2),
       dynamics:placed.length?Math.max(...placed.map(p=>p.dynamics)):0,
       velocityLayered:layered||undefined,
+      releases:rels.length||undefined,
       short:byNote.size-placed.length || undefined };
   },
   /* The pads an instrument is laid across, nearest first for a given note. */
