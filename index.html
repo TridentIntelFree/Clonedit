@@ -5974,7 +5974,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R222 · 2026-10-21 · strings play lines, not pads';
+const BUILD = 'JBH-88 · R223 · 2026-10-21 · the bow stays on the string';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -6032,7 +6032,7 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   gain:0.9, pitch:0, fine:0, speed:1, keepPitch:false, keepTime:true, pan:0, rev:0, dly:0,
   att:0.002, dec:0.12, sus:1, rel:0.06,
   grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grPos:0, grBurst:0.45,
-  choke:0, note:36+i, reverse:false, mode:'one',
+  choke:0, note:36+i, reverse:false, mode:'one', bowSlur:0.045, bowMaxSt:7, bowIn:0.30,
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
   fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12, velFlt:0, velEnv:0,
   layers:[], layMode:'rr', layRR:0, layXf:0, relBufs:[], relGain:0.5, vary:0,
@@ -6874,6 +6874,11 @@ function layerBlend(p,v,li){
    'free' is the odd one: a small irregular push and pull that belongs to
    no beat, which is what keeps a slow line from sounding metronomic even
    when its dynamics are already shaped. */
+/* Measured from the Essen Folksong Collection — 8,514 melodies, 441,316
+   intervals — by scripts/study-melody.py, not recalled from anywhere. */
+const MELODY_NORMS={ repeat:21.1, step:46.9, third:19.0, leap:13.1,
+  leapRecovery:56.1, dirChange:51.8, range:12,
+  source:'Essen Folksong Collection, 8514 melodies' };
 const PHRASE_V={
   cresc:[[0,0.55],[1,1.30]],
   dim:  [[0,1.30],[1,0.55]],
@@ -6910,8 +6915,157 @@ function humanTimeOffset(t, rnd){
   if(hd>0) d+=humanDriftAt(t)*hd*0.03;
   return d;
 }
+/* ---- A BOW THAT KEEPS MOVING ------------------------------------------
+
+   Every string part written here was rejected, and the reason was never
+   the samples. It was that each note re-attacked. A sampler triggers a
+   fresh voice per note, so a melodic line is a row of separate bow
+   strokes — and a real slurred line is ONE stroke whose pitch changes
+   while the bow stays on the string. That difference survives any
+   envelope, any reverb and any amount of EQ, and the ear catches it
+   immediately: it is the single loudest thing announcing a sampled
+   string section.
+
+   So a pad in 'bow' mode does not start a voice per note. It keeps one
+   source sounding and BENDS it — playbackRate ramped over about forty
+   milliseconds — for as long as the notes keep overlapping. A fresh bow
+   stroke happens only where a player would take one: after a gap, or
+   when the line jumps further than a hand can reach without shifting.
+
+   THE VOICE BELONGS TO THE INSTRUMENT, NOT THE PAD. instrument() puts
+   every pitch on its own pad, so a melody moves from pad to pad and a
+   per-pad voice could never continue across two notes of the same
+   phrase. Keyed by the instrument tag, the sample that is already
+   sounding carries on and is bent to the new pitch, which is also
+   physically what happens: a violinist does not change instrument to
+   play the next note.
+
+   AND IT NEEDS NO LOOKAHEAD, which is why it is done this way rather
+   than by grouping notes into phrases before rendering. Continuing a
+   voice depends only on what is already sounding, so the offline bounce
+   and the live pass run the same code and cannot drift apart — the
+   divergence that has caused more wrong notes in this file than any
+   other single cause. */
+function bowKey(p, idx){ return p.inst ? ('i:'+p.inst) : ('p:'+idx); }
+function rateOf(p, lay, pitchOff, cents){
+  return Math.pow(2,(p.pitch+(pitchOff||0)+(p.fine+(cents||0))/100+lay.pitch)/12);
+}
+function triggerBow(ctx, g, idx, vel, when, pitchOff, lk){
+  const p=S.pads[idx];
+  const lay=padLayer(p, pickLayerIdx(g,p,idx,clamp(vel,0,1))) || padLayer(p,0);
+  if(!lay || lay.bufId<0) return null;
+  const buf=S.buffers[lay.bufId]; if(!buf) return null;
+  const reg=g.bowReg||(g.bowReg={});
+  const key=bowKey(p,idx);
+  const cur=reg[key];
+  const slur=clamp(p.bowSlur==null?0.045:+p.bowSlur, 0.005, 0.5);
+  const maxSt=clamp(p.bowMaxSt==null?7:+p.bowMaxSt, 1, 24);
+  const relT=(lk&&lk.rel!=null)?clamp(lk.rel,0.005,1):Math.max(0.03,p.rel||0.2);
+  const dur=(lk&&lk.len>0)?+lk.len:Math.max(0.12,(60/Math.max(1,Math.abs(S.bpm)))*0.5);
+  const myMidi=(p.srcNote!=null?p.srcNote:60)+(pitchOff||0);
+  const lvl=clamp(vel,0,1)*clamp(lay.gain,0,2);
+
+  /* CONTINUE the stroke.
+
+     NOT by bending the old sample to the new pitch, which was the first
+     version of this and quietly reintroduced the fault the whole sample
+     library was rebuilt to remove: bend seven semitones and the entire
+     rest of the note plays seven semitones off its recording, formants
+     and all, which is the chipmunk sound that made the old five-sample
+     violin unusable. The bend was only ever meant to last the length of
+     a slur.
+
+     So the bow stays on the string and the RECORDING underneath it is
+     changed. The new note's own sample fades in over the slur while the
+     old one fades out, and the new one is entered part-way through —
+     past its bow attack, where the tone is steady — so nothing
+     re-articulates. Meanwhile the outgoing sample bends towards the new
+     pitch as it leaves, which is the finger arriving ahead of the bow
+     and is what makes two notes sound joined rather than butted.
+
+     Equal power across the pair: they are two takes of the same section
+     playing the same line, correlated enough that a linear crossfade
+     dips audibly in the middle of every slur. */
+  if(cur && when < cur.until-0.004){
+    const bowIn=clamp(p.bowIn==null?0.30:+p.bowIn, 0, Math.max(0,buf.duration-0.3));
+    const nsrc=ctx.createBufferSource(); nsrc.buffer=buf;
+    nsrc.playbackRate.value=rateOf(p,lay,pitchOff||0,0);
+    const nenv=ctx.createGain();
+    const N=17, up=new Float32Array(N), dn=new Float32Array(N);
+    for(let i=0;i<N;i++){ const t=i/(N-1);
+      up[i]=Math.max(0.0001, lvl*Math.sin(t*Math.PI/2));
+      dn[i]=Math.max(0.0001, cur.lastLvl*Math.cos(t*Math.PI/2)); }
+    try{ nenv.gain.setValueCurveAtTime(up, when, slur); }
+    catch(e){ try{ nenv.gain.setValueAtTime(0.0001,when);
+      nenv.gain.linearRampToValueAtTime(Math.max(0.0001,lvl),when+slur); }catch(e2){} }
+    nenv.gain.setValueAtTime(Math.max(0.0001,lvl), when+dur);
+    nenv.gain.linearRampToValueAtTime(0.0001, when+dur+relT);
+    nsrc.connect(nenv); nenv.connect(g.pads[idx].in);
+    nsrc.start(when, bowIn);
+    nsrc.stop(when+Math.max(0.2,(buf.duration-bowIn)/Math.max(0.05,nsrc.playbackRate.value))+0.1);
+    /* the outgoing take leaves, sliding towards where the line has gone */
+    try{
+      cur.env.gain.cancelScheduledValues(when);
+      cur.env.gain.setValueCurveAtTime(dn, when, slur);
+    }catch(e){ try{ cur.env.gain.cancelScheduledValues(when);
+      cur.env.gain.setValueAtTime(cur.lastLvl,when);
+      cur.env.gain.linearRampToValueAtTime(0.0001,when+slur); }catch(e2){} }
+    const glide=clamp(myMidi-cur.rootMidi,-maxSt,maxSt);
+    try{
+      cur.src.playbackRate.cancelScheduledValues(when);
+      cur.src.playbackRate.setValueAtTime(cur.lastRate, when);
+      cur.src.playbackRate.linearRampToValueAtTime(
+        cur.baseRate*Math.pow(2,glide/12), when+slur);
+    }catch(e){}
+    try{ cur.src.stop(when+slur+0.08); }catch(e){}
+    const voice={src:nsrc, env:nenv, baseRate:rateOf(p,lay,0,0),
+      rootMidi:(p.srcNote!=null?p.srcNote:60),
+      lastRate:nsrc.playbackRate.value, lastLvl:Math.max(0.0001,lvl),
+      until:when+dur, notes:cur.notes+1, pad:idx};
+    reg[key]=voice;
+    const act0=g.pads[idx].act||(g.pads[idx].act=[]);
+    act0.push({env:nenv, src:nsrc});
+    if(act0.length>8){ const old=act0.shift();
+      try{ old.env.gain.cancelScheduledValues(when);
+        old.env.gain.setTargetAtTime(0,when,0.02); }catch(e){} }
+    return nenv;
+  }
+
+  /* FRESH STROKE — the one place a bow attack belongs. */
+  const varyCents=(p.vary>0)?(takeRnd()*2-1)*p.vary*18:0;
+  const baseRate=rateOf(p,lay,0,varyCents);
+  const rate=rateOf(p,lay,pitchOff||0,varyCents);
+  const src=ctx.createBufferSource(); src.buffer=buf;
+  src.playbackRate.value=rate;
+  const env=ctx.createGain();
+  const att=Math.max(0.004, p.att==null?0.03:+p.att);
+  env.gain.setValueAtTime(0.0001, when);
+  env.gain.linearRampToValueAtTime(Math.max(0.0001,lvl), when+att);
+  env.gain.setValueAtTime(Math.max(0.0001,lvl), when+dur);
+  env.gain.linearRampToValueAtTime(0.0001, when+dur+relT);
+  src.connect(env); env.connect(g.pads[idx].in);
+  const s0=lay.start*buf.duration;
+  /* The source runs to the end of the recording and the gain is the only
+     gate. Rescheduling stop() on every continued note is the obvious
+     alternative and it is a trap: once a stop time has passed the voice
+     is gone and no later call brings it back, so a phrase longer than
+     its first note would cut off mid-slur. */
+  src.start(when, s0);
+  src.stop(when+Math.max(0.2,(buf.duration-lay.start*buf.duration)/Math.max(0.05,rate))+0.1);
+  const voice={src, env, baseRate, rootMidi:(p.srcNote!=null?p.srcNote:60),
+    lastRate:rate, lastLvl:Math.max(0.0001,lvl), until:when+dur, notes:1, pad:idx};
+  reg[key]=voice;
+  const act=g.pads[idx].act||(g.pads[idx].act=[]);
+  act.push({env,src});
+  if(act.length>8){ const old=act.shift();
+    try{ old.env.gain.cancelScheduledValues(when);
+      old.env.gain.setTargetAtTime(0,when,0.02); }catch(e){} }
+  return env;
+}
+
 function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLayer, lk, swShape){
   const p=S.pads[idx]; if(p.bufId<0) return null;
+  if(p.mode==='bow' && forceLayer==null) return triggerBow(ctx,g,idx,vel,when,pitchOff||0,lk);
   if(p.mode==='grain'){   // GRAIN pads spray a cloud instead of playing the sample
     scheduleGrains(ctx,g,idx,clamp(vel,0,1),when,clamp(p.grBurst||0.45,0.05,4),pitchOff||0);
     return null;
@@ -13479,6 +13633,88 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     return d;
   },
 
+  /* IS THIS A TUNE, OR IS IT SCALE MOVEMENT?
+
+     Everything written through this API was described as unmusical, and
+     the measurement says exactly why. Against 8,514 melodies of the Essen
+     Folksong Collection:
+
+                        real melodies     what was written here
+       repeated notes       21.1%                  0%
+       steps                46.9%                 76%
+       thirds               19.0%                 24%
+       leaps of a 4th+      13.1%                  0%
+
+     A fifth of the notes in a real melody repeat the pitch before them,
+     and an eighth of its moves are leaps. Neither appeared once. What
+     was written instead was continuous stepwise motion, which is not a
+     tune — it is a scale with a rhythm, and it wanders because nothing
+     in it is fixed enough to be remembered or wide enough to be a shape.
+
+     The norms below are measured, not recalled, and the script that
+     produced them is in the commit. They are folk melody: the most
+     neutral baseline there is, sung rather than composed, and the common
+     ancestor of most tunes anyone would call singable. A Bach fugue
+     subject will not match them and should not.
+
+     It reduces to the top note at each onset, because that is the line a
+     listener follows when an instrument plays more than one note. */
+  async melody(name, opt){
+    const o=opt||{}, src=o.src||'pat';
+    let pads;
+    if(typeof name==='number') pads=[clamp(name|0,0,NPADS-1)];
+    else { pads=[]; for(let i=0;i<NPADS;i++) if(S.pads[i]&&S.pads[i].inst===name) pads.push(i);
+      if(!pads.length) throw new Error('no instrument "'+name+'" — call instrument() first, '
+        +'or pass a pad number'); }
+    const sch=await window.MVX.schedule({src, full:true});
+    if(!sch || !sch.events) return null;
+    const mine=sch.events.filter(e=>pads.indexOf(e.pad)>=0 && e.midi!=null);
+    if(mine.length<4) return {instrument:name, notes:mine.length,
+      says:'too few notes to say anything about.'};
+    /* top note per onset — the line an ear actually follows */
+    const byT=new Map();
+    for(const e of mine){ const k=e.t.toFixed(3);
+      if(!byT.has(k) || e.midi>byT.get(k)) byT.set(k, e.midi); }
+    const seq=[...byT.entries()].sort((a,b)=>parseFloat(a[0])-parseFloat(b[0])).map(x=>x[1]);
+    if(seq.length<4) return {instrument:name, notes:seq.length,
+      says:'too few notes to say anything about.'};
+    let rep=0, step=0, third=0, leap=0, dirChg=0, dirTot=0, rec=0, same=0, prev=0;
+    for(let i=1;i<seq.length;i++){
+      const d=seq[i]-seq[i-1], a=Math.abs(d);
+      if(a===0) rep++; else if(a<=2) step++; else if(a<=4) third++; else leap++;
+      if(d!==0){ if(prev!==0){ dirTot++; if((prev>0)!==(d>0)) dirChg++; } prev=d; }
+    }
+    for(let i=2;i<seq.length;i++){
+      const d1=seq[i-1]-seq[i-2], d2=seq[i]-seq[i-1];
+      if(Math.abs(d1)>=5 && d2!==0){ if((d1>0)!==(d2>0) && Math.abs(d2)<=2) rec++; else same++; }
+    }
+    const n=seq.length-1, pc=x=>+(100*x/n).toFixed(1);
+    const got={repeat:pc(rep), step:pc(step), third:pc(third), leap:pc(leap),
+      dirChange:dirTot?+(100*dirChg/dirTot).toFixed(1):0,
+      leapRecovery:(rec+same)?+(100*rec/(rec+same)).toFixed(1):null,
+      range:Math.max.apply(null,seq)-Math.min.apply(null,seq)};
+    const notes=[];
+    const cmp=(k,label,tol)=>{
+      const d=got[k]-MELODY_NORMS[k];
+      if(Math.abs(d)>tol) notes.push(label+': '+got[k]+'% against '+MELODY_NORMS[k]
+        +'% in real melody — '+(d>0?'far more':'far fewer')+' than a tune usually has.');
+    };
+    cmp('repeat','repeated notes',10);
+    cmp('step','steps',14);
+    cmp('third','thirds',12);
+    cmp('leap','leaps of a 4th or more',9);
+    if(got.range<7) notes.push('the whole line sits inside '+got.range+' semitones; '
+      +'a melody usually covers about '+MELODY_NORMS.range+'.');
+    if(got.range>26) notes.push('the line covers '+got.range+' semitones, which is very wide '
+      +'for one voice — real melodies average about '+MELODY_NORMS.range+'.');
+    if(got.leapRecovery!=null && got.leapRecovery<35 && got.leap>4)
+      notes.push('leaps are not turned back from: '+got.leapRecovery+'% against '
+        +MELODY_NORMS.leapRecovery+'%. A leap that keeps going the same way reads as a scramble.');
+    return {instrument:(typeof name==='number'?('pad '+name):name), notes:seq.length,
+      got, norm:MELODY_NORMS, findings:notes,
+      says:notes.length?notes[0]:'the shape of this line is within the range real melodies occupy.'};
+  },
+
   /* HOLES IN A PART THAT IS SUPPOSED TO BE HELD.
 
      A string bed was written as one long note a bar. Each note stopped
@@ -13921,6 +14157,14 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       pat.steps.forEach(r=>r.fill(0)); pat.locks={};
       pat.sil=new Array(MAXSTEPS).fill(0); pat.poly={};
     }
+    /* A length that is not one of the four was dropped on the floor: the
+       call reported success, the pattern stayed as it was, and a line
+       written for 128 steps lost half of itself with nothing said. Same
+       silent no-op as a mix setting outside its range, and caught the
+       same way — by someone wondering where the notes went. */
+    if(props.plen!=null && PATLENS.indexOf(props.plen|0)<0)
+      throw new Error('pattern length must be one of '+PATLENS.join(', ')
+        +' — got '+props.plen+'. Longer music is a song of several patterns.');
     if(props.plen!=null && PATLENS.indexOf(props.plen|0)>=0){
       const nl=props.plen|0, old=patLen(pat);
       if(nl!==old){
@@ -21191,7 +21435,7 @@ function applySessionDoc(doc, bufs){
      change how every pitched pad in it sounds — so an older document keeps what
      it was made with. */
   S.pads.forEach(p=>{ if(p.keepTime==null) p.keepTime=true;   // pre-v2 docs were stamped in migrateDoc
-    if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16;
+    if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.bowSlur==null)p.bowSlur=0.045; if(p.bowMaxSt==null)p.bowMaxSt=7; if(p.bowIn==null)p.bowIn=0.30; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16;
     if(p.mute==null)p.mute=false; if(p.solo==null)p.solo=false;   // pre-R43/R44 docs lack these
     if(p.lfoOn==null)p.lfoOn=false; if(p.lfoTgt==null)p.lfoTgt='cutoff'; if(p.lfoShape==null)p.lfoShape='sine';
     if(p.lfoSync==null)p.lfoSync='free'; if(p.lfoRate==null)p.lfoRate=2; if(p.lfoDepth==null)p.lfoDepth=0.5;

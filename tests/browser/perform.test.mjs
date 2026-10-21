@@ -256,6 +256,72 @@ export default async function ({ browser, base }) {
       cont.plucked.sustained === false && /short notes/.test(cont.plucked.says),
       'median ' + cont.plucked.medianNoteSec + 's → ' + cont.plucked.says.slice(0, 40));
 
+    /* ---- 6. ONE BOW STROKE, NOT EIGHT ----------------------------------- */
+    t.head('bow MODE JOINS NOTES INSTEAD OF RE-ARTICULATING THEM');
+    const bowed = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('vc',
+        { pack: 'samples/vsco-orch.json', match: '^vo:cello-', lo: 40, hi: 64, max: 11 });
+      const pads = window.JBH.instPads('vc').map(p => p.pad);
+      const LINE = [[0, 52], [4, 55], [8, 57], [12, 59], [16, 60], [20, 59], [24, 57], [28, 55]];
+      const run = async (mode, beats) => {
+        await window.JBH.batch(pads.map(p => ['pad', p, { mode, sus: 1, rel: 0.22, dec: 5,
+          att: 0.03, ftype: 'off', rev: 0, gain: 1.6, relBufs: [], vary: 0,
+          bowSlur: 0.045, bowIn: 0.3, bowMaxSt: 7 }]));
+        window.JBH.set({ bpm: 96, human: 0, humanDrift: 0, revLvl: 0, masterVol: 1, compAmt: 0 });
+        window.JBH.pattern(0, { plen: 32, clear: true });
+        await window.JBH.batch(LINE.map(([st, m]) => ['note', 'vc', m, st, 0.55, { beats }]));
+        const buf = await renderMix(new Set(pads), new Set(), { loops: 1, src: 'pat', noTail: false });
+        const d = buf.getChannelData(0), sr = buf.sampleRate, w = Math.floor(sr * 0.01), e = [];
+        for (let i = 0; i + w < d.length; i += w) { let s = 0;
+          for (let j = i; j < i + w; j++) s += d[j] * d[j]; e.push(Math.sqrt(s / w)); }
+        let pk = 0; for (const v of e) if (v > pk) pk = v;
+        let att = 0;
+        for (let i = 2; i < e.length; i++) if (e[i] > pk * 0.12 && e[i] > e[i - 2] * 2.2) att++;
+        return att;
+      };
+      return { plain: await run('one', 1.1), bow: await run('bow', 1.1),
+               detached: await run('bow', 0.4) };
+    });
+    t.ok('eight slurred notes re-articulate far less in bow mode',
+      bowed.bow < bowed.plain * 0.5,
+      bowed.plain + ' attack transients as separate voices, ' + bowed.bow + ' bowed');
+    /* A slur is written by overlapping the notes, so notes with gaps between
+       them MUST take a fresh bow — otherwise the mode would be gluing
+       together things the part says are separate. */
+    t.ok('and detached notes still take a bow each',
+      bowed.detached > bowed.bow * 2,
+      bowed.detached + ' when the notes do not reach each other');
+
+    /* ---- 7. IS IT A TUNE? ----------------------------------------------- */
+    t.head('melody() MEASURES A LINE AGAINST REAL MELODY');
+    const mel = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('pf',
+        { pack: 'samples/salamander.json', match: '^sal:', lo: 55, hi: 84, max: 14 });
+      const write = async (rows) => {
+        window.JBH.pattern(0, { plen: 64, clear: true });
+        await window.JBH.batch(rows.map(([st, m]) => ['note', 'pf', m, st, 0.6, { beats: 0.5 }]));
+        return await window.JBH.melody('pf', { src: 'pat' });
+      };
+      /* pure stepwise motion: no repeat, no leap — a scale with a rhythm */
+      const scale = await write([[0, 67], [2, 69], [4, 71], [6, 72], [8, 74], [10, 72],
+        [12, 71], [14, 69], [16, 67], [18, 69], [20, 71], [22, 72], [24, 74], [26, 76]]);
+      let bad = null;
+      try { window.JBH.pattern(0, { plen: 128 }); } catch (e) { bad = e.message; }
+      return { scale, bad };
+    });
+    t.ok('a line with no repeated notes is told so',
+      mel.scale.findings.some(f => /repeated notes/.test(f)),
+      'repeats ' + mel.scale.got.repeat + '% against ' + mel.scale.norm.repeat + '%');
+    t.ok('and a line with no leaps is told so',
+      mel.scale.findings.some(f => /leaps/.test(f)),
+      'leaps ' + mel.scale.got.leap + '% against ' + mel.scale.norm.leap + '%');
+    /* The pattern length that silently did nothing and lost half a line. */
+    t.ok('an impossible pattern length is refused rather than ignored',
+      !!mel.bad && /16, 32, 48, 64/.test(mel.bad),
+      mel.bad ? mel.bad.slice(0, 64) + '…' : 'no throw');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
