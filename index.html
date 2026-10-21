@@ -2232,6 +2232,28 @@ socket. Anything driving a browser can call
 link renders as text, never as markup.</p>
   </div></details>
 
+  <details class="ex" style="margin-top:8px"><summary>Playing, not just placing</summary><div class="ex-body">
+    <p style="margin-top:0"><span class="lit">phrase(name, from, to, opt)</span>
+&mdash; shape notes that are already written. <span class="lit">vel</span>
+multiplies velocity, <span class="lit">time</span> displaces in step fractions,
+<span class="lit">swell</span> gives each note a target to travel to. Shapes:
+cresc, dim, arch, dip, swellend; rit, accel, push, drag, free &mdash; or
+<span class="lit">[[position,value],&hellip;]</span>. It never adds or removes a
+note.</p>
+    <p><span class="lit">{swell: v}</span> as a note lock makes that note change
+dynamic while it sounds. Where the start and end fall in different velocity
+layers the two takes crossfade, so the tone changes and not only the level.
+Sustaining instruments only &mdash; a struck string decays and cannot
+crescendo.</p>
+    <p><span class="lit">dynamics(name)</span> &mdash; how much an instrument
+answers to velocity, in level and in tone. Worth asking before writing
+dynamics: six-layer piano spans about 10dB of tone, a two-layer string about
+1.5dB.</p>
+    <p><span class="lit">humanDrift</span> (0&ndash;1) &mdash; timing that
+drifts rather than jitters. Separate from <span class="lit">human</span>, which
+is per-note noise, and off by default.</p>
+  </div></details>
+
   <details class="ex" style="margin-top:8px"><summary>Checking a mix</summary><div class="ex-body">
     <p style="margin-top:0"><span class="lit">critique()</span> runs the checks
 below and returns only what is wrong. Empty is the good answer.</p>
@@ -5952,7 +5974,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R220 · 2026-10-21 · it can hear the difference now';
+const BUILD = 'JBH-88 · R221 · 2026-10-21 · notes that are played, not placed';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -6024,7 +6046,7 @@ const S = {
   buffers: [],            // AudioBuffers, referenced by pads via bufId
   patterns: Array.from({length:NPAT},()=>newPattern()),
   pattern: 0, bank: 0, editPad: 0, seqPad: 0,
-  bpm: 100, swing: 0, human: 0, autoWarp: false, silFade: 0.06, masterVol: 0.9, delayFb: 0.35,
+  bpm: 100, swing: 0, human: 0, humanDrift: 0, autoWarp: false, silFade: 0.06, masterVol: 0.9, delayFb: 0.35,
   punchOn:false, punchIn:0, punchOut:0,   // auto-punch window, in seconds after bar 1
   revLvl: 0.9, revSize: 3.0, revType: 'hall', delayDiv: 0.375, dlyTone: 5200, dlyMode: 'digital', compAmt: 0.4,
   chain: [], chainOn: false, chainPos: 0,
@@ -6825,7 +6847,70 @@ function layerBlend(p,v,li){
   if(frac>=1-xf && li<n-1) return {idx:li+1, mix:0.5-(1-frac)/(2*xf)};
   return null;
 }
-function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLayer, lk){
+/* ---- TIMING THAT DRIFTS INSTEAD OF TWITCHING --------------------------
+
+   HUMANIZE has always been white noise: every note gets an independent
+   random offset, so a part at 30% jitters around the grid and each note's
+   error says nothing about its neighbour's. No player does that. What a
+   player does is drift — run a little ahead through a phrase and settle
+   back at the cadence — and the difference between drift and jitter is
+   the difference between rubato and a loose clock.
+
+   The correlation is the whole point, so the offset is a function of WHEN
+   the note falls rather than a fresh draw per note: two notes a sixteenth
+   apart get nearly the same displacement and the beat bends, where two
+   independent draws would have pulled them in opposite directions and
+   merely smeared it. Two slow sines of incommensurate period, about 3.7s
+   and 11.3s, so the pattern never lands back on the bar.
+
+   Stateless and therefore repeatable: an offline bounce and the live
+   playback of the same bar agree, which a running random walk would not
+   have managed across the two code paths.
+
+   Separate from HUMANIZE and zero by default, because this changes the
+   feel of every existing project and none of them asked for it. */
+/* The named contours phrase() understands. Deliberately few, and named
+   for what a player would call them rather than for their arithmetic.
+   'free' is the odd one: a small irregular push and pull that belongs to
+   no beat, which is what keeps a slow line from sounding metronomic even
+   when its dynamics are already shaped. */
+const PHRASE_V={
+  cresc:[[0,0.55],[1,1.30]],
+  dim:  [[0,1.30],[1,0.55]],
+  arch: [[0,0.60],[0.5,1.25],[1,0.60]],
+  dip:  [[0,1.20],[0.5,0.70],[1,1.20]],
+  swellend:[[0,0.70],[0.75,0.85],[1,1.35]],
+  flat: [[0,1],[1,1]]
+};
+const PHRASE_T={
+  rit:  [[0,0],[1,0.45]],
+  accel:[[0,0],[1,-0.30]],
+  push: [[0,-0.05],[1,-0.05]],
+  drag: [[0,0.05],[1,0.05]],
+  free: [[0,-0.04],[0.33,0.05],[0.66,-0.05],[1,0.03]]
+};
+function curveAt(pts,x){
+  if(!pts || !pts.length) return 0;
+  if(x<=pts[0][0]) return pts[0][1];
+  for(let i=1;i<pts.length;i++){
+    if(x<=pts[i][0]){
+      const x0=pts[i-1][0], y0=pts[i-1][1], x1=pts[i][0], y1=pts[i][1];
+      return x1===x0 ? y1 : y0+(y1-y0)*((x-x0)/(x1-x0));
+    }
+  }
+  return pts[pts.length-1][1];
+}
+function humanDriftAt(t){
+  return Math.sin(t*1.698+1.7)*0.6 + Math.sin(t*0.556+4.1)*0.4;
+}
+function humanTimeOffset(t, rnd){
+  let d=0;
+  if(S.human>0) d+=(rnd()*2-1)*S.human*0.012;
+  const hd=+S.humanDrift||0;
+  if(hd>0) d+=humanDriftAt(t)*hd*0.03;
+  return d;
+}
+function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLayer, lk, swShape){
   const p=S.pads[idx]; if(p.bufId<0) return null;
   if(p.mode==='grain'){   // GRAIN pads spray a cloud instead of playing the sample
     scheduleGrains(ctx,g,idx,clamp(vel,0,1),when,clamp(p.grBurst||0.45,0.05,4),pitchOff||0);
@@ -6840,10 +6925,59 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
       triggerPad(ctx,g,idx,vel,when,null,pitchOff,liveTap,li,lk);
   }
   const li = forceLayer!=null ? forceLayer : pickLayerIdx(g,p,idx,clamp(vel,0,1));
+
+  /* A NOTE THAT CHANGES DYNAMIC WHILE IT IS STILL SOUNDING.
+
+     A held string or wind note at one fixed velocity is the single most
+     recognisable sample-library tell there is. Real players shape every
+     long note; a violin that holds two seconds at exactly one dynamic
+     announces itself as a recording within about half of them.
+
+     AND IT IS NOT A VOLUME RAMP. Turning a quiet recording up does not
+     make it a loud one — the loud one has more bow noise, more rosin,
+     more upper partials, because those were played and recorded. So when
+     the start and end dynamics fall in different velocity layers the
+     quiet take fades out while the loud take fades in, and the timbre
+     crescendos along with the level. When they land in the same layer
+     there is nothing to cross to and it is simply a level move, which is
+     said plainly rather than pretended otherwise.
+
+     Equal power on the pair, not linear: two dynamic layers of the same
+     note at the same pitch are partly coherent, and a linear pair leaves
+     a dip in the middle of the crescendo exactly where the ear is
+     following it.
+
+     Only in 'vel' mode. pickLayerIdx advances the round-robin counter for
+     the modes that have one, so asking it a second question per note would
+     consume two alternates for one hit and quietly break the repeatable
+     bounce.
+
+     AND IT BELONGS TO INSTRUMENTS THAT ARE STILL BEING PLAYED. A bowed or
+     blown note is driven the whole time it sounds, so it can grow; a
+     struck one cannot, and no amount of crossfading will make it. Measured
+     on a piano the effect is real but wrong-sounding, because both takes
+     start together and the loud one is already two seconds into its own
+     decay by the time it arrives — louder, and no brighter. On the violin
+     the same instruction reads twelve times the level at 2.4s and keeps
+     the upper partials that go with it. Nothing here refuses a swell on a
+     piano; it simply is not what a piano does. */
+  if(!swShape && lk && lk.swell!=null && forceLayer==null){
+    const v0=clamp(vel,0,1), v1=clamp(+lk.swell,0.01,1);
+    if(Math.abs(v1-v0)>0.02){
+      const liB=(p.layMode==='vel') ? pickLayerIdx(g,p,idx,v1) : li;
+      if(liB!==li){
+        triggerPad(ctx,g,idx,v1,when,null,pitchOff,liveTap,liB,lk,{role:'in'});
+        swShape={role:'out'};
+      } else {
+        swShape={role:'level', ratio:v1/Math.max(0.01,v0)};
+      }
+    }
+  }
   /* At a band edge both recordings sound, their gains summing to one, so
      the timbre slides between them instead of stepping. Only ever one extra
-     voice, and only for notes actually near a boundary. */
-  if(forceLayer==null){
+     voice, and only for notes actually near a boundary. A swell is already
+     crossfading this note between two takes, so the two are never stacked. */
+  if(forceLayer==null && !swShape){
     const bl=layerBlend(p,clamp(vel,0,1),li);
     if(bl && bl.mix>0.01){
       const keep=Math.sqrt(1-bl.mix), add=Math.sqrt(bl.mix);
@@ -6943,8 +7077,39 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
   const relT=(lk&&lk.rel!=null)?clamp(lk.rel,0.005,1):p.rel;
   const relStart=when+Math.max(att+0.002,outDur-relT);
   env.gain.setValueAtTime(0,when);
-  env.gain.linearRampToValueAtTime(v,attEnd);
+  /* A SWELL REPLACES THE DECAY RATHER THAN FIGHTING IT.
+
+     Decay and swell are two instructions about the same span of time, and
+     running both means a note that falls to its sustain and then climbs
+     out of it again — which is not what either control was asked for. A
+     note told to change dynamic is given attack, the move, and release.
+     The 'in' voice of a crossfade pair starts effectively silent, since
+     its whole job is to arrive. */
+  const swOn = !!swShape && (outDur-att)>0.12;
   let holdLvl=v;
+  if(swOn){
+    const startLvl = swShape.role==='in' ? Math.max(0.0001, v*0.02) : v;
+    const endLvl   = swShape.role==='in' ? v
+                   : swShape.role==='out' ? Math.max(0.0001, v*0.02)
+                   : Math.max(0.0001, v*clamp(swShape.ratio,0.05,8));
+    env.gain.linearRampToValueAtTime(startLvl, attEnd);
+    holdLvl=startLvl;
+    const span=Math.max(0.02, relStart-attEnd), n=33, arr=new Float32Array(n);
+    for(let i=0;i<n;i++){
+      const t=i/(n-1);
+      const frac = swShape.role==='out' ? (1-Math.cos(t*Math.PI/2))
+                 : swShape.role==='in'  ? Math.sin(t*Math.PI/2) : t;
+      arr[i]=Math.max(0.0001, startLvl+(endLvl-startLvl)*frac);
+    }
+    /* setValueCurveAtTime throws across browsers if it so much as touches
+       another scheduled event, and a thrown note is a silent one, so the
+       shape degrades to a straight line rather than taking the voice out. */
+    try{ env.gain.setValueCurveAtTime(arr, attEnd, span); holdLvl=arr[n-1]; }
+    catch(e){
+      try{ env.gain.linearRampToValueAtTime(endLvl, attEnd+span); holdLvl=endLvl; }catch(e2){}
+    }
+  } else {
+  env.gain.linearRampToValueAtTime(v,attEnd);
   if(sus<1){
     const decEnd=attEnd+decT;
     if(decEnd<=relStart){
@@ -6959,6 +7124,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
       holdLvl=v*(1-(1-sus)*((relStart-attEnd)/decT));
       env.gain.linearRampToValueAtTime(holdLvl,relStart);
     }
+  }
   }
   env.gain.setValueAtTime(holdLvl,relStart);
   env.gain.linearRampToValueAtTime(0.0001,relStart+relT);
@@ -12430,6 +12596,7 @@ async function loadSongDoc(doc){
         if(src.prob!=null) lk.prob=clamp(src.prob,0,1);
         if(src.rat!=null&&src.rat>1) lk.rat=clamp(src.rat|0,2,4);
         if(src.nudge!=null) lk.nudge=clamp(src.nudge,-0.5,0.5);
+        if(src.swell!=null) lk.swell=clamp(+src.swell,0.01,1);
         if(src.plain) lk.plain=1;
         /* Clamped rather than dropped, because a song doc is hand-writable and
            a cutoff of 2 is a typo with an obvious intent — but only once it is
@@ -12899,6 +13066,85 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     bumpLocks(); try{ drawSeq(); drawPads(); }catch(e){} dirty();
     return {wrote:out, bend:worst};
   },
+
+  /* SHAPE, APPLIED TO A RUN OF NOTES RATHER THAN TYPED INTO EACH ONE.
+
+     Every part written through this API so far had its velocities typed in
+     one at a time, which is why they all came out flat: a human writing
+     eighty numbers by hand writes eighty numbers that are nearly the same,
+     and the result is a part with no direction. The shape is the music.
+     A crescendo across four bars is one instruction, not forty.
+
+     It operates on notes that are already there — it never adds or removes
+     one — so the sequencer still shows exactly what it will play.
+
+       phrase('vn', 0, 63, {vel:'cresc'})
+       phrase('pf', 32, 63, {vel:'arch', time:'rit'})
+       phrase('pf', 0, 15, {vel:[[0,0.7],[0.25,1.2],[1,0.5]]})
+       phrase('vn', 0, 63, {vel:'cresc', swell:1.4})
+
+     vel   multiplies the written velocity, so accents survive the contour.
+     time  displaces each note in step fractions, which is how a rit works:
+           progressively later against a grid that does not itself move.
+     swell multiplies each note's velocity to give it a target to travel to
+           while it sounds — see the swell note in triggerPad; on an
+           instrument with velocity layers it changes timbre, not just level.
+
+     A shape is a name or a list of [position, value] points, position
+     running 0 to 1 across the span, straight lines between them. */
+  phrase(name, from, to, opt){
+    const o=opt||{};
+    const pat=S.patterns[S.pattern], L=patLen(pat);
+    let pads;
+    if(typeof name==='number') pads=[clamp(name|0,0,NPADS-1)];
+    else{
+      const ip=window.MVX.instPads(name);
+      if(!ip.length) throw new Error('no instrument "'+name+'" — call instrument() first, '
+        +'or pass a pad number');
+      pads=ip.map(x=>x.pad);
+    }
+    if(Array.isArray(o.only)) pads=pads.filter(p=>o.only.indexOf(p)>=0);
+    const a=clamp(from==null?0:from|0,0,L-1), b=clamp(to==null?L-1:to|0,0,L-1);
+    const lo=Math.min(a,b), hi=Math.max(a,b), span=Math.max(1,hi-lo);
+    const pick=(src,table,what)=>{
+      if(src==null) return null;
+      if(typeof src==='string'){
+        if(!table[src]) throw new Error('no '+what+' shape "'+src+'". Known: '
+          +Object.keys(table).join(', ')+' — or give [[position,value],…].');
+        return table[src];
+      }
+      if(Array.isArray(src) && src.length) return src;
+      throw new Error(what+' wants a shape name or [[position,value],…]');
+    };
+    const vS=pick(o.vel, PHRASE_V, 'velocity'), tS=pick(o.time, PHRASE_T, 'timing');
+    const swl=(o.swell!=null && isFinite(+o.swell)) ? +o.swell : null;
+    if(!vS && !tS && swl==null)
+      throw new Error('phrase() needs at least one of vel, time or swell');
+    let touched=0; const hit=new Set();
+    for(const pad of pads){
+      const row=pat.steps[pad]; if(!row) continue;
+      for(let st=lo; st<=hi; st++){
+        const v=row[st]; if(!(v>0)) continue;
+        const x=(st-lo)/span;
+        if(vS) row[st]=clamp(v*curveAt(vS,x),0.02,1);
+        if(tS || swl!=null){
+          const k=LK(pad,st,false), lk=Object.assign({}, pat.locks[k]||{});
+          if(tS){
+            const nd=clamp(curveAt(tS,x),-0.5,0.5);
+            if(Math.abs(nd)<0.001) delete lk.nudge; else lk.nudge=+nd.toFixed(4);
+          }
+          if(swl!=null) lk.swell=clamp(row[st]*swl,0.01,1);
+          if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
+        }
+        touched++; hit.add(pad);
+      }
+    }
+    bumpLocks(); try{ drawSeq(); drawPads(); }catch(e){} dirty();
+    return {touched, pads:[...hit].sort((x,y)=>x-y), from:lo, to:hi,
+      vel:o.vel==null?null:(typeof o.vel==='string'?o.vel:'custom'),
+      time:o.time==null?null:(typeof o.time==='string'?o.time:'custom'),
+      swell:swl};
+  },
   /* A POLY FIGURE IN NOTES.
 
      Cells are grouped by register and each group gets a pad whose sample is
@@ -13231,6 +13477,56 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     d.levelDb=(wet.lufs!=null&&dryR.lufs!=null)?+(wet.lufs-dryR.lufs).toFixed(1):null;
     if(!d.bypassed.length) d.notes=['this pad has no processing on it — nothing was bypassed, so the two renders are the same audio'];
     return d;
+  },
+
+  /* HOW MUCH AN INSTRUMENT ACTUALLY ANSWERS TO VELOCITY.
+
+     Writing dynamics into a part is wasted on a library that does not
+     have any, and there is no way to tell by looking. Measured: the two
+     VSCO violin takes are 1.6dB apart in the upper bands, while the six
+     Salamander piano dynamics span 10.3dB. The same crescendo is a real
+     change of tone on one and almost nothing on the other, and knowing
+     which before writing forty notes is the difference between shaping a
+     part and typing numbers that do not matter.
+
+     Reports both axes, because they are different questions: LEVEL is how
+     much louder the hard take is, TONE is how much brighter. A library
+     can have plenty of the first and none of the second, and that is
+     exactly the one where a crescendo will sound like a volume knob. */
+  async dynamics(name){
+    const pads=(typeof name==='number')
+      ? [{pad:clamp(name|0,0,NPADS-1)}] : window.MVX.instPads(name);
+    if(!pads.length) throw new Error('no instrument "'+name+'" — call instrument() first, '
+      +'or pass a pad number');
+    const p=S.pads[pads[0].pad];
+    const n=padLayerCount(p);
+    if(n<2) return {instrument:name, pad:pads[0].pad, layers:n,
+      levelDb:0, toneDb:0,
+      says:'this pad has one recording, so velocity can only change its volume. '
+        +'Nothing written as a dynamic will change the tone.'};
+    const rows=[];
+    for(let i=0;i<n;i++){
+      const lay=padLayer(p,i), buf=lay && S.buffers[lay.bufId];
+      if(!buf) continue;
+      const b=await bandEnergy(buf);
+      const g=k=>Math.pow(10,b.find(x=>x.band===k).db/10);
+      let s=0; const d=buf.getChannelData(0);
+      for(let j=0;j<d.length;j++) s+=d[j]*d[j];
+      rows.push({layer:i,
+        level:+(10*Math.log10(Math.max(s/Math.max(1,d.length),1e-12))).toFixed(1),
+        tone:+(10*Math.log10((g('2k-4k')+g('1k-2k'))/Math.max(1e-12,g('250-500')))).toFixed(2)});
+    }
+    if(rows.length<2) return {instrument:name, pad:pads[0].pad, layers:rows.length,
+      levelDb:0, toneDb:0, says:'only one layer could be measured.'};
+    const lv=rows.map(r=>r.level), tn=rows.map(r=>r.tone);
+    const levelDb=+(Math.max.apply(null,lv)-Math.min.apply(null,lv)).toFixed(1);
+    const toneDb =+(Math.max.apply(null,tn)-Math.min.apply(null,tn)).toFixed(2);
+    const says = toneDb>=5 ? 'wide dynamics: a crescendo here changes the tone properly.'
+      : toneDb>=2 ? 'usable dynamics: a crescendo will be heard, though mostly as level.'
+      : 'narrow dynamics: these takes are '+toneDb+'dB apart in tone, so a swell will '
+        +'read as a volume change. Worth writing anyway, but do not expect a new timbre.';
+    return {instrument:(typeof name==='number'?('pad '+name):name), pad:pads[0].pad,
+      layers:rows.length, levelDb, toneDb, perLayer:rows, says};
   },
 
   /* EVERYTHING THAT IS WRONG WITH THIS MIX, IN ONE ANSWER.
@@ -14797,8 +15093,8 @@ function polyFire(pat, p, idx, v, when, pd, fired){
   if(lk && lk.prob!=null && Math.random()>lk.prob) return;
   if(lk && lk.nudge) when+=lk.nudge*pd;
   let hv=v;
-  if(S.human>0){
-    when+=(Math.random()*2-1)*S.human*0.012;
+  if(S.human>0||S.humanDrift>0){
+    when+=humanTimeOffset(when,Math.random);
     hv=clamp(v*(1-Math.random()*S.human*0.22),0.05,1);
     if(when<AC.currentTime) when=AC.currentTime;
   }
@@ -14884,7 +15180,7 @@ function schedStep(barStep, absStep, t){
     let when=t+swing;
     if(lk && lk.nudge) when+=lk.nudge*sd;                        // micro-timing
     let hv=v;
-    if(S.human>0){ when+=(Math.random()*2-1)*S.human*0.012;      // humanize: ±12ms drift + velocity breathing
+    if(S.human>0||S.humanDrift>0){ when+=humanTimeOffset(when,Math.random);   // humanize: jitter, drift, velocity breathing
       hv=clamp(v*(1-Math.random()*S.human*0.22),0.05,1);
       if(when<AC.currentTime) when=AC.currentTime; }
     // NOTES-lane harmony: a column can hold several pitches — fire the pad
@@ -20415,7 +20711,7 @@ function sessionFileDoc(){
     return {sr:b.sampleRate,len:b.length,ch:chans,pk};
   });
   return { fmt:DOC_FMT, v:DOC_V, build:BUILD, name:$('projName').value,
-    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, humanDrift:S.humanDrift, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
@@ -20492,7 +20788,7 @@ const DOC_FMT='mvx880-project';
 /* Every numeric field that ends up in an AudioParam or a clamp that assumes a
    number. docAccept refuses a document that carries any of these as something
    other than a finite number, so the apply path cannot throw half way. */
-const DOC_NUMS=['bpm','swing','human','masterVol','delayFb','silFade','revLvl','revSize',
+const DOC_NUMS=['bpm','swing','human','humanDrift','masterVol','delayFb','silFade','revLvl','revSize',
   'delayDiv','dlyTone','compAmt','midiCh','midiRoot','midiOutCh','scaleRoot',
   'mEqLo','mEqMid','mEqHi','mWidth','mMono','mCeil','mTrim',
   'mMud','mAir','mFocus','mDeess','scDepth','scRel','takeSeed'];
@@ -20666,7 +20962,7 @@ function docAccept(doc,where){
 }
 function applySessionDoc(doc, bufs){
   if(!docAccept(doc,'session load')) return false;
-  S.bpm=(doc.bpm!=null)?doc.bpm:120; S.swing=(doc.swing!=null)?doc.swing:0; S.human=doc.human||0;
+  S.bpm=(doc.bpm!=null)?doc.bpm:120; S.swing=(doc.swing!=null)?doc.swing:0; S.human=doc.human||0; S.humanDrift=clamp(+doc.humanDrift||0,0,1);
   // an older project has no seed: give it one now and keep it from here on, so
   // it at least becomes repeatable from this point rather than never
   S.takeSeed = (doc.takeSeed!=null) ? doc.takeSeed : newTakeSeed();
@@ -21059,7 +21355,7 @@ function snapshotSession(){
     return {sr:b.sampleRate,len:b.length,ch,pk};
   });
   return { fmt:DOC_FMT, v:DOC_V, build:BUILD, t:Date.now(), name:$('projName').value, projId:curProjId,
-    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, humanDrift:S.humanDrift, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
@@ -21177,7 +21473,7 @@ function dirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(autosave,1500); schedu
 let undoStack=[], redoStack=[], _committed=null, undoTimer=0;
 function undoSnap(){
   return { v:DOC_V, name:$('projName').value,
-    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, humanDrift:S.humanDrift, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
@@ -22108,7 +22404,7 @@ async function renderMixInner(padSet, traxSet, opt){
               if(!worst && plk && plk.prob!=null && takeRnd()>plk.prob) continue;
               let pw=ev.when; if(plk&&plk.nudge) pw+=plk.nudge*pd;
               let phv=pv;
-              if(!worst && S.human>0){ pw=Math.max(0.01,pw+(takeRnd()*2-1)*S.human*0.012);
+              if(!worst && (S.human>0||S.humanDrift>0)){ pw=Math.max(0.01,pw+humanTimeOffset(pw,takeRnd));
                 phv=clamp(pv*(1-takeRnd()*S.human*0.22),0.05,1); }
               const pch=(plk&&plk.pitches&&plk.pitches.length)?plk.pitches:[(plk&&plk.pitch)||0];
               const prat=(plk&&plk.rat>1)?plk.rat:1, pIsChord=pch.length>1;
@@ -22127,7 +22423,7 @@ async function renderMixInner(padSet, traxSet, opt){
           if(!worst && lk && lk.prob!=null && takeRnd()>lk.prob) continue;
           let when=t+st*sd+swing; if(lk&&lk.nudge) when+=lk.nudge*sd;
           let hv=v;
-          if(!worst && S.human>0){ when=Math.max(0.01,when+(takeRnd()*2-1)*S.human*0.012);   // same humanize as live playback
+          if(!worst && (S.human>0||S.humanDrift>0)){ when=Math.max(0.01,when+humanTimeOffset(when,takeRnd));   // same humanize as live playback
             hv=clamp(v*(1-takeRnd()*S.human*0.22),0.05,1); }
           /* the same gate the live scheduler applies, against the same pure
              function, so the file cannot disagree with what was played */
@@ -22155,7 +22451,7 @@ async function renderMixInner(padSet, traxSet, opt){
               if(!worst && plk && plk.prob!=null && takeRnd()>plk.prob) continue;
               let pw=f.when; if(plk&&plk.nudge) pw+=plk.nudge*pd;
               let pv=clamp(f.v*hv,0.02,1);
-              if(!worst && S.human>0){ pw=Math.max(0.01,pw+(takeRnd()*2-1)*S.human*0.012);
+              if(!worst && (S.human>0||S.humanDrift>0)){ pw=Math.max(0.01,pw+humanTimeOffset(pw,takeRnd));
                 pv=clamp(pv*(1-takeRnd()*S.human*0.22),0.05,1); }
               const pch=(plk&&plk.pitches&&plk.pitches.length)?plk.pitches:[(plk&&plk.pitch)||0];
               const prat=(plk&&plk.rat>1)?plk.rat:1, pIsChord=pch.length>1;

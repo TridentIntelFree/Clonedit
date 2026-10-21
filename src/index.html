@@ -2216,6 +2216,28 @@ socket. Anything driving a browser can call
 link renders as text, never as markup.</p>
   </div></details>
 
+  <details class="ex" style="margin-top:8px"><summary>Playing, not just placing</summary><div class="ex-body">
+    <p style="margin-top:0"><span class="lit">phrase(name, from, to, opt)</span>
+&mdash; shape notes that are already written. <span class="lit">vel</span>
+multiplies velocity, <span class="lit">time</span> displaces in step fractions,
+<span class="lit">swell</span> gives each note a target to travel to. Shapes:
+cresc, dim, arch, dip, swellend; rit, accel, push, drag, free &mdash; or
+<span class="lit">[[position,value],&hellip;]</span>. It never adds or removes a
+note.</p>
+    <p><span class="lit">{swell: v}</span> as a note lock makes that note change
+dynamic while it sounds. Where the start and end fall in different velocity
+layers the two takes crossfade, so the tone changes and not only the level.
+Sustaining instruments only &mdash; a struck string decays and cannot
+crescendo.</p>
+    <p><span class="lit">dynamics(name)</span> &mdash; how much an instrument
+answers to velocity, in level and in tone. Worth asking before writing
+dynamics: six-layer piano spans about 10dB of tone, a two-layer string about
+1.5dB.</p>
+    <p><span class="lit">humanDrift</span> (0&ndash;1) &mdash; timing that
+drifts rather than jitters. Separate from <span class="lit">human</span>, which
+is per-note noise, and off by default.</p>
+  </div></details>
+
   <details class="ex" style="margin-top:8px"><summary>Checking a mix</summary><div class="ex-body">
     <p style="margin-top:0"><span class="lit">critique()</span> runs the checks
 below and returns only what is wrong. Empty is the good answer.</p>
