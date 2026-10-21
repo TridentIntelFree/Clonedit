@@ -6,7 +6,8 @@
    input is a parser that works on one library. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSfz, sfzNote, sfzRoundRobin, sampleFromName, packFromNames } from '../src/pure/sfz.js';
+import { parseSfz, sfzNote, sfzRoundRobin, sampleFromName, packFromNames,
+  sfzAssemble, sfzIncludes, sfzMacros, sfzResolve } from '../src/pure/sfz.js';
 
 test('note names and numbers both resolve, with middle C at 60', () => {
   assert.equal(sfzNote('60'), 60);
@@ -147,4 +148,99 @@ test('a release token must not be the start of a longer word', () => {
   assert.ok(sampleFromName('relD2.wav').rel);
   assert.ok(!sampleFromName('reload-A4.wav').rel, '"reload" is not a release');
   assert.ok(!sampleFromName('relative_C3.wav').rel);
+});
+
+test('includes resolve against the MAIN sfz, which is what ARIA does', () => {
+  /* Taken from Naked Drums: a fragment inside Data/stereo/ writes
+     "../Data/group/x.txt", which only lands on a real file if ".." is
+     counted from the ENTRY's folder. Resolved from the fragment it becomes
+     Data/Data/group/x.txt — 42 of this library's 90 pieces went missing
+     that way, and the kit parsed to nothing at all. */
+  const files = {
+    'Kit/Stereo/kit.sfz': '#include "../Data/stereo/DI_Snare.txt"',
+    'Kit/Data/stereo/DI_Snare.txt': '#include "../Data/group/snare.txt"',
+    'Kit/Data/group/snare.txt': '<region> sample=snare.wav key=38',
+  };
+  const r = sfzAssemble('Kit/Stereo/kit.sfz', files);
+  assert.deepEqual(r.missing, [], 'nothing should be missing');
+  assert.equal(parseSfz(r.text).samples.length, 1);
+});
+
+test('and the other convention still works where a library uses it', () => {
+  const files = {
+    'inst/kit.sfz': '#include "parts/a.txt"',
+    'inst/parts/a.txt': '#include "b.txt"',          // sibling, relative to itself
+    'inst/parts/b.txt': '<region> sample=a.wav key=36',
+  };
+  const r = sfzAssemble('inst/kit.sfz', files);
+  assert.deepEqual(r.missing, []);
+  assert.equal(parseSfz(r.text).samples.length, 1);
+});
+
+test('a diamond include is spliced once, not nine times', () => {
+  const files = {
+    'a.sfz': '#include "k.txt"\n#include "b.txt"\n#include "c.txt"',
+    'b.txt': '#include "k.txt"\n<region> sample=b.wav key=40',
+    'c.txt': '#include "k.txt"\n<region> sample=c.wav key=41',
+    'k.txt': '<global> volume=-1',
+  };
+  const r = sfzAssemble('a.sfz', files);
+  assert.equal((r.text.match(/volume=-1/g) || []).length, 1);
+  assert.equal(r.included, 4);
+});
+
+test('a missing include is reported rather than silently dropping a kit', () => {
+  const r = sfzAssemble('a.sfz', { 'a.sfz': '#include "gone.txt"\n<region> sample=x.wav key=36' });
+  assert.deepEqual(r.missing, ['gone.txt']);
+  assert.equal(parseSfz(r.text).samples.length, 1, 'what did resolve still parses');
+});
+
+test('sfzIncludes offers both conventions as candidates to fetch', () => {
+  const got = sfzIncludes('#include "../Data/keymap.txt"', 'Kit/Data/stereo/x.txt', 'Kit/Stereo');
+  assert.ok(got.includes('Kit/Data/keymap.txt'), 'entry-relative first: ' + got.join(' '));
+  assert.ok(got.includes('Kit/Data/Data/keymap.txt'), 'and the other, in case');
+});
+
+test('macros substitute in values AND in opcode names', () => {
+  const src = `
+    #define $dir ../Samples
+    #define $ext flac
+    #define $VOL_DI 20
+    <region> locc$VOL_DI=1 sample=$dir/snare/hit.$ext key=38
+  `;
+  const { text, defs } = sfzMacros(src);
+  assert.equal(defs.get('$dir'), '../Samples');
+  assert.ok(text.includes('locc20=1'), 'a macro inside an opcode NAME was substituted');
+  const r = parseSfz(text);
+  assert.equal(r.samples[0].file, '../Samples/snare/hit.flac');
+});
+
+test('the longest macro name wins — $VOL must not eat $VOL_DI', () => {
+  const { text } = sfzMacros('#define $VOL 7\n#define $VOL_DI 20\n<region> locc$VOL_DI=1 sample=a.wav key=36');
+  assert.ok(text.includes('locc20=1'), text);
+});
+
+test('macros defined in terms of other macros resolve, and cycles terminate', () => {
+  const { text } = sfzMacros('#define $root base\n#define $dir $root/Samples\n<region> sample=$dir/a.wav key=36');
+  assert.equal(parseSfz(text).samples[0].file, 'base/Samples/a.wav');
+  const spin = sfzMacros('#define $a $b\n#define $b $a\n<region> sample=$a.wav key=36');
+  assert.ok(typeof spin.text === 'string', 'a cycle must not hang the parser');
+});
+
+test('a #define written mid-region is still a define', () => {
+  /* Verbatim shape from Naked Drums. Anchoring to whole lines left $V51H
+     unresolved — so hivel fell back to 127 and a five-layer kit read as a
+     single band — and left the literal text to be swallowed as lovel's
+     value, so every region also claimed velocity 1. */
+  const src = '<group> key=36\n' +
+    '<region> lovel=1   #define $V51H 27   hivel=$V51H seq_position=3 sample=a.flac\n' +
+    '<region> lovel=28  #define $V52H 52   hivel=$V52H seq_position=3 sample=b.flac\n';
+  const { text } = sfzMacros(src);
+  const r = parseSfz(text);
+  assert.equal(r.samples.length, 2);
+  assert.ok(r.samples[0].vel < r.samples[1].vel,
+    'the two dynamics must differ: ' + r.samples.map(s => s.vel.toFixed(3)).join(' '));
+  assert.ok(r.samples[0].vel < 0.15, 'lovel 1 to hivel 27 is a quiet band, got ' + r.samples[0].vel);
+  assert.equal(r.samples[0].rr, 3);
+  assert.equal(r.samples[0].file, 'a.flac', 'the sample name survived the define beside it');
 });

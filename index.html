@@ -2369,7 +2369,11 @@ var __JBH_PURE = (() => {
     posMod: () => posMod,
     rowUsed: () => rowUsed,
     sampleFromName: () => sampleFromName,
+    sfzAssemble: () => sfzAssemble,
+    sfzIncludes: () => sfzIncludes,
+    sfzMacros: () => sfzMacros,
     sfzNote: () => sfzNote,
+    sfzResolve: () => sfzResolve,
     sfzRoundRobin: () => sfzRoundRobin,
     snapSemitone: () => snapSemitone,
     stepHasLock: () => stepHasLock,
@@ -2994,6 +2998,80 @@ var __JBH_PURE = (() => {
       mapped: samples.length,
       velocitySteps: idxs.length
     };
+  }
+  var INC = /^[ \t]*#include[ \t]+"([^"]+)"[ \t]*$/gmi;
+  function sfzResolve(dir, rel) {
+    const parts = (dir ? dir.split("/") : []).concat(String(rel).replace(/\\/g, "/").split("/"));
+    const out = [];
+    for (const p of parts) {
+      if (!p || p === ".") continue;
+      if (p === "..") {
+        if (out.length) out.pop();
+        continue;
+      }
+      out.push(p);
+    }
+    return out.join("/");
+  }
+  var dirOf = (p) => {
+    const i = String(p).lastIndexOf("/");
+    return i < 0 ? "" : p.slice(0, i);
+  };
+  function sfzIncludes(text, fromPath, entryDir) {
+    const dFrom = dirOf(fromPath || "");
+    const dEntry = entryDir == null ? dFrom : entryDir;
+    const out = [];
+    let m;
+    INC.lastIndex = 0;
+    while (m = INC.exec(String(text || ""))) {
+      const a = sfzResolve(dEntry, m[1]), b = sfzResolve(dFrom, m[1]);
+      out.push(a);
+      if (b !== a) out.push(b);
+    }
+    return [...new Set(out)];
+  }
+  function sfzAssemble(entry, files, maxDepth) {
+    const missing = [], seen = /* @__PURE__ */ new Set();
+    const depth = maxDepth == null ? 24 : maxDepth;
+    const get = (p) => files instanceof Map ? files.get(p) : files[p];
+    const dEntry = dirOf(entry);
+    const walk = (path, level) => {
+      if (level > depth) return "// include depth exceeded\n";
+      const text = get(path);
+      if (text == null) {
+        missing.push(path);
+        return "";
+      }
+      if (seen.has(path)) return "";
+      seen.add(path);
+      const dFrom = dirOf(path);
+      return String(text).replace(INC, (_, rel) => {
+        const a = sfzResolve(dEntry, rel), b = sfzResolve(dFrom, rel);
+        if (get(a) != null || get(b) == null) return walk(a, level + 1);
+        return walk(b, level + 1);
+      });
+    };
+    return { text: walk(entry, 0), missing, included: seen.size };
+  }
+  function sfzMacros(text) {
+    const defs = /* @__PURE__ */ new Map();
+    const body = String(text || "").replace(
+      /#define[ \t]+(\$[A-Za-z0-9_]+)[ \t]+(\S+)/gi,
+      (_, k, v) => {
+        defs.set(k, v);
+        return " ";
+      }
+    );
+    if (!defs.size) return { text: body, defs };
+    const keys = [...defs.keys()].sort((a, b) => b.length - a.length);
+    const re = new RegExp(keys.map((k) => k.replace(/\$/g, "\\$")).join("|"), "g");
+    let out = body;
+    for (let i = 0; i < 6; i++) {
+      const next = out.replace(re, (k) => defs.get(k));
+      if (next === out) break;
+      out = next;
+    }
+    return { text: out, defs };
   }
   return __toCommonJS(index_exports);
 })();

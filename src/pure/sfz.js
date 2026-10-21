@@ -203,3 +203,115 @@ export function packFromNames(files, opt) {
   return { name: o.name || 'imported', samples,
     read: read.length, mapped: samples.length, velocitySteps: idxs.length };
 }
+
+/* ---- #include AND #define -----------------------------------------------
+
+   The first version of this parser read a flat .sfz and was enough for
+   Salamander. It is not enough for most of the rest: ARIA-style libraries
+   are assembled out of dozens of fragments, and the entry file is often
+   nothing but a list of includes. Naked Drums' stereo kit is sixty-two
+   lines, every one of them an #include or a comment, and its sample paths
+   are written $dir/snare/...$ext with both halves defined three files away.
+
+   So before anything can be parsed it has to be ASSEMBLED. Kept pure by
+   taking the files as a map rather than fetching them: the caller walks
+   the include graph, which it has to do anyway to know what to download. */
+
+const INC = /^[ \t]*#include[ \t]+"([^"]+)"[ \t]*$/gmi;
+
+/* Collapse . and .. without a URL, because these are repository paths and
+   may sit above the entry file. */
+export function sfzResolve(dir, rel) {
+  const parts = (dir ? dir.split('/') : []).concat(String(rel).replace(/\\/g, '/').split('/'));
+  const out = [];
+  for (const p of parts) {
+    if (!p || p === '.') continue;
+    if (p === '..') { if (out.length) out.pop(); continue; }
+    out.push(p);
+  }
+  return out.join('/');
+}
+const dirOf = p => { const i = String(p).lastIndexOf('/'); return i < 0 ? '' : p.slice(0, i); };
+
+/* Every path a file pulls in, as candidates to fetch.
+
+   ARIA resolves an #include against the MAIN .sfz's directory, not against
+   the file doing the including — which reads backwards until you see a
+   real library. Naked Drums' Data/stereo/DI_Snare_Tops.txt writes
+   "../Data/group/snare_top1.txt", and that only lands on a real file if
+   ".." is taken from the entry's folder. Resolved from the including file
+   it becomes Data/Data/group/..., which is exactly the 42 missing
+   fragments the first version of this reported.
+
+   Both are returned, entry-relative first, because the other convention
+   exists in the wild and trying it costs one failed lookup. */
+export function sfzIncludes(text, fromPath, entryDir) {
+  const dFrom = dirOf(fromPath || '');
+  const dEntry = entryDir == null ? dFrom : entryDir;
+  const out = [];
+  let m; INC.lastIndex = 0;
+  while ((m = INC.exec(String(text || '')))) {
+    const a = sfzResolve(dEntry, m[1]), b = sfzResolve(dFrom, m[1]);
+    out.push(a); if (b !== a) out.push(b);
+  }
+  return [...new Set(out)];
+}
+
+/* Splice the graph into one document. A file already spliced is not
+   spliced again: these graphs are diamonds, not trees, and a library that
+   includes one keymap from nine places should not get nine copies. */
+export function sfzAssemble(entry, files, maxDepth) {
+  const missing = [], seen = new Set();
+  const depth = maxDepth == null ? 24 : maxDepth;
+  const get = p => (files instanceof Map ? files.get(p) : files[p]);
+  const dEntry = dirOf(entry);
+  const walk = (path, level) => {
+    if (level > depth) return '// include depth exceeded\n';
+    const text = get(path);
+    if (text == null) { missing.push(path); return ''; }
+    if (seen.has(path)) return '';
+    seen.add(path);
+    const dFrom = dirOf(path);
+    return String(text).replace(INC, (_, rel) => {
+      const a = sfzResolve(dEntry, rel), b = sfzResolve(dFrom, rel);
+      if (get(a) != null || get(b) == null) return walk(a, level + 1);
+      return walk(b, level + 1);
+    });
+  };
+  return { text: walk(entry, 0), missing, included: seen.size };
+}
+
+/* #define $NAME value, substituted everywhere — including inside opcode
+   NAMES, which is why this is textual rather than per-value: real files
+   write locc$VOL_DI=1 and amplitude_oncc$VOL_DI=$RANGE_VOL. Longest names
+   first, or $VOL would eat the front of $VOL_DI. */
+export function sfzMacros(text) {
+  const defs = new Map();
+  /* NOT ANCHORED TO A LINE. Real libraries write a define in the middle of
+     a region, between two opcodes:
+
+       <region> lovel=1   #define $V51H 27   hivel=$V51H sample=k.flac
+
+     Matching only whole lines left both halves broken: the macro never
+     resolved, so every hivel fell back to 127 and a five-layer kit read as
+     one band — and the opcode scanner then swallowed "#define $V51H 27" as
+     the VALUE of lovel, so every region claimed velocity 1 as well. The
+     value is a single token, which is how every define in the wild is
+     written. */
+  const body = String(text || '').replace(
+    /#define[ \t]+(\$[A-Za-z0-9_]+)[ \t]+(\S+)/gi,
+    (_, k, v) => { defs.set(k, v); return ' '; });
+  if (!defs.size) return { text: body, defs };
+  const keys = [...defs.keys()].sort((a, b) => b.length - a.length);
+  const re = new RegExp(keys.map(k => k.replace(/\$/g, '\\$')).join('|'), 'g');
+  /* Applied repeatedly because a define may itself be written in terms of
+     another; bounded, because a pair that refer to each other must not
+     spin forever. */
+  let out = body;
+  for (let i = 0; i < 6; i++) {
+    const next = out.replace(re, k => defs.get(k));
+    if (next === out) break;
+    out = next;
+  }
+  return { text: out, defs };
+}
