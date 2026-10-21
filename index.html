@@ -5974,7 +5974,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R221 · 2026-10-21 · notes that are played, not placed';
+const BUILD = 'JBH-88 · R222 · 2026-10-21 · strings play lines, not pads';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -13477,6 +13477,97 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     d.levelDb=(wet.lufs!=null&&dryR.lufs!=null)?+(wet.lufs-dryR.lufs).toFixed(1):null;
     if(!d.bypassed.length) d.notes=['this pad has no processing on it — nothing was bypassed, so the two renders are the same audio'];
     return d;
+  },
+
+  /* HOLES IN A PART THAT IS SUPPOSED TO BE HELD.
+
+     A string bed was written as one long note a bar. Each note stopped
+     inside its own bar, so the section went play, cut, silence, play —
+     four times every four bars — and with a swell on each one it
+     crescendoed INTO the gap, surging to full a moment before dropping to
+     nothing. It lurched, and it was the first thing a listener noticed.
+
+     Every balance check passed. levels() reports RMS across the whole bar
+     and the average of a part that surges and gaps is a perfectly
+     reasonable number: the fault is in the shape, and an average is
+     exactly the statistic that destroys shape. 18% of that bed was
+     silence and nothing said so.
+
+     So this looks at the envelope rather than its mean. An instrument's
+     pads are rendered together, the result is walked in 50ms frames
+     between its first and last sound, and the frames that are effectively
+     silent are counted. A bed with 2% holes is continuous; the one above
+     read 18%.
+
+     Percussion is excluded, and so is anything whose notes are short:
+     gaps are what a staccato part IS, and a check that complains about
+     silence between plucks is a check nobody will read twice. */
+  async continuity(name, opt){
+    const o=opt||{}, src=o.src||'pat';
+    let pads, label;
+    if(typeof name==='number'){ pads=[clamp(name|0,0,NPADS-1)]; label='pad '+(name|0); }
+    else{
+      pads=[]; for(let i=0;i<NPADS;i++) if(S.pads[i] && S.pads[i].inst===name) pads.push(i);
+      label=name;
+      if(!pads.length) throw new Error('no instrument "'+name+'" — call instrument() first');
+    }
+    const sch=await window.MVX.schedule({src, full:true});
+    if(!sch || !sch.events) return null;
+    const mine=sch.events.filter(e=>pads.indexOf(e.pad)>=0);
+    if(!mine.length) return {instrument:label, pads, notes:0, holesPct:null,
+      says:'nothing from this instrument plays in '+(src==='song'?'the song':'this pattern')+'.'};
+    const held=mine.filter(e=>e.len!=null).map(e=>e.len);
+    const medLen=held.length ? held.sort((a,b)=>a-b)[held.length>>1] : 0;
+    const buf=await renderMix(new Set(pads), new Set(), {loops:o.loops||1, src, noTail:true});
+    if(!buf) return null;
+    const d=buf.getChannelData(0), sr=buf.sampleRate, w=Math.floor(sr*0.05);
+    const e=[]; for(let i=0;i+w<d.length;i+=w){ let s=0;
+      for(let j=i;j<i+w;j++) s+=d[j]*d[j]; e.push(Math.sqrt(s/w)); }
+    /* only the span the instrument is actually meant to be sounding over —
+       silence before the first entry and after the last is not a hole. */
+    let a=0, b=e.length-1;
+    const peak=Math.max.apply(null,e), floor=peak*0.02;
+    while(a<e.length && e[a]<floor) a++;
+    while(b>a && e[b]<floor) b--;
+    const seg=e.slice(a,b+1);
+    if(seg.length<4) return {instrument:label, pads, notes:mine.length, holesPct:null,
+      says:'too short to judge.'};
+    const mean=seg.reduce((x,y)=>x+y,0)/seg.length;
+    const quiet=seg.map(v=>v<mean*0.1);
+    const holes=quiet.filter(Boolean).length;
+    const holesPct=Math.round(100*holes/seg.length);
+    const sustained=medLen>=0.6;
+
+    /* SILENCE IS NOT THE FAULT. WHERE IT FALLS IS.
+
+       A Beethoven quartet voice rests a quarter of the time and sounds
+       like a quartet; a bed whose notes stop a beat short of every bar
+       line rests a tenth of the time and lurches. The difference is not
+       how much silence there is but whether it arrives on a schedule, so
+       the frames are folded over one bar and the gaps are looked at by
+       phase. Counting alone would scold real chamber writing and excuse
+       the thing that actually went wrong. */
+    const barSec=4*(60/Math.max(1,Math.abs(S.bpm)));
+    const perBar=Math.max(4, Math.round(barSec/0.05));
+    let late=0;
+    quiet.forEach((q,i)=>{ if(q && ((a+i)%perBar)/perBar>=0.72) late++; });
+    const latePct=holes? Math.round(100*late/holes) : 0;
+    const pulsing = sustained && holesPct>=6 && latePct>=55;
+
+    const says = pulsing
+      ? holesPct+'% of this part is silence and '+latePct+'% of it sits at the '
+        +'end of a bar. A held line that stops short of every bar line pulses. '
+        +'Give the notes enough length to overlap the next one.'
+      : !sustained ? 'short notes, so gaps are the part rather than a fault.'
+      : holesPct<=5 ? 'continuous — the bed holds.'
+      : holesPct<=25 ? holesPct+'% silence, spread through the part rather than '
+        +'landing on the barline — that is what rests in a line look like.'
+      : holesPct+'% of this part is silence. That is a lot for a held line, '
+        +'though it is not falling on the barline, so it reads as rests rather '
+        +'than as a part that keeps stopping.';
+    return {instrument:label, pads:pads.length, notes:mine.length,
+      medianNoteSec:+medLen.toFixed(2), sustained, holesPct,
+      gapsAtBarEndPct:latePct, pulsing, says};
   },
 
   /* HOW MUCH AN INSTRUMENT ACTUALLY ANSWERS TO VELOCITY.

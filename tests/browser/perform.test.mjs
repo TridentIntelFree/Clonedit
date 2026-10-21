@@ -213,6 +213,49 @@ export default async function ({ browser, base }) {
       /crescendo|swell/.test(dyn.p.says) && /crescendo|swell/.test(dyn.v.says),
       dyn.v.says.slice(0, 70) + '…');
 
+    /* ---- 5. HOLES IN A PART THAT IS MEANT TO BE HELD -------------------- */
+    t.head('continuity() FINDS THE GAPS AN AVERAGE HIDES');
+    const cont = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('vn',
+        { pack: 'samples/vsco-orch.json', match: '^vo:violins-', lo: 58, hi: 79, max: 9 });
+      const pads = window.JBH.instPads('vn').map(p => p.pad);
+      await window.JBH.batch(pads.map(p => ['pad', p,
+        { sus: 1, rel: 0.5, dec: 6, att: 0.05, ftype: 'off', rev: 0, gain: 1.3, relBufs: [] }]));
+      window.JBH.set({ bpm: 100, human: 0, humanDrift: 0, revLvl: 0, masterVol: 1, compAmt: 0 });
+      const notes = [70, 75, 74, 72];
+      const run = async (beats) => {
+        window.JBH.pattern(0, { plen: 64, clear: true });
+        await window.JBH.batch(notes.map((m, bar) =>
+          ['note', 'vn', m, bar * 16, 0.5, { beats }]));
+        return await window.JBH.continuity('vn', { src: 'pat' });
+      };
+      /* 3.6 beats stops inside a 4-beat bar; 4.6 overlaps the next one. */
+      const gappy = await run(3.6), tied = await run(4.6);
+      /* and a plucked part must NOT be scolded for the gaps that define it */
+      window.JBH.pattern(0, { plen: 64, clear: true });
+      await window.JBH.batch([0, 8, 16, 24, 32, 40, 48, 56].map((st, i) =>
+        ['note', 'vn', notes[i % 4], st, 0.6, { beats: 0.25 }]));
+      const plucked = await window.JBH.continuity('vn', { src: 'pat' });
+      return { gappy, tied, plucked };
+    });
+    /* 3.6 beats of a 4-beat bar is 10% silence, all of it in the same
+       place every bar. Quantity alone cannot call that a fault — a real
+       quartet voice rests 25% of the time — so what is asserted is that
+       the gaps are recognised as LANDING ON THE BARLINE. */
+    t.ok('a bed whose notes stop inside the bar is called pulsing',
+      cont.gappy.pulsing === true,
+      cont.gappy.holesPct + '% silence, ' + cont.gappy.gapsAtBarEndPct
+      + '% of it at the end of a bar');
+    t.ok('tying them over the barline closes it',
+      cont.tied.holesPct <= 6 && cont.tied.pulsing === false,
+      cont.tied.holesPct + '% once the notes overlap');
+    t.ok('and it says what to do rather than only that something is wrong',
+      /overlap/.test(cont.gappy.says), cont.gappy.says.slice(0, 64) + '…');
+    t.ok('a short-note part is not scolded for the gaps that define it',
+      cont.plucked.sustained === false && /short notes/.test(cont.plucked.says),
+      'median ' + cont.plucked.medianNoteSec + 's → ' + cont.plucked.says.slice(0, 40));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
