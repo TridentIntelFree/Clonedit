@@ -9500,6 +9500,38 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       note:nn==null?null:nn};
   },
 
+  /* ANOTHER RECORDING OF THE SAME NOTE, STACKED ON A PAD.
+
+     A pad has had layers and a layMode of 'vel' since long before any of
+     this — pick the recording by how hard the note was struck, which is
+     what a real sampled instrument does and what no filter can imitate: a
+     fortissimo piano note is not a brightened mezzo one, it is a different
+     event, with the hammer compressing against the string and the board
+     thumping behind it.
+
+     It was never reachable and never used, because nothing in the shipped
+     library had more than one dynamic per note. With one that does, this
+     is the whole difference. */
+  async layer(padIdx, id){
+    const i=clamp(padIdx|0,0,NPADS-1), p=S.pads[i];
+    if(p.bufId<0) throw new Error('pad '+(i+1)+' has no sound to layer onto');
+    if((p.layers||[]).length>=LAY_MAX)
+      throw new Error('pad '+(i+1)+' already holds '+LAY_MAX+' layers');
+    const sm=(packManifest&&packManifest.samples||[]).find(x=>x.id===id);
+    if(!sm) throw new Error('no sound "'+id+'" in the loaded pack');
+    ensureAudio();
+    if(!packHaveKeys.has(LIBKEY(id))) await libFetchStore(sm);
+    const rec=await idbGetS(IDB_LIB,LIBKEY(id));
+    if(!rec || !rec.bytes) throw new Error('"'+id+'" is not on the device');
+    const buf=await decode(rec.bytes.slice(0));
+    S.buffers.push(buf);
+    p.layers=p.layers||[];
+    p.layers.push({bufId:S.buffers.length-1, start:0, end:1, gain:1, pitch:0});
+    try{ drawPads(); drawEdit(); }catch(e){}
+    dirty();
+    return {pad:i, id, layers:p.layers.length, mode:p.layMode};
+  },
+
   /* ---- INSTRUMENTS: WRITE NOTES, NOT PADS -----------------------------
 
      Everything above is pad-shaped, and music is not. Writing a piano part
@@ -9530,23 +9562,43 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         && (o.lo==null||x.n>=o.lo) && (o.hi==null||x.n<=o.hi))
       .sort((a,b)=>a.n-b.n);
     if(!cand.length) throw new Error('no pitched samples match /'+(o.match||name)+'/ in this pack');
-    /* THINNED EVENLY, NOT TRUNCATED. A piano is 49 samples and a project is
-       64 pads; taking the first N would give five octaves of bass and
-       nothing above. An even thinning keeps the whole range and only
-       widens the worst bend. */
-    const max=Math.min(o.max||cand.length, NPADS);
-    if(cand.length>max){
-      const keep=[], stride=(cand.length-1)/(max-1);
-      for(let i=0;i<max;i++) keep.push(cand[Math.round(i*stride)]);
-      cand=keep.filter((x,i,a)=>a.indexOf(x)===i);
+    /* THINNED BY NOTE, NOT BY SAMPLE. A piano is 49 samples and a project
+       is 64 pads; taking the first N would give five octaves of bass and
+       nothing above, so the thinning is even across the range.
+
+       It has to count NOTES. Written to count samples it worked fine
+       until a pack arrived carrying several dynamics per note, and then
+       it thinned a 120-sample six-dynamic piano down to 64 entries and
+       tore the velocity groups apart — the instrument came back claiming
+       four dynamics, with a different four on every note. */
+    const notes=[...new Set(cand.map(x=>x.n))].sort((a,b)=>a-b);
+    const maxNotes=Math.min(o.max||notes.length, NPADS);
+    if(notes.length>maxNotes){
+      const keep=new Set(), stride=(notes.length-1)/(maxNotes-1);
+      for(let i=0;i<maxNotes;i++) keep.add(notes[Math.round(i*stride)]);
+      cand=cand.filter(x=>keep.has(x.n));
     }
-    const placed=[];
-    for(const x of cand){
+    /* SEVERAL RECORDINGS OF ONE NOTE GO ON ONE PAD, NOT SEVERAL.
+
+       A pack that carries dynamics marks them with `vel`. Those are not
+       different notes and must not take different pads: they are the same
+       key struck harder, and the engine picks between them at trigger time
+       from the velocity written on the step. Softest first, because
+       pickLayerIdx walks the base buffer and then the layers in order. */
+    const byNote=new Map();
+    for(const x of cand){ const k=x.n;
+      (byNote.get(k)||byNote.set(k,[]).get(k)).push(x); }
+    const placed=[]; let layered=0;
+    for(const [n2,group] of [...byNote.entries()].sort((a,b)=>a[0]-b[0])){
       const pad=firstEmptyPad();
       if(pad<0) break;                 // out of pads: say what was managed
-      await window.MVX.sound(x.s.id, pad);
+      group.sort((a,b)=>((a.s.vel==null?0.5:a.s.vel)-(b.s.vel==null?0.5:b.s.vel)));
+      const use=group.slice(0, 1+LAY_MAX);
+      await window.MVX.sound(use[0].s.id, pad);
+      for(let k=1;k<use.length;k++) await window.MVX.layer(pad, use[k].s.id);
+      if(use.length>1){ S.pads[pad].layMode='vel'; layered++; }
       S.pads[pad].inst=name;
-      placed.push({pad, note:x.n, id:x.s.id});
+      placed.push({pad, note:n2, id:use[0].s.id, dynamics:use.length});
     }
     /* The worst bend this layout will ever ask for is half the widest gap
        between neighbouring roots — worth knowing BEFORE writing the part. */
@@ -9554,7 +9606,10 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     for(let i=1;i<placed.length;i++) gap=Math.max(gap, placed[i].note-placed[i-1].note);
     return { name, pads:placed.map(p=>p.pad), roots:placed.map(p=>p.note),
       lo:placed.length?placed[0].note:null, hi:placed.length?placed[placed.length-1].note:null,
-      worstBend:Math.ceil(gap/2), short:cand.length-placed.length || undefined };
+      worstBend:Math.ceil(gap/2),
+      dynamics:placed.length?Math.max(...placed.map(p=>p.dynamics)):0,
+      velocityLayered:layered||undefined,
+      short:byNote.size-placed.length || undefined };
   },
   /* The pads an instrument is laid across, nearest first for a given note. */
   instPads(name){ const out=[];

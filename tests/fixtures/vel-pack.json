@@ -1,0 +1,53 @@
+{
+ "name": "velocity layer fixture",
+ "samples": [
+  {
+   "id": "tv:n60v0",
+   "name": "Test 60",
+   "cat": "KEYS",
+   "file": "../../samples/vsco/cello/cello_C4.wav",
+   "note": 60,
+   "vel": 0.2
+  },
+  {
+   "id": "tv:n60v1",
+   "name": "Test 60",
+   "cat": "KEYS",
+   "file": "../../samples/vsco/cello/cello_E4.wav",
+   "note": 60,
+   "vel": 0.55
+  },
+  {
+   "id": "tv:n60v2",
+   "name": "Test 60",
+   "cat": "KEYS",
+   "file": "../../samples/vsco/cello/cello_G4.wav",
+   "note": 60,
+   "vel": 0.9
+  },
+  {
+   "id": "tv:n36v0",
+   "name": "Test 36",
+   "cat": "KEYS",
+   "file": "../../samples/vsco/cello/cello_C2.wav",
+   "note": 36,
+   "vel": 0.2
+  },
+  {
+   "id": "tv:n36v1",
+   "name": "Test 36",
+   "cat": "KEYS",
+   "file": "../../samples/vsco/cello/cello_E2.wav",
+   "note": 36,
+   "vel": 0.55
+  },
+  {
+   "id": "tv:n36v2",
+   "name": "Test 36",
+   "cat": "KEYS",
+   "file": "../../samples/vsco/cello/cello_G2.wav",
+   "note": 36,
+   "vel": 0.9
+  }
+ ]
+}

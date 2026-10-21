@@ -71,6 +71,7 @@ relay between two machines, and this is not that.
 | `jbh_render` | Bounce and report length, peak, RMS, clipping, silence. `only` renders a STEM; `loudness` adds integrated LUFS, true peak and crest — the terms a release is judged on. Optionally write a WAV. |
 | `jbh_automate` | A line that moves while the bar plays: crescendo, a filter opening across the pattern. Says whether the target is baked into the bounce or live only. |
 | `jbh_auto_targets` | What can be automated, and where each sits now. |
+| `jbh_layer` | Stack another recording of the same note on a pad. With `layMode:'vel'` the engine picks by how hard the note is struck — the one thing no filter can imitate. |
 | `jbh_instrument` / `jbh_note` / `jbh_figure` | **Write notes, not pads.** Lay an instrument across a range, then write notes and chords by MIDI number; the pad and the semitone offset are worked out for you, and a figure's cells are grouped by register so nothing is stretched far. |
 | `jbh_save_session` / `jbh_load_session` | The file a person opens. |
 | `jbh_song_doc` | The compact text format — smaller, readable, but sixteen pads only and no tape lanes or instrument. |

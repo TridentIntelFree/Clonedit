@@ -96,6 +96,16 @@ instead of analysing the rendered WAV: an onset detector written to check
 some tuplet figures reported 146 onsets for four piano notes, twice. The app
 has always known exactly when every note lands.
 
+**One recording per note is not an instrument.** `samples/salamander.json`
+is the Salamander Grand Piano (Alexander Holm, CC-BY 3.0): a Yamaha C5
+sampled every minor third with sixteen recorded dynamics. `instrument()`
+stacks several of them on each pad as velocity layers, and `layMode:'vel'`
+picks between them by how hard the step was struck. Measured on one note,
+that is 31 dB of timbre between pianissimo and fortissimo. A filter and a
+waveshaper over a single mezzo sample manage about 16 dB, and it does not
+sound the same, because a loud note on a piano is a different event rather
+than a brighter one.
+
 **Transposing a sampled instrument is not free.** Pitch is playback rate
 unless `keepTime` is on, and a piano moved a fifth stops sounding like a
 piano — the hammer noise and the beating of the unisons move with it. For

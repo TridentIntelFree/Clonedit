@@ -754,6 +754,57 @@ export default async function ({ browser, base }) {
       'kick rms ' + fin.kick.rms + ' · hat rms ' + fin.hat.rms);
     t.ok('and a lane can be cleared again', fin.cleared === true);
 
+    /* THE SAME NOTE, RECORDED SEVERAL TIMES.
+
+       "They haven't sounded right at all yet." They had not, and the
+       reason was never the mixing: every instrument loaded here was ONE
+       recording per note, stretched across every dynamic. A filter was
+       darkening the quiet notes and a waveshaper inventing a top end the
+       mp3 never had — about 16dB of manufactured timbre where a real
+       piano moves 31dB, and none of it with the right character, because
+       a fortissimo note is a different event and not a brighter one.
+
+       A pad has had `layers` and a layMode of 'vel' since long before
+       any of this, and it had never once been used, because nothing in
+       the shipped library carried more than one dynamic per note. */
+    t.head('VELOCITY LAYERS — THE SAME NOTE, RECORDED SEVERAL TIMES');
+    const vel = await page.evaluate(async () => {
+      const o = {}, w = ms => new Promise(r => setTimeout(r, ms));
+      JBH.clear(); await w(250);
+      JBH.set({ bpm: 100, human: 0, swing: 0 });
+      o.lay = await JBH.instrument('tv', { pack: 'tests/fixtures/vel-pack.json',
+        match: '^tv:' });
+      const pads = JBH.instPads('tv');
+      o.pads = pads.length;
+      const p = S.pads[pads[0].pad];
+      o.mode = p.layMode;
+      o.layers = (p.layers || []).length;
+      /* EVERY LAYER MUST BE ITS OWN RECORDING. Sharing a buffer would mean
+         the velocity switch picks between identical audio, which measures
+         as working and sounds like nothing. */
+      o.distinctBuffers = new Set([p.bufId, ...(p.layers || []).map(l => l.bufId)]).size;
+      /* and the engine must choose a different one as the note gets harder */
+      o.picked = [0.1, 0.5, 0.95].map(v => pickLayerIdx({}, p, pads[0].pad, v));
+      /* THE REGRESSION. instrument() thinned its candidates by SAMPLE, and
+         once a pack carried several dynamics per note that tore the groups
+         apart — a six-dynamic piano came back claiming four, with a
+         different four on every note. It counts notes now. */
+      o.dynamics = o.lay.dynamics;
+      o.layered = o.lay.velocityLayered;
+      return o;
+    });
+    t.ok('an instrument built from a multi-dynamic pack stacks them on one pad',
+      vel.pads === 2 && vel.layers === 2 && vel.mode === 'vel',
+      vel.pads + ' notes, ' + vel.layers + ' layers on the first, mode ' + vel.mode);
+    t.ok('EVERY DYNAMIC IS ITS OWN RECORDING, not the same buffer three times',
+      vel.distinctBuffers === 3, vel.distinctBuffers + ' distinct buffers across 3 dynamics');
+    t.ok('and a harder note really does select a different one',
+      vel.picked[0] === 0 && vel.picked[2] === 2 && vel.picked[0] !== vel.picked[1],
+      'velocity 0.1 / 0.5 / 0.95 → layer ' + vel.picked.join(' / '));
+    t.ok('THINNING COUNTS NOTES, so the velocity groups survive it',
+      vel.dynamics === 3 && vel.layered === 2,
+      'counting samples instead shredded a six-dynamic piano down to four');
+
     t.head('AND IT TELLS YOU HOW TO CONNECT ONE — IN LINES THAT WORK');
     const how = await page.evaluate(async () => {
       const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));

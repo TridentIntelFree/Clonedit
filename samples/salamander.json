@@ -1,0 +1,1446 @@
+{
+ "name": "Salamander Grand Piano (CC-BY 3.0 · Alexander Holm)",
+ "note": "Yamaha C5, 48kHz/24bit source. Sampled every minor third, six of the sixteen recorded dynamics.",
+ "samples": [
+  {
+   "id": "sal:A0v1",
+   "name": "Piano A0",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A0v1.mp3",
+   "note": 21,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:A0v4",
+   "name": "Piano A0",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A0v4.mp3",
+   "note": 21,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:A0v7",
+   "name": "Piano A0",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A0v7.mp3",
+   "note": 21,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:A0v10",
+   "name": "Piano A0",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A0v10.mp3",
+   "note": 21,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:A0v13",
+   "name": "Piano A0",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A0v13.mp3",
+   "note": 21,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:A0v16",
+   "name": "Piano A0",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A0v16.mp3",
+   "note": 21,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:A1v1",
+   "name": "Piano A1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A1v1.mp3",
+   "note": 33,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:A1v4",
+   "name": "Piano A1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A1v4.mp3",
+   "note": 33,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:A1v7",
+   "name": "Piano A1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A1v7.mp3",
+   "note": 33,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:A1v10",
+   "name": "Piano A1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A1v10.mp3",
+   "note": 33,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:A1v13",
+   "name": "Piano A1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A1v13.mp3",
+   "note": 33,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:A1v16",
+   "name": "Piano A1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A1v16.mp3",
+   "note": 33,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:C1v1",
+   "name": "Piano C1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C1v1.mp3",
+   "note": 24,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:C1v4",
+   "name": "Piano C1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C1v4.mp3",
+   "note": 24,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:C1v7",
+   "name": "Piano C1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C1v7.mp3",
+   "note": 24,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:C1v10",
+   "name": "Piano C1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C1v10.mp3",
+   "note": 24,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:C1v13",
+   "name": "Piano C1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C1v13.mp3",
+   "note": 24,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:C1v16",
+   "name": "Piano C1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C1v16.mp3",
+   "note": 24,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Ds1v1",
+   "name": "Piano Ds1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds1v1.mp3",
+   "note": 27,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Ds1v4",
+   "name": "Piano Ds1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds1v4.mp3",
+   "note": 27,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Ds1v7",
+   "name": "Piano Ds1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds1v7.mp3",
+   "note": 27,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Ds1v10",
+   "name": "Piano Ds1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds1v10.mp3",
+   "note": 27,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Ds1v13",
+   "name": "Piano Ds1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds1v13.mp3",
+   "note": 27,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Ds1v16",
+   "name": "Piano Ds1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds1v16.mp3",
+   "note": 27,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Fs1v1",
+   "name": "Piano Fs1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs1v1.mp3",
+   "note": 30,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Fs1v4",
+   "name": "Piano Fs1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs1v4.mp3",
+   "note": 30,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Fs1v7",
+   "name": "Piano Fs1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs1v7.mp3",
+   "note": 30,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Fs1v10",
+   "name": "Piano Fs1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs1v10.mp3",
+   "note": 30,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Fs1v13",
+   "name": "Piano Fs1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs1v13.mp3",
+   "note": 30,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Fs1v16",
+   "name": "Piano Fs1",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs1v16.mp3",
+   "note": 30,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:A2v1",
+   "name": "Piano A2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A2v1.mp3",
+   "note": 45,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:A2v4",
+   "name": "Piano A2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A2v4.mp3",
+   "note": 45,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:A2v7",
+   "name": "Piano A2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A2v7.mp3",
+   "note": 45,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:A2v10",
+   "name": "Piano A2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A2v10.mp3",
+   "note": 45,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:A2v13",
+   "name": "Piano A2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A2v13.mp3",
+   "note": 45,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:A2v16",
+   "name": "Piano A2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A2v16.mp3",
+   "note": 45,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:C2v1",
+   "name": "Piano C2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C2v1.mp3",
+   "note": 36,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:C2v4",
+   "name": "Piano C2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C2v4.mp3",
+   "note": 36,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:C2v7",
+   "name": "Piano C2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C2v7.mp3",
+   "note": 36,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:C2v10",
+   "name": "Piano C2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C2v10.mp3",
+   "note": 36,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:C2v13",
+   "name": "Piano C2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C2v13.mp3",
+   "note": 36,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:C2v16",
+   "name": "Piano C2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C2v16.mp3",
+   "note": 36,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Ds2v1",
+   "name": "Piano Ds2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds2v1.mp3",
+   "note": 39,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Ds2v4",
+   "name": "Piano Ds2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds2v4.mp3",
+   "note": 39,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Ds2v7",
+   "name": "Piano Ds2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds2v7.mp3",
+   "note": 39,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Ds2v10",
+   "name": "Piano Ds2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds2v10.mp3",
+   "note": 39,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Ds2v13",
+   "name": "Piano Ds2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds2v13.mp3",
+   "note": 39,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Ds2v16",
+   "name": "Piano Ds2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds2v16.mp3",
+   "note": 39,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Fs2v1",
+   "name": "Piano Fs2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs2v1.mp3",
+   "note": 42,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Fs2v4",
+   "name": "Piano Fs2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs2v4.mp3",
+   "note": 42,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Fs2v7",
+   "name": "Piano Fs2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs2v7.mp3",
+   "note": 42,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Fs2v10",
+   "name": "Piano Fs2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs2v10.mp3",
+   "note": 42,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Fs2v13",
+   "name": "Piano Fs2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs2v13.mp3",
+   "note": 42,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Fs2v16",
+   "name": "Piano Fs2",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs2v16.mp3",
+   "note": 42,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:A3v1",
+   "name": "Piano A3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A3v1.mp3",
+   "note": 57,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:A3v4",
+   "name": "Piano A3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A3v4.mp3",
+   "note": 57,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:A3v7",
+   "name": "Piano A3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A3v7.mp3",
+   "note": 57,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:A3v10",
+   "name": "Piano A3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A3v10.mp3",
+   "note": 57,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:A3v13",
+   "name": "Piano A3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A3v13.mp3",
+   "note": 57,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:A3v16",
+   "name": "Piano A3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A3v16.mp3",
+   "note": 57,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:C3v1",
+   "name": "Piano C3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C3v1.mp3",
+   "note": 48,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:C3v4",
+   "name": "Piano C3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C3v4.mp3",
+   "note": 48,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:C3v7",
+   "name": "Piano C3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C3v7.mp3",
+   "note": 48,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:C3v10",
+   "name": "Piano C3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C3v10.mp3",
+   "note": 48,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:C3v13",
+   "name": "Piano C3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C3v13.mp3",
+   "note": 48,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:C3v16",
+   "name": "Piano C3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C3v16.mp3",
+   "note": 48,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Ds3v1",
+   "name": "Piano Ds3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds3v1.mp3",
+   "note": 51,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Ds3v4",
+   "name": "Piano Ds3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds3v4.mp3",
+   "note": 51,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Ds3v7",
+   "name": "Piano Ds3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds3v7.mp3",
+   "note": 51,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Ds3v10",
+   "name": "Piano Ds3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds3v10.mp3",
+   "note": 51,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Ds3v13",
+   "name": "Piano Ds3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds3v13.mp3",
+   "note": 51,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Ds3v16",
+   "name": "Piano Ds3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds3v16.mp3",
+   "note": 51,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Fs3v1",
+   "name": "Piano Fs3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs3v1.mp3",
+   "note": 54,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Fs3v4",
+   "name": "Piano Fs3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs3v4.mp3",
+   "note": 54,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Fs3v7",
+   "name": "Piano Fs3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs3v7.mp3",
+   "note": 54,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Fs3v10",
+   "name": "Piano Fs3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs3v10.mp3",
+   "note": 54,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Fs3v13",
+   "name": "Piano Fs3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs3v13.mp3",
+   "note": 54,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Fs3v16",
+   "name": "Piano Fs3",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs3v16.mp3",
+   "note": 54,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:A4v1",
+   "name": "Piano A4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A4v1.mp3",
+   "note": 69,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:A4v4",
+   "name": "Piano A4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A4v4.mp3",
+   "note": 69,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:A4v7",
+   "name": "Piano A4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A4v7.mp3",
+   "note": 69,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:A4v10",
+   "name": "Piano A4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A4v10.mp3",
+   "note": 69,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:A4v13",
+   "name": "Piano A4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A4v13.mp3",
+   "note": 69,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:A4v16",
+   "name": "Piano A4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A4v16.mp3",
+   "note": 69,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:C4v1",
+   "name": "Piano C4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C4v1.mp3",
+   "note": 60,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:C4v4",
+   "name": "Piano C4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C4v4.mp3",
+   "note": 60,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:C4v7",
+   "name": "Piano C4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C4v7.mp3",
+   "note": 60,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:C4v10",
+   "name": "Piano C4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C4v10.mp3",
+   "note": 60,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:C4v13",
+   "name": "Piano C4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C4v13.mp3",
+   "note": 60,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:C4v16",
+   "name": "Piano C4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C4v16.mp3",
+   "note": 60,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Ds4v1",
+   "name": "Piano Ds4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds4v1.mp3",
+   "note": 63,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Ds4v4",
+   "name": "Piano Ds4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds4v4.mp3",
+   "note": 63,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Ds4v7",
+   "name": "Piano Ds4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds4v7.mp3",
+   "note": 63,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Ds4v10",
+   "name": "Piano Ds4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds4v10.mp3",
+   "note": 63,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Ds4v13",
+   "name": "Piano Ds4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds4v13.mp3",
+   "note": 63,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Ds4v16",
+   "name": "Piano Ds4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds4v16.mp3",
+   "note": 63,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Fs4v1",
+   "name": "Piano Fs4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs4v1.mp3",
+   "note": 66,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Fs4v4",
+   "name": "Piano Fs4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs4v4.mp3",
+   "note": 66,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Fs4v7",
+   "name": "Piano Fs4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs4v7.mp3",
+   "note": 66,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Fs4v10",
+   "name": "Piano Fs4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs4v10.mp3",
+   "note": 66,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Fs4v13",
+   "name": "Piano Fs4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs4v13.mp3",
+   "note": 66,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Fs4v16",
+   "name": "Piano Fs4",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs4v16.mp3",
+   "note": 66,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:A5v1",
+   "name": "Piano A5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A5v1.mp3",
+   "note": 81,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:A5v4",
+   "name": "Piano A5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A5v4.mp3",
+   "note": 81,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:A5v7",
+   "name": "Piano A5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A5v7.mp3",
+   "note": 81,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:A5v10",
+   "name": "Piano A5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A5v10.mp3",
+   "note": 81,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:A5v13",
+   "name": "Piano A5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A5v13.mp3",
+   "note": 81,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:A5v16",
+   "name": "Piano A5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A5v16.mp3",
+   "note": 81,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:C5v1",
+   "name": "Piano C5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C5v1.mp3",
+   "note": 72,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:C5v4",
+   "name": "Piano C5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C5v4.mp3",
+   "note": 72,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:C5v7",
+   "name": "Piano C5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C5v7.mp3",
+   "note": 72,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:C5v10",
+   "name": "Piano C5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C5v10.mp3",
+   "note": 72,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:C5v13",
+   "name": "Piano C5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C5v13.mp3",
+   "note": 72,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:C5v16",
+   "name": "Piano C5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C5v16.mp3",
+   "note": 72,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Ds5v1",
+   "name": "Piano Ds5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds5v1.mp3",
+   "note": 75,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Ds5v4",
+   "name": "Piano Ds5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds5v4.mp3",
+   "note": 75,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Ds5v7",
+   "name": "Piano Ds5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds5v7.mp3",
+   "note": 75,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Ds5v10",
+   "name": "Piano Ds5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds5v10.mp3",
+   "note": 75,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Ds5v13",
+   "name": "Piano Ds5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds5v13.mp3",
+   "note": 75,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Ds5v16",
+   "name": "Piano Ds5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds5v16.mp3",
+   "note": 75,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Fs5v1",
+   "name": "Piano Fs5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs5v1.mp3",
+   "note": 78,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Fs5v4",
+   "name": "Piano Fs5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs5v4.mp3",
+   "note": 78,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Fs5v7",
+   "name": "Piano Fs5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs5v7.mp3",
+   "note": 78,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Fs5v10",
+   "name": "Piano Fs5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs5v10.mp3",
+   "note": 78,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Fs5v13",
+   "name": "Piano Fs5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs5v13.mp3",
+   "note": 78,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Fs5v16",
+   "name": "Piano Fs5",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs5v16.mp3",
+   "note": 78,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:A6v1",
+   "name": "Piano A6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A6v1.mp3",
+   "note": 93,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:A6v4",
+   "name": "Piano A6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A6v4.mp3",
+   "note": 93,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:A6v7",
+   "name": "Piano A6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A6v7.mp3",
+   "note": 93,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:A6v10",
+   "name": "Piano A6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A6v10.mp3",
+   "note": 93,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:A6v13",
+   "name": "Piano A6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A6v13.mp3",
+   "note": 93,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:A6v16",
+   "name": "Piano A6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A6v16.mp3",
+   "note": 93,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:C6v1",
+   "name": "Piano C6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C6v1.mp3",
+   "note": 84,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:C6v4",
+   "name": "Piano C6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C6v4.mp3",
+   "note": 84,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:C6v7",
+   "name": "Piano C6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C6v7.mp3",
+   "note": 84,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:C6v10",
+   "name": "Piano C6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C6v10.mp3",
+   "note": 84,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:C6v13",
+   "name": "Piano C6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C6v13.mp3",
+   "note": 84,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:C6v16",
+   "name": "Piano C6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C6v16.mp3",
+   "note": 84,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Ds6v1",
+   "name": "Piano Ds6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds6v1.mp3",
+   "note": 87,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Ds6v4",
+   "name": "Piano Ds6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds6v4.mp3",
+   "note": 87,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Ds6v7",
+   "name": "Piano Ds6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds6v7.mp3",
+   "note": 87,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Ds6v10",
+   "name": "Piano Ds6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds6v10.mp3",
+   "note": 87,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Ds6v13",
+   "name": "Piano Ds6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds6v13.mp3",
+   "note": 87,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Ds6v16",
+   "name": "Piano Ds6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds6v16.mp3",
+   "note": 87,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Fs6v1",
+   "name": "Piano Fs6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs6v1.mp3",
+   "note": 90,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Fs6v4",
+   "name": "Piano Fs6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs6v4.mp3",
+   "note": 90,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Fs6v7",
+   "name": "Piano Fs6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs6v7.mp3",
+   "note": 90,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Fs6v10",
+   "name": "Piano Fs6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs6v10.mp3",
+   "note": 90,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Fs6v13",
+   "name": "Piano Fs6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs6v13.mp3",
+   "note": 90,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Fs6v16",
+   "name": "Piano Fs6",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs6v16.mp3",
+   "note": 90,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:A7v1",
+   "name": "Piano A7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A7v1.mp3",
+   "note": 105,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:A7v4",
+   "name": "Piano A7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A7v4.mp3",
+   "note": 105,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:A7v7",
+   "name": "Piano A7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A7v7.mp3",
+   "note": 105,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:A7v10",
+   "name": "Piano A7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A7v10.mp3",
+   "note": 105,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:A7v13",
+   "name": "Piano A7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A7v13.mp3",
+   "note": 105,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:A7v16",
+   "name": "Piano A7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/A7v16.mp3",
+   "note": 105,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:C7v1",
+   "name": "Piano C7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C7v1.mp3",
+   "note": 96,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:C7v4",
+   "name": "Piano C7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C7v4.mp3",
+   "note": 96,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:C7v7",
+   "name": "Piano C7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C7v7.mp3",
+   "note": 96,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:C7v10",
+   "name": "Piano C7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C7v10.mp3",
+   "note": 96,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:C7v13",
+   "name": "Piano C7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C7v13.mp3",
+   "note": 96,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:C7v16",
+   "name": "Piano C7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C7v16.mp3",
+   "note": 96,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Ds7v1",
+   "name": "Piano Ds7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds7v1.mp3",
+   "note": 99,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Ds7v4",
+   "name": "Piano Ds7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds7v4.mp3",
+   "note": 99,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Ds7v7",
+   "name": "Piano Ds7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds7v7.mp3",
+   "note": 99,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Ds7v10",
+   "name": "Piano Ds7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds7v10.mp3",
+   "note": 99,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Ds7v13",
+   "name": "Piano Ds7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds7v13.mp3",
+   "note": 99,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Ds7v16",
+   "name": "Piano Ds7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Ds7v16.mp3",
+   "note": 99,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:Fs7v1",
+   "name": "Piano Fs7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs7v1.mp3",
+   "note": 102,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:Fs7v4",
+   "name": "Piano Fs7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs7v4.mp3",
+   "note": 102,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:Fs7v7",
+   "name": "Piano Fs7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs7v7.mp3",
+   "note": 102,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:Fs7v10",
+   "name": "Piano Fs7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs7v10.mp3",
+   "note": 102,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:Fs7v13",
+   "name": "Piano Fs7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs7v13.mp3",
+   "note": 102,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:Fs7v16",
+   "name": "Piano Fs7",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/Fs7v16.mp3",
+   "note": 102,
+   "vel": 0.96875
+  },
+  {
+   "id": "sal:C8v1",
+   "name": "Piano C8",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C8v1.mp3",
+   "note": 108,
+   "vel": 0.03125
+  },
+  {
+   "id": "sal:C8v4",
+   "name": "Piano C8",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C8v4.mp3",
+   "note": 108,
+   "vel": 0.21875
+  },
+  {
+   "id": "sal:C8v7",
+   "name": "Piano C8",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C8v7.mp3",
+   "note": 108,
+   "vel": 0.40625
+  },
+  {
+   "id": "sal:C8v10",
+   "name": "Piano C8",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C8v10.mp3",
+   "note": 108,
+   "vel": 0.59375
+  },
+  {
+   "id": "sal:C8v13",
+   "name": "Piano C8",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C8v13.mp3",
+   "note": 108,
+   "vel": 0.78125
+  },
+  {
+   "id": "sal:C8v16",
+   "name": "Piano C8",
+   "cat": "KEYS",
+   "file": "https://raw.githubusercontent.com/tambien/Piano/master/audio/C8v16.mp3",
+   "note": 108,
+   "vel": 0.96875
+  }
+ ]
+}

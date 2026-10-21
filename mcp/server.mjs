@@ -183,6 +183,15 @@ const TOOLS = [
       name: { type: 'string' }, pack: { type: 'string' }, match: { type: 'string' },
       lo: { type: 'integer' }, hi: { type: 'integer' }, max: { type: 'integer' } } } },
 
+  { name: 'jbh_layer', description:
+      'Stack another recording of the SAME note on a pad. With the pad in layMode "vel" the '
+      + 'engine picks between them by how hard the step was struck, which is what a real '
+      + 'sampled instrument does and what no filter imitates: a fortissimo note is a different '
+      + 'event, not a brighter one. jbh_instrument does this for you when the pack carries '
+      + 'dynamics.',
+    inputSchema: { type: 'object', required: ['pad', 'id'], properties: {
+      pad: { type: 'integer' }, id: { type: 'string' } } } },
+
   { name: 'jbh_note', description:
       'WRITE A NOTE OR A CHORD BY MIDI NUMBER, on an instrument laid out by jbh_instrument. '
       + 'Resolves the pad and the semitone offset itself, and notes landing on one pad at one '
@@ -353,6 +362,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_euclid':      return ok(await jbh('euclid', [a.pad, a.hits, a.steps, a.rot, a.vel, a.locks]));
       case 'jbh_params':      return ok(await jbh('params'));
       case 'jbh_instrument':  return ok(await jbh('instrument', [a.name, { pack: a.pack, match: a.match, lo: a.lo, hi: a.hi, max: a.max }]));
+      case 'jbh_layer':       return ok(await jbh('layer', [a.pad, a.id]));
       case 'jbh_note':        return ok(await jbh('note', [a.name, a.midi, a.step, a.vel, a.locks]));
       case 'jbh_figure':      return ok(await jbh('figure', [a.name, { notes: a.notes, bpm: a.bpm, cells: a.cells, fire: a.fire, match: a.match, maxBend: a.maxBend }]));
       case 'jbh_schedule':    return ok(await jbh('schedule', [{ src: a.src, loops: a.loops, full: a.full }]));
