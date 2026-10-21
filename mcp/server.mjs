@@ -183,6 +183,13 @@ const TOOLS = [
       name: { type: 'string' }, pack: { type: 'string' }, match: { type: 'string' },
       lo: { type: 'integer' }, hi: { type: 'integer' }, max: { type: 'integer' } } } },
 
+  { name: 'jbh_packs', description:
+      'The sample packs this build knows about, what a pack URL may point at, and what is '
+      + 'currently loaded. jbh_pack accepts a .json manifest OR an .sfz — the format nearly '
+      + 'every free library ships, which states which recording plays at which note, dynamic '
+      + 'and alternate, and which are release samples.',
+    inputSchema: { type: 'object', properties: {} } },
+
   { name: 'jbh_layer', description:
       'Stack another recording of the SAME note on a pad. With the pad in layMode "vel" the '
       + 'engine picks between them by how hard the step was struck, which is what a real '
@@ -362,6 +369,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_euclid':      return ok(await jbh('euclid', [a.pad, a.hits, a.steps, a.rot, a.vel, a.locks]));
       case 'jbh_params':      return ok(await jbh('params'));
       case 'jbh_instrument':  return ok(await jbh('instrument', [a.name, { pack: a.pack, match: a.match, lo: a.lo, hi: a.hi, max: a.max }]));
+      case 'jbh_packs':       return ok(await jbh('packs'));
       case 'jbh_layer':       return ok(await jbh('layer', [a.pad, a.id]));
       case 'jbh_note':        return ok(await jbh('note', [a.name, a.midi, a.step, a.vel, a.locks]));
       case 'jbh_figure':      return ok(await jbh('figure', [a.name, { notes: a.notes, bpm: a.bpm, cells: a.cells, fire: a.fire, match: a.match, maxBend: a.maxBend }]));

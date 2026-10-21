@@ -1,0 +1,16 @@
+// A small SFZ fixture: two notes, two dynamics, two alternates each,
+// plus a release. Points at samples already in the repo so the test
+// needs no network.
+<control> default_path=../../samples/vsco/cello/
+<global> ampeg_release=0.3
+<group> lokey=60 hikey=60 pitch_keycenter=60
+<region> sample=cello_C4.wav lovel=1 hivel=63 seq_position=1
+<region> sample=cello_E4.wav lovel=1 hivel=63 seq_position=2
+<region> sample=cello_E4.wav lovel=64 hivel=127 seq_position=1
+<region> sample=cello_C4.wav lovel=64 hivel=127 seq_position=2
+<group> lokey=45 hikey=45 pitch_keycenter=45
+<region> sample=cello_A3.wav lovel=1 hivel=63 seq_position=1
+<region> sample=cello_F3.wav lovel=1 hivel=63 seq_position=2
+<region> sample=cello_F3.wav lovel=64 hivel=127 seq_position=1
+<region> sample=cello_A3.wav lovel=64 hivel=127 seq_position=2
+<region> sample=cello_G2.wav trigger=release

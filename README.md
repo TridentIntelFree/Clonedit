@@ -96,6 +96,16 @@ instead of analysing the rendered WAV: an onset detector written to check
 some tuplet figures reported 146 onsets for four piano notes, twice. The app
 has always known exactly when every note lands.
 
+**Sample packs.** `pack(url)` takes this app's own `.json` manifest or an
+**`.sfz`** — the format nearly every free library ships, which states which
+recording plays at which note, dynamic and alternate, and which are release
+samples. `instrument()` turns that into velocity bands with round-robin
+alternates, a crossfade across the band edges, and the release recordings
+attached. In the app, **SMPL → SAMPLE PACKS → IMPORT FROM THIS DEVICE** takes
+an `.sfz` plus its audio, or loose audio files mapped from their filenames
+(`A4v8`, `C#3`, `Snare_mf_rr3`, `rel1`), and reports what it worked out so a
+wrong guess is visible.
+
 **One recording per note is not an instrument.** `samples/salamander.json`
 is the Salamander Grand Piano (Alexander Holm, CC-BY 3.0): a Yamaha C5
 sampled every minor third with sixteen recorded dynamics. `instrument()`

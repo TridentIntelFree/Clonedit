@@ -906,6 +906,58 @@ export default async function ({ browser, base }) {
       'hard ' + smp.hard.toFixed(3) + ' vs crossfaded ' + smp.soft.toFixed(3) +
       ' (1.0 would be completely different audio)');
 
+    /* READING SOMEBODY ELSE'S LIBRARY.
+
+       The sampler grew velocity layers, round robin and release recordings
+       over three days and then kept running out of material to put in
+       them: every instrument added here cost an afternoon of working out
+       where a library's samples live and what its filenames mean. The
+       blocker had stopped being the engine and become the sourcing.
+
+       SFZ already states all of it — which recording at which note, which
+       dynamic, which alternate, and which are releases — and nearly every
+       free library ships one. Reading theirs beats hand-writing ours. */
+    t.head('AN SFZ LOADS LIKE ANY OTHER PACK');
+    const sfz = await page.evaluate(async () => {
+      const o = {}, w = ms => new Promise(r => setTimeout(r, ms));
+      JBH.clear(); await w(250);
+      o.listed = JBH.packs().builtIn.length;
+      o.accepts = JBH.packs().accepts.length;
+      o.count = (await JBH.pack('tests/fixtures/mini.sfz')).length;
+      const m = JBH.packs().loaded;
+      o.loaded = { sfz: m.sfz, alternates: m.alternates, releases: m.releases };
+      /* two files share a basename across the regions — the ids must not */
+      const ids = JBH.sounds().map(s => s.id);
+      o.uniqueIds = new Set(ids).size === ids.length;
+
+      o.lay = await JBH.instrument('vc', { match: '^mini:' });
+      const pad = JBH.instPads('vc')[0].pad, p = S.pads[pad];
+      o.pad = { mode: p.layMode, rr: p.layRR, xf: p.layXf > 0,
+        layers: (p.layers || []).length, rel: (p.relBufs || []).length };
+      /* alternates inside a band, and a different band when struck harder */
+      const g = {};
+      o.soft = [0.2, 0.2, 0.2].map(v => pickLayerIdx(g, p, pad, v));
+      o.loud = [0.9, 0.9].map(v => pickLayerIdx(g, p, pad, v));
+      return o;
+    });
+    t.ok('the built-in packs are discoverable instead of being paths you must know',
+      sfz.listed >= 5 && sfz.accepts === 2, sfz.listed + ' packs listed');
+    t.ok('AN SFZ IS PARSED INTO A PLAYABLE PACK',
+      sfz.count === 9 && sfz.loaded.sfz === true,
+      sfz.count + ' regions playable');
+    t.ok('its alternates and releases are recognised',
+      sfz.loaded.alternates === 2 && sfz.loaded.releases === 1,
+      JSON.stringify(sfz.loaded));
+    t.ok('and two regions sharing a filename get distinct ids',
+      sfz.uniqueIds, 'downloads cache under the id — a collision serves the wrong audio');
+    t.ok('IT BECOMES VELOCITY BANDS WITH ALTERNATES AND A DAMPER, in one call',
+      sfz.pad.mode === 'velrr' && sfz.pad.rr === 2 && sfz.pad.xf && sfz.pad.rel === 1,
+      JSON.stringify(sfz.pad));
+    t.ok('a soft note cycles its takes, a loud one comes from the other band',
+      sfz.soft[0] !== sfz.soft[1] && sfz.soft[0] === sfz.soft[2] &&
+      Math.min(...sfz.loud) > Math.max(...sfz.soft),
+      'soft → ' + sfz.soft.join(',') + ' · loud → ' + sfz.loud.join(','));
+
     t.head('AND IT TELLS YOU HOW TO CONNECT ONE — IN LINES THAT WORK');
     const how = await page.evaluate(async () => {
       const o = {}; const wait = ms => new Promise(x => setTimeout(x, ms));

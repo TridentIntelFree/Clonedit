@@ -15,3 +15,4 @@ export * from './morph.js';
 export * from './poly.js';
 export * from './ir.js';
 export * from './install.js';
+export * from './sfz.js';

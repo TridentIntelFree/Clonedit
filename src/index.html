@@ -405,26 +405,48 @@ someone else's.</p>
   <label class="row" style="font-size:10px;color:var(--txt-dim);gap:5px;cursor:pointer">
     <input type="checkbox" id="kitBeat" checked> also lay a starter beat in the current pattern (clears it)
   </label>
-  <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">— download online, stored on-device, used offline</span></h3>
+  <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">&mdash; downloaded once, stored on-device, used offline</span></h3>
   <div class="row">
     <select aria-label="Sample pack" id="packPick" class="grow">
-      <option value="samples/vsco-real.json">★ REAL Cello + Acoustic Drums (CC0)</option>
-      <option value="samples/jbh-drums.json">JBH Drums — Kit One (synth, CC0)</option>
-      <option value="samples/real-cc0-full.json">Full Kit — Drums + Real (CC0)</option>
-      <option value="samples/real-cc0.json">Real Instruments · Core (CC0)</option>
+      <option value="samples/salamander.json">&#9733; Salamander Grand Piano &mdash; 6 dynamics (CC-BY)</option>
+      <option value="samples/vsco-real.json">Cello + Acoustic Drums (CC0)</option>
+      <option value="samples/real-cc0-full.json">Full Kit &mdash; Drums + Real Instruments (CC0)</option>
+      <option value="samples/real-cc0.json">Real Instruments &middot; Core (CC0)</option>
+      <option value="samples/jbh-drums.json">JBH Drums &mdash; Kit One (synth, CC0)</option>
       <option value="samples/manifest.json">JBH Studio (synth)</option>
-      <option value="custom">Custom URL…</option>
+      <option value="custom">From a URL&hellip;</option>
     </select>
-    <button id="btnPackLoad" class="needsnet" title="download the chosen sample pack to this device">LOAD PACK</button>
+    <button id="btnPackLoad" class="needsnet" title="Fetch the pack index">LOAD</button>
   </div>
   <div class="row" id="packUrlRow" style="display:none">
-    <input type="text" id="packUrl" class="grow" value="samples/vsco-real.json" spellcheck="false" autocapitalize="off" placeholder="https://…/manifest.json">
+    <input type="text" id="packUrl" class="grow" value="samples/salamander.json" spellcheck="false"
+      autocapitalize="off" placeholder="https://&hellip;/instrument.sfz or /pack.json">
   </div>
   <div class="row">
-    <span class="lbl">ON DEVICE</span>
-    <span id="packStore" style="font-size:10px;color:var(--lcd);flex:1">—</span>
-    <button id="btnPackPersist">KEEP OFFLINE</button>
+    <button id="btnPackFiles" class="grow">IMPORT FROM THIS DEVICE</button>
+    <button id="btnPackPersist" title="Ask the browser not to evict stored samples">KEEP OFFLINE</button>
   </div>
+  <input type="file" id="packFiles" multiple style="display:none"
+    accept=".sfz,.json,.wav,.mp3,.ogg,.flac,.aif,.aiff,audio/*">
+  <div id="packImport" style="font-size:10px;color:var(--txt-dim);margin:2px 0 4px"></div>
+  <div class="row">
+    <span class="lbl">ON DEVICE</span>
+    <span id="packStore" style="font-size:10px;color:var(--lcd);flex:1">&mdash;</span>
+  </div>
+  <details class="ex"><summary>Pack formats</summary><div class="ex-body">
+    <p><b>SFZ</b> is the format most free libraries ship. It maps which
+recording plays at which note, dynamic and alternate, and marks release
+samples &mdash; everything the sampler needs. Give the URL of an
+<span class="lit">.sfz</span> and the sample paths resolve against it.</p>
+    <p><b>IMPORT FROM THIS DEVICE</b> takes an <span class="lit">.sfz</span>
+plus its audio files, or just the audio files. Without an SFZ the mapping is
+read from the filenames &mdash; <span class="lit">A4v8</span>,
+<span class="lit">C#3</span>, <span class="lit">Snare_mf_rr3</span>,
+<span class="lit">rel1</span> &mdash; and the panel reports what it worked out
+so a wrong guess is visible.</p>
+    <p>A pack&rsquo;s own <span class="lit">.json</span> manifest still works.
+Imported audio is stored on this device only; it is not uploaded anywhere.</p>
+  </div></details>
   <div id="packList" style="max-height:210px;overflow-y:auto;margin:6px 0"></div>
   <h3>MY DOWNLOADS <span style="color:var(--txt-dim);letter-spacing:0">— every sound saved on this device, from any pack</span></h3>
   <div class="row">

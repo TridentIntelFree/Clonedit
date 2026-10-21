@@ -9603,6 +9603,23 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     return {pad:i, id, layers:p.layers.length, mode:p.layMode};
   },
 
+  /* THE PACKS THIS BUILD KNOWS ABOUT, and what a URL may point at.
+
+     pack() has always taken a URL and said nothing about where to find
+     one, so an agent either knew the paths already or could not load a
+     sound at all. */
+  packs(){
+    const sel=$('packPick');
+    const built=sel ? [...sel.options].filter(o=>o.value!=='custom')
+      .map(o=>({url:o.value, name:o.textContent.replace(/^\u2605\s*/,'').trim()})) : [];
+    const m=packManifest;
+    return { builtIn:built,
+      accepts:['.json manifest','.sfz (velocity layers, round robin, releases)'],
+      loaded: m ? { name:m.name, url:m._url||null, samples:(m.samples||[]).length,
+        sfz:!!m.sfz, local:!!m.local, alternates:m.rr||1,
+        releases:(m.samples||[]).filter(x=>x.rel).length } : null };
+  },
+
   /* THE NOISE A KEY MAKES COMING BACK UP.
 
      Attaches one or more release recordings to a pad. They sound where the
@@ -9694,7 +9711,15 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       const use=group.slice(0, 1+LAY_MAX);
       await window.MVX.sound(use[0].s.id, pad);
       for(let k=1;k<use.length;k++) await window.MVX.layer(pad, use[k].s.id);
-      if(use.length>1){ S.pads[pad].layMode='vel'; layered++; }
+      if(use.length>1){
+        /* A pack carrying alternates gets both: the velocity band chooses
+           the dynamic, the round robin chooses which take of it. */
+        const rr=Math.max(1, (o.rr!=null?o.rr|0:(packManifest&&packManifest.rr)|0)||1);
+        if(rr>1 && use.length>=rr*2){ S.pads[pad].layMode='velrr'; S.pads[pad].layRR=rr; }
+        else S.pads[pad].layMode='vel';
+        if(o.xfade!==false) S.pads[pad].layXf=(o.xfade==null?0.3:+o.xfade);
+        layered++;
+      }
       S.pads[pad].inst=name;
       placed.push({pad, note:n2, id:use[0].s.id, dynamics:use.length});
     }
@@ -10986,19 +11011,37 @@ function drawPackList(){
   });
 }
 function packBase(){ try{ return new URL($('packUrl').value, location.href).href; }catch(e){ return $('packUrl').value; } }
+/* A pack is either this app's own manifest or somebody else's SFZ, decided
+   by what comes back rather than by the file extension — plenty of libraries
+   serve an .sfz with no extension at all, or a .txt. */
+function packFromText(txt, url, name){
+  const t=String(txt||'').trim();
+  if(t[0]==='{'){
+    const man=JSON.parse(t);
+    if(!man || !Array.isArray(man.samples)) throw new Error('not a sample manifest');
+    return man;
+  }
+  if(!/<(region|group|global|control)>/i.test(t))
+    throw new Error('not a manifest and not an SFZ');
+  const base=(name||url||'pack').replace(/^.*\//,'').replace(/\.[^.]+$/,'');
+  const man=parseSfz(t, {prefix:base.toLowerCase().replace(/[^a-z0-9]+/g,'')||'sfz', name:base});
+  if(!man.samples.length) throw new Error('SFZ parsed but names no playable region');
+  man.sfz=true; man.rr=sfzRoundRobin(man.samples);
+  return man;
+}
 async function loadPack(){
   const url=packBase();
   lcd('LOADING PACK …');
   try{
     const res=await fetch(url,{cache:'no-store'});
     if(!res.ok) throw new Error('HTTP '+res.status);
-    const man=await res.json();
-    if(!man || !Array.isArray(man.samples)) throw new Error('bad manifest');
+    const man=packFromText(await res.text(), url);
     man._url=url;
     packManifest=man;
     await idbPutS(IDB_LIB,'__manifest',man);   // cache so the list survives offline
     await refreshHaveKeys(); drawPackList(); updateStoreMeter();
-    lcd('PACK: '+(man.name||'loaded')+' · '+man.samples.length+' samples — tap GET to store.');
+    lcd('PACK: '+(man.name||'loaded')+' · '+man.samples.length+' samples'
+      +(man.sfz?' · SFZ'+(man.rr>1?', '+man.rr+' alternates':''):'')+' — tap GET to store.');
   }catch(err){
     // offline / failed fetch — fall back to the last cached manifest
     try{ const cached=await idbGetS(IDB_LIB,'__manifest');
@@ -11056,6 +11099,87 @@ $('packPick').addEventListener('change',e=>{
   else{ $('packUrlRow').style.display='none'; $('packUrl').value=v; }
 });
 $('btnPackLoad').addEventListener('click',loadPack);
+/* ---------------- IMPORTING A PACK FROM THE DEVICE ------------------------
+
+   Every instrument added here so far cost an afternoon of working out where
+   somebody's samples live and what their filenames mean. That is the actual
+   bottleneck — the sampler has had velocity layers, alternates and release
+   recordings for a while and kept running out of material to put in them.
+
+   So: hand it a folder. An .sfz among the files is used if present, because
+   it states the mapping rather than implying it; otherwise the filenames are
+   read. Either way the panel says what it worked out, because a mapping
+   guessed wrong and applied silently is worse than one that failed. */
+$('btnPackFiles').addEventListener('click',()=>$('packFiles').click());
+$('packFiles').addEventListener('change',async e=>{
+  const files=[...(e.target.files||[])];
+  e.target.value='';
+  if(!files.length) return;
+  const say=t=>{ $('packImport').textContent=t; };
+  const audio=files.filter(f=>/\.(wav|mp3|ogg|flac|aif|aiff|m4a|opus|webm)$/i.test(f.name));
+  const sfz=files.find(f=>/\.sfz$/i.test(f.name));
+  const json=files.find(f=>/\.json$/i.test(f.name));
+  if(!audio.length){ say('No audio files in that selection.');
+    lcd('IMPORT: no audio files selected.'); return; }
+  say('Reading '+files.length+' file'+(files.length>1?'s':'')+'\u2026');
+  try{
+    ensureAudio();
+    /* The map is by BASENAME, because an .sfz refers to its samples by a
+       path relative to itself and a file picker hands back no directories
+       on most browsers. Two files with the same name in different folders
+       are a real possibility and the second one is reported, not silently
+       preferred. */
+    const byName=new Map(), dupes=[];
+    for(const f of audio){ const k=f.name.replace(/^.*[\\/]/,'').toLowerCase();
+      if(byName.has(k)) dupes.push(f.name); else byName.set(k,f); }
+    let man;
+    if(sfz){
+      man=parseSfz(await sfz.text(), {prefix:'imp', name:sfz.name.replace(/\.sfz$/i,'')});
+      man.rr=sfzRoundRobin(man.samples);
+    }else if(json){
+      man=JSON.parse(await json.text());
+      if(!man||!Array.isArray(man.samples)) throw new Error('not a sample manifest');
+    }else{
+      man=packFromNames(audio, {prefix:'imp', name:'imported'});
+      man.rr=sfzRoundRobin(man.samples);
+    }
+    /* Store the bytes under each sample's id, the same place a download
+       goes, so everything downstream — the list, the pads, the session —
+       cannot tell an imported sample from a fetched one. */
+    let stored=0, missing=[];
+    for(const sm of man.samples){
+      const key=String(sm.file||sm.id).replace(/^.*[\\/]/,'').toLowerCase();
+      const f=byName.get(key);
+      if(!f){ missing.push(sm.file||sm.id); continue; }
+      const bytes=await f.arrayBuffer();
+      await idbPutS(IDB_LIB,LIBKEY(sm.id),
+        {id:sm.id,name:sm.name,cat:sm.cat,type:f.type||'audio/wav',bytes});
+      stored++;
+      if(stored%12===0) say('Stored '+stored+' of '+man.samples.length+'\u2026');
+    }
+    man.samples=man.samples.filter(sm=>!missing.includes(sm.file||sm.id));
+    if(!man.samples.length) throw new Error('none of the mapped samples were in the selection');
+    man._url='imported:'+(sfz?sfz.name:'files');
+    man.local=true;
+    packManifest=man;
+    await idbPutS(IDB_LIB,'__manifest',man);
+    await refreshHaveKeys(); drawPackList(); drawDownloads(); updateStoreMeter();
+    const dyn=new Set(man.samples.filter(x=>x.vel!=null).map(x=>Math.round(x.vel*127))).size;
+    const notes=new Set(man.samples.filter(x=>x.note!=null).map(x=>x.note)).size;
+    say(stored+' stored \u00b7 '+notes+' note'+(notes===1?'':'s')
+      +(dyn>1?' \u00b7 '+dyn+' dynamics':'')
+      +(man.rr>1?' \u00b7 '+man.rr+' alternates':'')
+      +(man.samples.some(x=>x.rel)?' \u00b7 releases':'')
+      +(sfz?' \u00b7 from SFZ':' \u00b7 read from filenames')
+      +(missing.length?' \u00b7 '+missing.length+' referenced file(s) not selected':'')
+      +(dupes.length?' \u00b7 '+dupes.length+' duplicate name(s) ignored':''));
+    plog('Imported '+stored+' samples as "'+(man.name||'imported')+'".');
+    lcd('PACK IMPORTED \u2014 '+stored+' samples on this device.');
+  }catch(err){
+    say('Import failed: '+(err.message||'unreadable'));
+    lcd('IMPORT FAILED: '+(err.message||'unreadable'));
+  }
+});
 $('btnPackPersist').addEventListener('click',async ()=>{
   if(navigator.storage && navigator.storage.persist){
     const ok=await navigator.storage.persist();

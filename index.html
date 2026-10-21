@@ -421,26 +421,48 @@ someone else's.</p>
   <label class="row" style="font-size:10px;color:var(--txt-dim);gap:5px;cursor:pointer">
     <input type="checkbox" id="kitBeat" checked> also lay a starter beat in the current pattern (clears it)
   </label>
-  <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">— download online, stored on-device, used offline</span></h3>
+  <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">&mdash; downloaded once, stored on-device, used offline</span></h3>
   <div class="row">
     <select aria-label="Sample pack" id="packPick" class="grow">
-      <option value="samples/vsco-real.json">★ REAL Cello + Acoustic Drums (CC0)</option>
-      <option value="samples/jbh-drums.json">JBH Drums — Kit One (synth, CC0)</option>
-      <option value="samples/real-cc0-full.json">Full Kit — Drums + Real (CC0)</option>
-      <option value="samples/real-cc0.json">Real Instruments · Core (CC0)</option>
+      <option value="samples/salamander.json">&#9733; Salamander Grand Piano &mdash; 6 dynamics (CC-BY)</option>
+      <option value="samples/vsco-real.json">Cello + Acoustic Drums (CC0)</option>
+      <option value="samples/real-cc0-full.json">Full Kit &mdash; Drums + Real Instruments (CC0)</option>
+      <option value="samples/real-cc0.json">Real Instruments &middot; Core (CC0)</option>
+      <option value="samples/jbh-drums.json">JBH Drums &mdash; Kit One (synth, CC0)</option>
       <option value="samples/manifest.json">JBH Studio (synth)</option>
-      <option value="custom">Custom URL…</option>
+      <option value="custom">From a URL&hellip;</option>
     </select>
-    <button id="btnPackLoad" class="needsnet" title="download the chosen sample pack to this device">LOAD PACK</button>
+    <button id="btnPackLoad" class="needsnet" title="Fetch the pack index">LOAD</button>
   </div>
   <div class="row" id="packUrlRow" style="display:none">
-    <input type="text" id="packUrl" class="grow" value="samples/vsco-real.json" spellcheck="false" autocapitalize="off" placeholder="https://…/manifest.json">
+    <input type="text" id="packUrl" class="grow" value="samples/salamander.json" spellcheck="false"
+      autocapitalize="off" placeholder="https://&hellip;/instrument.sfz or /pack.json">
   </div>
   <div class="row">
-    <span class="lbl">ON DEVICE</span>
-    <span id="packStore" style="font-size:10px;color:var(--lcd);flex:1">—</span>
-    <button id="btnPackPersist">KEEP OFFLINE</button>
+    <button id="btnPackFiles" class="grow">IMPORT FROM THIS DEVICE</button>
+    <button id="btnPackPersist" title="Ask the browser not to evict stored samples">KEEP OFFLINE</button>
   </div>
+  <input type="file" id="packFiles" multiple style="display:none"
+    accept=".sfz,.json,.wav,.mp3,.ogg,.flac,.aif,.aiff,audio/*">
+  <div id="packImport" style="font-size:10px;color:var(--txt-dim);margin:2px 0 4px"></div>
+  <div class="row">
+    <span class="lbl">ON DEVICE</span>
+    <span id="packStore" style="font-size:10px;color:var(--lcd);flex:1">&mdash;</span>
+  </div>
+  <details class="ex"><summary>Pack formats</summary><div class="ex-body">
+    <p><b>SFZ</b> is the format most free libraries ship. It maps which
+recording plays at which note, dynamic and alternate, and marks release
+samples &mdash; everything the sampler needs. Give the URL of an
+<span class="lit">.sfz</span> and the sample paths resolve against it.</p>
+    <p><b>IMPORT FROM THIS DEVICE</b> takes an <span class="lit">.sfz</span>
+plus its audio files, or just the audio files. Without an SFZ the mapping is
+read from the filenames &mdash; <span class="lit">A4v8</span>,
+<span class="lit">C#3</span>, <span class="lit">Snare_mf_rr3</span>,
+<span class="lit">rel1</span> &mdash; and the panel reports what it worked out
+so a wrong guess is visible.</p>
+    <p>A pack&rsquo;s own <span class="lit">.json</span> manifest still works.
+Imported audio is stored on this device only; it is not uploaded anywhere.</p>
+  </div></details>
   <div id="packList" style="max-height:210px;overflow-y:auto;margin:6px 0"></div>
   <h3>MY DOWNLOADS <span style="color:var(--txt-dim);letter-spacing:0">— every sound saved on this device, from any pack</span></h3>
   <div class="row">
@@ -2324,6 +2346,8 @@ var __JBH_PURE = (() => {
     morphRanker: () => morphRanker,
     mulberry32: () => mulberry32,
     newPattern: () => newPattern,
+    packFromNames: () => packFromNames,
+    parseSfz: () => parseSfz,
     patLen: () => patLen,
     polyCfg: () => polyCfg,
     polyCycleBars: () => polyCycleBars,
@@ -2344,6 +2368,9 @@ var __JBH_PURE = (() => {
     polyTrimRow: () => polyTrimRow,
     posMod: () => posMod,
     rowUsed: () => rowUsed,
+    sampleFromName: () => sampleFromName,
+    sfzNote: () => sfzNote,
+    sfzRoundRobin: () => sfzRoundRobin,
     snapSemitone: () => snapSemitone,
     stepHasLock: () => stepHasLock,
     stepLock: () => stepLock,
@@ -2794,6 +2821,179 @@ var __JBH_PURE = (() => {
     } catch {
       return false;
     }
+  }
+
+  // src/pure/sfz.js
+  var HEADER = /<(global|master|group|region|control|curve|effect)>/gi;
+  var LETTER = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
+  function sfzNote(v) {
+    if (v == null) return null;
+    const s = String(v).trim();
+    if (/^-?\d+$/.test(s)) return +s;
+    const m = /^([a-gA-G])([#b]?)(-?\d+)$/.exec(s);
+    if (!m) return null;
+    return LETTER[m[1].toLowerCase()] + (m[2] === "#" ? 1 : m[2] === "b" ? -1 : 0) + (parseInt(m[3], 10) + 1) * 12;
+  }
+  function opcodes(chunk, into) {
+    const re = /([a-zA-Z0-9_]+)\s*=\s*([^=]*?)(?=\s+[a-zA-Z0-9_]+\s*=|$)/g;
+    let m;
+    while (m = re.exec(chunk)) into[m[1].toLowerCase()] = m[2].trim();
+    return into;
+  }
+  function parseSfz(text, opt) {
+    const o = opt || {};
+    const src = String(text || "").replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n\r]*/g, " ");
+    const parts = [];
+    let last = 0, lastTag = null, m;
+    HEADER.lastIndex = 0;
+    while (m = HEADER.exec(src)) {
+      if (lastTag) parts.push([lastTag, src.slice(last, m.index)]);
+      lastTag = m[1].toLowerCase();
+      last = m.index + m[0].length;
+    }
+    if (lastTag) parts.push([lastTag, src.slice(last)]);
+    let control = {}, global = {}, master = {}, group = {};
+    const regions = [];
+    for (const [tag, body] of parts) {
+      if (tag === "control") {
+        opcodes(body, control);
+        continue;
+      }
+      if (tag === "curve" || tag === "effect") continue;
+      if (tag === "global") {
+        global = opcodes(body, {});
+        master = {};
+        group = {};
+        continue;
+      }
+      if (tag === "master") {
+        master = opcodes(body, {});
+        group = {};
+        continue;
+      }
+      if (tag === "group") {
+        group = opcodes(body, {});
+        continue;
+      }
+      regions.push(opcodes(body, Object.assign({}, global, master, group)));
+    }
+    const defPath = (control.default_path || "").replace(/\\/g, "/");
+    const out = [], seen = /* @__PURE__ */ new Map();
+    for (const r of regions) {
+      if (!r.sample) continue;
+      const file = (defPath + r.sample).replace(/\\/g, "/").trim();
+      const rel = /release/i.test(r.trigger || "");
+      const note = rel ? null : sfzNote(r.pitch_keycenter != null ? r.pitch_keycenter : r.key != null ? r.key : r.lokey);
+      if (!rel && note == null) continue;
+      const lo = +r.lovel || 1, hi = +r.hivel || 127;
+      const vel = Math.min(1, Math.max(0, (lo + hi) / 2 / 127));
+      const rr = r.seq_position != null ? Math.max(1, +r.seq_position || 1) : 1;
+      const base = (o.prefix || "sfz") + ":" + file.replace(/^.*\//, "").replace(/\.[^.]+$/, "");
+      let id = base, n = seen.get(base) || 0;
+      if (n) id = base + "~" + n;
+      seen.set(base, n + 1);
+      const e = { id, name: o.name || file.replace(/^.*\//, ""), cat: rel ? "REL" : o.cat || "SAMPLE", file };
+      if (rel) e.rel = true;
+      else {
+        e.note = note;
+        e.vel = vel;
+        if (rr > 1 || r.seq_length) e.rr = rr;
+      }
+      if (r.volume != null && isFinite(+r.volume)) e.db = +r.volume;
+      out.push(e);
+    }
+    return {
+      name: o.name || "SFZ instrument",
+      samples: out,
+      regions: regions.length,
+      skipped: regions.length - out.length
+    };
+  }
+  function sfzRoundRobin(samples) {
+    const per = /* @__PURE__ */ new Map();
+    for (const s of samples || []) {
+      if (s.rel || s.note == null) continue;
+      const k = s.note + "|" + (s.vel == null ? 0 : Math.round(s.vel * 127));
+      per.set(k, (per.get(k) || 0) + 1);
+    }
+    if (!per.size) return 1;
+    const tally = /* @__PURE__ */ new Map();
+    for (const n of per.values()) tally.set(n, (tally.get(n) || 0) + 1);
+    let best = 1, bestN = 0;
+    for (const [n, c] of tally) if (c > bestN || c === bestN && n > best) {
+      best = n;
+      bestN = c;
+    }
+    return Math.max(1, best);
+  }
+  var DYN = { ppp: 0.08, pp: 0.16, p: 0.28, mp: 0.42, mf: 0.56, f: 0.72, ff: 0.86, fff: 0.96 };
+  function sampleFromName(filename) {
+    const base = String(filename || "").replace(/^.*[\\/]/, "").replace(/\.[^.]+$/, "");
+    const out = { raw: base, guessed: [] };
+    if (/(^|[^a-z])(release|damper|pedal|rel)(?![a-z]{3})/i.test(base)) {
+      out.rel = true;
+      out.guessed.push("release");
+      return out;
+    }
+    let m = /(?:^|[^a-gA-G0-9#b])([a-gA-G])([#b]?)(-?[0-8])(?![0-9])/.exec(base);
+    if (m) {
+      out.note = sfzNote(m[1] + m[2] + m[3]);
+      out.guessed.push("note");
+    } else {
+      m = /(?:^|[^0-9])((?:1[0-1][0-9]|12[0-7]|[1-9]?[0-9]))(?![0-9])/.exec(base);
+      if (m && +m[1] >= 12 && +m[1] <= 127) {
+        out.note = +m[1];
+        out.guessed.push("note");
+      }
+    }
+    const v = /(?:^|[^a-z])v(?:el)?([0-9]{1,2})(?![0-9])/i.exec(base);
+    if (v) {
+      out.velIdx = +v[1];
+      out.guessed.push("velocity");
+    } else {
+      const d = /(?:^|[^a-z])(fff|ff|f|mf|mp|ppp|pp|p)(?:[^a-z]|$)/i.exec(base);
+      if (d) {
+        out.vel = DYN[d[1].toLowerCase()];
+        out.guessed.push("velocity");
+      }
+    }
+    const rr = /(?:^|[^a-z])(?:rr|take|t)([0-9]{1,2})(?![0-9])/i.exec(base);
+    if (rr) {
+      out.rr = +rr[1];
+      out.guessed.push("alternate");
+    }
+    return out;
+  }
+  function packFromNames(files, opt) {
+    const o = opt || {}, pre = o.prefix || "local";
+    const read = files.map((f) => ({ f, g: sampleFromName(typeof f === "string" ? f : f.name) }));
+    const idxs = [...new Set(read.map((r) => r.g.velIdx).filter((n) => n != null))].sort((a, b) => a - b);
+    const samples = [], seen = /* @__PURE__ */ new Map();
+    for (const { f, g } of read) {
+      const name = typeof f === "string" ? f : f.name;
+      const short = name.replace(/^.*[\\/]/, "").replace(/\.[^.]+$/, "");
+      let id = pre + ":" + short, n = seen.get(id) || 0;
+      if (n) id = id + "~" + n;
+      seen.set(pre + ":" + short, n + 1);
+      const e = { id, name: short, cat: g.rel ? "REL" : o.cat || "SAMPLE", file: name };
+      if (g.rel) e.rel = true;
+      else {
+        if (g.note == null) continue;
+        e.note = g.note;
+        if (g.velIdx != null && idxs.length > 1)
+          e.vel = (idxs.indexOf(g.velIdx) + 0.5) / idxs.length;
+        else if (g.vel != null) e.vel = g.vel;
+        if (g.rr) e.rr = g.rr;
+      }
+      samples.push(e);
+    }
+    return {
+      name: o.name || "imported",
+      samples,
+      read: read.length,
+      mapped: samples.length,
+      velocitySteps: idxs.length
+    };
   }
   return __toCommonJS(index_exports);
 })();
@@ -12406,6 +12606,23 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     return {pad:i, id, layers:p.layers.length, mode:p.layMode};
   },
 
+  /* THE PACKS THIS BUILD KNOWS ABOUT, and what a URL may point at.
+
+     pack() has always taken a URL and said nothing about where to find
+     one, so an agent either knew the paths already or could not load a
+     sound at all. */
+  packs(){
+    const sel=$('packPick');
+    const built=sel ? [...sel.options].filter(o=>o.value!=='custom')
+      .map(o=>({url:o.value, name:o.textContent.replace(/^\u2605\s*/,'').trim()})) : [];
+    const m=packManifest;
+    return { builtIn:built,
+      accepts:['.json manifest','.sfz (velocity layers, round robin, releases)'],
+      loaded: m ? { name:m.name, url:m._url||null, samples:(m.samples||[]).length,
+        sfz:!!m.sfz, local:!!m.local, alternates:m.rr||1,
+        releases:(m.samples||[]).filter(x=>x.rel).length } : null };
+  },
+
   /* THE NOISE A KEY MAKES COMING BACK UP.
 
      Attaches one or more release recordings to a pad. They sound where the
@@ -12497,7 +12714,15 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       const use=group.slice(0, 1+LAY_MAX);
       await window.MVX.sound(use[0].s.id, pad);
       for(let k=1;k<use.length;k++) await window.MVX.layer(pad, use[k].s.id);
-      if(use.length>1){ S.pads[pad].layMode='vel'; layered++; }
+      if(use.length>1){
+        /* A pack carrying alternates gets both: the velocity band chooses
+           the dynamic, the round robin chooses which take of it. */
+        const rr=Math.max(1, (o.rr!=null?o.rr|0:(packManifest&&packManifest.rr)|0)||1);
+        if(rr>1 && use.length>=rr*2){ S.pads[pad].layMode='velrr'; S.pads[pad].layRR=rr; }
+        else S.pads[pad].layMode='vel';
+        if(o.xfade!==false) S.pads[pad].layXf=(o.xfade==null?0.3:+o.xfade);
+        layered++;
+      }
       S.pads[pad].inst=name;
       placed.push({pad, note:n2, id:use[0].s.id, dynamics:use.length});
     }
@@ -13789,19 +14014,37 @@ function drawPackList(){
   });
 }
 function packBase(){ try{ return new URL($('packUrl').value, location.href).href; }catch(e){ return $('packUrl').value; } }
+/* A pack is either this app's own manifest or somebody else's SFZ, decided
+   by what comes back rather than by the file extension — plenty of libraries
+   serve an .sfz with no extension at all, or a .txt. */
+function packFromText(txt, url, name){
+  const t=String(txt||'').trim();
+  if(t[0]==='{'){
+    const man=JSON.parse(t);
+    if(!man || !Array.isArray(man.samples)) throw new Error('not a sample manifest');
+    return man;
+  }
+  if(!/<(region|group|global|control)>/i.test(t))
+    throw new Error('not a manifest and not an SFZ');
+  const base=(name||url||'pack').replace(/^.*\//,'').replace(/\.[^.]+$/,'');
+  const man=parseSfz(t, {prefix:base.toLowerCase().replace(/[^a-z0-9]+/g,'')||'sfz', name:base});
+  if(!man.samples.length) throw new Error('SFZ parsed but names no playable region');
+  man.sfz=true; man.rr=sfzRoundRobin(man.samples);
+  return man;
+}
 async function loadPack(){
   const url=packBase();
   lcd('LOADING PACK …');
   try{
     const res=await fetch(url,{cache:'no-store'});
     if(!res.ok) throw new Error('HTTP '+res.status);
-    const man=await res.json();
-    if(!man || !Array.isArray(man.samples)) throw new Error('bad manifest');
+    const man=packFromText(await res.text(), url);
     man._url=url;
     packManifest=man;
     await idbPutS(IDB_LIB,'__manifest',man);   // cache so the list survives offline
     await refreshHaveKeys(); drawPackList(); updateStoreMeter();
-    lcd('PACK: '+(man.name||'loaded')+' · '+man.samples.length+' samples — tap GET to store.');
+    lcd('PACK: '+(man.name||'loaded')+' · '+man.samples.length+' samples'
+      +(man.sfz?' · SFZ'+(man.rr>1?', '+man.rr+' alternates':''):'')+' — tap GET to store.');
   }catch(err){
     // offline / failed fetch — fall back to the last cached manifest
     try{ const cached=await idbGetS(IDB_LIB,'__manifest');
@@ -13859,6 +14102,87 @@ $('packPick').addEventListener('change',e=>{
   else{ $('packUrlRow').style.display='none'; $('packUrl').value=v; }
 });
 $('btnPackLoad').addEventListener('click',loadPack);
+/* ---------------- IMPORTING A PACK FROM THE DEVICE ------------------------
+
+   Every instrument added here so far cost an afternoon of working out where
+   somebody's samples live and what their filenames mean. That is the actual
+   bottleneck — the sampler has had velocity layers, alternates and release
+   recordings for a while and kept running out of material to put in them.
+
+   So: hand it a folder. An .sfz among the files is used if present, because
+   it states the mapping rather than implying it; otherwise the filenames are
+   read. Either way the panel says what it worked out, because a mapping
+   guessed wrong and applied silently is worse than one that failed. */
+$('btnPackFiles').addEventListener('click',()=>$('packFiles').click());
+$('packFiles').addEventListener('change',async e=>{
+  const files=[...(e.target.files||[])];
+  e.target.value='';
+  if(!files.length) return;
+  const say=t=>{ $('packImport').textContent=t; };
+  const audio=files.filter(f=>/\.(wav|mp3|ogg|flac|aif|aiff|m4a|opus|webm)$/i.test(f.name));
+  const sfz=files.find(f=>/\.sfz$/i.test(f.name));
+  const json=files.find(f=>/\.json$/i.test(f.name));
+  if(!audio.length){ say('No audio files in that selection.');
+    lcd('IMPORT: no audio files selected.'); return; }
+  say('Reading '+files.length+' file'+(files.length>1?'s':'')+'\u2026');
+  try{
+    ensureAudio();
+    /* The map is by BASENAME, because an .sfz refers to its samples by a
+       path relative to itself and a file picker hands back no directories
+       on most browsers. Two files with the same name in different folders
+       are a real possibility and the second one is reported, not silently
+       preferred. */
+    const byName=new Map(), dupes=[];
+    for(const f of audio){ const k=f.name.replace(/^.*[\\/]/,'').toLowerCase();
+      if(byName.has(k)) dupes.push(f.name); else byName.set(k,f); }
+    let man;
+    if(sfz){
+      man=parseSfz(await sfz.text(), {prefix:'imp', name:sfz.name.replace(/\.sfz$/i,'')});
+      man.rr=sfzRoundRobin(man.samples);
+    }else if(json){
+      man=JSON.parse(await json.text());
+      if(!man||!Array.isArray(man.samples)) throw new Error('not a sample manifest');
+    }else{
+      man=packFromNames(audio, {prefix:'imp', name:'imported'});
+      man.rr=sfzRoundRobin(man.samples);
+    }
+    /* Store the bytes under each sample's id, the same place a download
+       goes, so everything downstream — the list, the pads, the session —
+       cannot tell an imported sample from a fetched one. */
+    let stored=0, missing=[];
+    for(const sm of man.samples){
+      const key=String(sm.file||sm.id).replace(/^.*[\\/]/,'').toLowerCase();
+      const f=byName.get(key);
+      if(!f){ missing.push(sm.file||sm.id); continue; }
+      const bytes=await f.arrayBuffer();
+      await idbPutS(IDB_LIB,LIBKEY(sm.id),
+        {id:sm.id,name:sm.name,cat:sm.cat,type:f.type||'audio/wav',bytes});
+      stored++;
+      if(stored%12===0) say('Stored '+stored+' of '+man.samples.length+'\u2026');
+    }
+    man.samples=man.samples.filter(sm=>!missing.includes(sm.file||sm.id));
+    if(!man.samples.length) throw new Error('none of the mapped samples were in the selection');
+    man._url='imported:'+(sfz?sfz.name:'files');
+    man.local=true;
+    packManifest=man;
+    await idbPutS(IDB_LIB,'__manifest',man);
+    await refreshHaveKeys(); drawPackList(); drawDownloads(); updateStoreMeter();
+    const dyn=new Set(man.samples.filter(x=>x.vel!=null).map(x=>Math.round(x.vel*127))).size;
+    const notes=new Set(man.samples.filter(x=>x.note!=null).map(x=>x.note)).size;
+    say(stored+' stored \u00b7 '+notes+' note'+(notes===1?'':'s')
+      +(dyn>1?' \u00b7 '+dyn+' dynamics':'')
+      +(man.rr>1?' \u00b7 '+man.rr+' alternates':'')
+      +(man.samples.some(x=>x.rel)?' \u00b7 releases':'')
+      +(sfz?' \u00b7 from SFZ':' \u00b7 read from filenames')
+      +(missing.length?' \u00b7 '+missing.length+' referenced file(s) not selected':'')
+      +(dupes.length?' \u00b7 '+dupes.length+' duplicate name(s) ignored':''));
+    plog('Imported '+stored+' samples as "'+(man.name||'imported')+'".');
+    lcd('PACK IMPORTED \u2014 '+stored+' samples on this device.');
+  }catch(err){
+    say('Import failed: '+(err.message||'unreadable'));
+    lcd('IMPORT FAILED: '+(err.message||'unreadable'));
+  }
+});
 $('btnPackPersist').addEventListener('click',async ()=>{
   if(navigator.storage && navigator.storage.persist){
     const ok=await navigator.storage.persist();
