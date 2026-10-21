@@ -5974,7 +5974,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R224 · 2026-10-21 · a bow is seventy centimetres long';
+const BUILD = 'JBH-88 · R225 · 2026-10-21 · what is struck and plucked';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -13510,7 +13510,25 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     if(!props) return JSON.parse(JSON.stringify(p));
     Object.keys(props).forEach(k=>{ if(k!=='bufId') p[k]=props[k]; });
     reapplyLivePads(); drawPads(); drawEdit(); dirty();
-    return JSON.parse(JSON.stringify(p));
+    const out=JSON.parse(JSON.stringify(p));
+    /* set() has reported out-of-range values since the mMud business and
+       pad() never did, which is the half of the surface where it matters
+       most: a pad gain of 2.5 is applied now and clamped to 2 on reload,
+       so a mix balanced today comes back 2dB different tomorrow with
+       nothing said. Found while balancing a bass that would not come up. */
+    const w=[];
+    for(const k in PADRANGE){
+      if(!(k in props)) continue;
+      const r=PADRANGE[k], v=+p[k];
+      if(typeof p[k]!=='number' || !isFinite(v)) continue;
+      if(v<r[0]-1e-9 || v>r[1]+1e-9)
+        w.push({field:k, value:v, severity:'out-of-range',
+          says:'pad '+(i|0)+' '+k+' is '+v+', outside '+r[0]+'..'+r[1]
+            +'. It applies now and a save/reload clamps it to '+clamp(v,r[0],r[1])
+            +', so the mix will not come back the same.'});
+    }
+    if(w.length) out.warnings=w;
+    return out;
   },
   lane(i, props){
     const tr=S.trax[clamp(i|0,0,S.trax.length-1)];
@@ -22528,6 +22546,15 @@ const MIXRANGE={
   scDepth:[0,1,''], scRel:[0.01,2,'s','']
 };
 const PADDB=['eqLo','eqMid','eqHi'];
+/* The ranges the document loader will clamp a pad field to, so pad() can
+   say so at the time rather than letting a reload change the mix. */
+const PADRANGE={ gain:[0,2], pan:[-1,1], rev:[0,1], dly:[0,1],
+  att:[0,2], dec:[0.001,10], sus:[0,1], rel:[0.005,1],
+  fcut:[0,1], fres:[0,20], drv:[0,1], crush:[1,16],
+  eqLo:[-12,12], eqMid:[-12,12], eqHi:[-12,12],
+  start:[0,0.99], end:[0.01,1], vary:[0,1], speed:[0.25,4],
+  layXf:[0,0.5], relGain:[0,2], atkGain:[0,2], atkLen:[0.01,0.5],
+  bowSlur:[0.005,0.5], bowIn:[0,2], bowLen:[0.25,30], bowBite:[0,0.4] };
 function mixWarnings(only){
   const out=[];
   for(const k in MIXRANGE){
