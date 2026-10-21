@@ -13593,6 +13593,14 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         const mixB=mixBuf?await bandEnergy(mixBuf):null;
         for(const b of lv.buried){
           const row=lv.pads.find(x=>x.pad===b);
+          /* AND A SPARSE PAD IS NOT A QUIET ONE EITHER. levels() calls a pad
+             buried on its RMS across the whole bar, which a pad that plays
+             one note in four bars fails by arithmetic rather than by being
+             inaudible — a melody spread over eighteen one-note piano pads
+             reported most of itself as buried. If it gets within 18dB of
+             the mix at its loudest moment then it is heard when it sounds,
+             which is the actual question. */
+          if(row && row.dbPeak>-18) continue;
           let owns=null;
           if(mixB){
             const st=await renderMix(new Set([b]),new Set(),{loops:o.loops||1, src, noTail:true});
