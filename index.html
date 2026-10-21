@@ -428,6 +428,7 @@ someone else's.</p>
       <option value="samples/vsco-real.json">Cello + Acoustic Drums (CC0)</option>
       <option value="samples/real-cc0-full.json">Full Kit &mdash; Drums + Real Instruments (CC0)</option>
       <option value="samples/real-cc0.json">Real Instruments &middot; Core (CC0)</option>
+      <option value="samples/nakeddrums.json">Naked Drums &mdash; velocity layers + 3 takes (CC BY)</option>
       <option value="samples/jbh-drums.json">JBH Drums &mdash; Kit One (synth, CC0)</option>
       <option value="samples/manifest.json">JBH Studio (synth)</option>
       <option value="custom">From a URL&hellip;</option>
@@ -3055,22 +3056,33 @@ var __JBH_PURE = (() => {
   }
   function sfzMacros(text) {
     const defs = /* @__PURE__ */ new Map();
-    const body = String(text || "").replace(
-      /#define[ \t]+(\$[A-Za-z0-9_]+)[ \t]+(\S+)/gi,
-      (_, k, v) => {
-        defs.set(k, v);
-        return " ";
+    const re = /#define[ \t]+(\$[A-Za-z0-9_]+)[ \t]+(\S+)/gi;
+    let rx = null, rxFor = -1;
+    const subst = (chunk) => {
+      if (!defs.size || !chunk) return chunk;
+      if (rxFor !== defs.size) {
+        const keys = [...defs.keys()].sort((a, b) => b.length - a.length);
+        rx = new RegExp(keys.map((k) => k.replace(/\$/g, "\\$")).join("|"), "g");
+        rxFor = defs.size;
       }
-    );
-    if (!defs.size) return { text: body, defs };
-    const keys = [...defs.keys()].sort((a, b) => b.length - a.length);
-    const re = new RegExp(keys.map((k) => k.replace(/\$/g, "\\$")).join("|"), "g");
-    let out = body;
-    for (let i = 0; i < 6; i++) {
-      const next = out.replace(re, (k) => defs.get(k));
-      if (next === out) break;
-      out = next;
+      let s2 = chunk;
+      for (let i = 0; i < 6; i++) {
+        const n = s2.replace(rx, (k) => defs.get(k));
+        if (n === s2) break;
+        s2 = n;
+      }
+      return s2;
+    };
+    let out = "", last = 0, m;
+    while (m = re.exec(text)) {
+      out += subst(String(text).slice(last, m.index));
+      const had = defs.has(m[1]);
+      defs.set(m[1], subst(m[2]));
+      if (had) rxFor = -1;
+      else rxFor = -1;
+      last = m.index + m[0].length;
     }
+    out += subst(String(text).slice(last));
     return { text: out, defs };
   }
   return __toCommonJS(index_exports);
