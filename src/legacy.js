@@ -10582,8 +10582,23 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const o=opt||{}, src=o.src||'pat', loops=o.loops||1;
     const sch=await window.MVX.schedule({src, loops, full:false});
     if(!sch) return null;
-    const pads=Object.keys(sch.byPad).map(Number)
+    let pads=Object.keys(sch.byPad).map(Number)
       .filter(p=>S.pads[p] && S.pads[p].bufId>=0);
+    /* A CAP, BECAUSE THIS IS ONE RENDER PER PAD. On a forty-nine pad
+       arrangement that is forty-nine renders, and with critique() doing
+       the same thing alongside it a single review() took twenty-five
+       minutes and was abandoned. A check nobody can afford to run is a
+       check nobody runs. The busiest pads are kept, since a pad with
+       three hits in two minutes is not what anyone means by "too loud",
+       and the ones left out are named in the result rather than
+       silently dropped. */
+    let notMeasured=[];
+    if(o.max && pads.length>o.max){
+      const byHits=[...pads].sort((a,b)=>(sch.byPad[b].n||0)-(sch.byPad[a].n||0));
+      notMeasured=byHits.slice(o.max).map(p=>({pad:p, name:(S.pads[p]&&S.pads[p].name)||'',
+        hits:sch.byPad[p].n}));
+      pads=byHits.slice(0,o.max);
+    }
     const full=await renderMix(null,null,{loops,src,noTail:true});
     const mixL=full?lufsIntegrated(full):null;
     const rows=[];
@@ -10606,7 +10621,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const loud=rows.length?rows[0].lufs:null;
     const shouty=rows.filter(r=>r.brightness>=(rows.reduce((a,c)=>a+c.brightness,0)/Math.max(1,rows.length))+4);
     return { src, mixLufs:mixL&&mixL.lufs!==-Infinity?+mixL.lufs.toFixed(1):null,
-      pads:rows, loudest:loud,
+      pads:rows, loudest:loud, notMeasured,
       /* the ones the ear will pick out regardless of what the meter says */
       forward:shouty.map(r=>({pad:r.pad, name:r.name, brightness:r.brightness})),
       says: shouty.length
@@ -11475,7 +11490,17 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
 
     /* 2. the existing aggregate: settings, stretched samples, buried
           pads, band ownership, and the reference if one is loaded */
-    const cr=await run('critique',()=>window.MVX.critique({src}));
+    /* THE PER-PAD CHECKS RUN ON ONE PATTERN, NOT THE WHOLE SONG.
+       critique() and loudness() each render every pad on its own, so on
+       a song with forty-nine pads review() was doing about ninety-eight
+       renders and taking twenty-five minutes. Nobody waits for that, so
+       nobody runs it, so the checks may as well not exist. A pad's level
+       relative to the mix barely moves between patterns, which is why
+       this is affordable rather than merely cheaper: it is the same
+       question asked of a representative four bars. Whole-mix checks —
+       pulse, translate, compare, motif, melody — still see the song. */
+    const padSrc=o.padSrc||(src==='song'?'pat':src);
+    const cr=await run('critique',()=>window.MVX.critique({src:padSrc}));
     for(const f of ((cr&&cr.found)||[]))
       add('critique', f.severity, f.says,
         f.severity==='stretched' ? 'write the line on notes the pack actually has, or load a closer sample'
@@ -11485,7 +11510,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
 
     /* 3. PERCEIVED loudness, which is not energy. This is the check that
           was missing when the bells came back too loud. */
-    const ld=await run('loudness',()=>window.MVX.loudness({src:o.loudnessSrc||'pat'}));
+    const ld=await run('loudness',()=>window.MVX.loudness(
+      {src:o.loudnessSrc||padSrc, max:o.maxPads||16}));
     for(const f of ((ld&&ld.forward)||[]))
       add('loudness','forward', (f.name||('pad '+f.pad))+' reads '+f.brightness
         +'dB louder than its energy — the ear will pick it out of the mix.',
@@ -11574,7 +11600,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     findings.sort((a,b)=>(ORDER[a.severity]==null?9:ORDER[a.severity])
       -(ORDER[b.severity]==null?9:ORDER[b.severity]));
     const hard=findings.filter(f=>(ORDER[f.severity]==null?9:ORDER[f.severity])<=3).length;
-    return { src, instruments:names, melodic:pitchedInsts,
+    return { src, perPadSrc:padSrc, instruments:names, melodic:pitchedInsts,
+      padsNotMeasured:((ld&&ld.notMeasured)||[]).map(x=>x.name||('pad '+x.pad)),
       notAskedAboutMelody:{percussion:percussive, sparsePack:tooSparse},
       findings, ran, skipped,
       counts:{total:findings.length, serious:hard, toolsRun:ran.length, toolsSkipped:skipped.length},
