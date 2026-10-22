@@ -35,14 +35,55 @@ if (!SRC) { console.error('usage: node scripts/make-vsco.mjs <path-to-VSCO-2-CE-
 const OUT = resolve(import.meta.dirname, '..', 'samples', 'vsco-orch.json');
 const RAW = 'https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/';
 
-/* C4 = 60, which is what the Salamander manifest already assumes: its A0
-   carries note 21 and 21 is A0 only under this convention. */
+/* THIS LIBRARY NAMES ITS FILES AN OCTAVE BELOW WHAT THEY SOUND, and the
+   first version of this script did not know that. It assumed scientific
+   pitch notation — A4 = 440Hz = note 69, as the Salamander piano manifest
+   correctly uses — so every instrument here was mapped an octave too low
+   and every line written on one came out an octave too high. A cello part
+   written in cello register sounded in viola register.
+
+   This is measured, not assumed. scripts/audit-pitch.mjs fetches samples
+   and compares what they sound against what they claim, and it reads the
+   Salamander piano at dead zero (A4 → 440.4Hz) while reading these files
+   at +12.0 with no spread across instruments or registers:
+
+     LDFlute_susvib_A4_v1_1.wav   named A4   sounds 880.2Hz = A5
+     LDFlute_susvib_A5_v1_1.wav   named A5   sounds 1762.6Hz = A6
+
+   So for most of this library the octave number is one lower than the
+   sounding octave.
+
+   BUT NOT ALL OF IT, which is the part that cost the most. The library
+   is internally inconsistent, and not even consistent within a single
+   instrument: measured over six samples each, spread across their
+   ranges,
+
+     Solo Violin/Arco Vib   5 of 6 read -12   scientific pitch
+     Solo Violin/Pizz       4 of 6 read -12   scientific pitch
+     Solo Violin/spic       6 of 6 read   0   an octave down
+     Strings/Harp           5 of 6 read -12   scientific pitch
+
+   — the same solo violin, named two different ways depending on the
+   articulation. The odd readings out are the detector catching a
+   harmonic on a short or very quiet sample, not a third convention.
+
+   Under the original assumption of scientific pitch everywhere, the
+   violin and harp were right and every ensemble string, woodwind, brass
+   and spiccato sounded an octave above what was written. A cello section
+   written in cello register came out in viola register, which is a far
+   better account of "the strings sound unnatural" than anything that was
+   proposed at the time.
+
+   Hence a per-folder offset rather than one constant. Change anything
+   here and re-run scripts/audit-pitch.mjs: every instrument should read
+   within a semitone of zero. */
+const DEFAULT_OCTAVE_OFFSET = 2;
 const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-function midiOf(name) {
+function midiOf(name, off) {
   const m = /^([A-Ga-g])([#b]?)(-?\d+)$/.exec(name);
   if (!m) return null;
   const n = PC[m[1].toUpperCase()] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
-  return n + (parseInt(m[3], 10) + 1) * 12;
+  return n + (parseInt(m[3], 10) + off) * 12;
 }
 
 /* Which folders are worth carrying, what to call them, and which
@@ -55,12 +96,12 @@ function midiOf(name) {
    and the Salamander grand already in samples/ is a better instrument than
    decoding that would buy. */
 const WANT = [
-  { dir: 'Strings/Solo Violin/Arco Vib',      tag: 'violin',   cat: 'VIOLIN',  name: 'Violin' },
+  { dir: 'Strings/Solo Violin/Arco Vib',      tag: 'violin',   cat: 'VIOLIN',  name: 'Violin' , oct: 1 },
   { dir: 'Strings/Violin Section/susvib',     tag: 'violins',  cat: 'VIOLIN',  name: 'Violins' },
   { dir: 'Strings/Viola Section/susvib',      tag: 'viola',    cat: 'VIOLA',   name: 'Violas' },
   { dir: 'Strings/Cello Section/susvib',      tag: 'cello',    cat: 'CELLO',   name: 'Cellos' },
   { dir: 'Strings/Solo Contrabass/SusVib',    tag: 'bass',     cat: 'BASS',    name: 'Contrabass' },
-  { dir: 'Strings/Solo Violin/Pizz',          tag: 'vlnpizz',  cat: 'VIOLIN',  name: 'Violin pizz' },
+  { dir: 'Strings/Solo Violin/Pizz',          tag: 'vlnpizz',  cat: 'VIOLIN',  name: 'Violin pizz' , oct: 1 },
   { dir: 'Strings/Cello Section/pizzT',       tag: 'clopizz',  cat: 'CELLO',   name: 'Cello pizz' },
   { dir: 'Strings/Solo Contrabass/Pizz',      tag: 'basspizz', cat: 'BASS',    name: 'Contrabass pizz' },
   { dir: 'Woodwinds/Flute/susvib',            tag: 'flute',    cat: 'FLUTE',   name: 'Flute' },
@@ -72,7 +113,7 @@ const WANT = [
   { dir: 'Brass/Trumpet/sus',                 tag: 'trumpet',  cat: 'TPT',     name: 'Trumpet' },
   { dir: 'Brass/Tenor Trombone/sus',          tag: 'trombone', cat: 'TBN',     name: 'Trombone' },
   { dir: 'Brass/Tuba/sus',                    tag: 'tuba',     cat: 'TUBA',    name: 'Tuba' },
-  { dir: 'Strings/Harp',                      tag: 'harp',     cat: 'HARP',    name: 'Harp' },
+  { dir: 'Strings/Harp',                      tag: 'harp',     cat: 'HARP',    name: 'Harp' , oct: 1 },
   /* SHORT BOW STROKES, CARRIED FOR THEIR ATTACKS RATHER THAN THEIR NOTES.
      The sustains here were recorded with soft eased-in entries: measured,
      their first 90ms is about 1.8dB DARKER and up to 22dB quieter than
@@ -96,11 +137,11 @@ const files = execFileSync('git', ['-C', SRC, 'ls-tree', '-r', '--name-only', 'H
 /* NOTE AND DYNAMIC OUT OF A FILENAME, over two naming schemes that both
    appear in this one repository: `LLVln_ArcoVib_A3_f.wav` carries its
    dynamic as p/mf/f, and `susvib_A2_v3_1.wav` carries it as v1..v3. */
-function parse(path) {
+function parse(path, oct) {
   const base = path.split('/').pop().replace(/\.wav$/i, '');
   const note = /(?:^|_)([A-Ga-g][#b]?-?\d)(?:_|$)/.exec(base);
   if (!note) return null;
-  const midi = midiOf(note[1]);
+  const midi = midiOf(note[1], oct);
   if (midi == null) return null;
   const v = /_v(\d)(?:_|$)/.exec(base);
   const d = /_(pp|p|mp|mf|f|ff)(?:_|$)/.exec(base);
@@ -116,7 +157,8 @@ const out = [];
 const report = [];
 for (const w of WANT) {
   const mine = files.filter(f => f.toLowerCase().startsWith(w.dir.toLowerCase() + '/') && !SKIP.test(f));
-  const rows = mine.map(f => ({ f, p: parse(f) })).filter(x => x.p);
+  const oct = w.oct == null ? DEFAULT_OCTAVE_OFFSET : w.oct;
+  const rows = mine.map(f => ({ f, p: parse(f, oct) })).filter(x => x.p);
   if (!rows.length) { report.push([w.tag, 0, 0, '-', 'NO FILES MATCHED']); continue; }
   const byLayer = [...new Set(rows.map(r => r.p.layer).filter(x => x != null))].sort((a, b) => a - b);
   const byDyn = [...new Set(rows.map(r => r.p.dyn).filter(Boolean))]
