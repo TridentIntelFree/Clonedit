@@ -36,7 +36,7 @@ export default async function ({ browser, base }) {
     t.head('PAINT MAKES A SOUND OUT OF NOTHING');
     const painted = await page.evaluate(async () => {
       await window.JBH.clear();
-      const before = window.JBH.state().padsLoaded;
+      const before = window.JBH.state().pads.loaded;
       document.getElementById('btnToolPaint').click();
       /* the button is async; wait for it to re-enable */
       for (let i = 0; i < 120; i++) {
@@ -85,7 +85,7 @@ export default async function ({ browser, base }) {
       await window.JBH.instrument('p', { pack: 'samples/salamander.json',
         match: '^sal:', lo: 48, hi: 60, max: 1 });
       const src = window.JBH.instPads('p')[0].pad;
-      const before = window.JBH.state().padsLoaded;
+      const before = window.JBH.state().pads.loaded;
       const press = async (id) => {
         document.getElementById(id).click();
         for (let i = 0; i < 300; i++) {
@@ -95,9 +95,9 @@ export default async function ({ browser, base }) {
         return (document.getElementById('toolLog') || {}).textContent || '';
       };
       const fz = await press('btnToolFreeze');
-      const afterFreeze = window.JBH.state().padsLoaded;
+      const afterFreeze = window.JBH.state().pads.loaded;
       const tp = await press('btnToolTape');
-      const afterTape = window.JBH.state().padsLoaded;
+      const afterTape = window.JBH.state().pads.loaded;
       return { src, before, afterFreeze, afterTape, fz, tp };
     });
     t.ok('freeze makes a new pad rather than replacing one',
