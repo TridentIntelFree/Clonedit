@@ -10693,11 +10693,34 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       const bin=atob(src.base64), by=new Uint8Array(bin.length);
       for(let i=0;i<bin.length;i++) by[i]=bin.charCodeAt(i);
       buf=await decode(by.buffer);
+    } else if(src && Array.isArray(src.shape)){
+      /* A REFERENCE IS A CURVE, NOT A RECORDING. Everything that reads
+         refSpec — compare(), balance(), critique()'s tonal check — wants
+         nine relative band levels and a couple of scalars. The audio is
+         only ever the means of getting them, so a measured profile can
+         be handed over directly: measure a track once, anywhere, keep
+         the numbers. Those numbers are a description of a spectrum, not
+         the music, so they can live in a repository and be shared and
+         re-used in a way audio cannot.
+
+         scripts/reference-profile.mjs produces one from any local file. */
+      const want=SPEC_NAMES.length;
+      const shape=src.shape.map(b=>({band:b.band, lo:b.lo, hi:b.hi, rel:+b.rel}))
+        .filter(b=>b.band && isFinite(b.rel));
+      if(shape.length<want-1) throw new Error('a reference profile needs '+want
+        +' bands ('+SPEC_NAMES.join(' ')+'); got '+shape.length);
+      refSpec={ shape, bands:shape.map(b=>({band:b.band, lo:b.lo, hi:b.hi, db:b.rel})),
+        lufs:src.lufs==null?null:+src.lufs, crestDb:src.crestDb==null?null:+src.crestDb,
+        width:src.width==null?0:+src.width, peak:src.peak==null?null:+src.peak,
+        seconds:src.seconds==null?null:+src.seconds,
+        name:src.name||'(profile)', fromProfile:true };
+      return refSpec;
     } else if(src && src.pad!=null){
       const p=S.pads[src.pad|0];
       if(!p || p.bufId<0) throw new Error('pad '+(src.pad|0)+' has no sample on it');
       buf=S.buffers[p.bufId]; name=p.name||('pad '+(src.pad|0));
-    } else throw new Error('reference(url) | reference({base64,name}) | reference({pad}) | reference(null)');
+    } else throw new Error('reference(url) | reference({base64,name}) | reference({pad}) '
+      +'| reference({shape,lufs,crestDb,name}) | reference(null)');
     if(!buf || !buf.length) throw new Error('the reference decoded to nothing');
     const full=+buf.duration.toFixed(1);
     const cut=sliceBuf(buf, o.from||0, o.seconds||120);
@@ -11674,6 +11697,171 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         +' from '+ran.length+' checks'
         +(skipped.length?', and '+skipped.length+' check'+(skipped.length>1?'s':'')
           +' could not run (see skipped)':'')+'.' };
+  },
+
+  /* PLAY ONE SOUND USING THE PIECES OFANOTHER.
+
+     Concatenative synthesis: chop a corpus into short blocks, chop a
+     target into short blocks, and rebuild the target by choosing, for
+     each of its blocks, whichever corpus block sounds most like it. The
+     result has the shape of the target and the substance of the corpus
+     — a drum loop played entirely in cello, a melody assembled out of
+     field recordings.
+
+     The idea is not mine. Samplebrain, designed by Richard James and
+     written by Dave Griffiths, is the well-known instance of it, and
+     the technique has a literature of its own going back to musaicing
+     and CataRT. This is an independent implementation of a published
+     technique rather than a port of theirs: their code is GPL and none
+     of it is here.
+
+     Why it belongs in this app in particular: the hard part of
+     concatenative synthesis is deciding when two short blocks "sound
+     alike", and that is a measurement. This app is mostly measurement
+     by now.
+
+     Matching is on spectral SHAPE, each block's band levels normalised
+     against its own total, so a quiet corpus block can stand in for a
+     loud target block and be scaled to fit. Matching on raw level
+     instead just picks whatever is nearest in volume and sounds like
+     nothing. */
+  async resynth(opt){
+    const o=opt||{};
+    ensureAudio();
+    if(o.target==null) throw new Error('resynth needs {target: padIndex} — the sound to rebuild');
+    const tp=S.pads[o.target|0];
+    if(!tp || tp.bufId<0) throw new Error('pad '+(o.target|0)+' has no sample to rebuild');
+    const tBuf=S.buffers[tp.bufId];
+    if(!tBuf || !tBuf.length) throw new Error('the target pad\'s buffer is empty');
+
+    /* the brain: every other pad that holds a sample, unless told */
+    let brainPads=o.brain;
+    if(!Array.isArray(brainPads) || !brainPads.length){
+      brainPads=[];
+      for(let i=0;i<NPADS;i++) if(i!==(o.target|0) && S.pads[i] && S.pads[i].bufId>=0) brainPads.push(i);
+    }
+    brainPads=brainPads.map(x=>x|0).filter(i=>S.pads[i] && S.pads[i].bufId>=0 && i!==(o.target|0));
+    if(!brainPads.length) throw new Error('nothing in the brain — load some other pads first, '
+      +'or pass {brain:[padIndexes]}');
+
+    const sr=tBuf.sampleRate;
+    const blockMs=clamp(o.blockMs==null?60:+o.blockMs, 10, 400);
+    const B=Math.max(256, Math.round(sr*blockMs/1000));
+    const HOP=Math.max(128, B>>1);
+    const JUMBLE=clamp(o.jumble==null?0.25:+o.jumble, 0, 1);
+    const FOLLOW=o.follow!==false;          /* scale each block to the target's level */
+
+    /* FEATURES. Eight log-spaced bands of one windowed FFT per block,
+       as decibels, then the vector is centred so only its SHAPE is
+       compared. Level is kept separately and used to rescale, not to
+       match: a corpus of quiet field recordings has to be allowed to
+       stand in for a loud kick. */
+    const NFFT=1<<Math.ceil(Math.log2(Math.min(2048, B)));
+    const EDGES=[40,110,260,520,1000,2000,4000,8000,16000];
+    const win=new Float64Array(NFFT);
+    for(let i=0;i<NFFT;i++) win[i]=0.5-0.5*Math.cos(2*Math.PI*i/(NFFT-1));
+    const featOf=(data, at)=>{
+      const re=new Float64Array(NFFT), im=new Float64Array(NFFT);
+      let rms=0, n=0;
+      for(let i=0;i<NFFT;i++){
+        const v=(at+i<data.length)?data[at+i]:0;
+        re[i]=v*win[i]; rms+=v*v; n++;
+      }
+      rms=Math.sqrt(rms/Math.max(1,n));
+      if(rms<1e-5) return null;                 /* silence is not a block */
+      fftInPlace(re,im);
+      const binHz=sr/NFFT, f=new Float64Array(EDGES.length-1);
+      for(let i=1;i<NFFT/2;i++){
+        const hz=i*binHz;
+        for(let b=0;b<f.length;b++) if(hz>=EDGES[b] && hz<EDGES[b+1]){ f[b]+=re[i]*re[i]+im[i]*im[i]; break; }
+      }
+      let mean=0;
+      for(let b=0;b<f.length;b++){ f[b]=10*Math.log10(Math.max(f[b],1e-12)); mean+=f[b]; }
+      mean/=f.length;
+      for(let b=0;b<f.length;b++) f[b]-=mean;   /* shape, not level */
+      return {f, rms};
+    };
+
+    /* build the brain */
+    const brain=[];
+    for(const pi of brainPads){
+      const b=S.buffers[S.pads[pi].bufId];
+      if(!b || !b.length) continue;
+      const d=b.getChannelData(0);
+      for(let at=0; at+B<=d.length; at+=HOP){
+        const ft=featOf(d, at);
+        if(ft) brain.push({pad:pi, at, f:ft.f, rms:ft.rms, data:d});
+      }
+      if(brain.length>20000) break;             /* enough is enough */
+    }
+    if(!brain.length) throw new Error('every block in the brain was silence');
+
+    const td=tBuf.getChannelData(0);
+    const outN=td.length;
+    const out=new Float32Array(outN);
+    const acc=new Float32Array(outN);
+    const fade=new Float64Array(B);
+    for(let i=0;i<B;i++) fade[i]=0.5-0.5*Math.cos(2*Math.PI*i/(B-1));
+
+    let rs=(o.seed|0)||0xC0FFEE;
+    const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+
+    let placed=0, used=new Set();
+    for(let at=0; at+B<=outN; at+=HOP){
+      const ft=featOf(td, at);
+      if(!ft) continue;
+      /* nearest block by shape, with a few near-misses kept so the same
+         one is not chosen every time a similar moment comes round —
+         that is what makes it sound like an instrument being played
+         rather than a loop being pasted */
+      let best=null, bestD=Infinity, pool=[];
+      for(const c of brain){
+        let d2=0;
+        for(let b=0;b<c.f.length;b++){ const e=c.f[b]-ft.f[b]; d2+=e*e; }
+        if(d2<bestD){ bestD=d2; best=c; }
+        if(pool.length<6 || d2<pool[pool.length-1].d){
+          pool.push({c, d:d2}); pool.sort((x,y)=>x.d-y.d);
+          if(pool.length>6) pool.pop();
+        }
+      }
+      if(!best) continue;
+      const pick=(JUMBLE>0 && pool.length>1 && rnd()<JUMBLE)
+        ? pool[1+Math.floor(rnd()*(pool.length-1))].c : best;
+      const g=FOLLOW ? (ft.rms/Math.max(pick.rms,1e-6)) : 1;
+      const gg=Math.max(0, Math.min(8, g));
+      for(let i=0;i<B && at+i<outN; i++){
+        out[at+i]+=pick.data[pick.at+i]*gg*fade[i];
+        acc[at+i]+=fade[i];
+      }
+      used.add(pick.pad); placed++;
+    }
+    for(let i=0;i<outN;i++) if(acc[i]>1e-6) out[i]/=acc[i];
+
+    let pk=0; for(let i=0;i<outN;i++){ const a=out[i]<0?-out[i]:out[i]; if(a>pk) pk=a; }
+    if(pk<1e-5) throw new Error('the rebuild came out silent — try a longer blockMs, '
+      +'or a brain whose sounds are closer to the target');
+    const norm=0.9/pk;
+    for(let i=0;i<outN;i++) out[i]*=norm;
+
+    const buf=AC.createBuffer(1, outN, sr);
+    buf.getChannelData(0).set(out);
+    const name=o.name||((tp.name||('pad '+(o.target|0)))+' rebuilt');
+    const target=(o.pad==null)?pickTargetPad():clamp(o.pad|0,0,NPADS-1);
+    S.editPad=target;
+    if(loadIntoTarget(buf, name, {keepTarget:true, noAsk:true})===false)
+      throw new Error('could not put the rebuild on '+padName(target));
+    S.pads[target].srcSample=''; S.pads[target].srcCat='RESYNTH';
+    if(tp.srcNote!=null) S.pads[target].srcNote=tp.srcNote;
+    dirty();
+    try{ drawPads(); }catch(e){}
+
+    return { pad:target, name, from:(o.target|0), brainPads,
+      blocks:placed, brainBlocks:brain.length, blockMs:+blockMs.toFixed(0),
+      padsUsed:[...used].map(i=>(S.pads[i]&&S.pads[i].name)||('pad '+i)),
+      seconds:+(outN/sr).toFixed(2),
+      says:'rebuilt '+(tp.name||('pad '+(o.target|0)))+' out of '+placed+' blocks taken from '
+        +used.size+' pad'+(used.size===1?'':'s')+' ('+brain.length+' candidates). '
+        +'It has the shape of the target and the substance of the brain.' };
   },
 
   /* PAINT A SOUND AS A SPECTRUM, THE WAY MetaSynth DOES.
@@ -13078,6 +13266,111 @@ async function copyBlock(id,label){
 }
 $('btnCopyMcp').addEventListener('click',()=>copyBlock('cmdMcpCfg','MCP CONFIG'));
 $('btnCopyTab').addEventListener('click',()=>copyBlock('cmdTab','SNIPPET'));
+/* ---- SOUND TOOLS PANEL -------------------------------------------------
+   The five calls below existed only on the API, which meant the person
+   using the app could not reach the parts of it that measure a mix or
+   make a sound out of nothing. Each button is the call with sensible
+   defaults; the API takes the arguments.
+
+   They render into a log rather than a status line because every one of
+   them answers with a list, and the whole point of these is the detail.
+   Everything written there is set as TEXT, never as markup. */
+function toolLog(lines){
+  const el=$('toolLog'); if(!el) return;
+  el.style.display='block';
+  el.textContent=(Array.isArray(lines)?lines.join('\n'):String(lines))+'\n';
+  el.scrollTop=0;
+}
+async function toolRun(btnId, label, fn){
+  const b=$(btnId); if(!b || b.disabled) return;
+  const was=b.textContent;
+  b.disabled=true; b.textContent='…';
+  toolLog(label+' — working. Renders take a moment.');
+  try{
+    const out=await fn();
+    toolLog(out);
+  }catch(e){
+    toolLog(label+' could not run:\n  '+String((e&&e.message)||e));
+  }finally{ b.disabled=false; b.textContent=was; }
+}
+const padLabel=(i)=>(S.pads[i]&&S.pads[i].name)?(S.pads[i].name+' (pad '+i+')'):('pad '+i);
+
+$('btnToolReview').addEventListener('click',()=>toolRun('btnToolReview','REVIEW',async()=>{
+  const src=(S.songOn && S.song && S.song.length)?'song':'pat';
+  const r=await window.MVX.review({src});
+  const out=['REVIEW of the '+(src==='song'?'song':'current pattern'), r.says, ''];
+  if(!r.findings.length) out.push('  nothing to report.');
+  for(const f of r.findings.slice(0,14)){
+    out.push('  ['+f.severity+'] '+f.says);
+    if(f.fix) out.push('       → '+f.fix);
+  }
+  if(r.findings.length>14) out.push('  …and '+(r.findings.length-14)+' more.');
+  if(r.skipped && r.skipped.length){
+    out.push('', 'could not run:');
+    for(const k of r.skipped) out.push('  '+k);
+  }
+  return out;
+}));
+
+$('btnToolBalance').addEventListener('click',()=>toolRun('btnToolBalance','BALANCE',async()=>{
+  const r=await window.MVX.balance({src:'pat'});
+  if(!r || !r.pads) return 'nothing to balance.';
+  const out=['BALANCE against '+r.target, r.says, '',
+    'group        gain  →  suggested   change   owns'];
+  for(const g of r.pads) out.push('  '+String(g.instrument).padEnd(10)
+    +String(g.gain).padStart(6)+'  → '+String(g.suggested).padStart(8)
+    +String((g.changeDb>=0?'+':'')+g.changeDb+'dB').padStart(9)+'   '+g.owns);
+  if(r.capped && r.capped.length){ out.push('', 'cannot get there by gain alone:');
+    for(const c of r.capped) out.push('  '+c); }
+  out.push('', 'Nothing was changed. Set these with the pad gain controls.');
+  return out;
+}));
+
+$('btnToolPaint').addEventListener('click',()=>toolRun('btnToolPaint','PAINT',async()=>{
+  const i=S.editPad|0;
+  /* a bell: partials at ratios a bar cannot be filtered into having */
+  const f=220;
+  const r=await window.MVX.paint({pad:i, seconds:2.4, name:'painted bell',
+    partials:[
+      {hz:f,       level:1.00, at:0, dur:1.00},
+      {hz:f*2,     level:0.55, at:0, dur:0.72},
+      {hz:f*2.73,  level:0.42, at:0, dur:0.46},
+      {hz:f*4.39,  level:0.30, at:0, dur:0.30},
+      {hz:f*7.12,  level:0.17, at:0, dur:0.16},
+      {hz:f*11.3,  level:0.09, at:0, dur:0.08}]});
+  drawPads();
+  return ['PAINT onto '+padLabel(r.pad), r.says, '',
+    'Inharmonic partials at 2.73x, 4.39x, 7.12x and 11.3x — bell ratios, not',
+    'harmonic ones. It is an ordinary sample now: chop it, mutate it, play it.'];
+}));
+
+$('btnToolMutate').addEventListener('click',()=>toolRun('btnToolMutate','MUTATE',async()=>{
+  const i=S.editPad|0;
+  if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample on it.';
+  const r=await window.MVX.mutate(i,{want:'different', population:5, generations:3});
+  const out=['MUTATE '+padLabel(i), r.says, ''];
+  if(r.changed.length){
+    out.push('what it moved:');
+    for(const c of r.changed) out.push('  '+c.field+': '+c.from+' → '+c.to);
+    out.push('', 'The pad is back as it was. To keep this, set those fields,',
+      'or call mutate(pad,{keep:true}) from the API.');
+  }
+  return out;
+}));
+
+$('btnToolResynth').addEventListener('click',()=>toolRun('btnToolResynth','REBUILD',async()=>{
+  const i=S.editPad|0;
+  if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample to rebuild.';
+  let free=-1;
+  for(let k=NPADS-1;k>=0;k--) if(S.pads[k] && S.pads[k].bufId<0){ free=k; break; }
+  if(free<0) return 'every pad is full — clear one for the result.';
+  const r=await window.MVX.resynth({target:i, pad:free});
+  drawPads();
+  return ['REBUILD '+padLabel(i)+' → '+padLabel(r.pad), r.says, '',
+    'built from: '+r.padsUsed.join(', '),
+    r.blocks+' blocks of '+r.blockMs+'ms, chosen from '+r.brainBlocks+' candidates.'];
+}));
+
 $('btnAgentPing').addEventListener('click',()=>{
   if(!jbhBus){ lcd('AGENT LINK is closed.'); return; }
   jbhPing();
@@ -20673,6 +20966,28 @@ const SPEC_NAMES=SPEC_BANDS.map(([a,b])=>{
    filter types involved actually read. */
 const BUTTER4=[0.54119610, 1.30656296].map(q=>20*Math.log10(q));
 
+/* A PLAIN RADIX-2 FFT. The band analysis elsewhere uses real filters in
+   an OfflineAudioContext, which is accurate and costs a render; block
+   matching needs a few hundred cheap spectra instead, which is what
+   this is for. */
+function fftInPlace(re, im){
+  const n=re.length;
+  for(let i=1,j=0;i<n;i++){
+    let bit=n>>1;
+    for(;j&bit;bit>>=1) j^=bit;
+    j^=bit;
+    if(i<j){ const tr=re[i]; re[i]=re[j]; re[j]=tr; const ti=im[i]; im[i]=im[j]; im[j]=ti; }
+  }
+  for(let len=2;len<=n;len<<=1){
+    const ang=-2*Math.PI/len, hl=len>>1;
+    for(let i=0;i<n;i+=len) for(let k=0;k<hl;k++){
+      const w=ang*k, wr=Math.cos(w), wi=Math.sin(w);
+      const ur=re[i+k], ui=im[i+k];
+      const vr=re[i+k+hl]*wr-im[i+k+hl]*wi, vi=re[i+k+hl]*wi+im[i+k+hl]*wr;
+      re[i+k]=ur+vr; im[i+k]=ui+vi; re[i+k+hl]=ur-vr; im[i+k+hl]=ui-vi;
+    }
+  }
+}
 async function bandEnergy(buf){
   if(!buf || !buf.length) return null;
   const sr=buf.sampleRate, nyq=sr/2;

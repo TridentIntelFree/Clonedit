@@ -498,6 +498,23 @@ const TOOLS = [
       partials: { type: 'array', items: { type: 'object' } },
       midi: { type: 'number' }, name: { type: 'string' }, seed: { type: 'integer' } } } },
 
+  { name: 'jbh_resynth', description:
+      'PLAY ONE SOUND USING THE PIECES OF ANOTHER — concatenative synthesis. Chops a corpus of '
+      + 'pads (the brain) into short blocks, chops the target pad into blocks, and rebuilds the '
+      + 'target by choosing whichever brain block sounds most like each moment of it. The result '
+      + 'has the SHAPE of the target and the SUBSTANCE of the brain: a drum loop played in cello, '
+      + 'a melody assembled from field recordings. Matching is on spectral shape with each block '
+      + 'normalised against its own level, so a quiet corpus can stand in for a loud target and '
+      + 'be scaled to fit. The idea is Samplebrain\'s — designed by Richard James, written by '
+      + 'Dave Griffiths; this is an independent implementation of the published technique. '
+      + 'Output is a sample on a pad like any other.',
+    inputSchema: { type: 'object', required: ['target'], properties: {
+      target: { type: 'integer' },
+      brain: { type: 'array', items: { type: 'integer' } },
+      pad: { type: 'integer' }, blockMs: { type: 'number' },
+      jumble: { type: 'number' }, follow: { type: 'boolean' },
+      name: { type: 'string' }, seed: { type: 'integer' } } } },
+
   { name: 'jbh_call', description:
       'Escape hatch: call any window.JBH method by name with an array of arguments. Everything '
       + 'the app exposes is reachable this way, including anything added after these tools were '
@@ -575,6 +592,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_paint':       return ok(await jbh('paint', [{ pad: a.pad, seconds: a.seconds,
                                 lo: a.lo, hi: a.hi, log: a.log, rows: a.rows,
                                 partials: a.partials, midi: a.midi, name: a.name, seed: a.seed }]));
+      case 'jbh_resynth':     return ok(await jbh('resynth', [{ target: a.target,
+                                brain: a.brain, pad: a.pad, blockMs: a.blockMs,
+                                jumble: a.jumble, follow: a.follow, name: a.name, seed: a.seed }]));
       case 'jbh_call':        return ok(await jbh(a.method, a.args || []));
 
       case 'jbh_render': {

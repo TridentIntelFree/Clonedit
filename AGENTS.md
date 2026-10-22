@@ -136,6 +136,37 @@ face, and it is the difference between a usable sound and everything
 crowded into the top octave. What comes out is a sample on a pad, so
 `chop()` and `mutate()` work on it like anything else.
 
+`resynth(opt)` plays one sound using the pieces of another. It chops a
+corpus of pads (the brain) and the target into short blocks, then
+rebuilds the target from whichever brain blocks sound most like each
+moment of it — the shape is the target's, the substance is the brain's.
+A piano note rebuilt from vibraphone, marimba and hand chimes takes 633
+blocks out of 2103 candidates. The idea is Samplebrain's, designed by
+Richard James and written by Dave Griffiths; this is an independent
+implementation of a published technique, not a port of their GPL code.
+Matching is on spectral shape with each block normalised against its own
+level, so a quiet corpus can stand in for a loud target.
+
+## Know the pack before you write for it
+
+`scripts/timbre-atlas.mjs <manifest>` measures every instrument in a
+pack once and writes `samples/atlas-<pack>.json`: the level each sample
+arrives at, which band it owns, how fast it starts, how long it rings,
+and how much energy it has above 2 kHz against below 500.
+
+Almost every mixing mistake in this repo came from not knowing one of
+those numbers. Levels were staged by ear across sources that differ by
+35 dB on disk. A palette was chosen for its "real top octave" and its
+headline instrument — a vibraphone struck with soft mallets — turned out
+to be the dullest thing in the library at 30 dB more body than air. The
+bell tree was pushed to maximum gain and stayed inaudible because it
+peaks at −40 dBFS and gain stops at +6. Each was discovered by
+measuring, late, after a bounce had gone out, and none of them needed
+discovering twice.
+
+Read the atlas before choosing a sound for a job, rather than choosing
+one and finding out afterwards that it cannot do the job.
+
 ## Reproducing a track
 
 `songs/*.mjs` each render one finished track end to end — build the

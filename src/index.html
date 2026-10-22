@@ -2217,6 +2217,49 @@ socket. Anything driving a browser can call
 link renders as text, never as markup.</p>
   </div></details>
 
+  <!-- These five grew out of an agent's workflow and were reachable only
+       from the API, which meant the person actually using the app could
+       not get at them at all. Each one does something that cannot be
+       done any other way here. -->
+  <h3 style="margin-top:14px">SOUND TOOLS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; measure, solve, and make</span></h3>
+  <div class="row" style="flex-wrap:wrap;gap:4px">
+    <button id="btnToolReview" class="grow" title="Run every analyser and list what is wrong, worst first">REVIEW MIX</button>
+    <button id="btnToolBalance" class="grow" title="Solve the group levels against the loaded reference">BALANCE</button>
+  </div>
+  <div class="row" style="flex-wrap:wrap;gap:4px">
+    <button id="btnToolPaint" class="grow" title="Draw a bell as a spectrum and resynthesise it onto this pad">PAINT A BELL</button>
+    <button id="btnToolMutate" class="grow" title="Vary this pad's sound, measure each variation, keep the best">MUTATE PAD</button>
+    <button id="btnToolResynth" class="grow" title="Rebuild this pad using the pieces of every other pad">REBUILD PAD</button>
+  </div>
+  <div id="toolLog" role="log" aria-live="polite" aria-label="Sound tool results"
+    style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
+           padding:8px;margin:6px 0;font-size:11px;line-height:1.5;max-height:200px;
+           overflow-y:auto;color:var(--txt-dim);white-space:pre-wrap"></div>
+  <details class="ex"><summary>What these five do</summary><div class="ex-body">
+    <p style="margin-top:0"><b>REVIEW MIX</b> runs every analyser in the app at
+once &mdash; balance, perceived loudness, small-speaker translation, pulse,
+melodic shape, voice independence &mdash; sorts what it finds by severity and
+says which checks it could not reach. A check that silently did not run reads
+exactly like a check that passed, so it reports its own coverage.</p>
+    <p><b>BALANCE</b> solves the instrument levels instead of guessing them.
+Load a finished mix with <span class="lit">reference()</span> first; it then
+renders each group once and fits the gains so the whole thing lands on that
+reference's own band shape. It suggests, it does not apply.</p>
+    <p><b>PAINT A BELL</b> draws a sound as a spectrum and resynthesises it, the
+way MetaSynth does: an image is a spectrogram, with time across, frequency up
+and brightness as level. The button makes a bell with genuinely inharmonic
+partials &mdash; something no oscillator-and-filter chain here can produce.
+From the API, <span class="lit">paint({rows})</span> takes a whole grid.</p>
+    <p><b>MUTATE PAD</b> makes variations of the current pad's sound, measures
+each one, and keeps whichever wins. Randomising alone gives noise; every
+candidate is scored against the sound it came from. It restores the pad unless
+you keep the result.</p>
+    <p><b>REBUILD PAD</b> plays the current pad using the pieces of every other
+loaded pad: it chops both into short blocks and rebuilds this sound out of the
+closest-matching blocks of the others. The shape is the target's, the substance
+is theirs.</p>
+  </div></details>
+
   <details class="ex" style="margin-top:8px"><summary>Playing, not just placing</summary><div class="ex-body">
     <p style="margin-top:0"><span class="lit">phrase(name, from, to, opt)</span>
 &mdash; shape notes that are already written. <span class="lit">vel</span>
