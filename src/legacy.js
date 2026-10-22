@@ -11555,11 +11555,27 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         for(const f of ((cp&&cp.findings)||[]))
           findings.push({tool:'counterpoint', severity:'voices', says:f, fix:''});
       }
-      return {src, quick:true, lines, findings, ran, skipped,
+      /* A CHECK THAT COULD NOT APPLY MUST NOT READ AS A CHECK THAT
+         PASSED. motif and counterpoint only look at pads belonging to
+         an instrument, so on a track built from found sounds — every
+         pad loaded with sound(), none of them registered — `lines` is
+         empty and both are filtered out before `run` is ever called.
+         They therefore never reach `skipped` either, and the whole
+         thing reported "nothing flagged — 2 free checks" over a track
+         whose material had not been examined at all. Say it. */
+      const notApplicable=[];
+      if(!lines.length) notApplicable.push('motif and counterpoint — no pad belongs to an '
+        +'instrument, so there is no line to examine. Pads loaded with sound() are bare; '
+        +'melodic material written on them is invisible to both.');
+      else if(lines.length<2) notApplicable.push('counterpoint — it compares voices and there '
+        +'is only one line ('+lines[0]+').');
+      return {src, quick:true, lines, findings, ran, skipped, notApplicable,
         pulse:pu?{strength:pu.pulseStrength, onBeat:pu.onGrid&&pu.onGrid.beat}:null,
         says:(findings.length?findings.length+' thing'+(findings.length>1?'s':'')+' to look at'
-          :'nothing flagged')+' — '+ran.length+' free checks, no audio rendered. '
-          +'Run review() without quick before bouncing.'};
+          :'nothing flagged')+' — '+ran.length+' free check'+(ran.length===1?'':'s')
+          +' ran, no audio rendered'
+          +(notApplicable.length?('. COULD NOT APPLY: '+notApplicable.join(' ')):'')
+          +' Run review() without quick before bouncing.'};
     }
     const findings=[], ran=[], skipped=[];
     const run=async(name, fn)=>{

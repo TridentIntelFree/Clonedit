@@ -47,7 +47,7 @@
 import { chromium } from '/home/user/Clonedit/node_modules/playwright-core/index.mjs';
 import { findBrowser, serve, boot } from '/home/user/Clonedit/tests/browser/harness.mjs';
 import { writeFileSync } from 'node:fs';
-const OUT='/home/user/Clonedit/', BPM=96, TARGET_LUFS=-14.5;
+const OUT='/home/user/Clonedit/', BPM=96, TARGET_LUFS=-15.0;
 const exe=await findBrowser(); const srv=await serve();
 const args=['--no-sandbox']; if(process.env.HTTPS_PROXY) args.push('--proxy-server='+process.env.HTTPS_PROXY);
 const browser=await chromium.launch({executablePath:exe,args});
@@ -68,7 +68,7 @@ const bat=async l=>{ const r=await call('batch',l);
    rather than guessed: this is the number that decides whether a pad
    plays the sound or the room tone in front of it. */
 const CLIP=5.0;
-const ONSET={ 'fk:knock2':0.14, 'fk:type':0.2, 'fk:fire':0.222,
+const ONSET={ 'fk:knock2':0.14, 'fk:type':0.2, 'fk:fire':0.222, 'fk:rain':0.422,
   'dk:train':0.208, 'dk:glass':0.128, 'dk:creak':0.02 };
 const startOf=id=>+( (ONSET[id]||0)/CLIP ).toFixed(4);
 
@@ -135,9 +135,15 @@ await stage(BODY,-9,'body'); await placed(BODY,'body');
    it, which is what the target below is for. */
 await call('pack','samples/foundkit.json');
 await call('sound','fk:knock2',KICK);
+/* IT HAS TO OWN SOMETHING THE TRAIN DOES NOT. Lowpassed at 347Hz with
+   eqLo pushed up, this knock owned 20-60Hz by -6.1dB — which is to say
+   it was in exactly the sub's band and 6dB underneath it, so the beat
+   could not be found. A kick under a sustained bass has to be heard by
+   its click rather than its weight, so the filter opens to 2.6kHz and
+   the low shelf comes off. */
 await call('pad',KICK,{pitch:-5, start:startOf('fk:knock2'),
-  ftype:'lowpass', fcut:0.30, drv:0.45,
-  att:0.001, dec:0.30, sus:0.0, rel:0.12, gain:1.0, eqLo:+4, name:'kick (knock)'});
+  ftype:'lowpass', fcut:0.62, drv:0.45,
+  att:0.001, dec:0.30, sus:0.0, rel:0.12, gain:1.0, eqLo:0, eqMid:+3, name:'kick (knock)'});
 await bat([[0,1.0],[8,0.55],[16,0.95],[28,0.6]].map(([s,v])=>['step',KICK,s,v]));
 console.log('\n3. KICK — a door knock at -5, hard envelope');
 await stage(KICK,-3,'kick'); await placed(KICK,'kick');
@@ -147,26 +153,44 @@ await stage(KICK,-3,'kick'); await placed(KICK,'kick');
    long enough to actually contain the sound this time: the keys begin
    0.2s into the file and the previous version shut the gate at 0.17s. */
 await call('sound','fk:type',TICK);
+/* A FILTER THROWS ENERGY AWAY; AN EQ MOVES IT. Highpassed at 398Hz
+   this came out at -33dB and the staging could not reach its target
+   even at the cap, which is the signal to change the sound rather than
+   the number. The keys are already bright, so nothing needed removing
+   at all — the low end comes off with a shelf, which costs 10dB of
+   bass instead of everything below the corner. */
 await call('pad',TICK,{pitch:5, reverse:true, start:startOf('fk:type'),
-  ftype:'highpass', fcut:0.34, fres:0.8,
-  att:0.004, dec:0.42, sus:0.0, rel:0.16, gain:0.5, eqHi:-3, dly:0.22, name:'tick (keys)'});
+  ftype:'off',
+  att:0.004, dec:0.75, sus:0.18, rel:0.25, gain:1.0, eqLo:-10, eqMid:-2, eqHi:+1,
+  dly:0.22, name:'tick (keys)'});
 await bat([4,10,14,22,26,30].map(s=>['step',TICK,s,s%8===6?0.75:0.5]));
 console.log('\n4. TICK — keys reversed, with an envelope that reaches the sound');
-await stage(TICK,-14,'tick'); await placed(TICK,'tick');
+/* -14 was the wrong target for a background texture, not just an
+     unreachable one: the honest reading of a staging that cannot get
+     there is sometimes that the target was wrong rather than the sound */
+await stage(TICK,-19,'tick'); await placed(TICK,'tick');
 
 /* ---- 5. THE AIR. A fire, held still --------------------------------- */
 /* freeze() reads the spectrum at one instant and sustains it, so a
    crackle becomes a pad with no loop in it: nothing is replayed, it is
    what that moment was made of. Taken from 60% through, well clear of
    the 0.222s onset. */
-await call('sound','fk:fire',AIR);
-const fz=await call('freeze',AIR,{pad:AIR, at:0.60, seconds:7, partials:56,
-  shimmer:9, name:'air (fire)'});
-console.log('\n5. AIR — a fire frozen at one instant: '+String(fz.says||'').slice(0,88));
-await call('pad',AIR,{ftype:'highpass', fcut:0.46, att:1.1, dec:2.4, sus:0.8, rel:2.4,
-  gain:0.5, eqHi:-2, rev:0.34, name:'air (fire)'});
+/* RAIN, NOT FIRE, AND THE REASON IS MEASURED RATHER THAN EVOCATIVE. A
+   fire sounds like it ought to make air and does not: frozen, its
+   strongest partials are low, and the pad came out owning 20-60Hz —
+   sitting directly on the sub, which is the one place a shimmer must
+   not be. Highpassing it at 787Hz fixed the band and cost 34dB,
+   leaving a sound that could not reach its target at all. Rain is
+   broadband hiss with structure, which is what the job actually wants
+   and what an oscillator cannot fake. */
+await call('sound','fk:rain',AIR);
+const fz=await call('freeze',AIR,{pad:AIR, at:0.55, seconds:7, partials:56,
+  shimmer:9, name:'air (rain)'});
+console.log('\n5. AIR — rain frozen at one instant: '+String(fz.says||'').slice(0,88));
+await call('pad',AIR,{ftype:'highpass', fcut:0.22, att:1.1, dec:2.4, sus:0.8, rel:2.4,
+  gain:1.0, eqLo:-9, eqMid:-2, rev:0.34, name:'air (rain)'});
 await bat([['step',AIR,0,0.6],['step',AIR,16,0.45]]);
-await stage(AIR,-16,'air'); await placed(AIR,'air');
+await stage(AIR,-15,'air'); await placed(AIR,'air');
 
 /* ---- 6. THE LEAD. Glass, moved without being stretched -------------- */
 /* keepTime, so transposing shifts the pitch and leaves the length
@@ -178,8 +202,9 @@ await stage(AIR,-16,'air'); await placed(AIR,'air');
 await call('pack','samples/darkkit.json');
 await call('sound','dk:glass',GLASS);
 await call('pad',GLASS,{keepTime:true, start:startOf('dk:glass'),
-  ftype:'bandpass', fcut:0.56, fres:1.1,
-  att:0.004, dec:0.9, sus:0.25, rel:0.6, gain:0.8, rev:0.26, dly:0.18, name:'lead (glass)'});
+  ftype:'off',
+  att:0.004, dec:0.9, sus:0.25, rel:0.6, gain:1.0, eqLo:-9, eqMid:+2,
+  rev:0.26, dly:0.18, name:'lead (glass)'});
 const ROOT=69, LINE=[69,72,71,67,69,76,74,72];
 await bat(LINE.map((n,k)=>['step',GLASS,k*4,k===0||k===5?0.9:0.62,{pitch:n-ROOT}]));
 console.log('\n6. LEAD — glass shifted by keepTime, so it never gets longer');
@@ -195,7 +220,7 @@ console.log('\n7. HINGE — a creak to tape: '+String(tp.says||'').slice(0,88));
 await call('pad',HINGE,{start:startOf('dk:creak'), ftype:'bandpass', fcut:0.40, fres:1.4,
   att:0.03, dec:1.4, sus:0.3, rel:0.9, gain:1.0, rev:0.30, name:'hinge (creak)'});
 await bat([['step',HINGE,6,0.55],['step',HINGE,24,0.7]]);
-await stage(HINGE,-16,'hinge'); await placed(HINGE,'hinge');
+await stage(HINGE,-13,'hinge'); await placed(HINGE,'hinge');
 
 /* ---- 8. FREE CHECKS, NOW, NOT AT THE END ---------------------------- */
 const q=await call('review',{quick:true});
@@ -239,7 +264,7 @@ await call('set',{pattern:0, songOn:true, songLoop:false,
 /* full:false, or `events` comes back as the entire array of them and
    prints as a wall of [object Object]. */
 const sch=await call('schedule',{src:'song', full:false});
-console.log('\n'+sch.events+' notes · '+sch.seconds.toFixed(1)+'s ('
+console.log('\n'+sch.notes+' notes · '+sch.seconds.toFixed(1)+'s ('
   +Math.floor(sch.seconds/60)+':'+String(Math.round(sch.seconds%60)).padStart(2,'0')
   +') · stretched '+JSON.stringify(sch.stretched||[]));
 
