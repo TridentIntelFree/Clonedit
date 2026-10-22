@@ -11205,15 +11205,25 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        be. So the finding is withheld when the gaps barely vary: there is
        nothing for this statistic to see, which is different from having
        looked and found nothing. */
-    const uniq=new Set(gaps).size;
-    if(rhythm!=null && rhythm<bucket.rhythmFloor && uniq>2)
+    /* The test is whether ONE gap dominates, not how many distinct gaps
+       exist. A first attempt suppressed the finding only when there were
+       two or fewer, and the marimba figure it was written for still
+       tripped it: that part is four evenly spaced notes repeated every
+       other bar, so its gaps are mostly a single value with a couple of
+       long jumps between statements. Plenty of distinct values, and
+       still nothing for a shuffle to rearrange. */
+    const gc=new Map(); for(const g of gaps) gc.set(g,(gc.get(g)||0)+1);
+    const dominant=gaps.length?Math.max(...gc.values())/gaps.length:0;
+    const uniq=gc.size;
+    if(rhythm!=null && rhythm<bucket.rhythmFloor && dominant<0.6)
       findings.push('the rhythm barely restates anything: '+rhythm+' points above chance against '
         +bucket.rhythm+' typical. Onsets land in a different pattern every time, which is what '
         +'random timing sounds like.');
-    else if(rhythm!=null && uniq<=2)
-      findings.push('the rhythm is too regular to measure this way: only '+uniq+' distinct gap'
-        +(uniq>1?'s':'')+' in the part, so reshuffling it changes nothing and the score of '
-        +rhythm+' means "no information", not "no shape".');
+    else if(rhythm!=null && dominant>=0.6)
+      findings.push('the rhythm is too regular to measure this way: '+Math.round(100*dominant)
+        +'% of the gaps in this part are the same length ('+uniq+' distinct in all), so '
+        +'reshuffling them barely changes anything and the score of '+rhythm+' means "no '
+        +'information", not "no shape".');
     if(pitch!=null && rhythm!=null && pitch>bucket.pitch*2.4 && rhythm>bucket.rhythm*2.4)
       findings.push('both are far above the norm ('+pitch+' and '+rhythm+'), which is a loop '
         +'rather than a theme. Real lines restate and then vary.');
