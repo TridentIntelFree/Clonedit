@@ -451,6 +451,53 @@ const TOOLS = [
     inputSchema: { type: 'object', required: ['pad'], properties: {
       pad: { type: 'integer' }, src: { type: 'string' } } } },
 
+  { name: 'jbh_balance', description:
+      'SOLVE THE GROUP LEVELS AGAINST A REFERENCE instead of guessing them. Renders each '
+      + 'instrument group once, then fits gains so the mix lands on the reference\'s own band '
+      + 'shape — after the renders it is arithmetic, so trying a thousand combinations costs '
+      + 'nothing more. Five rounds of setting one track by ear each fixed one part of the '
+      + 'spectrum and broke another; this put nine bands inside 1.7dB in a single pass. Needs '
+      + 'jbh_reference loaded. Moves are capped (default 9dB) because an unconstrained fit does '
+      + 'not balance a mix, it deletes from one — left alone it took an instrument down 49dB. '
+      + 'A group pinned at the cap is reported: that means the part or the sound is wrong, not '
+      + 'the level. It suggests, it does not apply.',
+    inputSchema: { type: 'object', properties: {
+      src: { type: 'string' }, maxMoveDb: { type: 'number' },
+      groups: { type: 'array', items: { type: 'string' } } } } },
+
+  { name: 'jbh_mutate', description:
+      'MAKE VARIATIONS OF A SOUND, MEASURE THEM, KEEP THE ONE THAT WINS. Richard James described '
+      + 'commissioning software that starts with a sound, analyses it, makes randomised '
+      + 'variations and compares them against the original before picking the best; this is that, '
+      + 'using the analysers already here as the fitness function. Randomising alone gives noise '
+      + '— what makes it a tool is that every candidate is scored against the sound it came from. '
+      + 'want: different (default), similar, brighter, darker, punchier, fuller. Costs '
+      + 'population x generations renders of one pad. It restores the pad unless keep:true, so '
+      + 'nothing is applied behind your back.',
+    inputSchema: { type: 'object', required: ['pad'], properties: {
+      pad: { type: 'integer' },
+      want: { type: 'string', enum: ['different', 'similar', 'brighter', 'darker', 'punchier', 'fuller'] },
+      population: { type: 'integer' }, generations: { type: 'integer' },
+      amount: { type: 'number' }, keep: { type: 'boolean' }, seed: { type: 'integer' },
+      src: { type: 'string' }, knobs: { type: 'array', items: { type: 'string' } } } } },
+
+  { name: 'jbh_paint', description:
+      'DRAW A SOUND AS A SPECTRUM AND RESYNTHESISE IT, the way MetaSynth does — the program '
+      + 'behind the face hidden in the spectrogram of Equation. An image IS a spectrogram: '
+      + 'horizontal is time, vertical is frequency, brightness is level. Pass `rows` as a grid '
+      + 'of 0..1 levels with the LOWEST frequency first, each row a partial and each column a '
+      + 'moment; or `partials` for one tone at a time, which is how you build a bell with real '
+      + 'inharmonic ratios. Frequency maps logarithmically by default — the detail that took '
+      + 'people years to work out about that face, and the difference between a usable sound and '
+      + 'everything crowded into the top octave. The result is a sample on a pad: pad it, chop '
+      + 'it, mutate it like any other.',
+    inputSchema: { type: 'object', properties: {
+      pad: { type: 'integer' }, seconds: { type: 'number' },
+      lo: { type: 'number' }, hi: { type: 'number' }, log: { type: 'boolean' },
+      rows: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
+      partials: { type: 'array', items: { type: 'object' } },
+      midi: { type: 'number' }, name: { type: 'string' }, seed: { type: 'integer' } } } },
+
   { name: 'jbh_call', description:
       'Escape hatch: call any window.JBH method by name with an array of arguments. Everything '
       + 'the app exposes is reachable this way, including anything added after these tools were '
@@ -519,6 +566,15 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_reference':   return ok(await jbh('reference', [a.url === undefined ? null : a.url]));
       case 'jbh_compare':     return ok(await jbh('compare', [{ src: a.src }]));
       case 'jbh_vs_dry':      return ok(await jbh('vsDry', [a.pad, { src: a.src }]));
+      case 'jbh_balance':     return ok(await jbh('balance', [{ src: a.src,
+                                maxMoveDb: a.maxMoveDb, groups: a.groups }]));
+      case 'jbh_mutate':      return ok(await jbh('mutate', [a.pad, { want: a.want,
+                                population: a.population, generations: a.generations,
+                                amount: a.amount, keep: a.keep, seed: a.seed,
+                                src: a.src, knobs: a.knobs }]));
+      case 'jbh_paint':       return ok(await jbh('paint', [{ pad: a.pad, seconds: a.seconds,
+                                lo: a.lo, hi: a.hi, log: a.log, rows: a.rows,
+                                partials: a.partials, midi: a.midi, name: a.name, seed: a.seed }]));
       case 'jbh_call':        return ok(await jbh(a.method, a.args || []));
 
       case 'jbh_render': {

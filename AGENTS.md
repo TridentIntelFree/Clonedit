@@ -100,6 +100,42 @@ passes `melody()` and `counterpoint()` and sounds like nothing at all.
 The scripts that produced them are in `scripts/study-*.py`. A random walk
 scores about +7 on `motif()`; that gap is the whole point of the measure.
 
+## Making sounds, not just judging them
+
+Three calls have no equivalent elsewhere in the app.
+
+`balance(opt)` solves the group levels against a loaded reference
+instead of guessing them. It renders each instrument group once; after
+that the fit is arithmetic, so trying a thousand combinations costs
+nothing more. Five rounds of setting one track's levels by ear each
+fixed one part of the spectrum and broke another — this put nine bands
+inside 1.7 dB in one pass. Moves are capped at 9 dB by default, because
+an unconstrained fit does not balance a mix, it deletes from one: left
+alone, its cleanest route to the target took an instrument down 49 dB.
+A group pinned at the cap is telling you the part or the sound is
+wrong, not the level. It suggests; it does not apply.
+
+`mutate(pad, opt)` makes variations of a sound, measures them, and
+keeps the one that wins. Richard James described commissioning software
+that starts with a sound, analyses it, makes randomised variations and
+compares them against the original before picking the best; this is
+that, with the analysers here as the fitness function. Randomising
+alone is not the idea — every candidate is scored against the sound it
+came from. `want` is different, similar, brighter, darker, punchier or
+fuller. It restores the pad unless you pass `keep:true`.
+
+`paint(opt)` draws a sound as a spectrum and resynthesises it, the way
+MetaSynth does — the program behind the face hidden in the spectrogram
+of *Equation*. An image is a spectrogram: horizontal is time, vertical
+is frequency, brightness is level. Pass `rows` as a grid of levels with
+the lowest frequency first, or `partials` to place tones individually,
+which is how you build a bell with real inharmonic ratios rather than a
+filtered oscillator pretending. Frequency maps logarithmically by
+default; that is the detail people took years to work out about the
+face, and it is the difference between a usable sound and everything
+crowded into the top octave. What comes out is a sample on a pad, so
+`chop()` and `mutate()` work on it like anything else.
+
 ## Reproducing a track
 
 `songs/*.mjs` each render one finished track end to end — build the

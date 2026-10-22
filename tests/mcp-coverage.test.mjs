@@ -64,6 +64,23 @@ test('every analyser is reachable over MCP', () => {
     + 'its dispatch. An agent that cannot listen writes blind.');
 });
 
+/* The generators are not analysers, but an agent that cannot reach them
+   is missing the parts of this app that make sounds rather than judge
+   them — and those are the ones with no equivalent anywhere else here. */
+const GENERATORS = ['balance', 'mutate', 'paint'];
+
+test('the tools that make and solve things are reachable over MCP', () => {
+  const missing = GENERATORS.filter(g =>
+    !(mcp.includes("'jbh_" + g + "'") || new RegExp("jbh\\('" + g + "'").test(mcp)));
+  assert.deepStrictEqual(missing, [],
+    'not reachable over MCP: ' + missing.join(', ')
+    + '. These have no equivalent elsewhere in the app.');
+  for (const g of GENERATORS) {
+    const re = new RegExp('^\\s{2}(?:async\\s+)?' + g + '\\s*\\(', 'm');
+    assert.ok(re.test(legacy), g + '() is listed here but not defined in src/legacy.js');
+  }
+});
+
 test('the two calls that teach the workflow are exposed, and first', () => {
   assert.ok(/name: 'jbh_howto'/.test(mcp), 'jbh_howto is not exposed');
   assert.ok(/name: 'jbh_review'/.test(mcp), 'jbh_review is not exposed');

@@ -14813,6 +14813,140 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           +' could not run (see skipped)':'')+'.' };
   },
 
+  /* PAINT A SOUND AS A SPECTRUM, THE WAY MetaSynth DOES.
+
+     The most picked-over thing in this man's catalogue is the face
+     hidden in the spectrogram of Equation, drawn in MetaSynth — a
+     program whose actual idea is that an image IS a spectrogram:
+     horizontal is time, vertical is frequency, brightness is level, and
+     it resynthesises whatever you paint. The face is the famous part
+     and the least interesting part. The tool underneath is an additive
+     synthesiser you draw rather than patch, and nothing here could do
+     that.
+
+     So: `rows` is a grid of levels, lowest frequency first, each row a
+     partial and each column a moment. 64 rows over 2 seconds gives a
+     texture that no oscillator-and-filter chain here can reach, because
+     the partials need not be harmonic, need not share an envelope, and
+     need not even overlap.
+
+     Frequency is mapped LOGARITHMICALLY by default, which is the detail
+     that took people years to work out about the face — it only reads
+     as a face on a log axis, and it only sounds like anything musical
+     on one either, since equal row spacing on a linear axis crowds
+     everything into the top octave.
+
+     `partials` is the same engine addressed one tone at a time, for
+     when a bell with specific inharmonic ratios is wanted rather than a
+     picture. */
+  async paint(opt){
+    const o=opt||{};
+    ensureAudio();
+    const sr=AC.sampleRate;
+    const secs=clamp(o.seconds==null?2:+o.seconds, 0.1, 8);
+    const n=Math.max(64, Math.floor(sr*secs));
+    const lo=clamp(+o.lo||60, 20, 17000);
+    const hi=clamp(+o.hi||12000, lo*1.05, 20000);
+    const useLog=o.log!==false;
+
+    /* one entry per partial: a frequency and a level-over-time */
+    const parts=[];
+    if(Array.isArray(o.rows) && o.rows.length){
+      const R=o.rows.length;
+      for(let r=0;r<R;r++){
+        const row=o.rows[r];
+        if(!Array.isArray(row) || !row.length) continue;
+        let mx=0; for(const v of row) if(+v>mx) mx=+v;
+        if(mx<=0.002) continue;            /* a dark row is silence, and costs nothing */
+        const frac=R===1?0:r/(R-1);
+        parts.push({hz: useLog ? lo*Math.pow(hi/lo, frac) : lo+(hi-lo)*frac,
+          env:row.map(v=>Math.max(0, Math.min(1, +v||0)))});
+      }
+    } else if(Array.isArray(o.partials) && o.partials.length){
+      for(const q of o.partials){
+        const hz=+q.hz || (q.midi!=null ? 440*Math.pow(2,(+q.midi-69)/12) : 0);
+        if(!(hz>0)) continue;
+        const at=clamp(q.at==null?0:+q.at, 0, 1);
+        const dur=clamp(q.dur==null?(1-at):+q.dur, 0.002, 1);
+        const lv=clamp(q.level==null?1:+q.level, 0, 1);
+        /* a short ramp at each end, because a partial that starts and
+           stops instantly is a click with a tone attached */
+        const E=96, env=new Array(E).fill(0), ramp=Math.max(1, Math.round(E*0.02));
+        for(let k=0;k<E;k++){
+          const t=k/(E-1);
+          if(t<at || t>at+dur) continue;
+          const into=(t-at)/dur;
+          const g=Math.min(1, into*(E*dur)/ramp, (1-into)*(E*dur)/ramp);
+          env[k]=lv*Math.max(0, Math.min(1, g));
+        }
+        parts.push({hz, env, toHz:+q.toHz>0?+q.toHz:0});
+      }
+    } else throw new Error('paint needs rows (a grid of levels, lowest frequency first) '
+      +'or partials ([{hz|midi, at, dur, level, toHz}])');
+
+    if(!parts.length) throw new Error('nothing to paint — every row was silent');
+    if(parts.length>192) throw new Error(parts.length+' partials is past the 192 cap: '
+      +'this is additive synthesis and every one of them costs a pass over the buffer');
+
+    /* a table rather than Math.sin per sample per partial: 64 partials
+       over two seconds is five and a half million of them */
+    const TAB=4096, tab=new Float32Array(TAB+1);
+    for(let i=0;i<=TAB;i++) tab[i]=Math.sin(2*Math.PI*i/TAB);
+
+    let rs=(o.seed|0)||0x5EED;
+    const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+
+    const out=new Float32Array(n);
+    for(const p of parts){
+      const env=p.env, E=env.length, glide=p.toHz>0;
+      /* a random starting phase per partial: start them all at zero and
+         the first sample is the sum of every amplitude at once, which
+         is a click no envelope can hide */
+      let phase=rnd();
+      const ratio=glide?Math.log(p.toHz/p.hz):0;
+      for(let i=0;i<n;i++){
+        const t=i/(n-1);
+        const x=t*(E-1), k=x|0, f=x-k;
+        const a=env[k]*(1-f)+(env[k+1]==null?env[k]:env[k+1])*f;
+        if(a>0.0004) out[i]+=a*tab[(phase*TAB)|0];
+        phase+=(glide?p.hz*Math.exp(ratio*t):p.hz)/sr;
+        if(phase>=1) phase-=(phase|0);
+      }
+    }
+    /* normalise, and fade the very ends so the sample can loop or be
+       retriggered without a click */
+    let pk=0; for(let i=0;i<n;i++){ const a=out[i]<0?-out[i]:out[i]; if(a>pk) pk=a; }
+    if(pk<=0) throw new Error('the painted buffer came out silent');
+    const g=0.9/pk, fade=Math.min(Math.floor(sr*0.004), n>>3);
+    for(let i=0;i<n;i++){
+      let v=out[i]*g;
+      if(i<fade) v*=i/fade;
+      if(i>=n-fade) v*=(n-1-i)/fade;
+      out[i]=v;
+    }
+
+    const buf=AC.createBuffer(1, n, sr);
+    buf.getChannelData(0).set(out);
+    const name=o.name||('painted '+parts.length+'p');
+    const target=(o.pad==null)?pickTargetPad():clamp(o.pad|0,0,NPADS-1);
+    S.editPad=target;
+    if(loadIntoTarget(buf, name, {keepTarget:true, noAsk:true})===false)
+      throw new Error('could not put the painted sound on '+padName(target));
+    S.pads[target].srcSample=''; S.pads[target].srcCat='PAINT';
+    if(o.midi!=null) S.pads[target].srcNote=+o.midi;
+    dirty();
+    try{ drawPads(); }catch(e){}
+
+    const rep=await specReport(buf);
+    return { pad:target, name, seconds:+(n/sr).toFixed(3), partials:parts.length,
+      lo:Math.round(lo), hi:Math.round(hi), log:useLog,
+      lowest:Math.round(parts[0].hz), highest:Math.round(parts[parts.length-1].hz),
+      shape:rep.shape, peak:rep.peak,
+      says:'painted '+parts.length+' partials from '+Math.round(parts[0].hz)+'Hz to '
+        +Math.round(parts[parts.length-1].hz)+'Hz onto '+padName(target)
+        +'. It is a sample now — pad() it, chop() it, mutate() it like any other.' };
+  },
+
   /* MUTATE A SOUND: MAKE VARIATIONS, MEASURE THEM, KEEP THE BEST.
 
      Richard James described commissioning software that "starts with a
@@ -15168,6 +15302,16 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         + 'separate motion — counterpoint() measures the second, motif() the first.',
     ],
     norms: { counterpoint:CP_NORMS, melody:MELODY_NORMS, motif:MOTIF_NORMS },
+    makes: [
+      'balance() solves group levels against a loaded reference instead of guessing them; '
+        + 'moves are capped because an unconstrained fit deletes instruments rather than '
+        + 'balancing them.',
+      'mutate(pad) makes variations of a sound, measures each against the original, and keeps '
+        + 'the winner. want: different, similar, brighter, darker, punchier, fuller.',
+      'paint() draws a sound as a spectrum — rows of levels, lowest frequency first, or '
+        + 'partials placed one at a time for genuinely inharmonic bells. The result is a '
+        + 'sample on a pad like any other.',
+    ],
     says:'review() is the one to run. It calls the rest and tells you what it could not reach.' };
   },
 
