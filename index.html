@@ -2233,6 +2233,49 @@ socket. Anything driving a browser can call
 link renders as text, never as markup.</p>
   </div></details>
 
+  <!-- These five grew out of an agent's workflow and were reachable only
+       from the API, which meant the person actually using the app could
+       not get at them at all. Each one does something that cannot be
+       done any other way here. -->
+  <h3 style="margin-top:14px">SOUND TOOLS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; measure, solve, and make</span></h3>
+  <div class="row" style="flex-wrap:wrap;gap:4px">
+    <button id="btnToolReview" class="grow" title="Run every analyser and list what is wrong, worst first">REVIEW MIX</button>
+    <button id="btnToolBalance" class="grow" title="Solve the group levels against the loaded reference">BALANCE</button>
+  </div>
+  <div class="row" style="flex-wrap:wrap;gap:4px">
+    <button id="btnToolPaint" class="grow" title="Draw a bell as a spectrum and resynthesise it onto this pad">PAINT A BELL</button>
+    <button id="btnToolMutate" class="grow" title="Vary this pad's sound, measure each variation, keep the best">MUTATE PAD</button>
+    <button id="btnToolResynth" class="grow" title="Rebuild this pad using the pieces of every other pad">REBUILD PAD</button>
+  </div>
+  <div id="toolLog" role="log" aria-live="polite" aria-label="Sound tool results"
+    style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
+           padding:8px;margin:6px 0;font-size:11px;line-height:1.5;max-height:200px;
+           overflow-y:auto;color:var(--txt-dim);white-space:pre-wrap"></div>
+  <details class="ex"><summary>What these five do</summary><div class="ex-body">
+    <p style="margin-top:0"><b>REVIEW MIX</b> runs every analyser in the app at
+once &mdash; balance, perceived loudness, small-speaker translation, pulse,
+melodic shape, voice independence &mdash; sorts what it finds by severity and
+says which checks it could not reach. A check that silently did not run reads
+exactly like a check that passed, so it reports its own coverage.</p>
+    <p><b>BALANCE</b> solves the instrument levels instead of guessing them.
+Load a finished mix with <span class="lit">reference()</span> first; it then
+renders each group once and fits the gains so the whole thing lands on that
+reference's own band shape. It suggests, it does not apply.</p>
+    <p><b>PAINT A BELL</b> draws a sound as a spectrum and resynthesises it, the
+way MetaSynth does: an image is a spectrogram, with time across, frequency up
+and brightness as level. The button makes a bell with genuinely inharmonic
+partials &mdash; something no oscillator-and-filter chain here can produce.
+From the API, <span class="lit">paint({rows})</span> takes a whole grid.</p>
+    <p><b>MUTATE PAD</b> makes variations of the current pad's sound, measures
+each one, and keeps whichever wins. Randomising alone gives noise; every
+candidate is scored against the sound it came from. It restores the pad unless
+you keep the result.</p>
+    <p><b>REBUILD PAD</b> plays the current pad using the pieces of every other
+loaded pad: it chops both into short blocks and rebuilds this sound out of the
+closest-matching blocks of the others. The shape is the target's, the substance
+is theirs.</p>
+  </div></details>
+
   <details class="ex" style="margin-top:8px"><summary>Playing, not just placing</summary><div class="ex-body">
     <p style="margin-top:0"><span class="lit">phrase(name, from, to, opt)</span>
 &mdash; shape notes that are already written. <span class="lit">vel</span>
@@ -16403,6 +16446,111 @@ async function copyBlock(id,label){
 }
 $('btnCopyMcp').addEventListener('click',()=>copyBlock('cmdMcpCfg','MCP CONFIG'));
 $('btnCopyTab').addEventListener('click',()=>copyBlock('cmdTab','SNIPPET'));
+/* ---- SOUND TOOLS PANEL -------------------------------------------------
+   The five calls below existed only on the API, which meant the person
+   using the app could not reach the parts of it that measure a mix or
+   make a sound out of nothing. Each button is the call with sensible
+   defaults; the API takes the arguments.
+
+   They render into a log rather than a status line because every one of
+   them answers with a list, and the whole point of these is the detail.
+   Everything written there is set as TEXT, never as markup. */
+function toolLog(lines){
+  const el=$('toolLog'); if(!el) return;
+  el.style.display='block';
+  el.textContent=(Array.isArray(lines)?lines.join('\n'):String(lines))+'\n';
+  el.scrollTop=0;
+}
+async function toolRun(btnId, label, fn){
+  const b=$(btnId); if(!b || b.disabled) return;
+  const was=b.textContent;
+  b.disabled=true; b.textContent='…';
+  toolLog(label+' — working. Renders take a moment.');
+  try{
+    const out=await fn();
+    toolLog(out);
+  }catch(e){
+    toolLog(label+' could not run:\n  '+String((e&&e.message)||e));
+  }finally{ b.disabled=false; b.textContent=was; }
+}
+const padLabel=(i)=>(S.pads[i]&&S.pads[i].name)?(S.pads[i].name+' (pad '+i+')'):('pad '+i);
+
+$('btnToolReview').addEventListener('click',()=>toolRun('btnToolReview','REVIEW',async()=>{
+  const src=(S.songOn && S.song && S.song.length)?'song':'pat';
+  const r=await window.MVX.review({src});
+  const out=['REVIEW of the '+(src==='song'?'song':'current pattern'), r.says, ''];
+  if(!r.findings.length) out.push('  nothing to report.');
+  for(const f of r.findings.slice(0,14)){
+    out.push('  ['+f.severity+'] '+f.says);
+    if(f.fix) out.push('       → '+f.fix);
+  }
+  if(r.findings.length>14) out.push('  …and '+(r.findings.length-14)+' more.');
+  if(r.skipped && r.skipped.length){
+    out.push('', 'could not run:');
+    for(const k of r.skipped) out.push('  '+k);
+  }
+  return out;
+}));
+
+$('btnToolBalance').addEventListener('click',()=>toolRun('btnToolBalance','BALANCE',async()=>{
+  const r=await window.MVX.balance({src:'pat'});
+  if(!r || !r.pads) return 'nothing to balance.';
+  const out=['BALANCE against '+r.target, r.says, '',
+    'group        gain  →  suggested   change   owns'];
+  for(const g of r.pads) out.push('  '+String(g.instrument).padEnd(10)
+    +String(g.gain).padStart(6)+'  → '+String(g.suggested).padStart(8)
+    +String((g.changeDb>=0?'+':'')+g.changeDb+'dB').padStart(9)+'   '+g.owns);
+  if(r.capped && r.capped.length){ out.push('', 'cannot get there by gain alone:');
+    for(const c of r.capped) out.push('  '+c); }
+  out.push('', 'Nothing was changed. Set these with the pad gain controls.');
+  return out;
+}));
+
+$('btnToolPaint').addEventListener('click',()=>toolRun('btnToolPaint','PAINT',async()=>{
+  const i=S.editPad|0;
+  /* a bell: partials at ratios a bar cannot be filtered into having */
+  const f=220;
+  const r=await window.MVX.paint({pad:i, seconds:2.4, name:'painted bell',
+    partials:[
+      {hz:f,       level:1.00, at:0, dur:1.00},
+      {hz:f*2,     level:0.55, at:0, dur:0.72},
+      {hz:f*2.73,  level:0.42, at:0, dur:0.46},
+      {hz:f*4.39,  level:0.30, at:0, dur:0.30},
+      {hz:f*7.12,  level:0.17, at:0, dur:0.16},
+      {hz:f*11.3,  level:0.09, at:0, dur:0.08}]});
+  drawPads();
+  return ['PAINT onto '+padLabel(r.pad), r.says, '',
+    'Inharmonic partials at 2.73x, 4.39x, 7.12x and 11.3x — bell ratios, not',
+    'harmonic ones. It is an ordinary sample now: chop it, mutate it, play it.'];
+}));
+
+$('btnToolMutate').addEventListener('click',()=>toolRun('btnToolMutate','MUTATE',async()=>{
+  const i=S.editPad|0;
+  if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample on it.';
+  const r=await window.MVX.mutate(i,{want:'different', population:5, generations:3});
+  const out=['MUTATE '+padLabel(i), r.says, ''];
+  if(r.changed.length){
+    out.push('what it moved:');
+    for(const c of r.changed) out.push('  '+c.field+': '+c.from+' → '+c.to);
+    out.push('', 'The pad is back as it was. To keep this, set those fields,',
+      'or call mutate(pad,{keep:true}) from the API.');
+  }
+  return out;
+}));
+
+$('btnToolResynth').addEventListener('click',()=>toolRun('btnToolResynth','REBUILD',async()=>{
+  const i=S.editPad|0;
+  if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample to rebuild.';
+  let free=-1;
+  for(let k=NPADS-1;k>=0;k--) if(S.pads[k] && S.pads[k].bufId<0){ free=k; break; }
+  if(free<0) return 'every pad is full — clear one for the result.';
+  const r=await window.MVX.resynth({target:i, pad:free});
+  drawPads();
+  return ['REBUILD '+padLabel(i)+' → '+padLabel(r.pad), r.says, '',
+    'built from: '+r.padsUsed.join(', '),
+    r.blocks+' blocks of '+r.blockMs+'ms, chosen from '+r.brainBlocks+' candidates.'];
+}));
+
 $('btnAgentPing').addEventListener('click',()=>{
   if(!jbhBus){ lcd('AGENT LINK is closed.'); return; }
   jbhPing();
