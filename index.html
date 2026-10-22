@@ -14333,10 +14333,24 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       findings.push('the pitches barely restate anything: '+pitch+' points above chance against '
         +bucket.pitch+' typical for a line of '+seq.length+' notes, and '+bucket.pitchFloor
         +' at the bottom of the range. Nothing here comes back, so there is nothing to follow.');
-    if(rhythm!=null && rhythm<bucket.rhythmFloor)
+    /* A PERFECTLY REGULAR RHYTHM SCORES ZERO, and that is not a fault
+       in the part. The measure is recurrence above the same values
+       reshuffled, and every shuffle of a run of identical gaps is that
+       same run — so an ostinato of four evenly spaced notes comes out at
+       0, indistinguishable from a part with no rhythmic shape at all.
+       It showed up on a marimba figure that is as regular as a part can
+       be. So the finding is withheld when the gaps barely vary: there is
+       nothing for this statistic to see, which is different from having
+       looked and found nothing. */
+    const uniq=new Set(gaps).size;
+    if(rhythm!=null && rhythm<bucket.rhythmFloor && uniq>2)
       findings.push('the rhythm barely restates anything: '+rhythm+' points above chance against '
         +bucket.rhythm+' typical. Onsets land in a different pattern every time, which is what '
         +'random timing sounds like.');
+    else if(rhythm!=null && uniq<=2)
+      findings.push('the rhythm is too regular to measure this way: only '+uniq+' distinct gap'
+        +(uniq>1?'s':'')+' in the part, so reshuffling it changes nothing and the score of '
+        +rhythm+' means "no information", not "no shape".');
     if(pitch!=null && rhythm!=null && pitch>bucket.pitch*2.4 && rhythm>bucket.rhythm*2.4)
       findings.push('both are far above the norm ('+pitch+' and '+rhythm+'), which is a loop '
         +'rather than a theme. Real lines restate and then vary.');

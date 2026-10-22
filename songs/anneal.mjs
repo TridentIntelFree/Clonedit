@@ -117,40 +117,52 @@ console.log('players: vib '+VIB.length+'  glk '+GLK.length+'  mar '+MAR.length+'
    sample on its own. So the synths come down instead, and the quiet
    recordings go up to near the ceiling with velocity carrying the rest.
    The numbers below are (target -12dBFS minus the sample's own peak),
-   clamped, and then balanced by ear only after that. */
+   clamped, and then balanced by ear only after that.
+
+   SECOND PASS. That fixed the top — 8kHz came back within 2dB of the
+   reference instead of 36 below it — and exposed the next thing. Each
+   band normalised against the track's OWN bass, rather than read as an
+   absolute, showed a hollow middle: 16dB under the reference's shape at
+   500Hz and 13dB at 1kHz, with the 60Hz band now the loudest in the
+   mix. A scooped curve, where a mix that works has a smooth downward
+   tilt. So the sub and kick come down again, the shaker and cabasa come
+   off the ceiling they were pushed to, and the three instruments that
+   actually live at 300Hz-1kHz — vibraphone, marimba, hand chimes — get
+   the room. Comparing a spectrum to a reference only in absolute terms
+   hides this completely, which is why reference() is loaded below. */
 await bat([
   ...VIB.map(p=>['pad',p,{inst:'vib', att:0.001, dec:3.4, sus:0.18, rel:1.10,
-    ftype:'lowpass', fcut:0.92, fres:0.3, gain:1.80, pan:-0.14, rev:0.26, eqHi:3}]),
+    ftype:'lowpass', fcut:0.92, fres:0.3, gain:2.00, pan:-0.14, rev:0.26, eqHi:3, eqMid:7, eqLo:2}]),
   /* the sparkle: pitched AND bright, measured 19dB down above 8kHz where
      the vibraphone is 62 — this is where the top octave comes from */
   ...GLK.map(p=>['pad',p,{inst:'glk', att:0.001, dec:2.2, sus:0.10, rel:0.80,
     ftype:'off', gain:1.70, pan:0.20, rev:0.40, eqHi:4}]),
   ...MAR.map(p=>['pad',p,{inst:'mar', att:0.001, dec:1.5, sus:0.05, rel:0.45,
-    ftype:'lowpass', fcut:0.80, gain:2.00, pan:0.10, rev:0.16, eqHi:2}]),
+    ftype:'lowpass', fcut:0.80, gain:2.00, pan:0.10, rev:0.16, eqHi:2, eqMid:5, eqLo:2}]),
   ...HCH.map(p=>['pad',p,{inst:'hch', att:0.02, dec:5.0, sus:0.40, rel:2.20,
-    ftype:'lowpass', fcut:0.86, gain:1.55, pan:-0.26, rev:0.48}]),
+    ftype:'lowpass', fcut:0.86, gain:2.00, pan:-0.26, rev:0.48, eqMid:5}]),
   /* THE AIR. All of it near the ceiling, all of it with the high shelf
      up, because every one of these is a quiet recording and together
      they are the only thing in the piece with real energy above 8kHz. */
   ['pad',TRI,{inst:'air', att:0.001, dec:2.0, sus:0, rel:1.4, gain:2.00, pan:0.30, rev:0.44, eqHi:8}],
-  ['pad',SHK,{inst:'air', att:0.001, dec:0.5, sus:0, rel:0.22, gain:1.90, pan:-0.32, rev:0.18, eqHi:5}],
-  ['pad',CAB,{inst:'air', att:0.001, dec:0.6, sus:0, rel:0.26, gain:2.00, pan:0.34, rev:0.20, eqHi:7}],
+  ['pad',SHK,{inst:'air', att:0.001, dec:0.5, sus:0, rel:0.22, gain:1.45, pan:-0.32, rev:0.18, eqHi:5}],
+  ['pad',CAB,{inst:'air', att:0.001, dec:0.6, sus:0, rel:0.26, gain:1.55, pan:0.34, rev:0.20, eqHi:7}],
   ['pad',BTR,{inst:'air', att:0.001, dec:3.0, sus:0, rel:2.0, gain:2.00, pan:0.08, rev:0.56, eqHi:10}],
   ['pad',FCY,{inst:'air', att:0.001, dec:2.4, sus:0, rel:1.6, gain:2.00, pan:-0.20, rev:0.50, eqHi:9}],
   ['pad',WBL,{inst:'air', att:0.001, dec:0.30, sus:0, rel:0.14, gain:0.80, pan:0.26, rev:0.12}],
   /* THE PULSE. Still the loudest thing on the beat, but these are
      full-scale synth sources and no longer need a gain above 1 to be it. */
   ['pad',KIK,{inst:'pulse', att:0.001, dec:0.62, sus:0, rel:0.26, pitch:-2,
-    ftype:'lowpass', fcut:0.34, drv:0.24, gain:0.42, pan:0, rev:0.05}],
+    ftype:'lowpass', fcut:0.34, drv:0.24, gain:0.34, pan:0, rev:0.05}],
   ...SUB.map(p=>['pad',p,{inst:'pulse', att:0.004, dec:2.4, sus:0.55, rel:0.60,
-    ftype:'lowpass', fcut:0.20, drv:0.16, gain:0.30, pan:0, rev:0.06}]),
+    ftype:'lowpass', fcut:0.20, drv:0.16, gain:0.20, pan:0, rev:0.06}]),
 ]);
 
 /* one room for everything, and only a little of it: the air is carried
    by real recordings here and does not need reverb to fake it */
 await call('set',{bpm:BPM, swing:0, human:0.018, humanDrift:0.10,
   revType:'room', revSize:1.9, revLvl:0.34, dlyMode:'digital', delayFb:0.22, dlyTone:7200,
-  compAmt:0.20, mWidth:1.10, mMono:95, mCeil:-3.0, mAir:5.0, mMud:-1.0, mEqMid:0,
+  compAmt:0.20, mWidth:1.10, mMono:95, mCeil:-3.0, mAir:4.0, mMud:0, mEqMid:4,
   scOn:false, masterVol:1.0, mTrim:0});
 
 /* ---- THE THEME ---------------------------------------------------------
@@ -325,6 +337,23 @@ for(const v of ['vib','glk','mar']){
       +' (norm '+mo.norm.pitch+', floor '+mo.norm.pitchFloor+')   rhythm '+mo.rhythmRecurrence
       +' (norm '+mo.norm.rhythm+')'+(mo.findings.length?'  ! '+mo.findings[0].slice(0,60):''));
 }
+/* THE APP HAS BEEN ASKING FOR THIS EVERY RUN. Every previous bounce
+   ended with "[no-reference] tonal balance was not judged", and every
+   time the balance was then judged by hand against a spectrum dump.
+   salvage3 is the mix in this repo that came back as having good
+   levels, and the harness serves the repo root, so it can just be
+   loaded and the difference read off. */
+try{
+  await call('reference','salvage3.wav');
+  const cmp=await call('compare',{src:'song'});
+  if(cmp && cmp.bands){
+    console.log('\nAGAINST salvage3 (+ = this track has more):');
+    for(const b of cmp.bands) console.log('   '+String(b.name||b.lo||'').padStart(7)
+      +'  '+(b.diffDb>=0?'+':'')+(+b.diffDb).toFixed(1)+' dB');
+  }
+  if(cmp && cmp.says) console.log('   '+cmp.says);
+}catch(e){ console.log('\nreference: '+String(e.message).slice(0,100)); }
+
 const cr=await call('critique',{src:'song'});
 console.log('\ncritique:'); for(const f of cr.found) console.log('   ['+f.severity+'] '+f.says.slice(0,105));
 if(!cr.found.length) console.log('   (nothing)');
