@@ -11676,6 +11676,184 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           +' could not run (see skipped)':'')+'.' };
   },
 
+  /* MUTATE A SOUND: MAKE VARIATIONS, MEASURE THEM, KEEP THE BEST.
+
+     Richard James described commissioning software that "starts with a
+     sound, analyzes it, then makes variations, randomizing and
+     comparing them to the original before picking the best one". That
+     is a hill-climb with an ear for a fitness function, and it is worth
+     building here for a reason beyond provenance: this app has spent a
+     long time growing measurements, and a measurement you can score
+     with is a measurement you can search with. Everything needed to
+     judge a candidate already exists.
+
+     Randomising alone is not the idea and never was. Turning knobs at
+     random gives noise; what makes it a tool is that each variation is
+     compared against the sound it came from and kept only if it wins.
+     So `want` says what winning means — further from the original,
+     closer to it, brighter, darker, punchier — and the comparison is
+     always against the original rather than against an absolute.
+
+     It costs population x generations renders of ONE pad, so it is
+     minutes rather than seconds, and it restores the pad afterwards
+     unless asked to keep the result. Nothing is applied behind your
+     back. */
+  async mutate(padIdx, opt){
+    const o=opt||{}, i=padIdx|0, p=S.pads[i];
+    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    const POP=Math.max(2, Math.min(12, o.population||5));
+    const GEN=Math.max(1, Math.min(8, o.generations||3));
+    const WANT=o.want||'different';
+    const AMT=o.amount==null?0.35:Math.max(0.05, Math.min(1, o.amount));
+    const ro={loops:o.loops||1, src:o.src||'pat', noTail:false};
+
+    /* what may be touched, and how far. Envelope and filter first,
+       because those are what change a sound's character rather than its
+       identity; pitch and start are included but moved less, since they
+       are the two that stop it being the same instrument. */
+    const KNOBS=[
+      {k:'fcut', lo:0.04, hi:1,    scale:0.45},
+      {k:'fres', lo:0,    hi:8,    scale:0.35},
+      {k:'drv',  lo:0,    hi:0.9,  scale:0.40},
+      {k:'crush',lo:1,    hi:16,   scale:0.30},
+      {k:'att',  lo:0.001,hi:0.4,  scale:0.30},
+      {k:'dec',  lo:0.05, hi:6,    scale:0.40},
+      {k:'sus',  lo:0,    hi:1,    scale:0.35},
+      {k:'rel',  lo:0.01, hi:1,    scale:0.35},
+      {k:'eqLo', lo:-10,  hi:10,   scale:0.30},
+      {k:'eqMid',lo:-10,  hi:10,   scale:0.30},
+      {k:'eqHi', lo:-10,  hi:10,   scale:0.30},
+      {k:'start',lo:0,    hi:0.6,  scale:0.18},
+      {k:'pitch',lo:-12,  hi:12,   scale:0.15},
+    ];
+    const FTYPES=['off','lowpass','highpass','bandpass'];
+    const knobs=o.knobs?KNOBS.filter(x=>o.knobs.indexOf(x.k)>=0):KNOBS;
+    if(!knobs.length) throw new Error('no knobs left to turn — check the names in `knobs`');
+
+    let rs=(o.seed|0)||0x9E3779B9;
+    const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+
+    const FIELDS=knobs.map(x=>x.k).concat(['ftype','reverse']);
+    const snap=()=>{ const o2={}; for(const k of FIELDS) o2[k]=p[k]; return o2; };
+    const put=(st)=>{ for(const k in st) p[k]=st[k]; };
+    const original=snap();
+
+    const measure=async()=>{
+      const buf=await renderMix(new Set([i]), new Set(), ro);
+      if(!buf) return null;
+      const r=await specReport(buf);
+      return r && r.peak>=0.002 ? r : null;
+    };
+    const base=await measure();
+    if(!base) throw new Error('pad '+i+(p.name?' ('+p.name+')':'')+' is silent over '
+      +(ro.src==='song'?'the song':'this pattern')+' — nothing to mutate. '
+      +'Write some steps for it first.');
+
+    /* HOW FAR APART ARE TWO SOUNDS. The spectral shape only: both are
+       normalised against their own total inside specShape, so this is
+       about colour rather than level, and a candidate cannot win by
+       simply being louder. */
+    const dist=(a,b)=>{
+      let n=0, s2=0;
+      for(const x of a.shape){ const y=b.shape.find(z=>z.band===x.band);
+        if(!y) continue; s2+=(x.rel-y.rel)*(x.rel-y.rel); n++; }
+      return n?Math.sqrt(s2/n):0;
+    };
+    /* `band` is a NAME, not a number — specShape labels each band
+       "20-60", "60-120" and so on, and `lo` is the numeric edge.
+       Filtering on band>=2000 compared a string to a number, which is
+       false for every band, so brightness was computed as exactly zero
+       every time and the brighter and darker goals could not move
+       anything at all. They ran twenty-four renders each and returned
+       the original, twice, identically. */
+    const tilt=(r)=>{ const hi=r.shape.filter(b=>b.lo>=2000).reduce((a,c)=>a+c.rel,0);
+      const lo=r.shape.filter(b=>b.lo<500).reduce((a,c)=>a+c.rel,0); return hi-lo; };
+    const score=(cand)=>{
+      const d=dist(base,cand);
+      switch(WANT){
+        /* a mutation that nobody recognises is a different sound, not a
+           variation of this one, so distance is rewarded up to a point
+           and then flat. Six decibels of shape change is a long way. */
+        case 'different': return Math.min(d,7)-Math.max(0,d-7)*0.6;
+        case 'similar':   return -d;
+        case 'brighter':  return tilt(cand)-tilt(base);
+        case 'darker':    return tilt(base)-tilt(cand);
+        case 'punchier':  return (cand.crestDb==null?0:cand.crestDb)-(base.crestDb==null?0:base.crestDb);
+        case 'fuller':    return -Math.abs(d-3);
+        default: throw new Error('want must be different, similar, brighter, darker, punchier or fuller');
+      }
+    };
+
+    /* THE ORIGINAL IS THE ONE TO BEAT, not negative infinity. Seeded
+       with -Infinity, the first candidate won whatever it did — and
+       since a candidate that changes nothing audible scores exactly
+       zero, a no-op took the lead and then blocked everything that
+       followed from being judged against the sound it came from. Both
+       "brighter" and "darker" returned the same inert result. */
+    let bestState=snap(), bestScore=score(base), bestRep=base, tried=0;
+    const history=[];
+    try{
+      for(let g=0; g<GEN; g++){
+        for(let c=0; c<POP; c++){
+          const st=Object.assign({}, bestState);
+          /* a handful of knobs per candidate, not all of them: changing
+             everything at once makes a different sound and tells you
+             nothing about which change did it */
+          /* A KNOB THAT DOES NOTHING IS NOT A MUTATION. With ftype off,
+             fcut and fres are wired to nothing, so a search that offers
+             them spends its budget turning a disconnected dial and
+             reports the result as the best it could do. Either the
+             filter gets switched on in the same candidate, or those two
+             are left alone. */
+          const live=knobs.filter(x=>!((x.k==='fcut'||x.k==='fres') && st.ftype==='off'));
+          const pool=live.length?live:knobs;
+          const howMany=1+Math.floor(rnd()*3);
+          for(let m=0;m<howMany;m++){
+            const kn=pool[Math.floor(rnd()*pool.length)];
+            const span=(kn.hi-kn.lo)*kn.scale*AMT;
+            let v=(+st[kn.k]||0)+(rnd()*2-1)*span;
+            st[kn.k]=+Math.max(kn.lo, Math.min(kn.hi, v)).toFixed(4);
+          }
+          const tonal=(WANT==='brighter'||WANT==='darker'||WANT==='different');
+          if(rnd()<(tonal?0.30:0.12)*AMT) st.ftype=FTYPES[Math.floor(rnd()*FTYPES.length)];
+          if(rnd()<0.08*AMT) st.reverse=!st.reverse;
+          put(st); tried++;
+          const rep=await measure();
+          if(!rep) continue;
+          const sc=score(rep);
+          if(sc>bestScore){ bestScore=sc; bestState=Object.assign({},st); bestRep=rep;
+            history.push({generation:g+1, score:+sc.toFixed(2),
+              shapeChangeDb:+dist(base,rep).toFixed(2)}); }
+        }
+      }
+    } finally {
+      put(o.keep?bestState:original);
+      try{ reapplyLivePads(); }catch(e){}
+      dirty();
+    }
+
+    const changed=[];
+    for(const k of FIELDS){
+      const a=original[k], b=bestState[k];
+      if(a===b) continue;
+      changed.push({field:k, from:(typeof a==='number'?+(+a).toFixed(3):a),
+        to:(typeof b==='number'?+(+b).toFixed(3):b)});
+    }
+    return { pad:i, name:p.name||('pad '+i), want:WANT, tried, kept:!!o.keep,
+      changed, settings:bestState,
+      shapeChangeDb:+dist(base,bestRep).toFixed(2),
+      before:{shape:base.shape, crestDb:base.crestDb, lufs:base.lufs},
+      after:{shape:bestRep.shape, crestDb:bestRep.crestDb, lufs:bestRep.lufs},
+      history,
+      says: changed.length
+        ? ('moved '+changed.map(c=>c.field).join(', ')+' — '
+          +(+dist(base,bestRep).toFixed(1))+'dB of spectral shape change over '+tried+' tries'
+          +(o.keep?'. Applied.':'. NOT applied: pass {keep:true} to keep it, or set the '
+            +'fields in `changed` yourself.'))
+        : 'nothing beat the original over '+tried+' tries — try a larger amount, more '
+          +'generations, or a different want.' };
+  },
+
   /* SOLVE THE LEVELS INSTEAD OF GUESSING THEM.
 
      This exists because of five consecutive attempts to balance one
