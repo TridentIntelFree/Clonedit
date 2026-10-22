@@ -14400,13 +14400,45 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       return {says:'too few events to look for a pulse.'};
     const ev=sch.events.filter(e=>e.t!=null);
     const dur=Math.max.apply(null, ev.map(e=>e.t))+0.5;
-    /* HOW LOUD IS THIS ONSET, ROUGHLY. Velocity times the pad's own gain
-       is crude — it takes no account of filtering, of where the sound
-       sits in the spectrum, or of masking — but the failure it has to
-       catch is a four-to-one gain difference between the pulse layer and
-       the scatter layer, and it catches that. */
+    /* HOW LOUD IS THIS ONSET, ROUGHLY — AND IT HAS TO INCLUDE THE SOURCE.
+       Velocity times the pad's gain was the first version, and it is
+       wrong in the one case that matters most. Gain is a multiplier on
+       whatever the pad is holding, and the things a pad holds differ by
+       tens of dB: in the track this was written for, a cabasa sample
+       peaking at -33dBFS at gain 2.0 and a full-scale synth kick at gain
+       0.42 came out as weight 302 against 51, when the kick is in fact
+       some 20dB the louder of the two. Every per-pad number in the table
+       was backwards, and the buried-by figure computed from them with it.
+
+       So the source level goes in. S.buffers holds what each pad plays,
+       so its RMS is a measurement rather than an assumption, and it
+       costs one pass over each buffer rather than the per-pad renders
+       loudness() does. It still takes no account of filtering, of where
+       a sound sits in the spectrum, or of masking — for that, use
+       loudness(), which renders each pad and weights for the ear. */
+    const srcCache=new Map();
+    const srcLevel=(padIdx)=>{
+      const p=S.pads[padIdx];
+      if(!p || p.bufId==null || p.bufId<0) return 0.25;
+      if(srcCache.has(p.bufId)) return srcCache.get(p.bufId);
+      let lvl=0.25;
+      try{
+        const b=S.buffers[p.bufId];
+        if(b && b.length){
+          const d=b.getChannelData(0);
+          /* subsampled: a buffer can be seconds long and the answer only
+             needs to be right to a decibel or two */
+          const step=Math.max(1, Math.floor(d.length/8000));
+          let s2=0, n2=0;
+          for(let i=0;i<d.length;i+=step){ s2+=d[i]*d[i]; n2++; }
+          if(n2) lvl=Math.sqrt(s2/n2);
+        }
+      }catch(e){ /* a pad whose buffer has gone keeps the default */ }
+      srcCache.set(p.bufId, lvl);
+      return lvl;
+    };
     const wOf=(e)=>{ const p=S.pads[e.pad]; const g=p&&p.gain!=null?p.gain:1;
-      return Math.max(0, (e.vel==null?0.8:e.vel)) * g; };
+      return Math.max(0, (e.vel==null?0.8:e.vel)) * g * srcLevel(e.pad); };
     const SRH=100;                                   // envelope samples per second
     const n=Math.max(16, Math.ceil(dur*SRH));
     const build=(list)=>{
@@ -14476,7 +14508,6 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        is audible as random timing however tidy the grid looks, and it
        is invisible to anything that counts events instead of weighing
        them. Stated this way it needs no minimum number of pads. */
-    const savedW=wOf;
     const flatShare=(period)=>{
       if(!(period>0)) return null;
       const tot=ev.length; if(!tot) return null;
