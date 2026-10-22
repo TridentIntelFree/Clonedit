@@ -211,6 +211,66 @@ as well as separate motion. `counterpoint()` measures the motion;
 `motif()` measures whether anything ever comes back. A seeded random walk
 passes `melody()` and `counterpoint()` and sounds like nothing at all.
 
+## A field recording does not start when the file does
+
+The found-sound packs here (`foundkit`, `darkkit`) are ESC-50 clips.
+Every one is exactly five seconds long with the event somewhere inside
+it, usually a fifth of a second in, and the manifest records where in
+an `onset` field. A pad's `start` is a fraction of the file, so it has
+to be set to `onset / 5` or the pad begins on room tone.
+
+This is not a subtle quality issue. The keys in `fk:type` begin 0.2s
+into the file; a pad given `dec: 0.17, sus: 0` opens its gate on
+silence and shuts it 30 milliseconds before the sound arrives. The
+sample peaks at 0.0 dBFS on disk and measured **−70 dB** in the mix.
+Every instinct says "it is too quiet, turn it up" — and gain stops at
+2, so turning it up cannot work and the obvious conclusion is that the
+sound is weak. It was never quiet. It was never playing.
+
+`place()` caught it, and caught it as the right problem: *owns
+NOTHING, below −70dB in every band*, which is the reading that means
+absent rather than quiet. Three other pads in the same track were
+losing 10–30 dB the same way without being obviously broken.
+
+So: before writing for a found-sound pack, read the `onset` field and
+set `start` from it. The onsets in use here are
+
+| sample | onset | `start` |
+|---|---|---|
+| `fk:knock2` | 0.14 | 0.028 |
+| `fk:type` | 0.20 | 0.040 |
+| `fk:fire` | 0.222 | 0.044 |
+| `dk:train` | 0.208 | 0.042 |
+| `dk:glass` | 0.128 | 0.026 |
+| `dk:creak` | 0.02 | 0.004 |
+
+`scripts/timbre-atlas.mjs` will not save you here: it groups by the
+manifest's `cat`, and all twelve found sounds declare `DRUMS`, so it
+reports one row for the pack and tells you nothing about any sample in
+it. Measure these per file.
+
+## Stage from a measured peak, and let it fail loudly
+
+Gain is capped at 2. That matters more than it sounds, because the
+honest way to set levels is to render each pad alone, read its peak,
+and compute the gain that puts it on target — and when that arithmetic
+asks for more than 2, the right response is to say so rather than
+silently clamp:
+
+```
+stage(pad, -14)
+→ solo peak -70.1dB  target -14dB  gain 2.00
+  CANNOT REACH IT — needs 638.3, cap is 2.
+  The sound is wrong for the job, not the level.
+```
+
+A clamped gain looks like a staged level and is not one. The bell tree
+was pushed to maximum and stayed inaudible for exactly this reason: it
+peaks at −40 dBFS and no gain setting reaches the job. When staging
+reports it cannot get there, change the sound — a different source, a
+different part of it, a filter that is not sitting on the only region
+it has — rather than the number.
+
 ## The norms are measured, not recalled
 
 | check | measured from |

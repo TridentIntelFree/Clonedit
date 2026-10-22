@@ -83,6 +83,42 @@ export default async function ({ browser, base }) {
     t.ok('a pad that plays nothing is told so, not scored',
       /plays nothing/.test(refused), refused.slice(0, 100));
 
+    /* ---- the bug the first real run of this found ------------------- */
+    t.head('A BAND IS NOT OWNED JUST BECAUSE NOBODY ELSE IS IN IT');
+    /* place() originally took the largest `over` outright. Against a
+       lowpassed sub, a bandpassed mid read as owning 2-4kHz by 27dB —
+       not because it had anything up there, but because the sub had
+       nothing at all and any scrap beats silence. The one number you
+       are meant to read then points at the part of the sound that
+       matters least. A band only counts if the sound actually lives
+       there. */
+    const sparse = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('s', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 30, hi: 40, max: 1 });
+      const sub = window.JBH.instPads('s')[0].pad;
+      /* a sub with everything above ~105Hz taken off it */
+      window.JBH.pad(sub, { ftype: 'lowpass', fcut: 0.10, gain: 1.0 });
+      await window.JBH.instrument('m', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 52, hi: 64, max: 1 });
+      const mid = window.JBH.instPads('m')[0].pad;
+      /* and a mid living around 374Hz: cutHz(x) = 60 * (16000/60)^x */
+      window.JBH.pad(mid, { ftype: 'bandpass', fcut: 0.33, fres: 1.8, drv: 0.7, gain: 0.5 });
+      window.JBH.pattern(0, { plen: 16, clear: true });
+      await window.JBH.batch([['step', sub, 0, 0.9], ['step', mid, 0, 0.9]]);
+      const r = await window.JBH.place(mid);
+      const loudest = [...r.bands].sort((a, b) => b.pad - a.pad)[0];
+      return { owns: r.owns, ownsBy: r.ownsBy, loudest: loudest.band,
+        loudestDb: loudest.pad, ownsDb: r.bands.find(b => b.band === r.owns).pad };
+    });
+    t.ok('the band it claims is one it is genuinely loud in',
+      sparse.ownsDb >= sparse.loudestDb - 12,
+      'owns ' + sparse.owns + ' at ' + sparse.ownsDb + 'dB; its loudest is '
+        + sparse.loudest + ' at ' + sparse.loudestDb + 'dB');
+    t.ok('and not a high band it merely happens to be alone in',
+      !/^(4000|8000)-/.test(sparse.owns || ''),
+      'owns ' + sparse.owns + ' by ' + sparse.ownsBy + 'dB');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

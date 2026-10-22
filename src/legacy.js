@@ -11815,10 +11815,21 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       rows.push({band:mb[b].band, pad:+me.toFixed(1), rest:+them.toFixed(1),
         over:+(me-them).toFixed(1)});
     }
-    /* the band it stands furthest above everything else in */
+    /* WHERE IT STANDS OUT, AMONG THE PLACES IT ACTUALLY IS.
+       Taking the largest `over` outright was wrong and the first run of
+       this call proved it: a bandpassed bass read as owning 2-4kHz by
+       27dB, not because it had anything there but because the only
+       other sound loaded was a lowpassed sub that had nothing there at
+       all. Against silence, a band a sound barely occupies wins — and
+       then the one number you are meant to read points at the part of
+       the sound that matters least. So a band only counts as somewhere
+       this sound lives if it is within 12dB of the sound's own best
+       band; `owns` is where it stands out among those. */
+    let peak=-999;
+    for(const r of rows) if(r.pad>peak) peak=r.pad;
+    const lives=rows.filter(r=>r.pad>-70 && r.pad>=peak-12);
     let owns=null, worst=null;
-    for(const r of rows){
-      if(r.pad<-70) continue;                       /* nothing of it there to speak of */
+    for(const r of lives){
       if(!owns || r.over>owns.over) owns=r;
       if(!worst || r.over<worst.over) worst=r;
     }
@@ -11827,7 +11838,17 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       ? +(lufsMine.lufs-lufsRest.lufs).toFixed(1) : null;
 
     const findings=[];
-    if(!others.size) findings.push('nothing else is loaded, so there is nothing to fit into yet.');
+    /* NO BAND AT ALL IS NOT GOOD NEWS. This used to fall through to the
+       reassuring default and report "it has a place and is not in
+       anything else's way" directly underneath the words "owns
+       nothing", which is both wrong and self-contradicting. A pad with
+       nothing above -70dB in any band is not sitting politely out of
+       the way; it is not audible. */
+    if(!owns) findings.push('this pad is below -70dB in every band — it is not audible at all, '
+      +'whatever its gain says. Check that the sample is not near-silent on disk, that the '
+      +'envelope is not closing before the sound starts, and that a filter is not sitting on '
+      +'top of the only region it has.');
+    else if(!others.size) findings.push('nothing else is loaded, so there is nothing to fit into yet.');
     else if(owns && owns.over<-6)
       findings.push('this sound owns nothing: its best band, '+owns.band+'Hz, is still '
         +Math.abs(owns.over)+'dB under everything else there. That is not quiet, it is '
@@ -11847,6 +11868,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     return { pad:i, name:p.name||('pad '+i), src, against:others.size,
       bands:rows, owns:owns?owns.band:null, ownsBy:owns?owns.over:null,
       weakest:worst?worst.band:null, relLufs:rel, findings,
+      peakBand:peak>-999?+peak.toFixed(1):null,
       says:findings.length?findings[0]
         :'it has a place and is not in anything else\'s way.' };
   },
