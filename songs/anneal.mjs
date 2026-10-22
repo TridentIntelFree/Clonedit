@@ -102,39 +102,56 @@ console.log('players: vib '+VIB.length+'  glk '+GLK.length+'  mar '+MAR.length+'
    -9 — so the numbers below are corrections for that first and taste
    second. The rule the last piece broke: nothing quiet marks the beat
    and nothing loud wanders off it. */
+/* GAIN STAGED FROM MEASURED PEAKS, NOT BY EAR. The first attempt at
+   this got it exactly backwards and the whole track collapsed to kick
+   and sub: 8kHz came out 19dB below the piece this one was meant to
+   improve on. The reason is that the two kinds of source here arrive at
+   completely different levels. The synthesised kick and sub are built
+   full-scale, while these are recordings of quiet instruments captured
+   with headroom — measured on disk, the vibraphone peaks at -20.7dBFS,
+   the cabasa -33.2 and the bell tree -44.4. Set by taste they all got
+   gains below 1 and the synths got 1.45, so the real instruments were
+   staged 15 to 40dB below the two things that did not need any help.
+
+   `gain` tops out at 2.0, about +6dB, which cannot lift a -44dBFS
+   sample on its own. So the synths come down instead, and the quiet
+   recordings go up to near the ceiling with velocity carrying the rest.
+   The numbers below are (target -12dBFS minus the sample's own peak),
+   clamped, and then balanced by ear only after that. */
 await bat([
   ...VIB.map(p=>['pad',p,{inst:'vib', att:0.001, dec:3.4, sus:0.18, rel:1.10,
-    ftype:'lowpass', fcut:0.80, fres:0.3, gain:0.62, pan:-0.14, rev:0.30}]),
-  /* the sparkle: bright by nature, so it needs no help up top and a
-     little restraint down low */
+    ftype:'lowpass', fcut:0.92, fres:0.3, gain:1.80, pan:-0.14, rev:0.26, eqHi:3}]),
+  /* the sparkle: pitched AND bright, measured 19dB down above 8kHz where
+     the vibraphone is 62 — this is where the top octave comes from */
   ...GLK.map(p=>['pad',p,{inst:'glk', att:0.001, dec:2.2, sus:0.10, rel:0.80,
-    ftype:'highpass', fcut:0.10, gain:0.30, pan:0.20, rev:0.44}]),
+    ftype:'off', gain:1.70, pan:0.20, rev:0.40, eqHi:4}]),
   ...MAR.map(p=>['pad',p,{inst:'mar', att:0.001, dec:1.5, sus:0.05, rel:0.45,
-    ftype:'lowpass', fcut:0.66, gain:0.52, pan:0.10, rev:0.18}]),
+    ftype:'lowpass', fcut:0.80, gain:2.00, pan:0.10, rev:0.16, eqHi:2}]),
   ...HCH.map(p=>['pad',p,{inst:'hch', att:0.02, dec:5.0, sus:0.40, rel:2.20,
-    ftype:'lowpass', fcut:0.70, gain:0.26, pan:-0.26, rev:0.56}]),
-  /* THE AIR. All of this is quiet on disk and all of it is lifted.
-     Together it is what puts energy above 8kHz, which the mallets cannot
-     do however they are filtered. */
-  ['pad',TRI,{inst:'air', att:0.001, dec:2.0, sus:0, rel:1.4, gain:0.50, pan:0.30, rev:0.50}],
-  ['pad',SHK,{inst:'air', att:0.001, dec:0.5, sus:0, rel:0.22, gain:0.44, pan:-0.32, rev:0.20}],
-  ['pad',CAB,{inst:'air', att:0.001, dec:0.6, sus:0, rel:0.26, gain:0.40, pan:0.34, rev:0.22}],
-  ['pad',BTR,{inst:'air', att:0.001, dec:3.0, sus:0, rel:2.0, gain:1.60, pan:0.08, rev:0.62}],
-  ['pad',FCY,{inst:'air', att:0.001, dec:2.4, sus:0, rel:1.6, gain:0.70, pan:-0.20, rev:0.54}],
-  ['pad',WBL,{inst:'air', att:0.001, dec:0.30, sus:0, rel:0.14, gain:0.30, pan:0.26, rev:0.14}],
-  /* THE PULSE. Loudest in the piece, on the beat, never nudged. */
+    ftype:'lowpass', fcut:0.86, gain:1.55, pan:-0.26, rev:0.48}]),
+  /* THE AIR. All of it near the ceiling, all of it with the high shelf
+     up, because every one of these is a quiet recording and together
+     they are the only thing in the piece with real energy above 8kHz. */
+  ['pad',TRI,{inst:'air', att:0.001, dec:2.0, sus:0, rel:1.4, gain:2.00, pan:0.30, rev:0.44, eqHi:8}],
+  ['pad',SHK,{inst:'air', att:0.001, dec:0.5, sus:0, rel:0.22, gain:1.90, pan:-0.32, rev:0.18, eqHi:5}],
+  ['pad',CAB,{inst:'air', att:0.001, dec:0.6, sus:0, rel:0.26, gain:2.00, pan:0.34, rev:0.20, eqHi:7}],
+  ['pad',BTR,{inst:'air', att:0.001, dec:3.0, sus:0, rel:2.0, gain:2.00, pan:0.08, rev:0.56, eqHi:10}],
+  ['pad',FCY,{inst:'air', att:0.001, dec:2.4, sus:0, rel:1.6, gain:2.00, pan:-0.20, rev:0.50, eqHi:9}],
+  ['pad',WBL,{inst:'air', att:0.001, dec:0.30, sus:0, rel:0.14, gain:0.80, pan:0.26, rev:0.12}],
+  /* THE PULSE. Still the loudest thing on the beat, but these are
+     full-scale synth sources and no longer need a gain above 1 to be it. */
   ['pad',KIK,{inst:'pulse', att:0.001, dec:0.62, sus:0, rel:0.26, pitch:-2,
-    ftype:'lowpass', fcut:0.34, drv:0.26, gain:1.45, pan:0, rev:0.05}],
+    ftype:'lowpass', fcut:0.34, drv:0.24, gain:0.42, pan:0, rev:0.05}],
   ...SUB.map(p=>['pad',p,{inst:'pulse', att:0.004, dec:2.4, sus:0.55, rel:0.60,
-    ftype:'lowpass', fcut:0.20, drv:0.18, gain:0.86, pan:0, rev:0.06}]),
+    ftype:'lowpass', fcut:0.20, drv:0.16, gain:0.30, pan:0, rev:0.06}]),
 ]);
 
 /* one room for everything, and only a little of it: the air is carried
    by real recordings here and does not need reverb to fake it */
 await call('set',{bpm:BPM, swing:0, human:0.018, humanDrift:0.10,
   revType:'room', revSize:1.9, revLvl:0.34, dlyMode:'digital', delayFb:0.22, dlyTone:7200,
-  compAmt:0.20, mWidth:1.10, mMono:95, mCeil:-3.0, mAir:2.4, mMud:-1.6, mEqMid:0,
-  scOn:true, scAmt:0.22, scSrc:KIK, masterVol:1.0, mTrim:0});
+  compAmt:0.20, mWidth:1.10, mMono:95, mCeil:-3.0, mAir:5.0, mMud:-1.0, mEqMid:0,
+  scOn:false, masterVol:1.0, mTrim:0});
 
 /* ---- THE THEME ---------------------------------------------------------
    Four notes and a rhythm, in scale degrees from D so every variation
@@ -171,10 +188,10 @@ const pulseBar=(bar,{half=false, air=1, open=false}={})=>{
   }
   /* shaker on the offbeat eighths, cabasa on sixteenths — quiet, and
      exactly on the grid, so they thicken the pulse instead of blurring it */
-  if(air>0) for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.34+0.10*(st===10?1:0)]);
-  if(air>1) for(let st=0;st<16;st+=2) o.push(['step',CAB,B(bar,st),st%4===0?0.20:0.30]);
-  if(air>1) o.push(['step',WBL,B(bar,11),0.34]);
-  if(open) o.push(['step',TRI,B(bar,0),0.52]);
+  if(air>0) for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.80+0.12*(st===10?1:0)]);
+  if(air>1) for(let st=0;st<16;st+=2) o.push(['step',CAB,B(bar,st),st%4===0?0.55:0.80]);
+  if(air>1) o.push(['step',WBL,B(bar,11),0.55]);
+  if(open) o.push(['step',TRI,B(bar,0),0.95]);
   return o;
 };
 const subBar=(bar,i)=>{
@@ -194,8 +211,8 @@ await mk(0,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
     o.push(...subBar(bar,bar));
     if(bar%2===0) o.push(...say(bar,62,{vel:0.62}));
-    o.push(['step',BTR,B(bar,bar%2?12:4),0.40]);
-    for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.22]);
+    o.push(['step',BTR,B(bar,bar%2?12:4),0.95]);
+    for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.60]);
   }
   return o; });
 
@@ -204,7 +221,7 @@ await mk(1,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
     o.push(...pulseBar(bar,{air:1, open:bar===0}), ...subBar(bar,bar));
     o.push(...say(bar,62,{vel:0.74}));
-    if(bar===3) o.push(['step',FCY,B(bar,12),0.50]);
+    if(bar===3) o.push(['step',FCY,B(bar,12),0.95]);
   }
   return o; });
 
@@ -214,8 +231,8 @@ await mk(2,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
     o.push(...pulseBar(bar,{air:2}), ...subBar(bar,bar));
     o.push(...say(bar,62,{vel:0.76}));
-    o.push(...say(bar,86,{vel:0.46, inst:'glk'}));
-    o.push(['step',TRI,B(bar,8),0.30]);
+    o.push(...say(bar,98,{vel:0.46, inst:'glk'}));
+    o.push(['step',TRI,B(bar,8),0.85]);
   }
   return o; });
 
@@ -225,7 +242,7 @@ await mk(3,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
     o.push(...pulseBar(bar,{air:2}), ...subBar(bar,bar+2));
     o.push(...say(bar,62,{t:2, vel:0.74}));
-    o.push(...say(bar,86,{t:2, vel:0.44, inst:'glk'}));
+    o.push(...say(bar,98,{t:2, vel:0.44, inst:'glk'}));
     for(let k=0;k<4;k++) o.push(['note','mar',MARN[(bar+k)%4],B(bar,k*4+2),0.40+0.08*(k===0?1:0)]);
   }
   return o; });
@@ -236,7 +253,7 @@ await mk(4,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
     o.push(...pulseBar(bar,{air:2}), ...subBar(bar,bar+1));
     o.push(...say(bar,69,{inv:true, vel:0.74}));
-    if(bar%2===1) o.push(...say(bar,86,{inv:true, vel:0.42, inst:'glk'}));
+    if(bar%2===1) o.push(...say(bar,98,{inv:true, vel:0.42, inst:'glk'}));
     o.push(['note','hch',deg(62,[0,4,2,5][bar]),B(bar,0),0.40,{beats:3.6}]);
   }
   return o; });
@@ -247,10 +264,10 @@ await mk(5,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
     o.push(['note','hch',deg(62,[0,2,4,2][bar]),B(bar,0),0.44,{beats:3.8}]);
     o.push(['note','hch',deg(62,[4,5,7,6][bar]),B(bar,8),0.34,{beats:2.0}]);
-    o.push(...say(bar,86,{only:bar<2?2:4, vel:0.40, inst:'glk'}));
-    o.push(['step',BTR,B(bar,0),0.46], ['step',TRI,B(bar,10),0.30]);
-    for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.26]);
-    if(bar===3) o.push(['step',KIK,B(bar,12),0.70], ['step',FCY,B(bar,12),0.56]);
+    o.push(...say(bar,98,{only:bar<2?2:4, vel:0.40, inst:'glk'}));
+    o.push(['step',BTR,B(bar,0),0.95], ['step',TRI,B(bar,10),0.85]);
+    for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.70]);
+    if(bar===3) o.push(['step',KIK,B(bar,12),0.70], ['step',FCY,B(bar,12),0.95]);
   }
   return o; });
 
@@ -260,9 +277,13 @@ await mk(5,()=>{ const o=[];
 await mk(6,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
     o.push(...pulseBar(bar,{air:2, open:bar===0}), ...subBar(bar,bar));
-    if(bar%2===0) o.push(...say(bar,50,{aug:2, vel:0.70, inst:'mar'}));
+    /* the marimba has only C, F, G and B in it, so the augmented
+       statement is spelled on the notes it actually owns rather than
+       dragged through the ones it does not */
+    if(bar%2===0){ const MN=[48,55,59,65];
+      for(let i=0;i<4;i++) o.push(['note','mar',MN[i],B(bar,i*4),0.74,{beats:1.4}]); }
     o.push(...say(bar,62,{vel:0.78}));
-    o.push(...say(bar,86,{t:bar%2?2:0, vel:0.48, inst:'glk'}));
+    o.push(...say(bar,98,{t:bar%2?2:0, vel:0.48, inst:'glk'}));
     o.push(['note','hch',deg(62,[0,2,4,1][bar]),B(bar,8),0.30,{beats:2.2}]);
   }
   return o; });
@@ -273,8 +294,8 @@ await mk(7,()=>{ const o=[];
     if(bar<2) o.push(...pulseBar(bar,{half:bar===1, air:1}));
     o.push(...subBar(bar,bar));
     o.push(...say(bar,62,{only:bar<2?3:2, vel:0.70-0.12*bar}));
-    o.push(...say(bar,86,{only:2, vel:0.40-0.08*bar, inst:'glk'}));
-    o.push(['step',BTR,B(bar,0),0.40]);
+    o.push(...say(bar,98,{only:2, vel:0.40-0.08*bar, inst:'glk'}));
+    o.push(['step',BTR,B(bar,0),0.90]);
     if(bar===3) o.push(['note','hch',deg(62,0),B(bar,0),0.40,{beats:3.8}]);
   }
   return o; });
