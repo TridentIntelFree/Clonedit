@@ -12891,7 +12891,27 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       if(lv && lv.buried.length){
         const mixBuf=await renderMix(null,null,{loops:o.loops||1, src, noTail:true});
         const mixB=mixBuf?await bandEnergy(mixBuf):null;
-        for(const b of lv.buried){
+        /* ONE RENDER PER BURIED PAD, SO THE LIST HAS TO BE CAPPED. Asking
+           whether a quiet pad nonetheless owns a band means rendering it
+           alone against the mix, and on an arrangement where most pads
+           are sparse by design — twelve painted bells, each sounding a
+           few times — nearly every pad qualifies as buried and the check
+           turns into thirty full renders of the whole song. review()
+           sat in here for fifteen minutes and was killed.
+
+           The quietest are investigated first because they are the ones
+           in question, and the rest are named rather than dropped: an
+           unanswered question is not the same as an answered one. */
+        const CAP=o.maxBuried==null?8:Math.max(1,o.maxBuried|0);
+        const order=[...lv.buried].sort((x,y)=>{
+          const a=lv.pads.find(q=>q.pad===x), b2=lv.pads.find(q=>q.pad===y);
+          return ((a&&a.dbRms)||-99)-((b2&&b2.dbRms)||-99); });
+        const look=order.slice(0,CAP), rest=order.slice(CAP);
+        if(rest.length) add('balance','not-checked', rest.length+' further pad'
+          +(rest.length>1?'s are':' is')+' quiet enough to ask about and '
+          +'were not investigated: asking costs a render each. Raise maxBuried, '
+          +'or run critique on one pattern instead of the song.', {pads:rest});
+        for(const b of look){
           const row=lv.pads.find(x=>x.pad===b);
           /* AND A SPARSE PAD IS NOT A QUIET ONE EITHER. levels() calls a pad
              buried on its RMS across the whole bar, which a pad that plays
