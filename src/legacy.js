@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R226 · 2026-10-21 · a door knock is a kick drum';
+const BUILD = 'JBH-88 · R227 · 2026-10-22 · bass carries on its harmonics';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -10655,6 +10655,173 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     d.levelDb=(wet.lufs!=null&&dryR.lufs!=null)?+(wet.lufs-dryR.lufs).toFixed(1):null;
     if(!d.bypassed.length) d.notes=['this pad has no processing on it — nothing was bypassed, so the two renders are the same audio'];
     return d;
+  },
+
+  /* WHERE TO CUT A RECORDING, DECIDED BY LISTENING TO IT.
+
+     Slice points were being guessed — eleven evenly spaced fractions
+     across a five second clip — and twice that produced a pad reading
+     sixty decibels under the mix, because a recording of a fire is
+     mostly the gaps between crackles and most of the guesses landed in
+     them. Guessing where a sound is, inside a sound, does not work.
+
+     The method here is lifted from Samplebrain, the sample-mashing tool
+     Richard D. James designed and Dave Griffiths wrote, which is open
+     source. Its block::compare scores a candidate by summed squared
+     difference against a spectral descriptor, and then — the part worth
+     stealing — ADDS THE BLOCK'S OWN USAGE COUNT to the score, weighted
+     by usage_importance. A fragment that has already been picked gets
+     worse the more it is used. That single term is what stops the output
+     repeating itself, and it is called boredom in the interface.
+
+     So: the recording is walked in windows, each one described by the
+     nine-band filterbank already used for mixing, and points are taken
+     greedily by loudness MINUS similarity to everything taken so far.
+     The result is n slice points that are each audible and each
+     different from the others, which is what chopping a break is for. */
+  async chop(padIdx, n, opt){
+    const o=opt||{}, i=clamp(padIdx|0,0,NPADS-1), p=S.pads[i];
+    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    const buf=S.buffers[p.bufId];
+    if(!buf) throw new Error('pad '+i+' points at a sample that is not loaded');
+    const want=clamp(n==null?8:n|0,1,64);
+    const win=clamp(+o.window||0.06,0.01,0.5);
+    const sr=buf.sampleRate, W=Math.floor(win*sr);
+    const d=buf.getChannelData(0);
+    const hop=Math.max(1,Math.floor(W*0.5));
+    /* one descriptor per window: level plus the nine-band shape, which
+       is the cheap stand-in for Samplebrain's fft/mfcc pair */
+    const frames=[];
+    for(let s=0;s+W<d.length;s+=hop){
+      const seg=buf.length? sliceBuf(buf, s/sr, win) : null;
+      if(!seg) continue;
+      frames.push({at:s/sr, seg});
+    }
+    if(!frames.length) return {pad:i, points:[], says:'the sample is shorter than one window.'};
+    const desc=[];
+    for(const f of frames){
+      const b=await bandEnergy(f.seg);
+      if(!b) continue;
+      const lin=b.map(x=>Math.pow(10,x.db/10));
+      const tot=lin.reduce((a,c)=>a+c,0);
+      desc.push({at:f.at, lvl:10*Math.log10(Math.max(tot,1e-12)),
+        shape:lin.map(v=>v/Math.max(tot,1e-12))});
+    }
+    const loudest=Math.max.apply(null,desc.map(x=>x.lvl));
+    const floorDb=loudest-(o.floorDb==null?26:+o.floorDb);
+    const cand=desc.filter(x=>x.lvl>=floorDb);
+    if(!cand.length) return {pad:i, points:[], says:'nothing in this recording is loud enough to cut to.'};
+    const dist=(a,b)=>{ let s=0; for(let k=0;k<a.shape.length;k++){
+      const q=a.shape[k]-b.shape[k]; s+=q*q; } return Math.sqrt(s); };
+    const bored=clamp(o.boredom==null?1:+o.boredom,0,4);
+    const taken=[];
+    while(taken.length<want && taken.length<cand.length){
+      let best=null;
+      for(const c of cand){
+        if(taken.some(t=>Math.abs(t.at-c.at)<win*0.9)) continue;
+        /* loud, and unlike what has already been taken */
+        let near=1; for(const t of taken) near=Math.min(near,dist(c,t));
+        const score=(c.lvl-floorDb)/Math.max(1,loudest-floorDb) + bored*near;
+        if(!best || score>best.score) best={c,score};
+      }
+      if(!best) break;
+      taken.push(best.c);
+    }
+    taken.sort((a,b)=>a.at-b.at);
+    const dur=buf.duration;
+    return { pad:i, seconds:+dur.toFixed(2), window:win,
+      points:taken.map(t=>+(t.at/dur).toFixed(4)),
+      atSeconds:taken.map(t=>+t.at.toFixed(3)),
+      levelsDb:taken.map(t=>+(t.lvl-loudest).toFixed(1)),
+      says:taken.length+' points, each at least '+(o.floorDb==null?26:o.floorDb)
+        +'dB above nothing and chosen to differ from the others. Use them as '
+        +'start locks.' };
+  },
+
+  /* WHAT IS LEFT OF THIS ON A SPEAKER THAT CANNOT DO BASS.
+
+     A track was sent out with a bass built from near-pure sine sub,
+     lowpassed at 147Hz, and the note that came back was that the bass
+     did not carry. It is the one fault in this whole file that is pure
+     physics: a 37Hz fundamental is not reproduced by a phone, a laptop
+     or most earbuds, and a sine has nothing else to be heard by. Bass
+     carries on small speakers through the MISSING FUNDAMENTAL — give the
+     ear harmonics at 2f, 3f, 4f and it reconstructs a pitch the speaker
+     never produced. No harmonics, no bass, however much energy is down
+     there on the meter.
+
+     Measured on that track: 12.4dB of the whole mix disappeared above
+     200Hz, against 5.4dB for the one before it, which is the difference
+     between a mix that survives a phone and one that collapses into it.
+
+     The same fault had already shown up as a hole at 640-1280Hz, and it
+     was mistaken for a missing percussion part — an attempt was made to
+     fill it with a train sample. That hole was where the bass's own
+     harmonics should have been.
+
+     So: the mix is re-rendered through each playback system that matters
+     and the loss is reported per instrument, because knowing the mix
+     loses 12dB is useless without knowing which voice went silent. */
+  async translate(opt){
+    const o=opt||{}, src=o.src||'pat';
+    const SYS=[
+      {name:'phone',   hp:450, lp:7000,  says:'a phone speaker'},
+      {name:'laptop',  hp:180, lp:14000, says:'laptop speakers'},
+      {name:'earbuds', hp:90,  lp:16000, says:'cheap earbuds'},
+      {name:'system',  hp:32,  lp:18000, says:'a full-range system'}];
+    const full=await renderMix(null,null,{loops:o.loops||1, src, noTail:true});
+    if(!full) return null;
+    const lvl=async(buf,hp,lp)=>{
+      const sr=buf.sampleRate;
+      const oc=new OfflineAudioContext(1, buf.length, sr);
+      const s=oc.createBufferSource(); s.buffer=buf;
+      let node=s;
+      const Q=[0.54119610,1.30656296].map(q=>20*Math.log10(q));
+      for(const q of Q){ const f=oc.createBiquadFilter(); f.type='highpass';
+        f.frequency.value=hp; f.Q.value=q; node.connect(f); node=f; }
+      for(const q of Q){ const f=oc.createBiquadFilter(); f.type='lowpass';
+        f.frequency.value=Math.min(lp,sr*0.48); f.Q.value=q; node.connect(f); node=f; }
+      node.connect(oc.destination); s.start();
+      const r=await oc.startRendering(), d=r.getChannelData(0);
+      let a=0; for(let i=0;i<d.length;i++) a+=d[i]*d[i];
+      return 10*Math.log10(Math.max(a/Math.max(1,d.length),1e-12));
+    };
+    const ref=await lvl(full,20,20000);
+    const systems=[];
+    for(const sy of SYS){
+      const v=await lvl(full,sy.hp,sy.lp);
+      systems.push({system:sy.name, lostDb:+(ref-v).toFixed(1), says:sy.says});
+    }
+    /* per instrument, through the worst case, because the number that
+       matters is which voice stops existing rather than the total */
+    const insts={};
+    for(let i=0;i<NPADS;i++){ const p=S.pads[i];
+      if(p && p.bufId>=0 && p.inst) (insts[p.inst]=insts[p.inst]||[]).push(i); }
+    const voices=[];
+    for(const name in insts){
+      const stem=await renderMix(new Set(insts[name]), new Set(),
+        {loops:o.loops||1, src, noTail:true});
+      if(!stem) continue;
+      const a=await lvl(stem,20,20000);
+      if(a<-90) continue;
+      const b=await lvl(stem,SYS[0].hp,SYS[0].lp);
+      voices.push({instrument:name, lostDb:+(a-b).toFixed(1)});
+    }
+    voices.sort((x,y)=>y.lostDb-x.lostDb);
+    const phone=systems[0].lostDb;
+    const gone=voices.filter(v=>v.lostDb>=14);
+    const says = phone>=10
+      ? 'the mix loses '+phone+'dB on a phone speaker. Anything below about '
+        +'400Hz is simply not reproduced there, so energy that lives only in '
+        +'the sub is energy most listeners never hear.'
+        +(gone.length?' Worst: '+gone.map(v=>v.instrument+' ('+v.lostDb+'dB)').join(', ')
+          +'. A bass carries on a small speaker through its HARMONICS, not its '
+          +'fundamental — saturate a parallel copy into the 150-800Hz range and '
+          +'the ear reconstructs the note the speaker cannot make.':'')
+      : phone>=6 ? 'the mix loses '+phone+'dB on a phone, which is normal for '
+        +'music with real low end in it.'
+      : 'this translates: only '+phone+'dB goes missing on a phone speaker.';
+    return {src, systems, voices, phoneLossDb:phone, carries:phone<10, says};
   },
 
   /* IS THIS A TUNE, OR IS IT SCALE MOVEMENT?
