@@ -1080,10 +1080,21 @@ export default async function ({ browser, base }) {
          this read 0.988, 0.938, 0.867 and 0.77 on four runs of identical code,
          failing the fourth. A peak over the first few frames asks the question
          the check is actually for: does a hard hit light it brightly. */
+      /* SAMPLE BEFORE YIELDING, AND STOP ONCE IT IS CLEARLY LIT. Sixteen
+         wait(4)s is a 64ms window on an idle machine and can be half a
+         second when twenty-two suites are sharing it, by which point
+         the glow has peaked and decayed between two samples — the full
+         run caught it at 0.755 while this suite alone passes every
+         time. So the first reading is taken synchronously, before the
+         loop can be descheduled at all, and the loop exits as soon as
+         the value is unambiguous rather than sampling on into the
+         fade. A late start is the one thing a fixed count cannot
+         absorb, so the window is wider as well. */
       const peakGlow = async (v) => { flashPad(pad, v);
-        let top = 0, tf = '';
-        for (let k = 0; k < 16; k++) { await wait(4);
-          const g = glow(); if (g > top) { top = g; tf = el.style.transform; } }
+        let top = glow(), tf = el.style.transform;
+        for (let k = 0; k < 40; k++) { await wait(4);
+          const g = glow(); if (g > top) { top = g; tf = el.style.transform; }
+          if (top > 0.9) break; }
         return { op: top, tf };
       };
       o.hard = await peakGlow(1.0);
