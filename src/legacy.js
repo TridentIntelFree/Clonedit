@@ -3750,6 +3750,45 @@ const CP_NORMS={ oblique:68.0, contrary:17.6, similar:10.7, parallel:3.6,
 const MELODY_NORMS={ repeat:21.1, step:46.9, third:19.0, leap:13.1,
   leapRecovery:56.1, dirChange:51.8, range:12,
   source:'Essen Folksong Collection, 8514 melodies' };
+/* HOW MUCH OF A LINE IS MADE OF MATERIAL THAT COMES BACK.
+
+   A piece came back described as "the timing comes off as random", and
+   it was: every pitch, every rest and every note length in it had been
+   drawn from a random number generator. Three voices moved on 3, 5 and
+   8 step cycles so they would stay independent, and they did, but
+   nothing in any of them ever happened twice. Independence had been
+   bought at the price of there being nothing to recognise.
+
+   None of the existing checks could see it. melody() looks at the mix of
+   steps and leaps, counterpoint() at how voices move against each other,
+   and a random walk passes both: its intervals are the right sizes and
+   its voices are gloriously independent. What neither asks is whether
+   any figure ever returns, which is most of what makes music followable
+   rather than merely well-formed.
+
+   Measuring it needs a null, because a line using few intervals repeats
+   by accident — a random walk on seven scale degrees scores 13.6% on raw
+   4-interval recurrence and looks motivic. The null is the same line's
+   own intervals in a different order: that holds length and vocabulary
+   fixed and leaves only arrangement. Against it the random walk scores
+   +6.8 and real melody +27.9.
+
+   Recurrence grows with length, so the norms are bucketed. From 8196
+   Essen melodies, median and 15th percentile of excess over shuffle:
+
+       notes      pitch            rhythm
+       24-47      +10.7 / +0.0     +17.3 / +3.0
+       48-95      +42.6 / +13.3    +20.0 / +5.5
+       96+        +51.1 / +31.3    +18.3 / +7.0
+
+   A long line that restates nothing is the failure this catches. */
+const MOTIF_NORMS={
+  buckets:[
+    {max:47,  pitch:10.7, pitchFloor:0.0,  rhythm:17.3, rhythmFloor:3.0},
+    {max:95,  pitch:42.6, pitchFloor:13.3, rhythm:20.0, rhythmFloor:5.5},
+    {max:1e9, pitch:51.1, pitchFloor:31.3, rhythm:18.3, rhythmFloor:7.0},
+  ],
+  source:'Essen Folksong Collection, 8196 melodies of 24 notes or more' };
 const PHRASE_V={
   cresc:[[0,0.55],[1,1.30]],
   dim:  [[0,1.30],[1,0.55]],
@@ -11062,6 +11101,276 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     return {instrument:(typeof name==='number'?('pad '+name):name), notes:seq.length,
       got, norm:MELODY_NORMS, findings:notes,
       says:notes.length?notes[0]:'the shape of this line is within the range real melodies occupy.'};
+  },
+
+  /* DOES ANYTHING IN THIS LINE EVER HAPPEN TWICE?
+
+     See MOTIF_NORMS for why this exists. In short: a line can have the
+     interval mix of a real tune and the voice independence of real
+     counterpoint and still be unlistenable, because nothing in it
+     returns. That is what a random walk is, and it is what "the timing
+     comes off as random" was describing.
+
+     Both halves are measured, because a line can restate its pitches
+     over shifting rhythms or drum out one rhythm over wandering
+     pitches, and the second is the commoner failure in sequenced music.
+
+     The shuffle null is seeded, so the same pattern always scores the
+     same. It has to be: a check that returns a slightly different
+     verdict each time cannot be used to tell whether an edit helped. */
+  async motif(name, opt){
+    const o=opt||{}, src=o.src||'pat', N=o.n||4, TRIALS=o.trials||40;
+    let pads;
+    if(typeof name==='number') pads=[clamp(name|0,0,NPADS-1)];
+    else { pads=[]; for(let i=0;i<NPADS;i++) if(S.pads[i]&&S.pads[i].inst===name) pads.push(i);
+      if(!pads.length) throw new Error('no instrument "'+name+'" — call instrument() first, '
+        +'or pass a pad number'); }
+    const sch=await window.MVX.schedule({src, full:true});
+    if(!sch || !sch.events) return null;
+    const mine=sch.events.filter(e=>pads.indexOf(e.pad)>=0);
+    /* EVERY PATH RETURNS THE SAME SHAPE. The early exits used to omit
+       `norm`, so a caller reading result.norm.pitch — the obvious thing
+       to read — crashed on exactly the sparse patterns where it most
+       wanted an answer. A result that is sometimes a different object is
+       worse than no result. */
+    const thin=(k,why)=>({instrument:(typeof name==='number'?('pad '+name):name), notes:k,
+      pitchRecurrence:null, rhythmRecurrence:null,
+      norm:{pitch:null, pitchFloor:null, rhythm:null, rhythmFloor:null, source:MOTIF_NORMS.source},
+      pitchFigure:null, rhythmFigure:null, findings:[], says:why});
+    if(mine.length<N+4) return thin(mine.length, 'too few notes to say anything about.');
+    /* one entry per onset: the top note, and the gap to the next onset.
+       Top note because that is the line an ear follows; the gap rather
+       than the written length because what a listener hears as rhythm
+       is when things start, not how long they are held. */
+    const byT=new Map();
+    for(const e of mine){ const k=+e.t.toFixed(4);
+      if(!byT.has(k) || (e.midi!=null && e.midi>byT.get(k))) byT.set(k, e.midi==null?0:e.midi); }
+    const times=[...byT.keys()].sort((a,b)=>a-b);
+    if(times.length<N+4) return thin(times.length, 'too few onsets to say anything about.');
+    const seq=times.map(t=>byT.get(t));
+    const gaps=[];
+    for(let i=1;i<times.length;i++) gaps.push(Math.round((times[i]-times[i-1])*48)/48);
+    const ivs=[];
+    for(let i=1;i<seq.length;i++) ivs.push(seq[i]-seq[i-1]);
+
+    /* a seeded shuffle, so the verdict is repeatable */
+    let rs=0x2F6E2B1;
+    const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+    const recur=(arr)=>{
+      if(arr.length<N) return null;
+      const c=new Map(); let tot=0;
+      for(let i=0;i+N<=arr.length;i++){
+        const k=arr.slice(i,i+N).join(',');
+        c.set(k,(c.get(k)||0)+1); tot++;
+      }
+      let rep=0; for(const v of c.values()) if(v>1) rep+=v;
+      return tot?100*rep/tot:null;
+    };
+    const excess=(arr)=>{
+      const a=recur(arr);
+      if(a==null) return null;
+      const nulls=[];
+      for(let t=0;t<TRIALS;t++){
+        const s=arr.slice();
+        for(let i=s.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const x=s[i]; s[i]=s[j]; s[j]=x; }
+        const r=recur(s); if(r!=null) nulls.push(r);
+      }
+      if(!nulls.length) return null;
+      nulls.sort((x,y)=>x-y);
+      return +(a-nulls[nulls.length>>1]).toFixed(1);
+    };
+    /* the figure that comes back most, so there is something to look at
+       rather than only a number to argue with */
+    const commonest=(arr)=>{
+      const c=new Map();
+      for(let i=0;i+N<=arr.length;i++){ const k=arr.slice(i,i+N).join(','); c.set(k,(c.get(k)||0)+1); }
+      let bk=null,bv=1;
+      for(const [k,v] of c) if(v>bv){ bv=v; bk=k; }
+      return bk?{figure:bk.split(',').map(Number), times:bv}:null;
+    };
+
+    const pitch=excess(ivs), rhythm=excess(gaps);
+    const bucket=MOTIF_NORMS.buckets.find(b=>seq.length<=b.max);
+    const findings=[];
+    if(pitch!=null && pitch<bucket.pitchFloor)
+      findings.push('the pitches barely restate anything: '+pitch+' points above chance against '
+        +bucket.pitch+' typical for a line of '+seq.length+' notes, and '+bucket.pitchFloor
+        +' at the bottom of the range. Nothing here comes back, so there is nothing to follow.');
+    if(rhythm!=null && rhythm<bucket.rhythmFloor)
+      findings.push('the rhythm barely restates anything: '+rhythm+' points above chance against '
+        +bucket.rhythm+' typical. Onsets land in a different pattern every time, which is what '
+        +'random timing sounds like.');
+    if(pitch!=null && rhythm!=null && pitch>bucket.pitch*2.4 && rhythm>bucket.rhythm*2.4)
+      findings.push('both are far above the norm ('+pitch+' and '+rhythm+'), which is a loop '
+        +'rather than a theme. Real lines restate and then vary.');
+    return {instrument:(typeof name==='number'?('pad '+name):name), notes:seq.length,
+      pitchRecurrence:pitch, rhythmRecurrence:rhythm,
+      norm:{pitch:bucket.pitch, pitchFloor:bucket.pitchFloor,
+        rhythm:bucket.rhythm, rhythmFloor:bucket.rhythmFloor, source:MOTIF_NORMS.source},
+      pitchFigure:commonest(ivs), rhythmFigure:commonest(gaps), findings,
+      says:findings.length?findings[0]
+        :'this line restates its own material about as often as a real melody does.'};
+  },
+
+  /* IS THERE A BEAT A LISTENER CAN FIND?
+
+     "The timing comes off as random." The piece that drew that had a
+     downbeat in it — a thump on step 0 of every bar — so the first guess,
+     that nothing ever repeated, was wrong, and motif() said so: its
+     figures recurred well above the folk norm.
+
+     What it did not have was a downbeat anyone could HEAR. The thump sat
+     at gain 0.42 while the elements scattered across the bar with random
+     nudges sat at 0.70 and 1.05. The pulse was present and underneath.
+     The loudest events in the piece were the random ones, so random is
+     what it sounded like, and every check that counted events rather
+     than weighing them called it even.
+
+     So this weighs them. Onsets become an envelope scaled by how loud
+     each one actually is, the envelope is autocorrelated, and the
+     strongest lag is the pulse the music is really projecting — not the
+     one the grid implies. Then the same question is asked per pad, which
+     is what makes it useful: it names which pads are holding the beat up
+     and which are smearing it. */
+  async pulse(opt){
+    const o=opt||{}, src=o.src||'song';
+    const sch=await window.MVX.schedule({src, full:true});
+    if(!sch || !sch.events || sch.events.length<8)
+      return {says:'too few events to look for a pulse.'};
+    const ev=sch.events.filter(e=>e.t!=null);
+    const dur=Math.max.apply(null, ev.map(e=>e.t))+0.5;
+    /* HOW LOUD IS THIS ONSET, ROUGHLY. Velocity times the pad's own gain
+       is crude — it takes no account of filtering, of where the sound
+       sits in the spectrum, or of masking — but the failure it has to
+       catch is a four-to-one gain difference between the pulse layer and
+       the scatter layer, and it catches that. */
+    const wOf=(e)=>{ const p=S.pads[e.pad]; const g=p&&p.gain!=null?p.gain:1;
+      return Math.max(0, (e.vel==null?0.8:e.vel)) * g; };
+    const SRH=100;                                   // envelope samples per second
+    const n=Math.max(16, Math.ceil(dur*SRH));
+    const build=(list)=>{
+      const env=new Float64Array(n);
+      for(const e of list){
+        const i=Math.round(e.t*SRH);
+        if(i>=0 && i<n) env[i]+=wOf(e);
+      }
+      return env;
+    };
+    /* autocorrelation over musically plausible lags, normalised so the
+       answer is "how much of itself does it find there", 0 to 1 */
+    const ac=(env, loS, hiS)=>{
+      let z=0; for(let i=0;i<n;i++) z+=env[i]*env[i];
+      if(z<=0) return {best:0, lag:null, curve:[]};
+      let best=0, bestLag=null; const curve=[];
+      for(let L=loS; L<=hiS && L<n/2; L++){
+        let s=0; for(let i=0;i+L<n;i++) s+=env[i]*env[i+L];
+        const v=s/z;
+        curve.push([L/SRH, v]);
+        if(v>best){ best=v; bestLag=L; }
+      }
+      return {best:+best.toFixed(3), lag:bestLag?bestLag/SRH:null, curve};
+    };
+    const all=build(ev);
+    /* the tempo-free question first: is there ANY periodicity in what can
+       be heard? The search is kept to lags a listener could take as a
+       beat — below about 0.25s the ear hears rate rather than pulse, and
+       above 1.2s it hears separate events. */
+    const r=ac(all, Math.round(0.25*SRH), Math.round(1.2*SRH));
+
+    /* then the question the app can answer exactly, because it knows the
+       tempo: how much of the audible weight lands on each level of the
+       metre? Reporting it per level is what makes it actionable — a
+       piece can be perfectly on the sixteenth grid and still have
+       nothing on the beat, which is precisely the failure here. */
+    const bpm=+S.bpm||120;
+    const beat=60/bpm, bar=beat*4, eighth=beat/2, sixteenth=beat/4;
+    const tol=Math.max(0.012, sixteenth*0.30);
+    let total=0; for(const e of ev) total+=wOf(e);
+    /* THE PHASE IS SEARCHED, NOT ASSUMED. The schedule carries a small
+       lead-in — every event in a 140bpm piece came back offset by 0.05s —
+       so measuring against a grid anchored at t=0 scored a piece written
+       entirely on sixteenths as 4.6% on-grid. The question worth asking
+       is whether the weight concentrates on SOME regular grid of this
+       period, which is also the question a listener's ear answers. */
+    const shareAt=(period, list)=>{
+      if(!(period>0)) return null;
+      const src2=list||ev;
+      let tot=0; for(const e of src2) tot+=wOf(e);
+      if(tot<=0) return null;
+      let best=0;
+      for(let k=0;k<32;k++){
+        const ph=(k/32)*period; let w=0;
+        for(const e of src2){ const d=(((e.t-ph)%period)+period)%period;
+          if(Math.min(d, period-d)<=tol) w+=wOf(e); }
+        if(w>best) best=w;
+      }
+      return +(100*best/tot).toFixed(1);
+    };
+    const grid={ bar:shareAt(bar), beat:shareAt(beat),
+      eighth:shareAt(eighth), sixteenth:shareAt(sixteenth) };
+    /* THE SAME SHARE WITH EVERY ONSET COUNTED EQUALLY. The gap between
+       the two is the whole diagnosis: if weighting by loudness LOWERS
+       the share that lands on the beat, then the quiet events are the
+       ones marking it and the loud ones are the ones ignoring it. That
+       is audible as random timing however tidy the grid looks, and it
+       is invisible to anything that counts events instead of weighing
+       them. Stated this way it needs no minimum number of pads. */
+    const savedW=wOf;
+    const flatShare=(period)=>{
+      if(!(period>0)) return null;
+      const tot=ev.length; if(!tot) return null;
+      let best=0;
+      for(let k=0;k<32;k++){
+        const ph=(k/32)*period; let c=0;
+        for(const e of ev){ const d=(((e.t-ph)%period)+period)%period;
+          if(Math.min(d, period-d)<=tol) c++; }
+        if(c>best) best=c;
+      }
+      return +(100*best/tot).toFixed(1);
+    };
+    const flatBeat=flatShare(beat);
+    const buriedBy=(flatBeat!=null && grid.beat!=null)?+(flatBeat-grid.beat).toFixed(1):null;
+
+    /* PER PAD, against the beat, so the table says who is holding the
+       pulse up and who is smearing it. */
+    const pads=[...new Set(ev.map(e=>e.pad))];
+    const perPad=[];
+    for(const pd of pads){
+      const mine=ev.filter(e=>e.pad===pd);
+      if(mine.length<3) continue;
+      let w=0; for(const e of mine) w+=wOf(e);
+      perPad.push({pad:pd, name:(S.pads[pd]&&S.pads[pd].name)||('pad '+pd),
+        events:mine.length, weight:+w.toFixed(2),
+        onBeat:shareAt(beat, mine), onSixteenth:shareAt(sixteenth, mine)});
+    }
+    perPad.sort((a,b)=>b.weight-a.weight);
+
+    const findings=[];
+    if(r.best<0.18) findings.push('there is no pulse to find: the loudness-weighted onsets '
+      +'autocorrelate at only '+r.best+' across every lag a listener could hear as a beat, '
+      +'so nothing recurs strongly enough in time to lock onto.');
+    if(grid.beat!=null && grid.beat<35) findings.push('only '+grid.beat+'% of the audible onset '
+      +'weight lands on a beat ('+grid.sixteenth+'% is at least on the sixteenth grid). The music '
+      +'is placed, but almost none of what can be heard marks the metre.');
+    /* the specific trap this was written for: a pulse exists in the
+       arrangement and the loud pads ignore it */
+    if(buriedBy!=null && buriedBy>10)
+      findings.push('the beat is being marked by the quiet events and ignored by the loud ones: '
+        +flatBeat+'% of onsets land on a beat, but only '+grid.beat+'% of the audible WEIGHT does, '
+        +'a gap of '+buriedBy+' points. The pulse is in the arrangement and buried under what is '
+        +'actually loud — either lift what marks it or move what buries it.');
+    const worst=perPad.filter(p=>p.onBeat!=null).slice(0,3)
+      .filter(p=>p.onBeat<(grid.beat||0)-10);
+    if(worst.length && buriedBy!=null && buriedBy>10)
+      findings.push('the loudest offenders are '+worst.map(p=>p.name+' ('+p.onBeat+'% on the beat, '
+        +'weight '+p.weight+')').join(', ')+'.');
+
+    return {pulseStrength:r.best, periodSec:r.lag,
+      bpmImplied:r.lag?+(60/r.lag).toFixed(1):null, bpm,
+      onGrid:grid, onGridUnweighted:{beat:flatBeat}, beatBuriedBy:buriedBy,
+      pads:perPad, findings,
+      says:findings.length?findings[0]
+        :'the pulse is clear and the audible onsets agree with it.'};
   },
 
   /* HOLES IN A PART THAT IS SUPPOSED TO BE HELD.

@@ -272,7 +272,14 @@ export default async function ({ browser, base }) {
         window.JBH.pattern(0, { plen: 32, clear: true });
         await window.JBH.batch(LINE.map(([st, m]) => ['note', 'vc', m, st, 0.55, { beats }]));
         const buf = await renderMix(new Set(pads), new Set(), { loops: 1, src: 'pat', noTail: false });
-        const d = buf.getChannelData(0), sr = buf.sampleRate, w = Math.floor(sr * 0.01), e = [];
+        /* 20ms, not 10. A cello's attack is slower than a 10ms window can
+           resolve, and at 10ms this counted 4 of the 8 articulations that
+           are in the plain take by construction — so the comparison below
+           was being made between two undercounts. The window was only ever
+           large enough because the samples it was written against were
+           mapped an octave high, and pitching a sample up shortens its
+           attack. Calibrated against the known 8: this finds 9. */
+        const d = buf.getChannelData(0), sr = buf.sampleRate, w = Math.floor(sr * 0.02), e = [];
         for (let i = 0; i + w < d.length; i += w) { let s = 0;
           for (let j = i; j < i + w; j++) s += d[j] * d[j]; e.push(Math.sqrt(s / w)); }
         let pk = 0; for (const v of e) if (v > pk) pk = v;
@@ -283,6 +290,11 @@ export default async function ({ browser, base }) {
       return { plain: await run('one', 1.1), bow: await run('bow', 1.1),
                detached: await run('bow', 0.4) };
     });
+    /* the detector has to be able to see the articulations that are
+       definitely there before its failure to see them means anything */
+    t.ok('the plain take shows about the eight attacks it was written with',
+      bowed.plain >= 6 && bowed.plain <= 11,
+      bowed.plain + ' found, 8 written');
     t.ok('eight slurred notes re-articulate far less in bow mode',
       bowed.bow < bowed.plain * 0.5,
       bowed.plain + ' attack transients as separate voices, ' + bowed.bow + ' bowed');
@@ -385,6 +397,77 @@ export default async function ({ browser, base }) {
     t.ok('and both carry a perceived loudness, not only an RMS',
       ld.hi && ld.hi.lufs != null && ld.lo && ld.lo.lufs != null,
       'LUFS ' + (ld.hi ? ld.hi.lufs : '?') + ' / ' + (ld.lo ? ld.lo.lufs : '?'));
+
+    /* ---- 10. MATERIAL THAT COMES BACK, AND A BEAT YOU CAN FIND --------- */
+    t.head('motif() AND pulse() CATCH WHAT THE OTHER CHECKS CANNOT');
+    const mp = await page.evaluate(async () => {
+      const mk = async (fn) => {
+        await window.JBH.clear();
+        await window.JBH.instrument('p', { pack: 'samples/salamander.json', match: '^sal:', lo: 36, hi: 84, max: 12 });
+        const pads = window.JBH.instPads('p').map(x => x.pad);
+        window.JBH.pattern(0, { plen: 64, clear: true });
+        await window.JBH.batch(fn(pads));
+        return window.JBH.motif('p', { src: 'pat' });
+      };
+      /* a walk with no figure in it: every step chosen fresh */
+      let s = 12345; const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+      const walk = await mk(pads => {
+        const o = []; let d = 4;
+        for (let i = 0; i < 56; i++) {
+          d = Math.max(0, Math.min(pads.length - 1, d + Math.round(rnd() * 4 - 2)));
+          o.push(['step', pads[d], i, 0.7]);
+        }
+        return o;
+      });
+      /* the same number of notes, built from one four-note figure */
+      const themed = await mk(pads => {
+        const o = [], fig = [0, 2, 1, 4];
+        for (let r = 0; r < 14; r++) {
+          const base = [0, 2, 4, 2][r % 4];
+          for (let k = 0; k < 4; k++) o.push(['step', pads[(base + fig[k]) % pads.length], r * 4 + k, 0.7]);
+        }
+        return o;
+      });
+
+      /* a beat that is marked by the LOUD pad, and the same beat marked
+         only by a quiet one while the loud pad scatters off it */
+      const pulseCase = async (loudOnBeat) => {
+        await window.JBH.clear();
+        await window.JBH.instrument('d', { pack: 'samples/salamander.json', match: '^sal:', lo: 40, hi: 64, max: 4 });
+        const dp = window.JBH.instPads('d').map(x => x.pad);
+        window.JBH.pattern(0, { plen: 64, clear: true });
+        const k = dp[0], t2 = dp[1];
+        await window.JBH.pad(k, { gain: loudOnBeat ? 1.0 : 0.25 });
+        await window.JBH.pad(t2, { gain: loudOnBeat ? 0.25 : 1.0 });
+        const o = [];
+        for (let b = 0; b < 16; b++) o.push(['step', k, b * 4, 0.9]);          // on every beat
+        for (let i = 0; i < 24; i++) o.push(['step', t2, (i * 7 + 1) % 64, 0.9]); // off it
+        await window.JBH.batch(o);
+        return window.JBH.pulse({ src: 'pat' });
+      };
+      return { walk, themed, good: await pulseCase(true), bad: await pulseCase(false) };
+    });
+    t.ok('a random walk is reported as restating nothing',
+      mp.walk.pitchRecurrence != null && mp.walk.pitchRecurrence < mp.themed.pitchRecurrence,
+      'walk ' + mp.walk.pitchRecurrence + ' vs themed ' + mp.themed.pitchRecurrence + ' points above chance');
+    t.ok('and a line built from one figure scores far above it',
+      mp.themed.pitchRecurrence >= 25,
+      mp.themed.pitchRecurrence + ' points above its own shuffle');
+    t.ok('motif() returns the same shape even when there is too little to judge',
+      (await page.evaluate(async () => {
+        await window.JBH.clear();
+        await window.JBH.instrument('p', { pack: 'samples/salamander.json', match: '^sal:', lo: 48, hi: 72, max: 6 });
+        window.JBH.pattern(0, { plen: 16, clear: true });
+        await window.JBH.batch([['step', window.JBH.instPads('p')[0].pad, 0, 0.8]]);
+        const r = await window.JBH.motif('p', { src: 'pat' });
+        return r && r.norm !== undefined && r.findings !== undefined;
+      })), 'norm and findings present on the sparse path');
+    t.ok('a beat marked by the loudest pad reads as on the beat',
+      mp.good.onGrid.beat >= 60, mp.good.onGrid.beat + '% of audible weight on a beat');
+    t.ok('and the same beat buried under a louder off-beat pad is caught',
+      mp.bad.onGrid.beat < mp.good.onGrid.beat
+      && mp.bad.findings.some(f => /quiet events|marks the metre/.test(f)),
+      mp.bad.onGrid.beat + '% on a beat — ' + (mp.bad.findings[0] || 'no finding').slice(0, 70));
 
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
