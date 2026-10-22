@@ -11501,12 +11501,34 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        pulse, translate, compare, motif, melody — still see the song. */
     const padSrc=o.padSrc||(src==='song'?'pat':src);
     const cr=await run('critique',()=>window.MVX.critique({src:padSrc}));
-    for(const f of ((cr&&cr.found)||[]))
+    for(const f of ((cr&&cr.found)||[])){
+      /* TONAL BALANCE IS A WHOLE-MIX QUESTION AND MUST NOT BE ASKED OF
+         FOUR BARS. Moving the per-pad work onto one pattern made
+         critique compare that pattern against the reference, and the
+         pattern it landed on was a sparse intro with no kick and almost
+         no percussion — which duly reported the top octave 34dB under
+         the reference and five serious findings that were nothing but
+         the intro being an intro. The per-pad checks survive the
+         narrower source; this one does not, so it is dropped here and
+         asked again below against the whole song. */
+      if(f.severity==='off-reference' && padSrc!==src) continue;
       add('critique', f.severity, f.says,
         f.severity==='stretched' ? 'write the line on notes the pack actually has, or load a closer sample'
         : f.severity==='buried' ? 'raise it, thin what masks it, or accept it as an accent'
         : f.severity==='off-reference' ? 'move the named band toward the reference'
         : '');
+    }
+
+    /* 2b. the reference, against the whole song rather than a fragment */
+    if(padSrc!==src){
+      const cmp=await run('compare',()=>window.MVX.compare({src}));
+      for(const b of ((cmp&&cmp.bands)||[])) if(Math.abs(b.delta)>=3)
+        add('compare','off-reference', b.band+'Hz sits '+(b.delta>0?'+':'')+b.delta
+          +'dB against the reference, over the whole song.',
+          'move that band toward the reference');
+      for(const n of ((cmp&&cmp.notes)||[])) if(/level|crest|stereo/.test(n))
+        add('compare','off-reference', n, '');
+    }
 
     /* 3. PERCEIVED loudness, which is not energy. This is the check that
           was missing when the bells came back too loud. */
@@ -11568,8 +11590,23 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       const mo=await run('motif:'+n,()=>window.MVX.motif(n,{src}));
       for(const f of ((mo&&mo.findings)||[])) add('motif','material', n+': '+f,
         'state a figure and bring it back — transposed, inverted, augmented');
+      /* ONE LINE PER INSTRUMENT, NOT FOUR. melody() scores against sung
+         folk melody and says itself that a Bach subject will not match
+         and should not. An instrumental subject built on an arpeggio is
+         leap-heavy by construction, so four separate findings per part
+         saying so is fourteen lines of noise around the two findings
+         that were real. Kept, because a line meant to sing and failing
+         to is worth knowing, but collapsed and marked for what it is. */
       const me=await run('melody:'+n,()=>window.MVX.melody(n,{src}));
-      for(const f of ((me&&me.findings)||[])) add('melody','shape', n+': '+f, '');
+      if(me && me.findings && me.findings.length){
+        const g=me.got||{};
+        add('melody','shape', n+': shape differs from sung melody in '
+          +me.findings.length+' respect'+(me.findings.length>1?'s':'')
+          +' (leaps '+(g.leap==null?'?':g.leap)+'% against 13.1, steps '
+          +(g.step==null?'?':g.step)+'% against 46.9, repeats '
+          +(g.repeat==null?'?':g.repeat)+'% against 21.1).',
+          'expected for an instrumental subject — act on it only if this line is meant to sing');
+      }
     }
     /* continuity is about holes in a held part, which applies to anything */
     for(const n of names){
