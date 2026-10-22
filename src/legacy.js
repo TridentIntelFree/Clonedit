@@ -13693,6 +13693,36 @@ $('btnToolResynth').addEventListener('click',()=>toolRun('btnToolResynth','REBUI
     r.blocks+' blocks of '+r.blockMs+'ms, chosen from '+r.brainBlocks+' candidates.'];
 }));
 
+/* Both of these write to a FREE pad rather than over the one in hand.
+   A button that quietly replaces the sound you were working on is a
+   button people learn not to press. */
+function freePadFor(){
+  for(let k=NPADS-1;k>=0;k--) if(S.pads[k] && S.pads[k].bufId<0) return k;
+  return -1;
+}
+$('btnToolFreeze').addEventListener('click',()=>toolRun('btnToolFreeze','FREEZE',async()=>{
+  const i=S.editPad|0;
+  if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample to freeze.';
+  const free=freePadFor();
+  if(free<0) return 'every pad is full — clear one for the result.';
+  const r=await window.MVX.freeze(i,{pad:free, at:0.25, seconds:4});
+  drawPads();
+  return ['FREEZE '+padLabel(i)+' → '+padLabel(r.pad), r.says, '',
+    'held '+r.partials+' of '+r.found+' partials found, '+r.lowest+'Hz to '+r.highest+'Hz.',
+    'The original is untouched. Try a different moment with freeze(pad,{at:0.6}).'];
+}));
+$('btnToolTape').addEventListener('click',()=>toolRun('btnToolTape','TAPE',async()=>{
+  const i=S.editPad|0;
+  if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample on it.';
+  const free=freePadFor();
+  if(free<0) return 'every pad is full — clear one for the result.';
+  const r=await window.MVX.tape(i,{pad:free});
+  drawPads();
+  return ['RUN TO TAPE '+padLabel(i)+' → '+padLabel(r.pad), r.says, '',
+    'The original is untouched. For more or less of it, '
+    +'tape(pad,{wow:20, flutter:6, drift:15, sat:0.5}).'];
+}));
+
 $('btnAgentPing').addEventListener('click',()=>{
   if(!jbhBus){ lcd('AGENT LINK is closed.'); return; }
   jbhPing();

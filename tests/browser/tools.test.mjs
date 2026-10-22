@@ -27,7 +27,8 @@ export default async function ({ browser, base }) {
 
     t.head('THE BUTTONS ARE THERE AND THEY ARE WIRED');
     const present = await page.evaluate(() =>
-      ['btnToolReview', 'btnToolBalance', 'btnToolPaint', 'btnToolMutate', 'btnToolResynth']
+      ['btnToolReview', 'btnToolBalance', 'btnToolPaint', 'btnToolMutate', 'btnToolResynth',
+        'btnToolFreeze', 'btnToolTape']
         .map(id => ({ id, found: !!document.getElementById(id) })));
     for (const p of present) t.ok('there is a ' + p.id, p.found, p.found ? 'present' : 'MISSING');
 
@@ -76,6 +77,35 @@ export default async function ({ browser, base }) {
     t.ok('and says how many checks it managed',
       /from \d+ checks/.test(reviewed),
       (/from \d+ checks/.exec(reviewed) || ['(not stated)'])[0]);
+
+    /* ---- FREEZE and TAPE, which must not eat the pad they came from ---- */
+    t.head('FREEZE AND TAPE LEAVE THE ORIGINAL ALONE');
+    const made = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('p', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 48, hi: 60, max: 1 });
+      const src = window.JBH.instPads('p')[0].pad;
+      const before = window.JBH.state().padsLoaded;
+      const press = async (id) => {
+        document.getElementById(id).click();
+        for (let i = 0; i < 300; i++) {
+          await new Promise(r => setTimeout(r, 100));
+          if (!document.getElementById(id).disabled) break;
+        }
+        return (document.getElementById('toolLog') || {}).textContent || '';
+      };
+      const fz = await press('btnToolFreeze');
+      const afterFreeze = window.JBH.state().padsLoaded;
+      const tp = await press('btnToolTape');
+      const afterTape = window.JBH.state().padsLoaded;
+      return { src, before, afterFreeze, afterTape, fz, tp };
+    });
+    t.ok('freeze makes a new pad rather than replacing one',
+      made.afterFreeze === made.before + 1 && /held \d+ partials/.test(made.fz),
+      made.before + ' pads → ' + made.afterFreeze + '; ' + made.fz.split('\n')[1].slice(0, 80));
+    t.ok('and tape does too',
+      made.afterTape === made.afterFreeze + 1 && /cents of wow/.test(made.tp),
+      made.afterFreeze + ' pads → ' + made.afterTape + '; ' + made.tp.split('\n')[1].slice(0, 80));
 
     /* ---- the panel must not be able to inject markup -------------------- */
     t.head('WHAT GOES IN THE LOG IS TEXT');

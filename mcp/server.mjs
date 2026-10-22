@@ -515,6 +515,40 @@ const TOOLS = [
       jumble: { type: 'number' }, follow: { type: 'boolean' },
       name: { type: 'string' }, seed: { type: 'integer' } } } },
 
+  { name: 'jbh_tape', description:
+      'RUN A PAD TO TAPE — pitch that will not hold still. Everything this app makes is '
+      + 'perfectly in tune for the whole length of a note, which never happened to any '
+      + 'recording made on tape, and there is a humanDrift for timing with no equivalent for '
+      + 'pitch. Three separate things, in cents: WOW is slow (under ~2Hz) and heard as the '
+      + 'pitch sagging and recovering; FLUTTER is fast (5-15Hz) and heard as roughness rather '
+      + 'than as pitch at all; DRIFT is neither periodic nor fast and never quite comes back. '
+      + 'Saturation and the loss of the top octave come with it because they came with it on '
+      + 'the machine. Defaults are small on purpose — real machines are subtle. Pass `pad` to '
+      + 'write elsewhere; it replaces in place otherwise.',
+    inputSchema: { type: 'object', required: ['from'], properties: {
+      from: { type: 'integer' }, pad: { type: 'integer' },
+      wow: { type: 'number' }, wowHz: { type: 'number' },
+      flutter: { type: 'number' }, flutterHz: { type: 'number' },
+      drift: { type: 'number' }, sat: { type: 'number' },
+      hiLossHz: { type: 'number' }, hiss: { type: 'number' },
+      name: { type: 'string' }, seed: { type: 'integer' } } } },
+
+  { name: 'jbh_freeze', description:
+      'HOLD ONE MOMENT OF A SOUND for as long as you like. paint() can make anything provided '
+      + 'you already know the partials you want, and usually you do not — but you have a sound '
+      + 'whose colour is right for a fifth of a second and no way to keep it. This reads the '
+      + 'spectrum at one instant, keeps the strongest partials and sustains them, so any '
+      + 'one-shot becomes a pad: a door knock, a can, the moment a bell has stopped clanging '
+      + 'and is only ringing. Nothing loops, because nothing is replayed — it is what that '
+      + 'instant was made of, held still. `at` is how far through the source to look (0-1) and '
+      + '`shimmer` gives each partial a few cents of its own drift, without which they sum to '
+      + 'an organ.',
+    inputSchema: { type: 'object', required: ['from'], properties: {
+      from: { type: 'integer' }, pad: { type: 'integer' },
+      at: { type: 'number' }, seconds: { type: 'number' },
+      partials: { type: 'integer' }, shimmer: { type: 'number' },
+      midi: { type: 'number' }, name: { type: 'string' }, seed: { type: 'integer' } } } },
+
   { name: 'jbh_call', description:
       'Escape hatch: call any window.JBH method by name with an array of arguments. Everything '
       + 'the app exposes is reachable this way, including anything added after these tools were '
@@ -595,6 +629,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_resynth':     return ok(await jbh('resynth', [{ target: a.target,
                                 brain: a.brain, pad: a.pad, blockMs: a.blockMs,
                                 jumble: a.jumble, follow: a.follow, name: a.name, seed: a.seed }]));
+      case 'jbh_tape':        return ok(await jbh('tape', [a.from, { pad: a.pad,
+                                wow: a.wow, wowHz: a.wowHz, flutter: a.flutter,
+                                flutterHz: a.flutterHz, drift: a.drift, sat: a.sat,
+                                hiLossHz: a.hiLossHz, hiss: a.hiss, name: a.name, seed: a.seed }]));
+      case 'jbh_freeze':      return ok(await jbh('freeze', [a.from, { pad: a.pad, at: a.at,
+                                seconds: a.seconds, partials: a.partials, shimmer: a.shimmer,
+                                midi: a.midi, name: a.name, seed: a.seed }]));
       case 'jbh_call':        return ok(await jbh(a.method, a.args || []));
 
       case 'jbh_render': {

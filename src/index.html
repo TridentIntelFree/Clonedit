@@ -2231,6 +2231,10 @@ link renders as text, never as markup.</p>
     <button id="btnToolMutate" class="grow" title="Vary this pad's sound, measure each variation, keep the best">MUTATE PAD</button>
     <button id="btnToolResynth" class="grow" title="Rebuild this pad using the pieces of every other pad">REBUILD PAD</button>
   </div>
+  <div class="row" style="flex-wrap:wrap;gap:4px">
+    <button id="btnToolFreeze" class="grow" title="Hold one instant of this pad's spectrum as a sustained pad">FREEZE PAD</button>
+    <button id="btnToolTape" class="grow" title="Run this pad to tape — wow, flutter, drift and saturation">RUN TO TAPE</button>
+  </div>
   <div id="toolLog" role="log" aria-live="polite" aria-label="Sound tool results"
     style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
            padding:8px;margin:6px 0;font-size:11px;line-height:1.5;max-height:200px;
@@ -2258,6 +2262,17 @@ you keep the result.</p>
 loaded pad: it chops both into short blocks and rebuilds this sound out of the
 closest-matching blocks of the others. The shape is the target's, the substance
 is theirs.</p>
+    <p><b>FREEZE PAD</b> holds one instant of this sound for as long as you like.
+It reads the spectrum a quarter of the way through, keeps the strongest partials
+and sustains them &mdash; so any one-shot becomes a pad: a door knock, a can, the
+moment a bell has stopped clanging and is only ringing. Nothing loops, because
+nothing is replayed.</p>
+    <p><b>RUN TO TAPE</b> gives the sound a pitch that will not hold still.
+Everything made here is perfectly in tune for a whole note, which never happened
+on tape. <i>Wow</i> is slow and heard as the pitch sagging; <i>flutter</i> is fast
+and heard as roughness; <i>drift</i> wanders off and never quite returns.
+Saturation and a softer top come with it. Both of these write to a free pad, so
+the original is left alone.</p>
   </div></details>
 
   <details class="ex" style="margin-top:8px"><summary>Playing, not just placing</summary><div class="ex-body">

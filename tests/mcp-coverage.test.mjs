@@ -67,7 +67,7 @@ test('every analyser is reachable over MCP', () => {
 /* The generators are not analysers, but an agent that cannot reach them
    is missing the parts of this app that make sounds rather than judge
    them — and those are the ones with no equivalent anywhere else here. */
-const GENERATORS = ['balance', 'mutate', 'paint', 'resynth'];
+const GENERATORS = ['balance', 'mutate', 'paint', 'resynth', 'tape', 'freeze'];
 
 test('the tools that make and solve things are reachable over MCP', () => {
   const missing = GENERATORS.filter(g =>

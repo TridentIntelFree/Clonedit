@@ -178,6 +178,34 @@ implementation of a published technique, not a port of their GPL code.
 Matching is on spectral shape with each block normalised against its own
 level, so a quiet corpus can stand in for a loud target.
 
+`freeze(pad, opt)` holds one instant of a sound for as long as you
+like. `paint()` can make anything provided you already know the
+partials you want, and usually you do not — but you have a sound whose
+colour is right for a fifth of a second and no way to keep it. This
+reads the spectrum at one moment, keeps the strongest partials and
+sustains them, so any one-shot becomes a pad. Nothing loops, because
+nothing is replayed. `shimmer` gives each partial its own few cents of
+drift; without it they sum to an organ.
+
+`tape(pad, opt)` gives a sound a pitch that will not hold still.
+Everything made here is perfectly in tune for the whole length of a
+note, which never happened to a recording made on tape, and there is a
+`humanDrift` for timing with no equivalent for pitch. Wow is slow and
+heard as the pitch sagging; flutter is fast and heard as roughness
+rather than as pitch; drift is neither and never quite comes back. All
+three in cents, with small defaults, because real machines are subtle.
+
+## Reach for what is already there
+
+The next gain is usually not a new call. `poly()` gives a pad its own
+BPM and produces real cross-rhythm — 3:4:5 inside one bar — and six
+tracks were written in this repo before anyone used it, every one of
+them on a single 16-step grid at a single tempo. The same habit left a
+finished track bounced with six of seventeen analysers run.
+
+Before adding a tool, check whether the thing you want already exists
+and has simply never been reached for.
+
 ## Know the pack before you write for it
 
 `scripts/timbre-atlas.mjs <manifest>` measures every instrument in a
