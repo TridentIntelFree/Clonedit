@@ -14900,11 +14900,33 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      alike", and that is a measurement. This app is mostly measurement
      by now.
 
-     Matching is on spectral SHAPE, each block's band levels normalised
-     against its own total, so a quiet corpus block can stand in for a
-     loud target block and be scaled to fit. Matching on raw level
-     instead just picks whatever is nearest in volume and sounds like
-     nothing. */
+     WHAT READING THEIR MANUAL CHANGED. The first version here was
+     written from the concept alone and got four things wrong or
+     missing, all of them documented in Samplebrain's own manual:
+
+     - It matched on spectral shape only, normalising every block's
+       level away. Their default matches frequency AND dynamics, and
+       the manual is explicit that frequency-only is the special case.
+       Shape-only throws away the loudness contour of the target, which
+       is half of what makes a rebuild recognisable. `match` now
+       chooses, and 'shape+level' is the default.
+     - It had no stickiness. If the block that FOLLOWS the one just
+       used is close enough to the next target block, using it instead
+       of searching keeps a contiguous run of the source intact. That
+       single idea is the difference between phrases and confetti,
+       because it preserves the corpus's own micro-continuity.
+     - Its variety came from picking randomly among near-matches, which
+       is noise. Theirs comes from novelty: bias against blocks already
+       used, with a boredom term for how fast that bias decays. Same
+       intent, and theirs is the better mechanism because it is a
+       preference rather than a coin toss.
+     - And a deliberately WORST match is a mode worth having, with the
+       caveat their manual gives — silence is least similar to
+       everything, so it has to be excluded or it wins every time.
+
+     Matching on shape alone normalises each block against its own
+     total, so a quiet corpus block can stand in for a loud target one
+     and be rescaled; matching on shape+level keeps the contour. */
   async resynth(opt){
     const o=opt||{};
     ensureAudio();
@@ -14928,8 +14950,14 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const blockMs=clamp(o.blockMs==null?60:+o.blockMs, 10, 400);
     const B=Math.max(256, Math.round(sr*blockMs/1000));
     const HOP=Math.max(128, B>>1);
-    const JUMBLE=clamp(o.jumble==null?0.25:+o.jumble, 0, 1);
     const FOLLOW=o.follow!==false;          /* scale each block to the target's level */
+    const MATCH=o.match||'shape+level';
+    if(['shape','shape+level'].indexOf(MATCH)<0)
+      throw new Error("match must be 'shape' or 'shape+level'");
+    const NOVELTY=clamp(o.novelty==null?0.3:+o.novelty, 0, 1);
+    const BOREDOM=clamp(o.boredom==null?0.25:+o.boredom, 0, 1);
+    const STICKY=clamp(o.stickiness==null?0.25:+o.stickiness, 0, 1);
+    const REVERSED=!!o.reversed;
 
     /* FEATURES. Eight log-spaced bands of one windowed FFT per block,
        as decibels, then the vector is centred so only its SHAPE is
@@ -14968,9 +14996,16 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       const b=S.buffers[S.pads[pi].bufId];
       if(!b || !b.length) continue;
       const d=b.getChannelData(0);
+      let prev=-1;
       for(let at=0; at+B<=d.length; at+=HOP){
         const ft=featOf(d, at);
-        if(ft) brain.push({pad:pi, at, f:ft.f, rms:ft.rms, data:d});
+        if(!ft) { prev=-1; continue; }
+        /* `next` is what makes stickiness possible: the block that
+           physically follows this one in the same recording. */
+        const idx=brain.length;
+        brain.push({pad:pi, at, f:ft.f, rms:ft.rms, data:d, next:-1, used:0});
+        if(prev>=0) brain[prev].next=idx;
+        prev=idx;
       }
       if(brain.length>20000) break;             /* enough is enough */
     }
@@ -14986,7 +15021,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     let rs=(o.seed|0)||0xC0FFEE;
     const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
 
-    let placed=0, used=new Set();
+    let placed=0, used=new Set(), lastIdx=-1, ran=0;
     for(let at=0; at+B<=outN; at+=HOP){
       const ft=featOf(td, at);
       if(!ft) continue;
@@ -14994,19 +15029,56 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
          one is not chosen every time a similar moment comes round —
          that is what makes it sound like an instrument being played
          rather than a loop being pasted */
-      let best=null, bestD=Infinity, pool=[];
-      for(const c of brain){
+      /* raw distance between two blocks, before any preference is
+         applied: spectral shape, plus the level difference when the
+         match is asked to respect dynamics */
+      const distTo=(c)=>{
         let d2=0;
         for(let b=0;b<c.f.length;b++){ const e=c.f[b]-ft.f[b]; d2+=e*e; }
-        if(d2<bestD){ bestD=d2; best=c; }
-        if(pool.length<6 || d2<pool[pool.length-1].d){
-          pool.push({c, d:d2}); pool.sort((x,y)=>x.d-y.d);
-          if(pool.length>6) pool.pop();
+        if(MATCH==='shape+level'){
+          const dl=20*Math.log10(Math.max(c.rms,1e-6)/Math.max(ft.rms,1e-6));
+          d2+=dl*dl*0.6;
         }
+        return d2;
+      };
+      let best=null, bestRaw=Infinity, bestScore=Infinity;
+      for(const c of brain){
+        const raw=distTo(c);
+        /* REVERSED wants the least similar, but silence is least
+           similar to everything — their manual says so and it is true
+           here too, so quiet blocks are kept out of that race. */
+        if(REVERSED && c.rms<ft.rms*0.25) continue;
+        /* novelty is a preference against what has already been used,
+           not a coin toss between near-equal options */
+        const sc=(REVERSED? -raw : raw) + NOVELTY*c.used*18;
+        if(sc<bestScore){ bestScore=sc; best=c; bestRaw=raw; }
       }
       if(!best) continue;
-      const pick=(JUMBLE>0 && pool.length>1 && rnd()<JUMBLE)
-        ? pool[1+Math.floor(rnd()*(pool.length-1))].c : best;
+      /* STICKINESS: if whatever followed the last block we took is
+         close enough, take that instead and keep the run intact.
+
+         "Close enough" is relative to the best match found, and the
+         first attempt at that arithmetic was far too generous — it
+         admitted any successor within two and a half times the best
+         distance, so 620 of 633 blocks carried on and the thing was
+         playing the corpus end to end while barely consulting the
+         target. At (1+STICKY) the default admits a successor up to a
+         quarter worse in squared distance, which is about 12% worse in
+         real terms: enough to hold a run together, not enough to
+         ignore what is being rebuilt.
+
+         Not in reversed mode. There `bestRaw` is the distance of the
+         deliberately WORST match, so every successor compares
+         favourably against it and stickiness swallows the mode whole. */
+      let pick=best;
+      if(STICKY>0 && !REVERSED && lastIdx>=0 && brain[lastIdx].next>=0){
+        const nxt=brain[brain[lastIdx].next];
+        if(distTo(nxt) <= bestRaw*(1+STICKY)) { pick=nxt; ran++; }
+      }
+      lastIdx=brain.indexOf(pick);
+      pick.used++;
+      /* boredom wears the novelty penalty off again */
+      if(BOREDOM>0) for(const c of brain) if(c.used>0) c.used*=(1-BOREDOM*0.5);
       const g=FOLLOW ? (ft.rms/Math.max(pick.rms,1e-6)) : 1;
       const gg=Math.max(0, Math.min(8, g));
       for(let i=0;i<B && at+i<outN; i++){
@@ -15036,12 +15108,18 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     try{ drawPads(); }catch(e){}
 
     return { pad:target, name, from:(o.target|0), brainPads,
+      match:MATCH, reversed:REVERSED,
+      settings:{novelty:NOVELTY, boredom:BOREDOM, stickiness:STICKY},
+      continuedRuns:ran, continuedPct:placed?+(100*ran/placed).toFixed(0):0,
       blocks:placed, brainBlocks:brain.length, blockMs:+blockMs.toFixed(0),
       padsUsed:[...used].map(i=>(S.pads[i]&&S.pads[i].name)||('pad '+i)),
       seconds:+(outN/sr).toFixed(2),
       says:'rebuilt '+(tp.name||('pad '+(o.target|0)))+' out of '+placed+' blocks taken from '
         +used.size+' pad'+(used.size===1?'':'s')+' ('+brain.length+' candidates). '
-        +'It has the shape of the target and the substance of the brain.' };
+        +'It has the shape of the target and the substance of the brain'
+        +(ran?(', and '+ran+' of those blocks carried straight on from the one before '
+          +'rather than being searched for — that is what keeps runs of the source intact'):'')
+        +'.' };
   },
 
   /* PAINT A SOUND AS A SPECTRUM, THE WAY MetaSynth DOES.
