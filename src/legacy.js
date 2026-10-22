@@ -10174,8 +10174,22 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const notes=[...new Set(cand.map(x=>x.n))].sort((a,b)=>a-b);
     const maxNotes=Math.min(o.max||notes.length, NPADS);
     if(notes.length>maxNotes){
-      const keep=new Set(), stride=(notes.length-1)/(maxNotes-1);
-      for(let i=0;i<maxNotes;i++) keep.add(notes[Math.round(i*stride)]);
+      const keep=new Set();
+      /* ONE NOTE IS A LEGITIMATE ASK AND IT USED TO RETURN NOTHING.
+         The stride is (notes.length-1)/(maxNotes-1), which at maxNotes
+         of 1 divides by zero: the index came out NaN, notes[NaN] is
+         undefined, and the instrument was built from an empty set and
+         handed back with pads:[] and no error. Every caller in the repo
+         asked for four or more so it was never hit — but asking for a
+         single sound is the most ordinary request there is once you are
+         building one sound at a time, which is how it finally turned
+         up. Take the middle note: of one recording from a range, the
+         middle is the one that represents it. */
+      if(maxNotes<=1) keep.add(notes[Math.floor((notes.length-1)/2)]);
+      else {
+        const stride=(notes.length-1)/(maxNotes-1);
+        for(let i=0;i<maxNotes;i++) keep.add(notes[Math.round(i*stride)]);
+      }
       cand=cand.filter(x=>keep.has(x.n));
     }
     /* SEVERAL RECORDINGS OF ONE NOTE GO ON ONE PAD, NOT SEVERAL.
@@ -11491,6 +11505,62 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      collects what every tool said, sorts by severity and hands it over. */
   async review(opt){
     const o=opt||{}, src=o.src||'song';
+    /* QUICK MODE, FOR CHECKING WHILE YOU BUILD.
+
+       Everything here was being run once, at the end, on a finished
+       arrangement — which is the wrong time to learn that two parts
+       shadow each other or that the beat cannot be found, because by
+       then the thing is written. A person building this would check
+       after every element, and against what is already there.
+
+       The reason that was not happening is that review() is expensive,
+       and the reason it is expensive is the renders. But four of the
+       checks do not render at all: pulse(), motif(), melody() and
+       counterpoint() all read the schedule, which the app already
+       knows exactly. "Is there a beat", "does anything come back",
+       "is this line a tune", "are these two voices one voice" are
+       free, and they are most of what matters while writing.
+
+       So quick:true runs those and nothing else. It is instant, it can
+       be called after every pattern, and the expensive half — levels,
+       loudness, tonal balance against a reference, what a phone keeps —
+       belongs at the end where it was always going to live anyway. */
+    if(o.quick){
+      const findings=[], ran=[], skipped=[];
+      const run=async(name, fn)=>{ try{ const r=await fn(); ran.push(name); return r; }
+        catch(e){ skipped.push(name+' — '+String((e&&e.message)||e).slice(0,80)); return null; } };
+      const insts=[...new Set((S.pads||[]).filter(p=>p&&p.inst).map(p=>p.inst))];
+      const names=o.instruments||insts;
+      const sch=await run('schedule',()=>window.MVX.schedule({src, full:true}));
+      if(!sch || !sch.notes) return {src, quick:true, findings:[], ran, skipped,
+        says:'nothing plays yet.'};
+      for(const s2 of (sch.stretched||[]))
+        findings.push({tool:'schedule', severity:'stretched',
+          says:'pad '+s2.pad+(s2.name?' ('+s2.name+')':'')+' is played '+s2.semitones
+            +' semitones from its sample', fix:'write on notes the pack has, or paint one'});
+      const pu=await run('pulse',()=>window.MVX.pulse({src}));
+      for(const f of ((pu&&pu.findings)||[])) findings.push({tool:'pulse', severity:'metre', says:f, fix:''});
+      /* only lines, not percussion — the same filter the full pass uses */
+      const ev=new Map();
+      for(const e of (sch.events||[])){ const pd=S.pads[e.pad], k=pd&&pd.inst;
+        if(!k) continue; const r=ev.get(k)||{n:0,p:0}; r.n++; if(e.midi!=null) r.p++; ev.set(k,r); }
+      const lines=names.filter(n=>{ const r=ev.get(n); return r && r.n>=4 && r.p/r.n>=0.6; });
+      for(const n of lines){
+        const mo=await run('motif:'+n,()=>window.MVX.motif(n,{src}));
+        for(const f of ((mo&&mo.findings)||[]))
+          findings.push({tool:'motif', severity:'material', says:n+': '+f, fix:''});
+      }
+      if(lines.length>1){
+        const cp=await run('counterpoint',()=>window.MVX.counterpoint(lines.slice(0,4),{src}));
+        for(const f of ((cp&&cp.findings)||[]))
+          findings.push({tool:'counterpoint', severity:'voices', says:f, fix:''});
+      }
+      return {src, quick:true, lines, findings, ran, skipped,
+        pulse:pu?{strength:pu.pulseStrength, onBeat:pu.onGrid&&pu.onGrid.beat}:null,
+        says:(findings.length?findings.length+' thing'+(findings.length>1?'s':'')+' to look at'
+          :'nothing flagged')+' — '+ran.length+' free checks, no audio rendered. '
+          +'Run review() without quick before bouncing.'};
+    }
     const findings=[], ran=[], skipped=[];
     const run=async(name, fn)=>{
       try{ const r=await fn(); ran.push(name); return r; }
@@ -11697,6 +11767,88 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         +' from '+ran.length+' checks'
         +(skipped.length?', and '+skipped.length+' check'+(skipped.length>1?'s':'')
           +' could not run (see skipped)':'')+'.' };
+  },
+
+  /* DOES THIS ONE SOUND HAVE A PLACE, AGAINST WHAT IS ALREADY HERE?
+
+     This exists because of how a mix actually gets built, which is one
+     sound at a time: you need a bass, so you make the bass — tweak the
+     sample until it IS the bass — and only then do you move on to the
+     next thing. Each sound is finished, in context, before the next
+     one starts, so the relationships between them are right by
+     construction.
+
+     Everything else in this file assumes the opposite: that a whole
+     palette is loaded, every part is written, and then the levels are
+     sorted out at the end. That is why balance() had to be written —
+     nine bands against seven groups, solved simultaneously, because by
+     then there was no other way to do it. The puzzle was self-inflicted.
+
+     So this answers the question the one-at-a-time method actually
+     asks, about one pad, cheaply: what does it own that nothing else
+     does, what is covering it, and what is it covering. Two renders —
+     the mix with it and the mix without — rather than one per pad.
+
+     `masks` and `maskedBy` are the useful half. A sound that owns no
+     band and is 20dB under everywhere is not quiet, it is absent, and
+     no amount of turning it up will give it somewhere to sit. */
+  async place(padIdx, opt){
+    const o=opt||{}, i=padIdx|0, p=S.pads[i];
+    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    const src=o.src||'pat', ro={loops:o.loops||1, src, noTail:true};
+
+    const mine=await renderMix(new Set([i]), new Set(), ro);
+    if(!mine) throw new Error('pad '+i+(p.name?' ('+p.name+')':'')+' plays nothing in '
+      +(src==='song'?'the song':'this pattern')+' — write a step for it first');
+    /* everything else that sounds, which is the thing it has to fit into */
+    const others=new Set();
+    for(let k=0;k<NPADS;k++) if(k!==i && S.pads[k] && S.pads[k].bufId>=0) others.add(k);
+    const rest=others.size?await renderMix(others, new Set(), ro):null;
+
+    const mb=await bandEnergy(mine);
+    const rb=rest?await bandEnergy(rest):null;
+    if(!mb) throw new Error('could not measure that pad');
+
+    const rows=[];
+    for(let b=0;b<mb.length;b++){
+      const me=mb[b].db, them=rb?rb[b].db:-120;
+      rows.push({band:mb[b].band, pad:+me.toFixed(1), rest:+them.toFixed(1),
+        over:+(me-them).toFixed(1)});
+    }
+    /* the band it stands furthest above everything else in */
+    let owns=null, worst=null;
+    for(const r of rows){
+      if(r.pad<-70) continue;                       /* nothing of it there to speak of */
+      if(!owns || r.over>owns.over) owns=r;
+      if(!worst || r.over<worst.over) worst=r;
+    }
+    const lufsMine=lufsIntegrated(mine), lufsRest=rest?lufsIntegrated(rest):null;
+    const rel=(lufsMine && lufsMine.lufs>-Infinity && lufsRest && lufsRest.lufs>-Infinity)
+      ? +(lufsMine.lufs-lufsRest.lufs).toFixed(1) : null;
+
+    const findings=[];
+    if(!others.size) findings.push('nothing else is loaded, so there is nothing to fit into yet.');
+    else if(owns && owns.over<-6)
+      findings.push('this sound owns nothing: its best band, '+owns.band+'Hz, is still '
+        +Math.abs(owns.over)+'dB under everything else there. That is not quiet, it is '
+        +'absent — turning it up will make the mix louder rather than making room for it. '
+        +'Move it somewhere the others are not, or thin what is already in its way.');
+    else if(owns)
+      findings.push('it sits in '+owns.band+'Hz, where it is '
+        +(owns.over>=0?('+'+owns.over+'dB above'):(Math.abs(owns.over)+'dB under'))
+        +' everything else. That is its place.');
+    /* what it is covering: bands where it is well above, and loud */
+    const covering=rows.filter(r=>r.over>6 && r.pad>-50).map(r=>r.band);
+    if(covering.length>2) findings.push('it is the loudest thing across '+covering.length
+      +' bands ('+covering.slice(0,4).join(', ')+'). Check what used to live there.');
+    if(rel!=null && rel>3) findings.push('it is '+rel+'dB louder than everything else put '
+      +'together. Almost certainly too much for one sound.');
+
+    return { pad:i, name:p.name||('pad '+i), src, against:others.size,
+      bands:rows, owns:owns?owns.band:null, ownsBy:owns?owns.over:null,
+      weakest:worst?worst.band:null, relLufs:rel, findings,
+      says:findings.length?findings[0]
+        :'it has a place and is not in anything else\'s way.' };
   },
 
   /* HOLD ONE MOMENT OF A SOUND FOR AS LONG AS YOU LIKE.
@@ -12369,15 +12521,40 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       {k:'eqHi', lo:-10,  hi:10,   scale:0.30},
       {k:'start',lo:0,    hi:0.6,  scale:0.18},
       {k:'pitch',lo:-12,  hi:12,   scale:0.15},
+      /* The three that were missing, and they are the ones that do most
+         to a real recording. `fine` is the detune that stops a doubled
+         sample sounding like one sample twice. `rev` and `dly` are the
+         sends — depth in the spatial sense, which nothing in this search
+         could previously reach, so every sound it produced was dry. They
+         are scoreable because `ro` renders with noTail:false, so the
+         tail a send creates is inside what gets measured; with the tail
+         cut they would be knobs the scorer could not hear, which is
+         worse than no knob at all. */
+      {k:'fine', lo:-50,  hi:50,   scale:0.25},
+      {k:'rev',  lo:0,    hi:0.6,  scale:0.30},
+      {k:'dly',  lo:0,    hi:0.5,  scale:0.25},
     ];
     const FTYPES=['off','lowpass','highpass','bandpass'];
+    /* HOW THE PITCH KNOB IS SPENT, which is a different sound each way.
+       Dropping a recording a fifth by varispeed slows it and thickens
+       every detail with it — the classic trick, and the reason a sample
+       pitched down reads as bigger rather than merely lower. Shifting it
+       with keepTime leaves the length alone and the artefacts show as
+       grain. Stretching it with keepPitch leaves the note alone and
+       smears the attack. Three genuinely different sounds from one
+       number, and until now the search only ever heard the first: it
+       moved `pitch` and nothing else, so two thirds of what pitch can do
+       to a sample were never tried. */
+    const PMODES=['varispeed','keepTime','keepPitch'];
+    const pmodeOf=(st)=>st.keepPitch?'keepPitch':(st.keepTime?'keepTime':'varispeed');
+    const setPmode=(st,m)=>{ st.keepPitch=(m==='keepPitch'); st.keepTime=(m==='keepTime'); };
     const knobs=o.knobs?KNOBS.filter(x=>o.knobs.indexOf(x.k)>=0):KNOBS;
     if(!knobs.length) throw new Error('no knobs left to turn — check the names in `knobs`');
 
     let rs=(o.seed|0)||0x9E3779B9;
     const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
 
-    const FIELDS=knobs.map(x=>x.k).concat(['ftype','reverse']);
+    const FIELDS=knobs.map(x=>x.k).concat(['ftype','reverse','keepTime','keepPitch']);
     const snap=()=>{ const o2={}; for(const k of FIELDS) o2[k]=p[k]; return o2; };
     const put=(st)=>{ for(const k in st) p[k]=st[k]; };
     const original=snap();
@@ -12461,6 +12638,10 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           const tonal=(WANT==='brighter'||WANT==='darker'||WANT==='different');
           if(rnd()<(tonal?0.30:0.12)*AMT) st.ftype=FTYPES[Math.floor(rnd()*FTYPES.length)];
           if(rnd()<0.08*AMT) st.reverse=!st.reverse;
+          /* only worth trying when the pitch knob is actually off its
+             rest, since all three modes are identical at a ratio of 1 */
+          if(Math.abs(+st.pitch||0)>0.2 && rnd()<0.22*AMT)
+            setPmode(st, PMODES[Math.floor(rnd()*PMODES.length)]);
           put(st); tried++;
           const rep=await measure();
           if(!rep) continue;
@@ -12483,8 +12664,15 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       changed.push({field:k, from:(typeof a==='number'?+(+a).toFixed(3):a),
         to:(typeof b==='number'?+(+b).toFixed(3):b)});
     }
+    /* two booleans are a worse answer than one word */
+    const pmWas=pmodeOf(original), pmNow=pmodeOf(bestState);
+    if(pmWas!==pmNow){
+      for(let k=changed.length-1;k>=0;k--)
+        if(changed[k].field==='keepTime'||changed[k].field==='keepPitch') changed.splice(k,1);
+      changed.push({field:'pitchMode', from:pmWas, to:pmNow});
+    }
     return { pad:i, name:p.name||('pad '+i), want:WANT, tried, kept:!!o.keep,
-      changed, settings:bestState,
+      changed, settings:bestState, pitchMode:pmNow,
       shapeChangeDb:+dist(base,bestRep).toFixed(2),
       before:{shape:base.shape, crestDb:base.crestDb, lufs:base.lufs},
       after:{shape:bestRep.shape, crestDb:bestRep.crestDb, lufs:bestRep.lufs},
@@ -12646,12 +12834,25 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      gain means nothing until you know what the pad is holding. */
   howto(){ return {
     order: [
-      '1. instrument()/preset()/sound() to build the players, then pad() for each one.',
-      '2. pattern() + batch() to write. note() for pitched lines, step() for everything else.',
-      '3. reference(url) with a finished mix you want to sound like. Do this BEFORE judging anything.',
-      '4. review({src:"song"}) — runs every analyser and reports which ones it could not run.',
-      '5. fix what it names, in the order it names them, and run it again.',
-      '6. render({loudness:true}) across a few mTrim values, pick by measurement, then bounce.',
+      'Build it ONE SOUND AT A TIME. Decide what the song needs next — a bass, a high, a '
+        + 'pulse — then make that one thing and finish it before starting the next. The '
+        + 'alternative, which everything in this file used to assume, is to load a whole '
+        + 'palette, write every part, and sort the levels out at the end; that is what '
+        + 'creates a nine-band seven-group puzzle that then needs balance() to solve. The '
+        + 'puzzle is avoidable. Each of these is one sound:',
+      '  a. read the atlas for the pack (scripts/timbre-atlas.mjs) and pick a source whose '
+        + 'measured band and brightness already suit the job. Do not pick by name.',
+      '  b. tweak it until it IS that sound, not a sample that will do: pad() for gain and '
+        + 'envelope, chop()/tape()/freeze()/mutate()/paint()/resynth() for the sound itself.',
+      '  c. write its part — note() for pitched lines, step() for everything else.',
+      '  d. place(pad) — does it own a band, is it covered, is it covering. Fix it NOW, while '
+        + 'it is the only thing you are thinking about and nothing else depends on it.',
+      '  e. review({quick:true}) every few sounds — free, no renders, catches drift early.',
+      'Then, once every sound is in and each one already fits:',
+      '  f. reference(url) with a finished mix you want to sound like. BEFORE judging tone.',
+      '  g. review({src:"song"}) — runs every analyser and reports what it could not run.',
+      '  h. fix what it names, in the order it names them, and run it again.',
+      '  i. render({loudness:true}) across a few mTrim values, pick by measurement, bounce.',
     ],
     traps: [
       'A SAMPLE PACK CAN LIE ABOUT PITCH. VSCO-2 names its files an octave below what they '
@@ -12671,6 +12872,11 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         + 'translate() measures the loss; the fix is a saturated parallel copy at 150-800Hz.',
       'A BEAT CAN BE PRESENT AND INAUDIBLE. Being on the grid is not the same as being heard '
         + 'on the beat: pulse() weighs onsets by how loud they actually are.',
+      'A SOUND LEFT TO THE END IS A SOUND YOU CANNOT HEAR. Judging a mix after everything is '
+        + 'in it means judging seven things at once, which is why levels set by ear fix one '
+        + 'part of the spectrum and break another. Each sound has to earn its place against '
+        + 'what is already there, at the moment it goes in — place(pad) answers exactly that, '
+        + 'for one pad, in two renders.',
       'INDEPENDENT IS NOT THE SAME AS UNRELATED. Voices need shared material as well as '
         + 'separate motion — counterpoint() measures the second, motif() the first.',
     ],
@@ -12684,8 +12890,13 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       'paint() draws a sound as a spectrum — rows of levels, lowest frequency first, or '
         + 'partials placed one at a time for genuinely inharmonic bells. The result is a '
         + 'sample on a pad like any other.',
+      'place(pad) answers the question the one-at-a-time method asks: against everything '
+        + 'else loaded, what band does this sound own, what is covering it, what is it '
+        + 'covering. Two renders rather than one per pad, so it is cheap enough to run on '
+        + 'every sound as it goes in.',
     ],
-    says:'review() is the one to run. It calls the rest and tells you what it could not reach.' };
+    says:'Make one sound, place() it, then make the next. review() at the end confirms; it is '
+      + 'a poor way to discover.' };
   },
 
   /* HOLES IN A PART THAT IS SUPPOSED TO BE HELD.

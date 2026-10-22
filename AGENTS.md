@@ -29,20 +29,111 @@ exactly like a check that passed.
 0. Read `samples/atlas-*.json` for the pack you are about to use, or
    generate it. Choosing a sound and discovering afterwards that it
    cannot do the job is the most expensive mistake available here.
-1. `instrument()` / `preset()` / `sound()` to build the players, then
-   `pad()` for each one.
-2. `pattern()` + `batch()` to write. `note()` for pitched lines,
-   `step()` for everything else.
-3. `reference(url)` with a finished mix you want to sound like. **Before**
-   judging anything — without it, tonal balance is not checked at all and
-   `critique()` says so.
-4. `review({src:'song'})`. Fix what it names, in the order it names them.
-   Run it again.
-5. `render({loudness:true})` across a few `mTrim` values, choose by
+1. **Then one sound at a time.** Not a palette, one sound. Decide what
+   the song needs next — it needs a bass, it needs something high — and
+   make that, and finish it, before you start the next thing. For each:
+
+   a. pick the source by its measured numbers in the atlas, not its
+      name. The thing called `vibh` is the dullest instrument in VCSL.
+
+   b. tweak it until it *is* the sound the song needs, rather than a
+      sample that will do. `pad()` sets gain and envelope; `chop()`,
+      `tape()`, `freeze()`, `mutate()`, `paint()` and `resynth()` change
+      what it actually is. A sample is a starting point.
+
+   c. write its part — `note()` for pitched lines, `step()` for the
+      rest.
+
+   d. `place(pad)`. What band does it own, what is covering it, what is
+      it covering. Fix it now, while it is the only thing you are
+      thinking about and nothing else has been built on top of it.
+
+   e. `review({quick:true})` every few sounds, since it is free.
+
+2. Only once every sound is in, and each already fits: `reference(url)`
+   with a finished mix you want to sound like. **Before** judging tone —
+   without it, tonal balance is not checked at all and `critique()`
+   says so.
+3. `review({src:'song'})`. Fix what it names, in the order it names them.
+   Run it again. This should mostly confirm. If it finds a sound with
+   nowhere to sit, that sound was placed badly and you skipped 1d.
+4. `render({loudness:true})` across a few `mTrim` values, choose by
    measurement, then bounce. Make sure the ladder BRACKETS your target:
    a denser arrangement is far hotter than a sparse one, and a ladder
    whose quietest rung is already too loud fails every gate and writes
    no file.
+
+## Check while you build, not after
+
+Everything in this file was being run once, at the end, on a finished
+arrangement. That is the wrong time to learn that two parts shadow each
+other or that the beat cannot be found, because by then the piece is
+written and the finding costs a rewrite rather than an edit.
+
+The reason it happened is that `review()` renders audio and so costs
+minutes. But **four of the checks render nothing at all** — they read
+the schedule, which the app already knows exactly:
+
+| free | what it answers |
+|---|---|
+| `pulse()` | is there a beat a listener can find |
+| `motif()` | does anything in this line ever come back |
+| `melody()` | is this a tune or a scale with a rhythm |
+| `counterpoint()` | are these two voices actually one voice |
+
+That is most of what matters while writing, and it is instant.
+`review({quick:true})` runs exactly those and nothing else, so it can
+be called after every pattern. The expensive half — per-pad levels,
+perceived loudness, tonal balance against a reference, what survives a
+phone — belongs at the end, where it was always going to live.
+
+A song script should look like: write a pattern, `review({quick:true})`,
+write the next one. Not: write everything, then look.
+
+## One sound at a time, not a palette
+
+The order above was rewritten because the way this repo had been
+working was backwards, and the evidence is a function.
+
+The old method: load twenty instruments, write every part, then set all
+the levels. By that point there are nine bands and seven groups
+interacting, nothing can be adjusted without disturbing something else,
+and five rounds of setting levels by ear each fixed one part of the
+spectrum and broke another. `balance()` was written to solve that
+system as linear algebra, and it works — nine bands inside 1.7 dB in
+one pass. But it is a solver for a problem that did not have to exist.
+Every sound was placed blind and the relationships between them were
+left to be negotiated at the end.
+
+The method that does not create it: the song needs a bass, so make the
+bass — take a source, tweak it until it is the bass this song wants,
+check it against what is already there, and only then ask what the song
+needs next. Each sound is finished in context. The relationships come
+out right because each one was made against the others, not alongside
+them.
+
+`place(pad)` is the check that makes this affordable. Two renders — the
+pad alone, and everything else — then a band-by-band comparison:
+
+```
+await JBH.place(bassPad)
+→ { owns:'60-120', ownsBy:9.4, weakest:'4000-8000',
+    says:'it sits in 60-120Hz, where it is +9.4dB above everything
+          else. That is its place.' }
+```
+
+`ownsBy` is the number to read. Positive and the sound has somewhere to
+live. Negative by more than about 6 dB and it owns nothing anywhere,
+which is **not** a level problem: turning it up makes the whole mix
+louder without making room for it. Either move it where the others are
+not, or thin what is in its way. That distinction — absent versus
+quiet — is invisible to every meter in this file and it is the one that
+costs rewrites.
+
+Two renders is the point. `critique()` does one render per pad and is
+why a review takes a quarter of an hour; `place()` costs the same
+whether the song has three sounds in it or thirty, so it can be run on
+every sound as it goes in without ever being the slow part.
 
 ## There is no correct loudness
 

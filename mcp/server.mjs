@@ -533,6 +533,22 @@ const TOOLS = [
       hiLossHz: { type: 'number' }, hiss: { type: 'number' },
       name: { type: 'string' }, seed: { type: 'integer' } } } },
 
+  { name: 'jbh_place', description:
+      'DOES THIS ONE SOUND HAVE A PLACE, against everything already loaded. This is the '
+      + 'check the one-sound-at-a-time method needs: you decided the song wanted a bass, you '
+      + 'made the bass, and before you move on you want to know whether it actually sits '
+      + 'anywhere. Two renders — the pad on its own, and everything else — then a band-by-band '
+      + 'comparison. `owns` is the band it stands furthest above the rest in, which is its '
+      + 'place; a sound whose best band is still 6dB under everything else owns nothing, and '
+      + 'that is not a level problem — turning it up makes the mix louder without making room. '
+      + 'Run it on every sound as it goes in, rather than discovering at the end that three '
+      + 'things are fighting over 200-500Hz. Cheap enough to afford: two renders, not one per '
+      + 'pad like critique().',
+    inputSchema: { type: 'object', required: ['pad'], properties: {
+      pad: { type: 'integer', description: 'the pad to judge' },
+      src: { type: 'string', enum: ['pat', 'song'], description: 'default pat' },
+      loops: { type: 'integer' } } } },
+
   { name: 'jbh_freeze', description:
       'HOLD ONE MOMENT OF A SOUND for as long as you like. paint() can make anything provided '
       + 'you already know the partials you want, and usually you do not — but you have a sound '
@@ -633,6 +649,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
                                 wow: a.wow, wowHz: a.wowHz, flutter: a.flutter,
                                 flutterHz: a.flutterHz, drift: a.drift, sat: a.sat,
                                 hiLossHz: a.hiLossHz, hiss: a.hiss, name: a.name, seed: a.seed }]));
+      case 'jbh_place':       return ok(await jbh('place', [a.pad,
+                                { src: a.src, loops: a.loops }]));
       case 'jbh_freeze':      return ok(await jbh('freeze', [a.from, { pad: a.pad, at: a.at,
                                 seconds: a.seconds, partials: a.partials, shimmer: a.shimmer,
                                 midi: a.midi, name: a.name, seed: a.seed }]));
