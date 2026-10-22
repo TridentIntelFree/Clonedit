@@ -26,6 +26,9 @@ exactly like a check that passed.
 
 ## The order
 
+0. Read `samples/atlas-*.json` for the pack you are about to use, or
+   generate it. Choosing a sound and discovering afterwards that it
+   cannot do the job is the most expensive mistake available here.
 1. `instrument()` / `preset()` / `sound()` to build the players, then
    `pad()` for each one.
 2. `pattern()` + `batch()` to write. `note()` for pitched lines,
@@ -36,7 +39,35 @@ exactly like a check that passed.
 4. `review({src:'song'})`. Fix what it names, in the order it names them.
    Run it again.
 5. `render({loudness:true})` across a few `mTrim` values, choose by
-   measurement, then bounce.
+   measurement, then bounce. Make sure the ladder BRACKETS your target:
+   a denser arrangement is far hotter than a sparse one, and a ladder
+   whose quietest rung is already too loud fails every gate and writes
+   no file.
+
+## There is no correct loudness
+
+Every track bounced in this repo was aimed at about −11.5 LUFS, as
+though that were the answer. It is not. Measured across 112 tracks of
+one widely-admired electronic catalogue, the median is −14.5 dB with
+the middle half spanning −21.2 to −8.7 — a sixteen-decibel spread, with
+ambient records near −23 and dense ones near −7.6. The loudness is a
+decision about the music, not a target to hit.
+
+Pick it from what the piece is. A slow, spacious track mastered to the
+same level as a dense one has had its dynamics spent on nothing, and
+`dynamics()` and the crest figure will both say so.
+
+## A reference does not have to be audio
+
+`scripts/reference-profile.mjs <file>` measures any local audio file and
+writes a profile: nine relative band levels, LUFS, crest. `reference()`
+accepts that object directly, so `compare()` and `balance()` can target
+a mix without the audio ever being in the repository or reachable over
+the network. Measure once, keep the numbers.
+
+This matters because the alternative is circular. Matching your own
+previous bounce only propagates your own mistakes, and for a long time
+that is exactly what was happening here.
 
 ## The traps
 
@@ -166,6 +197,19 @@ discovering twice.
 
 Read the atlas before choosing a sound for a job, rather than choosing
 one and finding out afterwards that it cannot do the job.
+
+## A warning from the tool this borrowed from
+
+Samplebrain's own manual says, of its parameters: "we gradually added
+more and more tweakable parameters until it became slightly out of
+control." That is the failure mode of everything in this file. `review()`
+had to be fixed twice for the same disease — it ran melodic checks on
+shakers and reported one fact four times per instrument, burying four
+real findings under thirty-two spurious ones.
+
+A check that cries wolf gets ignored, and then it may as well not
+exist. When adding one, ask what it will say on material where nothing
+is wrong.
 
 ## Reproducing a track
 
