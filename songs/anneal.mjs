@@ -347,11 +347,14 @@ try{
   await call('reference','salvage3.wav');
   const cmp=await call('compare',{src:'song'});
   if(cmp && cmp.bands){
-    console.log('\nAGAINST salvage3 (+ = this track has more):');
-    for(const b of cmp.bands) console.log('   '+String(b.name||b.lo||'').padStart(7)
-      +'  '+(b.diffDb>=0?'+':'')+(+b.diffDb).toFixed(1)+' dB');
+    /* these deltas are each mix normalised against its own total, which
+       is the comparison that matters: an absolute spectrum made this
+       track look fine at the top while hiding a hollow middle */
+    console.log('\nAGAINST salvage3, each normalised to its own total (+ = this track has more):');
+    for(const b of cmp.bands) console.log('   '+String(b.band).padStart(6)+'Hz  '
+      +(b.delta>=0?'+':'')+b.delta.toFixed(1)+' dB');
   }
-  if(cmp && cmp.says) console.log('   '+cmp.says);
+  for(const n of (cmp&&cmp.notes)||[]) console.log('   ! '+n);
 }catch(e){ console.log('\nreference: '+String(e.message).slice(0,100)); }
 
 const cr=await call('critique',{src:'song'});
