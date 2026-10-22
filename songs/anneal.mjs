@@ -1,50 +1,71 @@
-/* ANNEAL — D dorian, 132bpm. Struck metal and wood, with a pulse.
+/* ANNEAL — D dorian, 132bpm. Struck metal and wood over a bass you can
+   actually follow.
 
-   WRITTEN AGAINST TWO MEASUREMENTS, both from the last piece's verdict:
-   "the timing comes off as random sound and the sounds aren't very hifi".
+   SECOND VERSION, AGAINST THREE SPECIFIC COMPLAINTS. The first bounce
+   came back as: a good foundation, the bridge is the best part, but the
+   bass isn't clear, almost everything needs more sub including the real
+   kick, and the bells are louder than you expect.
 
-   ON THE TIMING. The previous piece had a downbeat — a thump on step 0 of
-   every bar — and 98% of its onsets sat on the sixteenth grid, so the
-   first explanation, that nothing in it ever repeated, was wrong, and
-   motif() said so: its figures recurred ABOVE the folk norm. What
-   pulse() found instead was that the beat was inaudible. Weighted by how
-   loud each onset actually is, only 46% landed on a beat. The two
-   loudest things in the mix — a rimshot at weight 42 and a conga at 21.8,
-   both scattered across the bar with random nudges — outweighed the kick
-   nearly four to one, and the kick was the only element holding the
-   pulse. The beat was in the arrangement and buried under everything
-   audible.
+   All three were measurable, and two of the three were measurable by
+   tools in this app that the first version never ran. It used six of
+   the seventeen checks here. loudness(), translate() and spectrum() were
+   among the eleven it skipped, and they are exactly the three that had
+   the answers. review() exists now so that cannot happen again, and this
+   file calls it.
 
-   So here the loudest thing in the piece is on the beat, every time, and
-   nothing loud is nudged. The scatter is quiet and the pulse is not.
+   THE BELLS. loudness() renders each pad alone and reports perceived
+   loudness beside raw energy. The gap is the whole point: the ear is
+   10-15dB more sensitive around 3kHz than at 100Hz, so bright metal
+   reads far louder than any RMS meter says. Measured on the first
+   bounce:
 
-   ON THE SOUNDS. Measured against the best-received mix in this repo,
-   that piece's 8kHz band sat 17.3dB lower and its 4kHz band 9.8dB lower:
-   a palette of synthesis put through resonant bandpasses and bitcrushing
-   has no top octave to lose. The obvious fix was real recordings of
-   struck metal, and the obvious fix was half wrong. Measured one by one,
-   a vibraphone struck with soft mallets is the DULLEST thing in the
-   library — 80dB down above 8kHz, almost pure fundamental — and the hand
-   chimes and glass are not much better at 35 and 48dB down. Big resonant
-   bars put their energy where their pitch is.
+       Marimba 48      +22.0dB louder than its own energy
+       Triangle        +16.4
+       Tubular glock   +14.1 and +14.2
 
-   What is actually bright is the small thin metal: triangle at 1.8dB
-   down, cabasa 1.5, shaker 1.6, bell tree 5.4, finger cymbals 7.8, and —
-   the useful discovery — the two glockenspiels, which are both pitched
-   AND bright at 19 and 21dB down. So the air in this track comes from a
-   tubular glockenspiel and a tray of small percussion, and the mallets
-   underneath them are allowed to be warm.
+   Those four are the "louder than you expect". Nothing was wrong with
+   the level in the meter; the meter was the wrong instrument. They come
+   down here, and their high shelves come down with them.
 
-   ON THE KEY. The vibraphone is sampled on the white notes only, every
-   major third, so D dorian is the one mode it can play with almost no
-   transposition at all. The tubular glock covers C D E F# G A B across
-   its two octaves at a maximum gap of 2 semitones. The marimba has only
-   C, F, G and B in it, so it gets an ostinato on those four notes rather
-   than a melody it would have to be dragged through.
+   THE BASS. This is not a level problem, which matters because the
+   obvious response — more sub — would have made it worse. Normalised
+   against each track's own total, the first bounce sat 1.1dB BELOW the
+   reference at 20Hz and 2.0dB ABOVE it at 60Hz. The low end was already
+   there. What it did not have was any way to be identified: the sub was
+   a near-pure sine, measured at -6.1dB in 20-60Hz and -18.2dB by
+   500Hz-1kHz. A sine has no harmonics, so it has no pitch anywhere a
+   small speaker can reach, and translate() put the loss at 10.5dB with
+   the bass group the worst offender at 20.2dB. Its own words: a bass
+   carries on a small speaker through its HARMONICS, not its
+   fundamental.
 
-   ON THE THEME. Four notes, stated and then developed — transposed,
-   inverted, augmented, and broken into a fragment — rather than drawn
-   from a random number generator, which is what the last one did. */
+   So the bass is three layers now, which is what the one piece here with
+   a bass that worked already did:
+     - a sine for weight, below 120Hz, doing nothing else
+     - the same notes an octave up, driven hard, living in 150-800Hz:
+       this is the layer that is audible on a phone and the layer that
+       tells you what the note IS
+     - and the kick gets its own sub thump, because "even the real kick
+       samples" need it and a synthesised kick rolled off at 0.34 has
+       nothing under 80Hz to give.
+
+   And pulling the bells down makes the bass more prominent without
+   adding a decibel to it, which is the other half of why it read as
+   weak.
+
+   THE BRIDGE GETS DEVELOPED, since it was the part that landed: it had
+   one pattern and now has two, the second taking the same open harmony
+   and putting the subject underneath it augmented while the pulse comes
+   back. Eight pattern slots is the hard limit, so length comes from
+   arrangement and from automation making the repeats differ rather than
+   from more material.
+
+   ON THE KEY, unchanged and worth restating: the vibraphone is sampled
+   on the white notes only, every major third, so D dorian is the one
+   mode it plays with almost no transposition. The tubular glock covers
+   C D E F# G A B at a maximum gap of 2 semitones. The marimba has only
+   C, F, G and B, so it gets figures on those four notes rather than a
+   line it would have to be dragged through. */
 
 import { chromium } from '/home/user/Clonedit/node_modules/playwright-core/index.mjs';
 import { findBrowser, serve, boot } from '/home/user/Clonedit/tests/browser/harness.mjs';
@@ -69,14 +90,14 @@ await call('clear');
 
 /* ---- THE PLAYERS ------------------------------------------------------ */
 const MAL='samples/vcsl-mallets.json';
-const vib=await call('instrument','vib',{pack:MAL, match:'^vc:vibh-', lo:57, hi:84, max:9});
-const glk=await call('instrument','glk',{pack:MAL, match:'^vc:tglock-', lo:91, hi:105, max:9});
-const mar=await call('instrument','mar',{pack:MAL, match:'^vc:marimba-', lo:41, hi:72, max:5});
-const hch=await call('instrument','hch',{pack:MAL, match:'^vc:hchime-', lo:62, hi:86, max:8});
+await call('instrument','vib',{pack:MAL, match:'^vc:vibh-', lo:57, hi:84, max:9});
+await call('instrument','glk',{pack:MAL, match:'^vc:tglock-', lo:91, hi:105, max:9});
+await call('instrument','mar',{pack:MAL, match:'^vc:marimba-', lo:41, hi:72, max:5});
+await call('instrument','hch',{pack:MAL, match:'^vc:hchime-', lo:62, hi:86, max:8});
 const P=(n)=>call('instPads',n).then(l=>l.map(x=>x.pad));
 const VIB=await P('vib'), GLK=await P('glk'), MAR=await P('mar'), HCH=await P('hch');
 
-/* the small bright metal, placed one sample to a pad */
+/* the small bright metal, one sample to a pad */
 await call('pack', MAL);
 const TRI=40, SHK=41, CAB=42, BTR=43, FCY=44, WBL=45;
 for(const [pd,id] of [
@@ -88,287 +109,276 @@ for(const [pd,id] of [
   [WBL,'vc:wblock-wood_click2_mp'],
 ]) await call('sound', id, pd);
 
-/* the pulse and the weight, synthesised: a kick that has to be the
-   loudest thing here, and a sub under it */
-const KIK=46, SUB=[47,48,49,50,51];
+/* THE PULSE AND THE BASS. Three bass layers and two kick layers, because
+   one of each was the whole problem. */
+const KIK=46, KSB=47;
 const SUBN=[38,40,41,43,45];                    // D2 E2 F2 G2 A2
+const SUB=[48,49,50,51,52];                     // sine, weight only
+const BAS=[53,54,55,56,57];                     // octave up, driven: the NOTE
 await call('preset','dkick',KIK,36);
-for(let i=0;i<SUB.length;i++) await call('preset','bsub',SUB[i],SUBN[i]);
-console.log('players: vib '+VIB.length+'  glk '+GLK.length+'  mar '+MAR.length+'  hch '+HCH.length);
+await call('preset','bsub',KSB,26);             // the kick's own sub thump
+for(let i=0;i<SUBN.length;i++){
+  await call('preset','bsub',SUB[i],SUBN[i]);
+  await call('preset','bsub',BAS[i],SUBN[i]+12);
+}
+console.log('players: vib '+VIB.length+'  glk '+GLK.length+'  mar '+MAR.length
+  +'  hch '+HCH.length+'  bass 3 layers');
 
 /* ---- HOW EACH ONE SITS -------------------------------------------------
-   The gain staging is the piece. These samples arrive at wildly
-   different levels — the bell tree peaks at -44dB and the woodblock at
-   -9 — so the numbers below are corrections for that first and taste
-   second. The rule the last piece broke: nothing quiet marks the beat
-   and nothing loud wanders off it. */
-/* GAIN STAGED FROM MEASURED PEAKS, NOT BY EAR. The first attempt at
-   this got it exactly backwards and the whole track collapsed to kick
-   and sub: 8kHz came out 19dB below the piece this one was meant to
-   improve on. The reason is that the two kinds of source here arrive at
-   completely different levels. The synthesised kick and sub are built
-   full-scale, while these are recordings of quiet instruments captured
-   with headroom — measured on disk, the vibraphone peaks at -20.7dBFS,
-   the cabasa -33.2 and the bell tree -44.4. Set by taste they all got
-   gains below 1 and the synths got 1.45, so the real instruments were
-   staged 15 to 40dB below the two things that did not need any help.
+   Staged from each sample's measured peak first and balanced by ear only
+   after that, because gain is a multiplier on whatever the pad holds and
+   what these pads hold differs by 35dB on disk — the bell tree peaks at
+   -44.4dBFS and the woodblock at -9.1. Setting these by taste once
+   collapsed the whole track to kick and sub.
 
-   `gain` tops out at 2.0, about +6dB, which cannot lift a -44dBFS
-   sample on its own. So the synths come down instead, and the quiet
-   recordings go up to near the ceiling with velocity carrying the rest.
-   The numbers below are (target -12dBFS minus the sample's own peak),
-   clamped, and then balanced by ear only after that.
-
-   SECOND PASS. That fixed the top — 8kHz came back within 2dB of the
-   reference instead of 36 below it — and exposed the next thing. Each
-   band normalised against the track's OWN bass, rather than read as an
-   absolute, showed a hollow middle: 16dB under the reference's shape at
-   500Hz and 13dB at 1kHz, with the 60Hz band now the loudest in the
-   mix. A scooped curve, where a mix that works has a smooth downward
-   tilt. So the sub and kick come down again, the shaker and cabasa come
-   off the ceiling they were pushed to, and the three instruments that
-   actually live at 300Hz-1kHz — vibraphone, marimba, hand chimes — get
-   the room. Comparing a spectrum to a reference only in absolute terms
-   hides this completely, which is why reference() is loaded below. */
+   Then corrected a second time by PERCEIVED loudness rather than energy,
+   which is what the bell complaint was about. The four pads loudness()
+   named as forward are the four that come down here. */
 await bat([
   ...VIB.map(p=>['pad',p,{inst:'vib', att:0.001, dec:3.4, sus:0.18, rel:1.10,
-    ftype:'lowpass', fcut:0.92, fres:0.3, gain:2.00, pan:-0.14, rev:0.26, eqHi:3, eqMid:7, eqLo:2}]),
-  /* the sparkle: pitched AND bright, measured 19dB down above 8kHz where
-     the vibraphone is 62 — this is where the top octave comes from */
+    ftype:'lowpass', fcut:0.92, fres:0.3, gain:1.70, pan:-0.14, rev:0.26, eqMid:6, eqLo:2}]),
+  /* was +14dB forward: down 4dB and the shelf nearly off */
   ...GLK.map(p=>['pad',p,{inst:'glk', att:0.001, dec:2.2, sus:0.10, rel:0.80,
-    ftype:'off', gain:1.70, pan:0.20, rev:0.40, eqHi:4}]),
+    ftype:'off', gain:1.05, pan:0.20, rev:0.40, eqHi:1}]),
+  /* was +22dB forward, the worst in the mix */
   ...MAR.map(p=>['pad',p,{inst:'mar', att:0.001, dec:1.5, sus:0.05, rel:0.45,
-    ftype:'lowpass', fcut:0.80, gain:2.00, pan:0.10, rev:0.16, eqHi:2, eqMid:5, eqLo:2}]),
+    ftype:'lowpass', fcut:0.74, gain:1.15, pan:0.10, rev:0.16, eqMid:4, eqLo:2}]),
   ...HCH.map(p=>['pad',p,{inst:'hch', att:0.02, dec:5.0, sus:0.40, rel:2.20,
-    ftype:'lowpass', fcut:0.86, gain:2.00, pan:-0.26, rev:0.48, eqMid:5}]),
-  /* THE AIR. All of it near the ceiling, all of it with the high shelf
-     up, because every one of these is a quiet recording and together
-     they are the only thing in the piece with real energy above 8kHz. */
-  ['pad',TRI,{inst:'air', att:0.001, dec:2.0, sus:0, rel:1.4, gain:2.00, pan:0.30, rev:0.44, eqHi:8}],
-  ['pad',SHK,{inst:'air', att:0.001, dec:0.5, sus:0, rel:0.22, gain:1.45, pan:-0.32, rev:0.18, eqHi:5}],
-  ['pad',CAB,{inst:'air', att:0.001, dec:0.6, sus:0, rel:0.26, gain:1.55, pan:0.34, rev:0.20, eqHi:7}],
-  ['pad',BTR,{inst:'air', att:0.001, dec:3.0, sus:0, rel:2.0, gain:2.00, pan:0.08, rev:0.56, eqHi:10}],
-  ['pad',FCY,{inst:'air', att:0.001, dec:2.4, sus:0, rel:1.6, gain:2.00, pan:-0.20, rev:0.50, eqHi:9}],
-  ['pad',WBL,{inst:'air', att:0.001, dec:0.30, sus:0, rel:0.14, gain:0.80, pan:0.26, rev:0.12}],
-  /* THE PULSE. Still the loudest thing on the beat, but these are
-     full-scale synth sources and no longer need a gain above 1 to be it. */
-  ['pad',KIK,{inst:'pulse', att:0.001, dec:0.62, sus:0, rel:0.26, pitch:-2,
-    ftype:'lowpass', fcut:0.34, drv:0.24, gain:0.34, pan:0, rev:0.05}],
-  ...SUB.map(p=>['pad',p,{inst:'pulse', att:0.004, dec:2.4, sus:0.55, rel:0.60,
-    ftype:'lowpass', fcut:0.20, drv:0.16, gain:0.20, pan:0, rev:0.06}]),
+    ftype:'lowpass', fcut:0.86, gain:1.85, pan:-0.26, rev:0.48, eqMid:5}]),
+  /* THE AIR, still the only real source of energy above 8kHz here, but
+     no longer pushed to the ceiling: the triangle was +16dB forward. */
+  ['pad',TRI,{inst:'air', att:0.001, dec:2.0, sus:0, rel:1.4, gain:1.10, pan:0.30, rev:0.44, eqHi:3}],
+  ['pad',SHK,{inst:'air', att:0.001, dec:0.5, sus:0, rel:0.22, gain:1.55, pan:-0.32, rev:0.18, eqHi:4}],
+  ['pad',CAB,{inst:'air', att:0.001, dec:0.6, sus:0, rel:0.26, gain:1.40, pan:0.34, rev:0.20, eqHi:5}],
+  ['pad',BTR,{inst:'air', att:0.001, dec:3.0, sus:0, rel:2.0, gain:1.45, pan:0.08, rev:0.56, eqHi:5}],
+  ['pad',FCY,{inst:'air', att:0.001, dec:2.4, sus:0, rel:1.6, gain:1.30, pan:-0.20, rev:0.50, eqHi:4}],
+  ['pad',WBL,{inst:'air', att:0.001, dec:0.30, sus:0, rel:0.14, gain:0.70, pan:0.26, rev:0.12}],
+  /* THE PULSE, in two layers. The synth kick rolled off at 0.34 has
+     nothing below 80Hz, which is why a real kick still felt light. */
+  ['pad',KIK,{inst:'pulse', att:0.001, dec:0.60, sus:0, rel:0.24, pitch:-2,
+    ftype:'lowpass', fcut:0.40, drv:0.22, gain:0.40, pan:0, rev:0.05}],
+  ['pad',KSB,{inst:'pulse', att:0.002, dec:0.34, sus:0, rel:0.18,
+    ftype:'lowpass', fcut:0.10, gain:0.52, pan:0, rev:0}],
+  /* THE BASS, in two more. The sine carries weight and says nothing. */
+  ...SUB.map(p=>['pad',p,{inst:'bass', att:0.004, dec:2.4, sus:0.55, rel:0.55,
+    ftype:'lowpass', fcut:0.14, drv:0.10, gain:0.30, pan:0, rev:0.04}]),
+  /* and this one is the note: an octave up, driven hard, deliberately
+     sitting where a phone speaker starts working. It is the layer that
+     makes the bass followable rather than merely present. */
+  ...BAS.map(p=>['pad',p,{inst:'bass', att:0.003, dec:1.9, sus:0.42, rel:0.45,
+    ftype:'lowpass', fcut:0.46, fres:1.1, drv:0.62, crush:11,
+    gain:0.34, pan:0, rev:0.10, eqLo:-3, eqMid:4}]),
 ]);
 
-/* one room for everything, and only a little of it: the air is carried
-   by real recordings here and does not need reverb to fake it */
 await call('set',{bpm:BPM, swing:0, human:0.018, humanDrift:0.10,
-  revType:'room', revSize:1.9, revLvl:0.34, dlyMode:'digital', delayFb:0.22, dlyTone:7200,
-  compAmt:0.20, mWidth:1.10, mMono:95, mCeil:-3.0, mAir:4.0, mMud:0, mEqMid:4,
+  revType:'room', revSize:1.9, revLvl:0.32, dlyMode:'digital', delayFb:0.22, dlyTone:7200,
+  compAmt:0.20, mWidth:1.10, mMono:95, mCeil:-3.0, mAir:3.0, mMud:0, mEqMid:3,
   scOn:false, masterVol:1.0, mTrim:0});
 
-/* ---- THE THEME ---------------------------------------------------------
-   Four notes and a rhythm, in scale degrees from D so every variation
-   stays in the mode. It is stated plainly before anything is done to it,
-   because a theme nobody has heard cannot be developed. */
+/* ---- THE THEME --------------------------------------------------------- */
 const SC=[0,2,3,5,7,9,10];                      // D dorian: D E F G A B C
 const deg=(base,d)=>{ const o=Math.floor(d/7), k=((d%7)+7)%7; return base+12*o+SC[k]; };
 const FIG   =[0,2,1,4];                         // D F E A — the subject
 const FIG_R =[0,3,6,8];                         // its rhythm, in steps
 const B=(bar,st)=>bar*16+st;
 
-/* the five things done to it over the piece */
 const say=(bar,base,{t=0, inv=false, aug=1, only=4, vel=0.72, inst='vib'}={})=>{
   const o=[];
   for(let i=0;i<Math.min(only,FIG.length);i++){
     const d=(inv? -FIG[i] : FIG[i]) + t;
     const st=Math.round(FIG_R[i]*aug);
     if(st>=16*aug+8) break;
-    o.push(['note', inst, deg(base,d), B(bar,0)+st, vel,
-      {beats:(aug>1?1.4:0.85)}]);
+    o.push(['note', inst, deg(base,d), B(bar,0)+st, vel, {beats:(aug>1?1.4:0.85)}]);
   }
   return o;
 };
 
-/* ---- THE PULSE LAYER ---------------------------------------------------
-   Four to the floor is not the point; being audible is. The kick is on
-   every beat so there is never a question where the time is, and the
-   quiet percussion fills between without ever being the loudest thing. */
-const pulseBar=(bar,{half=false, air=1, open=false}={})=>{
+/* ---- PULSE AND BASS ---------------------------------------------------- */
+const pulseBar=(bar,{half=false, air=1, open=false, sub=true}={})=>{
   const o=[];
   for(let b=0;b<4;b++){
     if(half && b%2===1) continue;
-    o.push(['step',KIK,B(bar,b*4),b===0?0.98:0.88]);
+    const v=b===0?0.98:0.88;
+    o.push(['step',KIK,B(bar,b*4),v]);
+    if(sub) o.push(['step',KSB,B(bar,b*4),v*0.92]);
   }
-  /* shaker on the offbeat eighths, cabasa on sixteenths — quiet, and
-     exactly on the grid, so they thicken the pulse instead of blurring it */
-  if(air>0) for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.80+0.12*(st===10?1:0)]);
-  if(air>1) for(let st=0;st<16;st+=2) o.push(['step',CAB,B(bar,st),st%4===0?0.55:0.80]);
-  if(air>1) o.push(['step',WBL,B(bar,11),0.55]);
-  if(open) o.push(['step',TRI,B(bar,0),0.95]);
+  if(air>0) for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.78+0.10*(st===10?1:0)]);
+  if(air>1) for(let st=0;st<16;st+=2) o.push(['step',CAB,B(bar,st),st%4===0?0.52:0.76]);
+  if(air>1) o.push(['step',WBL,B(bar,11),0.52]);
+  if(open) o.push(['step',TRI,B(bar,0),0.88]);
   return o;
 };
-const subBar=(bar,i)=>{
-  /* the bass moves once a bar and holds, so it reinforces the downbeat
-     rather than competing with the mallets for attention */
+/* both bass layers always move together: they are one instrument. */
+const bassBar=(bar,i,{walk=false}={})=>{
   const n=[0,0,3,2][i%4];
-  return [['step',SUB[n],B(bar,0),0.82,{}],
-          ...(i%4===3?[['step',SUB[1],B(bar,10),0.60]]:[])];
+  const o=[['step',SUB[n],B(bar,0),0.84], ['step',BAS[n],B(bar,0),0.84]];
+  if(i%4===3){ o.push(['step',SUB[1],B(bar,10),0.62], ['step',BAS[1],B(bar,10),0.62]); }
+  /* a little movement in the fuller sections, on the driven layer only,
+     so the weight stays put while the note moves */
+  if(walk){ const m=[4,2][i%2]; o.push(['step',BAS[m],B(bar,12),0.54]); }
+  return o;
 };
 
-/* ---- THE PATTERNS ------------------------------------------------------ */
 const mk=async(slot,fn)=>{ await call('pattern',slot,{plen:64,clear:true});
   await call('set',{pattern:slot}); await bat(fn()); };
 
-/* 0 — the subject alone, no drums. State it so it can be recognised later. */
+/* 0 — the subject alone */
 await mk(0,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
-    o.push(...subBar(bar,bar));
+    o.push(...bassBar(bar,bar));
     if(bar%2===0) o.push(...say(bar,62,{vel:0.62}));
-    o.push(['step',BTR,B(bar,bar%2?12:4),0.95]);
-    for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.60]);
+    o.push(['step',BTR,B(bar,bar%2?12:4),0.80]);
+    for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.52]);
   }
   return o; });
 
-/* 1 — the pulse arrives under the same subject, unchanged */
+/* 1 — the pulse arrives under it */
 await mk(1,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
-    o.push(...pulseBar(bar,{air:1, open:bar===0}), ...subBar(bar,bar));
+    o.push(...pulseBar(bar,{air:1, open:bar===0}), ...bassBar(bar,bar));
     o.push(...say(bar,62,{vel:0.74}));
-    if(bar===3) o.push(['step',FCY,B(bar,12),0.95]);
+    if(bar===3) o.push(['step',FCY,B(bar,12),0.82]);
   }
   return o; });
 
-/* 2 — the glockenspiel doubles it two octaves up: the same shape, now
-       with the top octave the last piece did not have */
+/* 2 — the glockenspiel doubles it two octaves up */
 await mk(2,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
-    o.push(...pulseBar(bar,{air:2}), ...subBar(bar,bar));
+    o.push(...pulseBar(bar,{air:2}), ...bassBar(bar,bar));
     o.push(...say(bar,62,{vel:0.76}));
-    o.push(...say(bar,98,{vel:0.46, inst:'glk'}));
-    o.push(['step',TRI,B(bar,8),0.85]);
+    o.push(...say(bar,98,{vel:0.52, inst:'glk'}));
+    o.push(['step',TRI,B(bar,8),0.62]);
   }
   return o; });
 
-/* 3 — transposed up a third, with the marimba on the four notes it owns */
+/* 3 — up a third, with the marimba on the four notes it owns */
 await mk(3,()=>{ const o=[];
   const MARN=[48,55,59,65];
   for(let bar=0;bar<4;bar++){
-    o.push(...pulseBar(bar,{air:2}), ...subBar(bar,bar+2));
+    o.push(...pulseBar(bar,{air:2}), ...bassBar(bar,bar+2,{walk:true}));
     o.push(...say(bar,62,{t:2, vel:0.74}));
-    o.push(...say(bar,98,{t:2, vel:0.44, inst:'glk'}));
-    for(let k=0;k<4;k++) o.push(['note','mar',MARN[(bar+k)%4],B(bar,k*4+2),0.40+0.08*(k===0?1:0)]);
+    o.push(...say(bar,98,{t:2, vel:0.50, inst:'glk'}));
+    for(let k=0;k<4;k++) o.push(['note','mar',MARN[(bar+k)%4],B(bar,k*4+2),0.64]);
   }
   return o; });
 
-/* 4 — inverted. The same intervals turned upside down, which is why it
-       still sounds like the subject while going the other way. */
+/* 4 — inverted */
 await mk(4,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
-    o.push(...pulseBar(bar,{air:2}), ...subBar(bar,bar+1));
+    o.push(...pulseBar(bar,{air:2}), ...bassBar(bar,bar+1,{walk:true}));
     o.push(...say(bar,69,{inv:true, vel:0.74}));
-    if(bar%2===1) o.push(...say(bar,98,{inv:true, vel:0.42, inst:'glk'}));
-    o.push(['note','hch',deg(62,[0,4,2,5][bar]),B(bar,0),0.40,{beats:3.6}]);
+    if(bar%2===1) o.push(...say(bar,98,{inv:true, vel:0.48, inst:'glk'}));
+    o.push(['note','hch',deg(62,[0,4,2,5][bar]),B(bar,0),0.62,{beats:3.6}]);
   }
   return o; });
 
-/* 5 — the drums drop out and the hand chimes hold it open. The air layer
-       keeps going, so the top of the mix never disappears. */
+/* 5 — THE BRIDGE. The part that landed, left alone: drums out, hand
+       chimes holding it open, the air layer still running so the top of
+       the mix never disappears. */
 await mk(5,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
-    o.push(['note','hch',deg(62,[0,2,4,2][bar]),B(bar,0),0.44,{beats:3.8}]);
-    o.push(['note','hch',deg(62,[4,5,7,6][bar]),B(bar,8),0.34,{beats:2.0}]);
-    o.push(...say(bar,98,{only:bar<2?2:4, vel:0.40, inst:'glk'}));
-    o.push(['step',BTR,B(bar,0),0.95], ['step',TRI,B(bar,10),0.85]);
-    for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.70]);
-    if(bar===3) o.push(['step',KIK,B(bar,12),0.70], ['step',FCY,B(bar,12),0.95]);
+    o.push(['note','hch',deg(62,[0,2,4,2][bar]),B(bar,0),0.66,{beats:3.8}]);
+    o.push(['note','hch',deg(62,[4,5,7,6][bar]),B(bar,8),0.52,{beats:2.0}]);
+    o.push(...say(bar,98,{only:bar<2?2:4, vel:0.46, inst:'glk'}));
+    o.push(['step',BTR,B(bar,0),0.86], ['step',TRI,B(bar,10),0.60]);
+    for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.58]);
+    /* the bass stays, quietly, so the floor does not drop out */
+    if(bar%2===0) o.push(['step',SUB[[0,0,3,2][bar%4]],B(bar,0),0.52]);
+    if(bar===3) o.push(['step',KIK,B(bar,12),0.76], ['step',KSB,B(bar,12),0.70],
+      ['step',FCY,B(bar,12),0.86]);
   }
   return o; });
 
-/* 6 — everything, with the subject augmented underneath: the same four
-       notes at half speed, which is how it stays recognisable while the
-       surface gets busy */
+/* 6 — THE BRIDGE, DEVELOPED. Same open harmony, and now the subject
+       underneath it augmented while the pulse walks back in. This is the
+       "a bit more" — the one section that worked, taken somewhere. */
 await mk(6,()=>{ const o=[];
+  const MARN=[48,55,59,65];
   for(let bar=0;bar<4;bar++){
-    o.push(...pulseBar(bar,{air:2, open:bar===0}), ...subBar(bar,bar));
-    /* the marimba has only C, F, G and B in it, so the augmented
-       statement is spelled on the notes it actually owns rather than
-       dragged through the ones it does not */
-    if(bar%2===0){ const MN=[48,55,59,65];
-      for(let i=0;i<4;i++) o.push(['note','mar',MN[i],B(bar,i*4),0.74,{beats:1.4}]); }
-    o.push(...say(bar,62,{vel:0.78}));
-    o.push(...say(bar,98,{t:bar%2?2:0, vel:0.48, inst:'glk'}));
-    o.push(['note','hch',deg(62,[0,2,4,1][bar]),B(bar,8),0.30,{beats:2.2}]);
+    o.push(['note','hch',deg(62,[0,2,5,4][bar]),B(bar,0),0.62,{beats:3.8}]);
+    /* the subject at half speed, on the marimba, under the chimes */
+    if(bar%2===0) for(let i=0;i<4;i++)
+      o.push(['note','mar',MARN[i],B(bar,i*4),0.62,{beats:1.4}]);
+    o.push(...say(bar,74,{vel:0.58}));
+    o.push(...say(bar,98,{t:bar>=2?2:0, only:3, vel:0.44, inst:'glk'}));
+    /* the pulse returns a layer at a time */
+    if(bar>=1){ o.push(['step',KIK,B(bar,0),0.92], ['step',KSB,B(bar,0),0.86]); }
+    if(bar>=2){ o.push(['step',KIK,B(bar,8),0.86], ['step',KSB,B(bar,8),0.80]); }
+    if(bar>=3) for(let b=0;b<4;b++){ o.push(['step',KIK,B(bar,b*4),b?0.86:0.94],
+      ['step',KSB,B(bar,b*4),b?0.80:0.88]); }
+    o.push(...bassBar(bar,bar,{walk:bar>=2}));
+    for(let st=2;st<16;st+=4) o.push(['step',SHK,B(bar,st),0.62+0.06*bar]);
+    o.push(['step',BTR,B(bar,0),0.70]);
   }
   return o; });
 
-/* 7 — the fragment: the first two notes only, thinning out */
+/* 7 — everything at once */
 await mk(7,()=>{ const o=[];
+  const MARN=[48,55,59,65];
   for(let bar=0;bar<4;bar++){
-    if(bar<2) o.push(...pulseBar(bar,{half:bar===1, air:1}));
-    o.push(...subBar(bar,bar));
-    o.push(...say(bar,62,{only:bar<2?3:2, vel:0.70-0.12*bar}));
-    o.push(...say(bar,98,{only:2, vel:0.40-0.08*bar, inst:'glk'}));
-    o.push(['step',BTR,B(bar,0),0.90]);
-    if(bar===3) o.push(['note','hch',deg(62,0),B(bar,0),0.40,{beats:3.8}]);
+    o.push(...pulseBar(bar,{air:2, open:bar===0}), ...bassBar(bar,bar,{walk:true}));
+    if(bar%2===0) o.push(['note','mar',MARN[bar%4],B(bar,0),0.66,{beats:1.4}]);
+    o.push(...say(bar,62,{vel:0.80}));
+    o.push(...say(bar,98,{t:bar%2?2:0, vel:0.54, inst:'glk'}));
+    o.push(['note','hch',deg(62,[0,2,4,1][bar]),B(bar,8),0.50,{beats:2.2}]);
+    if(bar===3) o.push(['step',FCY,B(bar,14),0.84]);
   }
   return o; });
+
+/* ---- MOVEMENT ACROSS THE REPEATS --------------------------------------
+   Eight slots is the limit, so the same pattern has to come round more
+   than once. Automation is what keeps that from being a loop: the master
+   filter opens across the intro and closes into the bridge, and the
+   level steps between sections so the piece has somewhere to go. */
+await call('automate','mfilt',[[0,0.42],[48,0.72],[63,0.80]],{pattern:0});
+await call('automate','mfilt',[[0,0.80],[32,0.62],[63,0.52]],{pattern:5});
+await call('automate','mfilt',[[0,0.56],[32,0.74],[63,0.88]],{pattern:6});
+await call('automate','mvol',[[0,0.62],[63,0.78]],{pattern:0});
+await call('automate','mvol',[[0,0.74],[63,0.70]],{pattern:5});
+await call('automate','mvol',[[0,0.76],[63,0.92]],{pattern:6});
+await call('automate','mvol',[[0,0.95],[63,0.88]],{pattern:7});
 
 /* ---- THE ARRANGEMENT --------------------------------------------------- */
 await call('set',{pattern:0, songOn:true, songLoop:false,
   song:[{pat:0,reps:1},{pat:1,reps:1},{pat:2,reps:1},{pat:3,reps:1},
-        {pat:2,reps:1},{pat:4,reps:1},{pat:5,reps:1},{pat:6,reps:1},
-        {pat:3,reps:1},{pat:6,reps:1},{pat:7,reps:1}]});
+        {pat:2,reps:1},{pat:4,reps:1},
+        {pat:5,reps:1},{pat:6,reps:1},
+        {pat:7,reps:1},{pat:3,reps:1},{pat:7,reps:1},
+        {pat:5,reps:1},{pat:6,reps:1},
+        {pat:7,reps:1},{pat:0,reps:1}]});
 
-/* ---- WHAT THE TOOLS SAY BEFORE IT IS RENDERED -------------------------- */
+/* ---- ASK THE APP WHAT IS WRONG, ALL OF IT ------------------------------
+   The first version of this file ran six of the seventeen checks and the
+   three it needed were among the eleven it skipped. review() runs the
+   lot and says which ones it could not reach. */
 const sch=await call('schedule',{src:'song',full:false});
 console.log('\n'+sch.notes+' notes · '+sch.seconds.toFixed(1)+'s · stretched '+JSON.stringify(sch.stretched));
 
-const pul=await call('pulse',{src:'song'});
-console.log('\nPULSE  autocorr '+pul.pulseStrength+'   on bar '+pul.onGrid.bar+'%  beat '+pul.onGrid.beat
-  +'%  eighth '+pul.onGrid.eighth+'%  sixteenth '+pul.onGrid.sixteenth+'%');
-console.log('       unweighted beat '+pul.onGridUnweighted.beat+'% → buried-by '+pul.beatBuriedBy);
-for(const q of pul.pads.slice(0,5)) console.log('       '+q.name.slice(0,18).padEnd(20)
-  +'weight '+String(q.weight).padStart(7)+'   on-beat '+q.onBeat+'%');
-for(const f of pul.findings) console.log('   ! '+f);
+await call('reference','salvage3.wav');
+const rv=await call('review',{src:'song'});
+console.log('\nREVIEW — '+rv.says);
+for(const f of rv.findings) console.log('  ['+f.severity+'] '+f.says.slice(0,108)
+  +(f.fix?'\n        → '+f.fix.slice(0,96):''));
+console.log('\nchecks run: '+rv.ran.join(' '));
+for(const k of rv.skipped) console.log('  could not run: '+k);
 
-for(const v of ['vib','glk','mar']){
-  const mo=await call('motif',v,{src:'song'});
-  if(mo && mo.pitchRecurrence!=null)
-    console.log('MOTIF  '+v.padEnd(4)+String(mo.notes).padStart(4)+' notes   pitch '+mo.pitchRecurrence
-      +' (norm '+mo.norm.pitch+', floor '+mo.norm.pitchFloor+')   rhythm '+mo.rhythmRecurrence
-      +' (norm '+mo.norm.rhythm+')'+(mo.findings.length?'  ! '+mo.findings[0].slice(0,60):''));
+const cmp=await call('compare',{src:'song'});
+if(cmp&&cmp.bands){
+  console.log('\nAGAINST salvage3, each normalised to its own total:');
+  for(const b of cmp.bands) console.log('   '+String(b.band).padStart(6)+'Hz  '
+    +(b.delta>=0?'+':'')+b.delta.toFixed(1)+' dB');
 }
-/* THE APP HAS BEEN ASKING FOR THIS EVERY RUN. Every previous bounce
-   ended with "[no-reference] tonal balance was not judged", and every
-   time the balance was then judged by hand against a spectrum dump.
-   salvage3 is the mix in this repo that came back as having good
-   levels, and the harness serves the repo root, so it can just be
-   loaded and the difference read off. */
-try{
-  await call('reference','salvage3.wav');
-  const cmp=await call('compare',{src:'song'});
-  if(cmp && cmp.bands){
-    /* these deltas are each mix normalised against its own total, which
-       is the comparison that matters: an absolute spectrum made this
-       track look fine at the top while hiding a hollow middle */
-    console.log('\nAGAINST salvage3, each normalised to its own total (+ = this track has more):');
-    for(const b of cmp.bands) console.log('   '+String(b.band).padStart(6)+'Hz  '
-      +(b.delta>=0?'+':'')+b.delta.toFixed(1)+' dB');
-  }
-  for(const n of (cmp&&cmp.notes)||[]) console.log('   ! '+n);
-}catch(e){ console.log('\nreference: '+String(e.message).slice(0,100)); }
-
-const cr=await call('critique',{src:'song'});
-console.log('\ncritique:'); for(const f of cr.found) console.log('   ['+f.severity+'] '+f.says.slice(0,105));
-if(!cr.found.length) console.log('   (nothing)');
+const tr=await call('translate',{src:'song'});
+console.log('\nsmall speaker: '+tr.says.slice(0,150));
 
 /* ---- LEVEL ------------------------------------------------------------- */
 let best=null;
-for(const [trim,amt] of [[-14,0.16],[-11,0.18],[-8,0.20],[-5,0.24]]){
+for(const [trim,amt] of [[-8,0.18],[-5,0.20],[-3,0.22],[-1,0.24]]){
   await call('set',{mTrim:trim, compAmt:amt});
   const m=await call('render',{src:'song',loops:1,loudness:true});
   console.log('   trim '+trim+' → '+m.lufs.toFixed(1)+' LUFS  tp '+m.truePeakDb.toFixed(2)
     +'  crest '+m.crestDb.toFixed(1)+(m.clipping?'  CLIP':''));
-  const miss=Math.abs(m.lufs+12.0);
+  const miss=Math.abs(m.lufs+11.5);
   if(!m.clipping && m.truePeakDb<=-1.0 && m.crestDb>=9 && (!best||miss<best.miss)) best={trim,amt,miss,m};
 }
 if(!best) throw new Error('nothing cleared the ceiling and crest floor');
