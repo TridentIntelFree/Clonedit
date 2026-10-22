@@ -136,44 +136,68 @@ console.log('players: vib '+VIB.length+'  glk '+GLK.length+'  mar '+MAR.length
    named as forward are the four that come down here. */
 await bat([
   ...VIB.map(p=>['pad',p,{inst:'vib', att:0.001, dec:3.4, sus:0.18, rel:1.10,
-    ftype:'lowpass', fcut:0.92, fres:0.3, gain:1.70, pan:-0.14, rev:0.26, eqMid:6, eqLo:2}]),
+    ftype:'lowpass', fcut:0.92, fres:0.3, gain:1.95, pan:-0.14, rev:0.26, eqMid:5, eqLo:2}]),
   /* was +14dB forward: down 4dB and the shelf nearly off */
   ...GLK.map(p=>['pad',p,{inst:'glk', att:0.001, dec:2.2, sus:0.10, rel:0.80,
-    ftype:'off', gain:1.05, pan:0.20, rev:0.40, eqHi:1}]),
+    ftype:'off', gain:1.60, pan:0.20, rev:0.40, eqHi:3}]),
   /* was +22dB forward, the worst in the mix */
   ...MAR.map(p=>['pad',p,{inst:'mar', att:0.001, dec:1.5, sus:0.05, rel:0.45,
-    ftype:'lowpass', fcut:0.74, gain:1.15, pan:0.10, rev:0.16, eqMid:4, eqLo:2}]),
+    ftype:'lowpass', fcut:0.74, gain:0.85, pan:0.10, rev:0.16, eqMid:4, eqLo:2}]),
   ...HCH.map(p=>['pad',p,{inst:'hch', att:0.02, dec:5.0, sus:0.40, rel:2.20,
-    ftype:'lowpass', fcut:0.86, gain:1.85, pan:-0.26, rev:0.48, eqMid:5}]),
+    ftype:'lowpass', fcut:0.86, gain:1.25, pan:-0.26, rev:0.48, eqMid:5}]),
   /* THE AIR, still the only real source of energy above 8kHz here, but
      no longer pushed to the ceiling: the triangle was +16dB forward. */
-  ['pad',TRI,{inst:'air', att:0.001, dec:2.0, sus:0, rel:1.4, gain:1.10, pan:0.30, rev:0.44, eqHi:3}],
-  ['pad',SHK,{inst:'air', att:0.001, dec:0.5, sus:0, rel:0.22, gain:1.55, pan:-0.32, rev:0.18, eqHi:4}],
-  ['pad',CAB,{inst:'air', att:0.001, dec:0.6, sus:0, rel:0.26, gain:1.40, pan:0.34, rev:0.20, eqHi:5}],
-  ['pad',BTR,{inst:'air', att:0.001, dec:3.0, sus:0, rel:2.0, gain:1.45, pan:0.08, rev:0.56, eqHi:5}],
-  ['pad',FCY,{inst:'air', att:0.001, dec:2.4, sus:0, rel:1.6, gain:1.30, pan:-0.20, rev:0.50, eqHi:4}],
+  ['pad',TRI,{inst:'air', att:0.001, dec:2.0, sus:0, rel:1.4, gain:1.10, pan:0.30, rev:0.44, eqHi:5}],
+  ['pad',SHK,{inst:'air', att:0.001, dec:0.5, sus:0, rel:0.22, gain:1.95, pan:-0.32, rev:0.18, eqHi:8}],
+  ['pad',CAB,{inst:'air', att:0.001, dec:0.6, sus:0, rel:0.26, gain:1.95, pan:0.34, rev:0.20, eqHi:9}],
+  ['pad',BTR,{inst:'air', att:0.001, dec:3.0, sus:0, rel:2.0, gain:1.60, pan:0.08, rev:0.56, eqHi:7}],
+  ['pad',FCY,{inst:'air', att:0.001, dec:2.4, sus:0, rel:1.6, gain:1.80, pan:-0.20, rev:0.50, eqHi:8}],
   ['pad',WBL,{inst:'air', att:0.001, dec:0.30, sus:0, rel:0.14, gain:0.70, pan:0.26, rev:0.12}],
   /* THE PULSE, in two layers. The synth kick rolled off at 0.34 has
      nothing below 80Hz, which is why a real kick still felt light. */
   ['pad',KIK,{inst:'pulse', att:0.001, dec:0.60, sus:0, rel:0.24, pitch:-2,
-    ftype:'lowpass', fcut:0.40, drv:0.22, gain:0.40, pan:0, rev:0.05}],
+    ftype:'lowpass', fcut:0.40, drv:0.22, gain:0.46, pan:0, rev:0.05}],
   ['pad',KSB,{inst:'pulse', att:0.002, dec:0.34, sus:0, rel:0.18,
-    ftype:'lowpass', fcut:0.10, gain:0.52, pan:0, rev:0}],
+    ftype:'lowpass', fcut:0.10, gain:0.60, pan:0, rev:0}],
   /* THE BASS, in two more. The sine carries weight and says nothing. */
   ...SUB.map(p=>['pad',p,{inst:'bass', att:0.004, dec:2.4, sus:0.55, rel:0.55,
-    ftype:'lowpass', fcut:0.14, drv:0.10, gain:0.30, pan:0, rev:0.04}]),
+    ftype:'lowpass', fcut:0.14, drv:0.10, gain:0.26, pan:0, rev:0.04}]),
   /* and this one is the note: an octave up, driven hard, deliberately
      sitting where a phone speaker starts working. It is the layer that
      makes the bass followable rather than merely present. */
   ...BAS.map(p=>['pad',p,{inst:'bass', att:0.003, dec:1.9, sus:0.42, rel:0.45,
     ftype:'lowpass', fcut:0.46, fres:1.1, drv:0.62, crush:11,
-    gain:0.34, pan:0, rev:0.10, eqLo:-3, eqMid:4}]),
+    gain:0.26, pan:0, rev:0.10, eqLo:-4, eqMid:2}]),
 ]);
 
 await call('set',{bpm:BPM, swing:0, human:0.018, humanDrift:0.10,
   revType:'room', revSize:1.9, revLvl:0.32, dlyMode:'digital', delayFb:0.22, dlyTone:7200,
-  compAmt:0.20, mWidth:1.10, mMono:95, mCeil:-3.0, mAir:3.0, mMud:0, mEqMid:3,
+  compAmt:0.16, mWidth:1.10, mMono:95, mCeil:-3.0, mAir:6.0, mMud:0, mEqMid:1,
   scOn:false, masterVol:1.0, mTrim:0});
+
+/* THE LEVELS ABOVE WERE SOLVED, NOT GUESSED.
+   Five rounds of setting these by ear each fixed one part of the
+   spectrum and broke another — too dark, too bright, a hollow middle,
+   then no top octave — because placing seven group levels so that nine
+   bands land on a target is a small linear system, not a thing an ear
+   does well. balance() renders each group once, then solves it: every
+   band inside 1.7dB of the reference, and 8kHz exact.
+
+   Two of its answers are deliberately only half taken, and both for the
+   same reason — a curve is not a sound.
+
+   It wants the glockenspiel +11dB, because that is the only thing here
+   filling 4kHz. But loudness() has that same pad +14dB forward of its
+   own energy: it is one of the "bells louder than you expect", and the
+   reference gets its 4kHz from noise-based percussion rather than from
+   a pitched bell. Matching the curve that way would re-create the
+   complaint. It gets +3.
+
+   And it wants the hand chimes -7dB, which is right for the dense
+   pattern the solve ran on and wrong for the piece, because gains are
+   global and the hand chimes are the lead voice of the bridge. They get
+   -3.4. That gap is a real limitation of solving balance on one
+   pattern, and is worth knowing rather than papering over. */
 
 /* ---- THE THEME --------------------------------------------------------- */
 const SC=[0,2,3,5,7,9,10];                      // D dorian: D E F G A B C
@@ -382,8 +406,15 @@ const tr=await call('translate',{src:'song'});
 console.log('\nsmall speaker: '+tr.says.slice(0,150));
 
 /* ---- LEVEL ------------------------------------------------------------- */
+/* THE LADDER HAS TO BRACKET THE TARGET, and this one did not. Adding a
+   third bass layer and a sub thump to the kick made the mix far hotter
+   than the version these numbers were chosen for, so the quietest rung
+   on the ladder still came out at -9.5 LUFS with the crest already
+   collapsed to 8.1 — every remaining rung was louder, nothing could
+   pass the gate, and the run threw instead of writing a file. The gate
+   was right and the search was looking in the wrong place. */
 let best=null;
-for(const [trim,amt] of [[-8,0.18],[-5,0.20],[-3,0.22],[-1,0.24]]){
+for(const [trim,amt] of [[-20,0.10],[-17,0.12],[-14,0.14],[-11,0.16]]){
   await call('set',{mTrim:trim, compAmt:amt});
   const m=await call('render',{src:'song',loops:1,loudness:true});
   console.log('   trim '+trim+' → '+m.lufs.toFixed(1)+' LUFS  tp '+m.truePeakDb.toFixed(2)

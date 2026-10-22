@@ -11650,6 +11650,145 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           +' could not run (see skipped)':'')+'.' };
   },
 
+  /* SOLVE THE LEVELS INSTEAD OF GUESSING THEM.
+
+     This exists because of five consecutive attempts to balance one
+     track by ear, each of which fixed one part of the spectrum and
+     broke another: too dark, then too bright, then a hollow middle,
+     then no top octave at all. Every round cost a full render. The
+     numbers moved in the right direction each time and never arrived,
+     because setting eight group levels so that nine bands land on a
+     target is not a thing ears do well — it is a small linear system,
+     and it was being solved by hand.
+
+     Mixing is linear, so it can simply be solved. Render each group on
+     its own ONCE to get its energy per band, and after that the mix for
+     any set of gains is arithmetic: no further renders, however many
+     combinations are tried. What comes back is a gain per group and the
+     band each one is actually carrying.
+
+     It reports what it cannot do, too. A group whose answer lands above
+     the maximum gain is named as capped rather than silently clipped to
+     it — that is the bell tree, a -44dBFS recording that cannot be
+     lifted into place by gain alone and needs a different sample or a
+     shelf. */
+  async balance(opt){
+    const o=opt||{}, src=o.src||'pat';
+    const groups=o.groups||[...new Set((S.pads||[]).filter(p=>p&&p.inst).map(p=>p.inst))];
+    const MOVE=o.maxMoveDb==null?9:Math.abs(o.maxMoveDb);
+    if(!groups.length) throw new Error('no instruments on the board — call instrument() first');
+    /* the target curve: the reference's own shape, or a plain tilt if
+       none is loaded, said out loud rather than assumed */
+    let target=null, from='';
+    if(o.target){ target=o.target.slice(); from='the target passed in'; }
+    else if(refSpec && refSpec.shape){ target=refSpec.shape.map(b=>b.rel); from='the loaded reference'; }
+    else throw new Error('no reference loaded and no target given — call reference(url) first, '
+      +'or pass {target:[relDbPerBand]} for the nine bands');
+
+    /* one render per group, and that is the whole cost */
+    /* PADS BY INSTRUMENT, NOT BY instPads(). That helper exists for note
+       mapping and so requires a pad to know its own pitch, which means
+       it returns nothing at all for unpitched percussion. Used here it
+       silently dropped the entire air group — the shaker, cabasa,
+       triangle and bell tree — from the solve, which left the
+       glockenspiel as the only thing the fit could see above 8kHz and
+       had it asking for +24dB it could never deliver. The one group
+       that owns the top octave was the one group excluded. */
+    const padsOf=(g)=>{ const out=[];
+      for(let i=0;i<NPADS;i++) if(S.pads[i] && S.pads[i].inst===g && S.pads[i].bufId>=0) out.push(i);
+      return out; };
+    const E=[], used=[], padLists=[];
+    for(const g of groups){
+      const list=padsOf(g);
+      if(!list.length) continue;
+      const pads=new Set(list);
+      const buf=await renderMix(pads, new Set(), {src, loops:1, noTail:true});
+      if(!buf) continue;
+      const bands=await bandEnergy(buf);
+      if(!bands || !bands.length) continue;
+      const lin=bands.map(b=>Math.pow(10, b.db/10));
+      if(lin.reduce((a,c)=>a+c,0)<=1e-12) continue;      // silent group
+      E.push(lin); used.push(g); padLists.push(list);
+    }
+    if(!E.length) return {says:'nothing audible to balance.'};
+    const NB=Math.min(target.length, E[0].length);
+
+    /* iterative fit: each group is nudged by the error in the bands it
+       actually occupies, weighted by how much of each it owns. Damped,
+       because a group that owns one band can otherwise chase it alone. */
+    const m=E.map(()=>1);
+    const relOf=()=>{
+      const P=new Array(NB).fill(0);
+      for(let g=0;g<E.length;g++) for(let b=0;b<NB;b++) P[b]+=m[g]*m[g]*E[g][b];
+      const tot=P.reduce((a,c)=>a+c,0)||1e-12;
+      return P.map(p=>10*Math.log10(Math.max(p,1e-12)/tot));
+    };
+    for(let iter=0; iter<120; iter++){
+      const rel=relOf();
+      const err=[]; for(let b=0;b<NB;b++) err.push(target[b]-rel[b]);
+      const P=new Array(NB).fill(0);
+      for(let g=0;g<E.length;g++) for(let b=0;b<NB;b++) P[b]+=m[g]*m[g]*E[g][b];
+      for(let g=0;g<E.length;g++){
+        let num=0, den=0;
+        for(let b=0;b<NB;b++){
+          const share=(m[g]*m[g]*E[g][b])/Math.max(P[b],1e-12);
+          num+=share*err[b]; den+=share;
+        }
+        if(den<=1e-9) continue;
+        const d=(num/den)*0.35;                           // damping
+        m[g]*=Math.pow(10, Math.max(-3,Math.min(3,d))/20);
+        /* KEPT INSIDE A MUSICAL RANGE, because an unconstrained fit does
+           not balance a mix, it deletes from one. Left alone this solver
+           found that the cleanest way to match the reference curve was
+           to take the hand chimes down 49dB — mathematically correct,
+           and it removes an instrument from the piece. A level solver is
+           being asked for balance, not for arrangement, so no group may
+           move further than maxMoveDb from where the writing put it. */
+        const lim=Math.pow(10, MOVE/20);
+        if(m[g]>lim) m[g]=lim; else if(m[g]<1/lim) m[g]=1/lim;
+      }
+    }
+    /* only the SHAPE is being fitted, so the overall scale is free:
+       pin it so the loudest group keeps roughly the level it had and
+       the answer reads as a set of adjustments rather than a rebuild */
+    let big=0, bigE=-1;
+    for(let g=0;g<E.length;g++){ const t=E[g].reduce((a,c)=>a+c,0); if(t>bigE){ bigE=t; big=g; } }
+    const scale=1/m[big];
+    for(let g=0;g<m.length;g++) m[g]*=scale;
+
+    const BANDN=SPEC_BANDS.map(b=>b[0]);
+    const rows=[], capped=[];
+    for(let g=0;g<used.length;g++){
+      const pads=padLists[g];
+      const cur=pads.length&&S.pads[pads[0]]&&S.pads[pads[0]].gain!=null?S.pads[pads[0]].gain:1;
+      const want=cur*m[g];
+      const lim=Math.min(2, Math.max(0, want));
+      /* which band is this group carrying */
+      let own=0, ownV=-1;
+      for(let b=0;b<NB;b++){ let tot=0;
+        for(let k=0;k<E.length;k++) tot+=m[k]*m[k]*E[k][b];
+        const share=(m[g]*m[g]*E[g][b])/Math.max(tot,1e-12);
+        if(share>ownV){ ownV=share; own=b; } }
+      if(want>2.01) capped.push(used[g]+' wants '+want.toFixed(2)+', and gain stops at 2');
+      if(Math.abs(20*Math.log10(Math.max(m[g],1e-6)))>=MOVE-0.1)
+        capped.push(used[g]+' is pinned at the '+MOVE+'dB move limit, so the fit is holding it '
+          +'back — if it genuinely belongs that far out, the part or the sound is wrong, '
+          +'not the level');
+      rows.push({instrument:used[g], pads:pads.length,
+        gain:+cur.toFixed(3), suggested:+lim.toFixed(3),
+        changeDb:+(20*Math.log10(Math.max(m[g],1e-6))).toFixed(1),
+        owns:BANDN[own]+'Hz', ownsShare:+(100*ownV).toFixed(0)});
+    }
+    rows.sort((a,b)=>Math.abs(b.changeDb)-Math.abs(a.changeDb));
+    const worst=rows[0];
+    return { src, target:from, bands:BANDN.slice(0,NB), pads:rows, capped,
+      fit:relOf().map((v,i)=>({band:BANDN[i], got:+v.toFixed(1), want:+target[i].toFixed(1)})),
+      says:(rows.length?('the biggest move is '+worst.instrument+' by '+worst.changeDb+'dB'
+        +(capped.length?('; '+capped.length+' group'+(capped.length>1?'s':'')
+          +' cannot get there by gain alone'):'')):'nothing to move')
+        +'. Apply with pad() on each group, then render.' };
+  },
+
   /* THE ORDER TO DO THIS IN, FOR WHOEVER COMES NEXT.
 
      Written because the knowledge that makes this app produce decent
