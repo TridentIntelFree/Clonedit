@@ -29,6 +29,11 @@ exactly like a check that passed.
 0. Read `samples/atlas-*.json` for the pack you are about to use, or
    generate it. Choosing a sound and discovering afterwards that it
    cannot do the job is the most expensive mistake available here.
+   The atlas groups by the manifest's `cat`, so it is useless on a pack
+   whose samples all declare the same one — every found sound in
+   `foundkit` and `darkkit` says `DRUMS`, and the atlas reports a
+   single row for the lot. Measure those per file, and read *A field
+   recording does not start when the file does* before writing on them.
 1. **Then one sound at a time.** Not a palette, one sound. Decide what
    the song needs next — it needs a bass, it needs something high — and
    make that, and finish it, before you start the next thing. For each:
