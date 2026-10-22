@@ -11428,6 +11428,157 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         :'the pulse is clear and the audible onsets agree with it.'};
   },
 
+  /* EVERY CHECK, IN ONE CALL, WITH ITS OWN COVERAGE REPORTED.
+
+     This exists because of how a finished track actually went wrong. The
+     app had seventeen analysers; the piece that was bounced used six.
+     The three that would have caught what the listener then complained
+     about — loudness(), translate() and spectrum() — were all sitting
+     there unused. The verdict came back as "the bass isn't clear, the
+     bells are louder than you expect", and loudness() had the bells at
+     +14 to +22dB above their own energy while translate() named the
+     bass problem AND its fix in one sentence.
+
+     So the failure was not missing knowledge. It was that choosing
+     which tools to run was left to whoever was driving, and that choice
+     is where results stop being repeatable. Anything that has to be
+     remembered will eventually not be.
+
+     review() therefore runs the lot, keeps going when one of them
+     throws, and says at the end which ones it managed and which it did
+     not. A check that silently did not run is worse than one that
+     failed loudly, because its silence reads as a pass.
+
+     It is deliberately not clever. It does not decide what matters; it
+     collects what every tool said, sorts by severity and hands it over. */
+  async review(opt){
+    const o=opt||{}, src=o.src||'song';
+    const findings=[], ran=[], skipped=[];
+    const run=async(name, fn)=>{
+      try{ const r=await fn(); ran.push(name); return r; }
+      catch(e){ skipped.push(name+' — '+String((e&&e.message)||e).slice(0,90)); return null; }
+    };
+    const add=(tool, severity, says, fix)=>findings.push({tool, severity, says, fix:fix||''});
+
+    /* which instruments are on the board, so the per-line checks can run
+       without being told */
+    const insts=[...new Set((S.pads||[]).filter(p=>p&&p.inst).map(p=>p.inst))];
+    const names=o.instruments||insts;
+
+    /* 1. what is actually there */
+    const sch=await run('schedule',()=>window.MVX.schedule({src, full:false}));
+    if(!sch || !sch.notes){
+      add('schedule','empty','nothing plays in '+(src==='song'?'the song':'this pattern')+'.');
+      return {src, findings, ran, skipped, instruments:names, passed:false,
+        says:'nothing to review.'};
+    }
+
+    /* 2. the existing aggregate: settings, stretched samples, buried
+          pads, band ownership, and the reference if one is loaded */
+    const cr=await run('critique',()=>window.MVX.critique({src}));
+    for(const f of ((cr&&cr.found)||[]))
+      add('critique', f.severity, f.says,
+        f.severity==='stretched' ? 'write the line on notes the pack actually has, or load a closer sample'
+        : f.severity==='buried' ? 'raise it, thin what masks it, or accept it as an accent'
+        : f.severity==='off-reference' ? 'move the named band toward the reference'
+        : '');
+
+    /* 3. PERCEIVED loudness, which is not energy. This is the check that
+          was missing when the bells came back too loud. */
+    const ld=await run('loudness',()=>window.MVX.loudness({src:o.loudnessSrc||'pat'}));
+    for(const f of ((ld&&ld.forward)||[]))
+      add('loudness','forward', (f.name||('pad '+f.pad))+' reads '+f.brightness
+        +'dB louder than its energy — the ear will pick it out of the mix.',
+        'pull its gain or velocity down, or darken it; matching it by RMS will not work');
+
+    /* 4. does any of it survive a small speaker */
+    const tr=await run('translate',()=>window.MVX.translate({src}));
+    if(tr && tr.lostDb!=null && tr.lostDb>8)
+      add('translate','small-speaker','the mix loses '+tr.lostDb+'dB on a phone'
+        +(tr.worst?' (worst: '+tr.worst+')':'')+'.',
+        'a bass carries through its harmonics — saturate a parallel copy into 150-800Hz');
+
+    /* 5. is there a beat to find */
+    const pu=await run('pulse',()=>window.MVX.pulse({src}));
+    for(const f of ((pu&&pu.findings)||[]))
+      add('pulse','metre', f, 'put the loudest things on the beat and stop nudging them');
+
+    /* 6-8. the lines themselves */
+    for(const n of names){
+      const mo=await run('motif:'+n,()=>window.MVX.motif(n,{src}));
+      for(const f of ((mo&&mo.findings)||[])) add('motif','material', n+': '+f,
+        'state a figure and bring it back — transposed, inverted, augmented');
+      const me=await run('melody:'+n,()=>window.MVX.melody(n,{src}));
+      for(const f of ((me&&me.findings)||[])) add('melody','shape', n+': '+f, '');
+      const co=await run('continuity:'+n,()=>window.MVX.continuity(n,{src}));
+      for(const f of (((co&&co.findings)||[]))) add('continuity','holes', n+': '+f, '');
+    }
+    /* 9. and how they sit against each other */
+    if(names.length>1){
+      const cp=await run('counterpoint',()=>window.MVX.counterpoint(names.slice(0,4),{src}));
+      for(const f of ((cp&&cp.findings)||[])) add('counterpoint','voices', f, '');
+    }
+    /* 10. dynamics over the whole thing */
+    const dy=await run('dynamics',()=>window.MVX.dynamics());
+    for(const f of ((dy&&dy.findings)||[])) add('dynamics','range', f, '');
+
+    const ORDER={ 'out-of-range':0, stretched:1, empty:1, forward:2, 'small-speaker':2,
+      metre:3, 'off-reference':3, buried:4, squashed:4, range:5, material:5,
+      shape:6, voices:6, holes:6, narrow:7, 'no-reference':8 };
+    findings.sort((a,b)=>(ORDER[a.severity]==null?9:ORDER[a.severity])
+      -(ORDER[b.severity]==null?9:ORDER[b.severity]));
+    const hard=findings.filter(f=>(ORDER[f.severity]==null?9:ORDER[f.severity])<=3).length;
+    return { src, instruments:names, findings, ran, skipped,
+      counts:{total:findings.length, serious:hard, toolsRun:ran.length, toolsSkipped:skipped.length},
+      passed:hard===0,
+      says:(hard?hard+' thing'+(hard>1?'s':'')+' worth fixing before this is bounced'
+        :'nothing serious')+' — '+findings.length+' finding'+(findings.length===1?'':'s')
+        +' from '+ran.length+' checks'
+        +(skipped.length?', and '+skipped.length+' check'+(skipped.length>1?'s':'')
+          +' could not run (see skipped)':'')+'.' };
+  },
+
+  /* THE ORDER TO DO THIS IN, FOR WHOEVER COMES NEXT.
+
+     Written because the knowledge that makes this app produce decent
+     results had been accumulating in one head and in commit messages,
+     and neither travels. An agent arriving cold can list the API and
+     still have no idea that a manifest can lie about pitch, or that
+     gain means nothing until you know what the pad is holding. */
+  howto(){ return {
+    order: [
+      '1. instrument()/preset()/sound() to build the players, then pad() for each one.',
+      '2. pattern() + batch() to write. note() for pitched lines, step() for everything else.',
+      '3. reference(url) with a finished mix you want to sound like. Do this BEFORE judging anything.',
+      '4. review({src:"song"}) — runs every analyser and reports which ones it could not run.',
+      '5. fix what it names, in the order it names them, and run it again.',
+      '6. render({loudness:true}) across a few mTrim values, pick by measurement, then bounce.',
+    ],
+    traps: [
+      'A SAMPLE PACK CAN LIE ABOUT PITCH. VSCO-2 names its files an octave below what they '
+        + 'sound, and is not even consistent with itself — one solo violin folder uses one '
+        + 'convention and another folder of the same instrument uses the other. Run '
+        + 'scripts/audit-pitch.mjs against any pack before writing on it.',
+      'GAIN IS A MULTIPLIER ON WHAT THE PAD HOLDS. A full-scale synth at gain 0.4 is far '
+        + 'louder than a field recording at gain 2.0. Stage from each sample\'s measured peak '
+        + 'first and balance by ear only after that.',
+      'LOUD IS NOT ENERGETIC. loudness() reports perceived minus measured; anything reading '
+        + '+10dB or more will jump out however tidy the RMS looks. Bright metal and high '
+        + 'mallets are the usual offenders.',
+      'A SPECTRUM READ IN ABSOLUTE TERMS HIDES SHAPE. compare() normalises each mix against '
+        + 'its own total, which is the only way two tracks are comparable. An absolute reading '
+        + 'once showed a fixed top end while a 16dB hole sat at 500Hz.',
+      'BASS CARRIES BY ITS HARMONICS. Anything below about 400Hz does not exist on a phone. '
+        + 'translate() measures the loss; the fix is a saturated parallel copy at 150-800Hz.',
+      'A BEAT CAN BE PRESENT AND INAUDIBLE. Being on the grid is not the same as being heard '
+        + 'on the beat: pulse() weighs onsets by how loud they actually are.',
+      'INDEPENDENT IS NOT THE SAME AS UNRELATED. Voices need shared material as well as '
+        + 'separate motion — counterpoint() measures the second, motif() the first.',
+    ],
+    norms: { counterpoint:CP_NORMS, melody:MELODY_NORMS, motif:MOTIF_NORMS },
+    says:'review() is the one to run. It calls the rest and tells you what it could not reach.' };
+  },
+
   /* HOLES IN A PART THAT IS SUPPOSED TO BE HELD.
 
      A string bed was written as one long note a bar. Each note stopped

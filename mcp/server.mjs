@@ -91,6 +91,26 @@ async function jbh(method, args = []) {
 }
 
 const TOOLS = [
+  { name: 'jbh_howto', description:
+      'START HERE. The order to do things in, the traps that are not guessable from the API, '
+      + 'and the measured norms every check is scored against. Costs nothing and returns no '
+      + 'audio. Read it before writing anything: the API will not tell you that a sample pack '
+      + 'can lie about pitch by an octave, that gain is a multiplier on whatever the pad '
+      + 'happens to hold, or that a beat can be perfectly on the grid and still inaudible.',
+    inputSchema: { type: 'object', properties: {} } },
+
+  { name: 'jbh_review', description:
+      'EVERY CHECK AT ONCE, AND IT SAYS WHICH ONES IT COULD NOT RUN. This is the one to run '
+      + 'before a bounce. It calls critique, loudness, translate, pulse, motif, melody, '
+      + 'continuity, counterpoint and dynamics, keeps going when one of them throws, sorts the '
+      + 'findings by severity and reports its own coverage. It exists because a finished track '
+      + 'was bounced using six of the seventeen analysers here, and the three that would have '
+      + 'caught what the listener then complained about were among the eleven not run. Choosing '
+      + 'which checks to run by hand is where results stop being repeatable.',
+    inputSchema: { type: 'object', properties: {
+      src: { type: 'string', enum: ['pat', 'song', 'chain', 'morph'] },
+      instruments: { type: 'array', items: { type: 'string' } } } } },
+
   { name: 'jbh_state', description:
       'What is loaded and what is playing: tempo, pattern, how many pads and tape lanes hold '
       + 'audio, how many hits are in the current pattern, the LIVE voice, and the audio context. '
@@ -332,6 +352,105 @@ const TOOLS = [
       + 'carries no tape lanes or LIVE instrument. Prefer jbh_save_session unless you need text.',
     inputSchema: { type: 'object', properties: {} } },
 
+  { name: 'jbh_critique', description:
+      'WHAT IS WRONG WITH THE MIX AS IT STANDS: settings outside their legal range, samples '
+      + 'being pitch-shifted further than they survive, pads that are playing and cannot be '
+      + 'heard, pads that own a band despite being quiet, and the distance from a loaded '
+      + 'reference. jbh_review calls this; use it directly when you only want this part.',
+    inputSchema: { type: 'object', properties: { src: { type: 'string' } } } },
+
+  { name: 'jbh_loudness', description:
+      'PERCEIVED LOUDNESS PER PAD, WHICH IS NOT ENERGY. Renders each pad alone and reports LUFS '
+      + 'beside raw RMS; the gap between them is what matters. The ear is 10-15dB more '
+      + 'sensitive around 3kHz than at 100Hz, so bright metal and high mallets read far louder '
+      + 'than any RMS meter says — one marimba came back +22dB and a triangle +16dB above their '
+      + 'own energy, which is exactly what "that is louder than I expected" means. One render '
+      + 'per pad, so prefer src:"pat".',
+    inputSchema: { type: 'object', properties: {
+      src: { type: 'string' }, loops: { type: 'integer' } } } },
+
+  { name: 'jbh_translate', description:
+      'WHAT SURVIVES A SMALL SPEAKER. Anything under about 400Hz is simply not reproduced on a '
+      + 'phone, so energy living only in the sub is energy most listeners never hear. Reports '
+      + 'the loss in dB and names the worst instrument. The fix it implies is always the same: '
+      + 'a bass carries through its HARMONICS, so saturate a parallel copy into 150-800Hz and '
+      + 'the ear reconstructs a fundamental the speaker cannot make.',
+    inputSchema: { type: 'object', properties: { src: { type: 'string' } } } },
+
+  { name: 'jbh_pulse', description:
+      'IS THERE A BEAT A LISTENER CAN FIND. Weighs every onset by how loud it actually is — '
+      + 'velocity, pad gain AND the level of the sample the pad holds — then autocorrelates and '
+      + 'reports what share of the audible weight lands on the bar, the beat, the eighth and '
+      + 'the sixteenth. Being on the grid is not the same as being heard on the beat: a track '
+      + 'can be 98% on the sixteenth grid with the metre buried under louder scattered parts.',
+    inputSchema: { type: 'object', properties: { src: { type: 'string' } } } },
+
+  { name: 'jbh_motif', description:
+      'DOES THIS LINE EVER RESTATE ITSELF. Scored against 8196 Essen folk melodies as '
+      + 'recurrence above the SAME intervals reshuffled, which controls for a line repeating by '
+      + 'accident because it uses few pitches. A random walk scores about +7 and real melody '
+      + 'about +28, rising to +51 for lines of 96 notes or more. melody() and counterpoint() '
+      + 'both pass a random walk; this is the check that does not.',
+    inputSchema: { type: 'object', required: ['instrument'], properties: {
+      instrument: { type: 'string' }, src: { type: 'string' } } } },
+
+  { name: 'jbh_melody', description:
+      'THE SHAPE OF A LINE against real melody: how much of it repeats a pitch, steps, moves by '
+      + 'a third, or leaps, and whether leaps are turned back from. Measured from the Essen '
+      + 'Folksong Collection. A Bach subject will not match these and should not.',
+    inputSchema: { type: 'object', required: ['instrument'], properties: {
+      instrument: { type: 'string' }, src: { type: 'string' } } } },
+
+  { name: 'jbh_counterpoint', description:
+      'HOW TWO OR MORE LINES MOVE AGAINST EACH OTHER, against 70 Palestrina scores: 68% of '
+      + 'moves between a pair of real voices are oblique, one holding while the other goes. '
+      + 'Parts written on the same grid positions read 0%. Catches parallel fifths and octaves '
+      + 'too. Independence alone is not the goal — voices also need shared material, which is '
+      + 'what jbh_motif measures.',
+    inputSchema: { type: 'object', required: ['instruments'], properties: {
+      instruments: { type: 'array', items: { type: 'string' } }, src: { type: 'string' } } } },
+
+  { name: 'jbh_continuity', description:
+      'HOLES IN A PART THAT IS SUPPOSED TO BE HELD. A string bed written as one note a bar '
+      + 'stops inside each bar and reads as play, cut, silence, play. Real voices rest about a '
+      + 'quarter of the time, so what matters is the PHASE of the gaps, not their presence.',
+    inputSchema: { type: 'object', required: ['instrument'], properties: {
+      instrument: { type: 'string' }, src: { type: 'string' } } } },
+
+  { name: 'jbh_dynamics', description:
+      'WHETHER ANYTHING CHANGES ACROSS THE PIECE — loudness range, and whether sections differ '
+      + 'from each other at all. A track that measures the same from end to end reads as flat '
+      + 'however busy it is.',
+    inputSchema: { type: 'object', properties: {} } },
+
+  { name: 'jbh_spectrum', description:
+      'THE NINE-BAND BALANCE of the mix, or of named pads alone, from one offline render. Use '
+      + 'it to see where an instrument actually sits before deciding it needs EQ — a vibraphone '
+      + 'struck with soft mallets is 80dB down above 8kHz and no filter will put air into it.',
+    inputSchema: { type: 'object', properties: {
+      src: { type: 'string' }, pads: { type: 'array', items: { type: 'integer' } } } } },
+
+  { name: 'jbh_reference', description:
+      'LOAD A FINISHED RECORDING TO BE JUDGED AGAINST. Do this BEFORE reviewing: without it, '
+      + 'tonal balance is simply not checked and critique says so. Pass a URL the app can '
+      + 'fetch, or null to clear.',
+    inputSchema: { type: 'object', properties: { url: { type: 'string' } } } },
+
+  { name: 'jbh_compare', description:
+      'THIS MIX AGAINST THE LOADED REFERENCE, band by band. Both sides are normalised against '
+      + 'their OWN total, which is the only way two mixes are comparable — an absolute spectrum '
+      + 'once showed a track fixed at the top while a 16dB hole sat at 500Hz.',
+    inputSchema: { type: 'object', properties: { src: { type: 'string' } } } },
+
+  { name: 'jbh_vs_dry', description:
+      'WHAT A PAD\'S OWN CHAIN DID TO IT. Renders the pad twice from the same notes, velocity '
+      + 'layers and transposition — once as it stands and once with the filter, drive, crusher, '
+      + 'EQ and sends bypassed. The only difference left is the processing, so whatever the '
+      + 'answer shows is the processing. Use it when a sound is not sitting right and you want '
+      + 'to know whether the pad or the part is at fault.',
+    inputSchema: { type: 'object', required: ['pad'], properties: {
+      pad: { type: 'integer' }, src: { type: 'string' } } } },
+
   { name: 'jbh_call', description:
       'Escape hatch: call any window.JBH method by name with an array of arguments. Everything '
       + 'the app exposes is reachable this way, including anything added after these tools were '
@@ -384,6 +503,22 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_transport':   return ok(await jbh(a.action === 'stop' ? 'stop' : 'play'));
       case 'jbh_hit':         return ok(await jbh('hit', [a.pad, a.vel, a.pitch]));
       case 'jbh_song_doc':    return ok(await jbh('export'));
+      case 'jbh_howto':       return ok(await jbh('howto'));
+      case 'jbh_review':      return ok(await jbh('review', [{ src: a.src || 'song',
+                                instruments: a.instruments }]));
+      case 'jbh_critique':    return ok(await jbh('critique', [{ src: a.src }]));
+      case 'jbh_loudness':    return ok(await jbh('loudness', [{ src: a.src, loops: a.loops }]));
+      case 'jbh_translate':   return ok(await jbh('translate', [{ src: a.src }]));
+      case 'jbh_pulse':       return ok(await jbh('pulse', [{ src: a.src }]));
+      case 'jbh_motif':       return ok(await jbh('motif', [a.instrument, { src: a.src }]));
+      case 'jbh_melody':      return ok(await jbh('melody', [a.instrument, { src: a.src }]));
+      case 'jbh_counterpoint':return ok(await jbh('counterpoint', [a.instruments, { src: a.src }]));
+      case 'jbh_continuity':  return ok(await jbh('continuity', [a.instrument, { src: a.src }]));
+      case 'jbh_dynamics':    return ok(await jbh('dynamics'));
+      case 'jbh_spectrum':    return ok(await jbh('spectrum', [{ src: a.src, pads: a.pads }]));
+      case 'jbh_reference':   return ok(await jbh('reference', [a.url === undefined ? null : a.url]));
+      case 'jbh_compare':     return ok(await jbh('compare', [{ src: a.src }]));
+      case 'jbh_vs_dry':      return ok(await jbh('vsDry', [a.pad, { src: a.src }]));
       case 'jbh_call':        return ok(await jbh(a.method, a.args || []));
 
       case 'jbh_render': {

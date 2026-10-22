@@ -1,0 +1,108 @@
+# Making music with this app, if you are an agent
+
+Start with two calls: `howto()` and `review()`. Everything below is what
+they return, in prose, and why.
+
+    jbh_howto     the order to work in, and the traps
+    jbh_review    every check at once, before a bounce
+
+Both are in the MCP server (`mcp/server.mjs`) and on `window.JBH`.
+
+## Why this file exists
+
+The app has seventeen analysers. A finished track was bounced here using
+six of them, and the three that would have caught what the listener
+complained about — `loudness`, `translate`, `spectrum` — were among the
+eleven that were not run. The listener's verdict was "the bass isn't
+clear, the bells are louder than you expect". `loudness()` had those
+bells at +14 to +22 dB above their own energy. `translate()` had the
+bass problem and named its fix in one sentence.
+
+Nothing was missing from the app. What was missing was any guarantee
+that the checks get run. Choosing them by hand is where results stop
+being repeatable, which is why `review()` runs all of them and reports
+which ones it could not reach — a check that silently did not run reads
+exactly like a check that passed.
+
+## The order
+
+1. `instrument()` / `preset()` / `sound()` to build the players, then
+   `pad()` for each one.
+2. `pattern()` + `batch()` to write. `note()` for pitched lines,
+   `step()` for everything else.
+3. `reference(url)` with a finished mix you want to sound like. **Before**
+   judging anything — without it, tonal balance is not checked at all and
+   `critique()` says so.
+4. `review({src:'song'})`. Fix what it names, in the order it names them.
+   Run it again.
+5. `render({loudness:true})` across a few `mTrim` values, choose by
+   measurement, then bounce.
+
+## The traps
+
+These are the ones that cost real work here. None are guessable from the
+API.
+
+**A sample pack can lie about pitch.** VSCO-2 CE names every file an
+octave below what it sounds, and is not consistent with itself: one solo
+violin folder uses scientific pitch and another folder of the same
+instrument uses the octave-down convention. For a long time every
+ensemble string, woodwind and brass in this repo played a register above
+what was written — a cello section landing in viola range — and the
+complaint it produced was "the strings sound unnatural". Run
+`scripts/audit-pitch.mjs <manifest>` before writing on a pack. It
+refuses to report until its detector passes signals whose answers are
+known, because the first version of that detector read harmonics as
+fundamentals and declared a correct library 12 semitones out.
+
+**Gain is a multiplier on whatever the pad holds.** A full-scale synth at
+gain 0.4 is far louder than a field recording at gain 2.0. Sources here
+differ by 35 dB on disk. Stage from each sample's measured peak first and
+balance by ear only after that. Setting levels by taste across mixed
+sources once collapsed a whole track to kick and sub, 19 dB darker than
+the track it was meant to improve on.
+
+**Loud is not energetic.** The ear is 10–15 dB more sensitive near 3 kHz
+than at 100 Hz, so bright metal and high mallets read far louder than any
+RMS meter reports. `loudness()` gives perceived minus measured; anything
+at +10 dB or more will jump out of the mix no matter how tidy the RMS
+looks.
+
+**Bass carries by its harmonics.** Below about 400 Hz nothing is
+reproduced on a phone. A near-pure sine sub is felt on a large speaker
+and simply absent on a small one, which reads as "the bass isn't clear"
+rather than "the bass is quiet". `translate()` measures the loss; the fix
+is a saturated parallel copy in 150–800 Hz.
+
+**A beat can be present and inaudible.** Being on the grid is not the
+same as being heard on the beat. `pulse()` weighs onsets by velocity,
+pad gain *and* the level of the sample the pad holds — the first version
+omitted that last term and ranked a −33 dBFS cabasa above a full-scale
+kick, which inverted every number it produced.
+
+**Read spectra normalised, never absolute.** `compare()` normalises both
+sides against their own total. An absolute reading once showed a track
+fixed at the top while a 16 dB hole sat at 500 Hz.
+
+**Independent is not the same as unrelated.** Voices need shared material
+as well as separate motion. `counterpoint()` measures the motion;
+`motif()` measures whether anything ever comes back. A seeded random walk
+passes `melody()` and `counterpoint()` and sounds like nothing at all.
+
+## The norms are measured, not recalled
+
+| check | measured from |
+|---|---|
+| `counterpoint()` | 70 Palestrina scores — 68% of moves between a pair of voices are oblique |
+| `melody()` | Essen Folksong Collection, 8514 melodies |
+| `motif()` | 8196 of those melodies, bucketed by length: recurrence above the same intervals reshuffled is about +28 overall, +51 for lines of 96 notes or more |
+
+The scripts that produced them are in `scripts/study-*.py`. A random walk
+scores about +7 on `motif()`; that gap is the whole point of the measure.
+
+## Reproducing a track
+
+`songs/*.mjs` each render one finished track end to end — build the
+instruments, write the parts, run the checks, choose a master setting by
+measurement, write the WAV. The bounces are gitignored; the scripts are
+the artefact. `songs/README.md` says what each one was written against.
