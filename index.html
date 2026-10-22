@@ -5974,7 +5974,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R227 · 2026-10-22 · bass carries on its harmonics';
+const BUILD = 'JBH-88 · R228 · 2026-10-22 · two voices, not one voice and chords';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -6878,6 +6878,11 @@ function layerBlend(p,v,li){
    when its dynamics are already shaped. */
 /* Measured from the Essen Folksong Collection — 8,514 melodies, 441,316
    intervals — by scripts/study-melody.py, not recalled from anywhere. */
+/* Measured from 70 Palestrina scores by scripts/study-counterpoint.py —
+   115,530 vertical intervals and 73,966 moves between pairs of voices. */
+const CP_NORMS={ oblique:68.0, contrary:17.6, similar:10.7, parallel:3.6,
+  par5:0.235, par8:0.111, consonantPct:69.8,
+  source:'Palestrina, 70 scores' };
 const MELODY_NORMS={ repeat:21.1, step:46.9, third:19.0, leap:13.1,
   leapRecovery:56.1, dirChange:51.8, range:12,
   source:'Essen Folksong Collection, 8514 melodies' };
@@ -13653,6 +13658,61 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     return { mix, pads:out, buried:out.filter(x=>x.dbRms<-26).map(x=>x.pad) };
   },
 
+  /* HOW LOUD IT SOUNDS, WHICH IS NOT HOW MUCH ENERGY IT HAS.
+
+     levels() reports RMS, and RMS is energy. The ear is not flat: it is
+     ten to fifteen decibels more sensitive around 3kHz than at 100Hz, so
+     a bright element can sit at a perfectly reasonable RMS and still be
+     the loudest thing in the room. Reported as "they seem balanced in
+     number but humans sense them as loud", which is exactly the symptom
+     of comparing raw energy across different parts of the spectrum.
+
+     The fix is the weighting the loudness standard already uses and this
+     file already implements for the master: a high shelf and a high pass
+     that together approximate the ear's response. Applying it per stem
+     gives a number that can be compared BETWEEN sounds, which RMS cannot.
+
+     Integrated rather than averaged, so a sound that plays twice in a bar
+     is measured by how loud it is when it sounds rather than diluted by
+     the silence around it. */
+  async loudness(opt){
+    const o=opt||{}, src=o.src||'pat', loops=o.loops||1;
+    const sch=await window.MVX.schedule({src, loops, full:false});
+    if(!sch) return null;
+    const pads=Object.keys(sch.byPad).map(Number)
+      .filter(p=>S.pads[p] && S.pads[p].bufId>=0);
+    const full=await renderMix(null,null,{loops,src,noTail:true});
+    const mixL=full?lufsIntegrated(full):null;
+    const rows=[];
+    for(const p of pads){
+      const one=await renderMix(new Set([p]),new Set(),{loops,src,noTail:true});
+      if(!one) continue;
+      const li=lufsIntegrated(one);
+      if(li.lufs===-Infinity) continue;
+      /* and the raw energy beside it, because the GAP between the two is
+         the thing worth seeing: a sound whose perceived loudness sits far
+         above its energy is one that will jump out of the mix */
+      const d=one.getChannelData(0); let s=0;
+      for(let i=0;i<d.length;i++) s+=d[i]*d[i];
+      const rms=10*Math.log10(Math.max(s/Math.max(1,d.length),1e-12));
+      rows.push({pad:p, name:S.pads[p].name||'', hits:sch.byPad[p].n,
+        lufs:+li.lufs.toFixed(1), rmsDb:+rms.toFixed(1),
+        brightness:+(li.lufs-rms).toFixed(1)});
+    }
+    rows.sort((a,b)=>b.lufs-a.lufs);
+    const loud=rows.length?rows[0].lufs:null;
+    const shouty=rows.filter(r=>r.brightness>=(rows.reduce((a,c)=>a+c.brightness,0)/Math.max(1,rows.length))+4);
+    return { src, mixLufs:mixL&&mixL.lufs!==-Infinity?+mixL.lufs.toFixed(1):null,
+      pads:rows, loudest:loud,
+      /* the ones the ear will pick out regardless of what the meter says */
+      forward:shouty.map(r=>({pad:r.pad, name:r.name, brightness:r.brightness})),
+      says: shouty.length
+        ? shouty.map(r=>r.name||('pad '+r.pad)).join(', ')+' sit'+(shouty.length>1?'':'s')
+          +' well above the others in perceived loudness for the energy they carry — '
+          +'they will read as loud even when the meter says they are balanced.'
+        : 'no element is unusually forward for its energy.' };
+  },
+
   /* ---- EARS -----------------------------------------------------------
 
      levels() answers "is anything buried", and loudness answers "is it
@@ -13958,6 +14018,104 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         +'music with real low end in it.'
       : 'this translates: only '+phone+'dB goes missing on a phone speaker.';
     return {src, systems, voices, phoneLossDb:phone, carries:phone<10, says};
+  },
+
+  /* ARE THESE TWO VOICES, OR ONE VOICE AND SOME CHORDS?
+
+     Everything written through this API has been a tune with
+     accompaniment under it, which is arranging rather than composing.
+     Measured on seventy Palestrina scores — 115,530 vertical intervals,
+     73,966 moves between pairs of voices:
+
+       oblique (one holds, one moves)   68.0%
+       contrary                         17.6%
+       similar                          10.7%
+       parallel                          3.6%
+       parallel fifths                   0.235%
+       parallel octaves                  0.111%
+
+     The 68% is the whole thing. Voices sound independent because they do
+     NOT move together — most of the time one sustains while the other
+     goes somewhere. Writing every part onto the same grid positions,
+     which is what a step sequencer invites, produces chords with a
+     melody on top however many notes are in it.
+
+     And parallel fifths and octaves really are absent in the practice
+     the rule was derived from, at two tenths of one percent. Worth
+     checking for rather than assuming, since nothing here ever has. */
+  async counterpoint(names, opt){
+    const o=opt||{}, src=o.src||'pat';
+    const list=Array.isArray(names)?names:(names?[names]:null);
+    const sch=await window.MVX.schedule({src, full:true});
+    if(!sch || !sch.events) return null;
+    /* one voice per instrument, reduced to its top note at each onset */
+    const byInst={};
+    for(const e of sch.events){
+      const p=S.pads[e.pad]; if(!p || e.midi==null) continue;
+      const tag=p.inst||('pad'+e.pad);
+      if(list && list.indexOf(tag)<0) continue;
+      (byInst[tag]=byInst[tag]||[]).push(e);
+    }
+    const voices={};
+    for(const tag in byInst){
+      const m=new Map();
+      for(const e of byInst[tag]){ const k=+e.t.toFixed(3);
+        const held=(e.len!=null?e.len:0.25);
+        if(!m.has(k) || e.midi>m.get(k).midi) m.set(k,{t:k, midi:e.midi, until:k+held}); }
+      const seq=[...m.values()].sort((a,b)=>a.t-b.t);
+      if(seq.length>=3) voices[tag]=seq;
+    }
+    const tags=Object.keys(voices);
+    if(tags.length<2) return {voices:tags, says:'fewer than two voices to compare — '
+      +'counterpoint needs at least two independent lines.'};
+    /* what each voice is sounding at a given instant */
+    const at=(seq,t)=>{ let cur=null;
+      for(const n of seq){ if(n.t<=t+1e-4 && t<n.until-1e-4) cur=n; if(n.t>t) break; }
+      return cur?cur.midi:null; };
+    const times=[...new Set([].concat.apply([],tags.map(g=>voices[g].map(n=>n.t))))]
+      .sort((a,b)=>a-b);
+    const motion={oblique:0,contrary:0,similar:0,parallel:0};
+    const vert={}; let par5=0, par8=0, moves=0, verts=0;
+    for(let i=1;i<times.length;i++){
+      for(let a=0;a<tags.length;a++) for(let b=a+1;b<tags.length;b++){
+        const p0=at(voices[tags[a]],times[i-1]), q0=at(voices[tags[b]],times[i-1]);
+        const p1=at(voices[tags[a]],times[i]),   q1=at(voices[tags[b]],times[i]);
+        if(p1!=null&&q1!=null){ const iv=Math.abs(p1-q1)%12; vert[iv]=(vert[iv]||0)+1; verts++; }
+        if(p0==null||q0==null||p1==null||q1==null) continue;
+        const da=p1-p0, db=q1-q0;
+        if(da===0&&db===0) continue;
+        moves++;
+        if(da===0||db===0) motion.oblique++;
+        else if((da>0)!==(db>0)) motion.contrary++;
+        else if(da===db){ motion.parallel++;
+          const iv0=Math.abs(p0-q0)%12, iv1=Math.abs(p1-q1)%12;
+          if(iv0===7&&iv1===7) par5++;
+          if(iv0===0&&iv1===0&&Math.abs(p0-q0)>0) par8++;
+        } else motion.similar++;
+      }
+    }
+    if(!moves) return {voices:tags, says:'the voices never move against each other.'};
+    const pc=x=>+(100*x/moves).toFixed(1);
+    const got={oblique:pc(motion.oblique), contrary:pc(motion.contrary),
+      similar:pc(motion.similar), parallel:pc(motion.parallel),
+      par5:+(100*par5/moves).toFixed(2), par8:+(100*par8/moves).toFixed(2)};
+    const notes=[];
+    if(got.oblique < CP_NORMS.oblique-25)
+      notes.push('oblique motion is '+got.oblique+'% against '+CP_NORMS.oblique
+        +'% in Palestrina. The voices are moving together: that is chords with a '
+        +'tune on top, not counterpoint. Hold one line while the other moves.');
+    if(got.parallel > CP_NORMS.parallel+8)
+      notes.push('parallel motion is '+got.parallel+'% against '+CP_NORMS.parallel
+        +'%. The lines are shadowing each other rather than being separate.');
+    if(got.par5 > 1.5) notes.push('parallel fifths on '+got.par5+'% of moves, against '
+      +CP_NORMS.par5+'% in the practice the rule came from.');
+    if(got.par8 > 1.5) notes.push('parallel octaves on '+got.par8+'% of moves, against '
+      +CP_NORMS.par8+'%. Two voices in octaves are one voice.');
+    const sorted=Object.keys(vert).map(k=>({iv:+k, pct:+(100*vert[k]/Math.max(1,verts)).toFixed(1)}))
+      .sort((a,b)=>b.pct-a.pct);
+    return { voices:tags, moves, motion:got, norm:CP_NORMS,
+      vertical:sorted.slice(0,6), findings:notes,
+      says:notes.length?notes[0]:'the voices move independently of each other.' };
   },
 
   /* IS THIS A TUNE, OR IS IT SCALE MOVEMENT?

@@ -322,6 +322,70 @@ export default async function ({ browser, base }) {
       !!mel.bad && /16, 32, 48, 64/.test(mel.bad),
       mel.bad ? mel.bad.slice(0, 64) + '…' : 'no throw');
 
+    /* ---- 8. TWO VOICES, OR ONE VOICE AND SOME CHORDS? ------------------- */
+    t.head('counterpoint() CAN TELL THE DIFFERENCE');
+    const cp = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('a', { pack: 'samples/salamander.json', match: '^sal:', lo: 48, hi: 72, max: 10 });
+      await window.JBH.instrument('b', { pack: 'samples/salamander.json', match: '^sal:', lo: 36, hi: 60, max: 10 });
+      const write = async (rows) => {
+        window.JBH.pattern(0, { plen: 64, clear: true });
+        await window.JBH.batch(rows);
+        return await window.JBH.counterpoint(['a', 'b'], { src: 'pat' });
+      };
+      const lock = [];
+      [[0, 67, 52], [8, 69, 53], [16, 71, 55], [24, 72, 57], [32, 71, 55], [40, 69, 53], [48, 67, 52]]
+        .forEach(([st, hi, lo]) => { lock.push(['note', 'a', hi, st, 0.7, { beats: 1.8 }]);
+                                     lock.push(['note', 'b', lo, st, 0.7, { beats: 1.8 }]); });
+      const ob = [];
+      [[0, 67], [6, 69], [12, 71], [20, 72], [26, 71], [34, 69], [40, 67], [48, 69], [54, 71]]
+        .forEach(([st, m]) => ob.push(['note', 'a', m, st, 0.65, { beats: 1.3 }]));
+      [[0, 52], [20, 55], [40, 48], [56, 53]]
+        .forEach(([st, m]) => ob.push(['note', 'b', m, st, 0.7, { beats: 4.6 }]));
+      const p5 = [];
+      [[0, 60], [8, 62], [16, 64], [24, 65], [32, 67], [40, 65], [48, 64]]
+        .forEach(([st, m]) => { p5.push(['note', 'a', m + 7, st, 0.7, { beats: 1.8 }]);
+                                p5.push(['note', 'b', m, st, 0.7, { beats: 1.8 }]); });
+      return { lockstep: await write(lock), oblique: await write(ob), fifths: await write(p5) };
+    });
+    /* Writing both parts onto the same grid positions is what a step
+       sequencer invites and what every part written through this API had
+       done. It must not read as counterpoint. */
+    t.ok('parts written on the same grid positions are called out',
+      cp.lockstep.motion.oblique < 20 && cp.lockstep.findings.some(f => /chords with a tune/.test(f)),
+      'oblique ' + cp.lockstep.motion.oblique + '% against the 68% norm');
+    t.ok('one voice holding while the other moves passes',
+      cp.oblique.motion.oblique >= 60 && cp.oblique.findings.length === 0,
+      'oblique ' + cp.oblique.motion.oblique + '%');
+    t.ok('and deliberate parallel fifths are caught',
+      cp.fifths.motion.par5 > 50 && cp.fifths.findings.some(f => /parallel fifths/.test(f)),
+      cp.fifths.motion.par5 + '% of moves');
+
+    /* ---- 9. LOUD IS NOT THE SAME AS ENERGETIC --------------------------- */
+    t.head('loudness() WEIGHTS FOR THE EAR, WHICH RMS DOES NOT');
+    const ld = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('p', { pack: 'samples/salamander.json', match: '^sal:', lo: 36, hi: 84, max: 12 });
+      const pads = window.JBH.instPads('p');
+      const low = pads[0].pad, high = pads[pads.length - 1].pad;
+      window.JBH.pattern(0, { plen: 64, clear: true });
+      await window.JBH.batch([
+        ['step', low, 0, 0.8], ['step', low, 32, 0.8],
+        ['step', high, 16, 0.8], ['step', high, 48, 0.8]]);
+      /* matched on ENERGY, deliberately: a bright sound at the same RMS as
+         a low one is heard as louder, and that gap is what this reports */
+      const r = await window.JBH.loudness({ src: 'pat' });
+      const lo = r.pads.find(x => x.pad === low), hi = r.pads.find(x => x.pad === high);
+      return { lo, hi, says: r.says };
+    });
+    t.ok('a high sound reads louder than a low one of similar energy',
+      ld.hi && ld.lo && (ld.hi.brightness > ld.lo.brightness),
+      'brightness ' + (ld.hi ? ld.hi.brightness : '?') + ' vs ' + (ld.lo ? ld.lo.brightness : '?')
+      + ' (perceived minus energy)');
+    t.ok('and both carry a perceived loudness, not only an RMS',
+      ld.hi && ld.hi.lufs != null && ld.lo && ld.lo.lufs != null,
+      'LUFS ' + (ld.hi ? ld.hi.lufs : '?') + ' / ' + (ld.lo ? ld.lo.lufs : '?'));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
