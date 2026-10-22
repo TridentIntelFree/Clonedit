@@ -182,13 +182,23 @@ const FIG   =[0,2,1,4];                         // D F E A — the subject
 const FIG_R =[0,3,6,8];                         // its rhythm, in steps
 const B=(bar,st)=>bar*16+st;
 
-const say=(bar,base,{t=0, inv=false, aug=1, only=4, vel=0.72, inst='vib'}={})=>{
+/* `at` is what stops the glockenspiel being the vibraphone.
+   counterpoint() caught the first version shadowing itself: the glock
+   played the same figure on the same rhythm three octaves up, which
+   measured as 33.5% parallel motion against a norm of 3.6% and 28.7%
+   parallel octaves against 0.111%. Two voices in octaves are one voice,
+   however far apart they are. Entering the same subject half a bar
+   later makes it an answer instead — the material is still shared,
+   which is what motif() wants, and the motion is no longer locked,
+   which is what counterpoint() wants. */
+const say=(bar,base,{t=0, inv=false, aug=1, only=4, vel=0.72, inst='vib', at=0}={})=>{
   const o=[];
   for(let i=0;i<Math.min(only,FIG.length);i++){
     const d=(inv? -FIG[i] : FIG[i]) + t;
-    const st=Math.round(FIG_R[i]*aug);
-    if(st>=16*aug+8) break;
-    o.push(['note', inst, deg(base,d), B(bar,0)+st, vel, {beats:(aug>1?1.4:0.85)}]);
+    const st=at+Math.round(FIG_R[i]*aug);
+    const abs=B(bar,0)+st;
+    if(abs>=64) break;                      // the pattern is four bars long
+    o.push(['note', inst, deg(base,d), abs, vel, {beats:(aug>1?1.4:0.85)}]);
   }
   return o;
 };
@@ -246,7 +256,7 @@ await mk(2,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
     o.push(...pulseBar(bar,{air:2}), ...bassBar(bar,bar));
     o.push(...say(bar,62,{vel:0.76}));
-    o.push(...say(bar,98,{vel:0.52, inst:'glk'}));
+    o.push(...say(bar,98,{at:8, only:3, vel:0.52, inst:'glk'}));
     o.push(['step',TRI,B(bar,8),0.62]);
   }
   return o; });
@@ -257,7 +267,7 @@ await mk(3,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
     o.push(...pulseBar(bar,{air:2}), ...bassBar(bar,bar+2,{walk:true}));
     o.push(...say(bar,62,{t:2, vel:0.74}));
-    o.push(...say(bar,98,{t:2, vel:0.50, inst:'glk'}));
+    o.push(...say(bar,98,{at:8, t:2, only:3, vel:0.50, inst:'glk'}));
     for(let k=0;k<4;k++) o.push(['note','mar',MARN[(bar+k)%4],B(bar,k*4+2),0.64]);
   }
   return o; });
@@ -267,7 +277,7 @@ await mk(4,()=>{ const o=[];
   for(let bar=0;bar<4;bar++){
     o.push(...pulseBar(bar,{air:2}), ...bassBar(bar,bar+1,{walk:true}));
     o.push(...say(bar,69,{inv:true, vel:0.74}));
-    if(bar%2===1) o.push(...say(bar,98,{inv:true, vel:0.48, inst:'glk'}));
+    if(bar%2===1) o.push(...say(bar,98,{at:6, inv:true, only:3, vel:0.48, inst:'glk'}));
     o.push(['note','hch',deg(62,[0,4,2,5][bar]),B(bar,0),0.62,{beats:3.6}]);
   }
   return o; });
@@ -300,7 +310,7 @@ await mk(6,()=>{ const o=[];
     if(bar%2===0) for(let i=0;i<4;i++)
       o.push(['note','mar',MARN[i],B(bar,i*4),0.62,{beats:1.4}]);
     o.push(...say(bar,74,{vel:0.58}));
-    o.push(...say(bar,98,{t:bar>=2?2:0, only:3, vel:0.44, inst:'glk'}));
+    o.push(...say(bar,98,{at:10, t:bar>=2?2:0, only:3, vel:0.44, inst:'glk'}));
     /* the pulse returns a layer at a time */
     if(bar>=1){ o.push(['step',KIK,B(bar,0),0.92], ['step',KSB,B(bar,0),0.86]); }
     if(bar>=2){ o.push(['step',KIK,B(bar,8),0.86], ['step',KSB,B(bar,8),0.80]); }
@@ -319,7 +329,7 @@ await mk(7,()=>{ const o=[];
     o.push(...pulseBar(bar,{air:2, open:bar===0}), ...bassBar(bar,bar,{walk:true}));
     if(bar%2===0) o.push(['note','mar',MARN[bar%4],B(bar,0),0.66,{beats:1.4}]);
     o.push(...say(bar,62,{vel:0.80}));
-    o.push(...say(bar,98,{t:bar%2?2:0, vel:0.54, inst:'glk'}));
+    o.push(...say(bar,98,{at:8, t:bar%2?2:0, only:3, vel:0.54, inst:'glk'}));
     o.push(['note','hch',deg(62,[0,2,4,1][bar]),B(bar,8),0.50,{beats:2.2}]);
     if(bar===3) o.push(['step',FCY,B(bar,14),0.84]);
   }

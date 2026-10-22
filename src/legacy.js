@@ -11466,7 +11466,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const names=o.instruments||insts;
 
     /* 1. what is actually there */
-    const sch=await run('schedule',()=>window.MVX.schedule({src, full:false}));
+    const sch=await run('schedule',()=>window.MVX.schedule({src, full:true}));
     if(!sch || !sch.notes){
       add('schedule','empty','nothing plays in '+(src==='song'?'the song':'this pattern')+'.');
       return {src, findings, ran, skipped, instruments:names, passed:false,
@@ -11503,24 +11503,70 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     for(const f of ((pu&&pu.findings)||[]))
       add('pulse','metre', f, 'put the loudest things on the beat and stop nudging them');
 
-    /* 6-8. the lines themselves */
+    /* 6-8. THE LINES — BUT ONLY THE ONES THAT ARE LINES.
+       The first version ran every melodic check on every instrument
+       group and produced thirty-six findings, most of them meaningless:
+       it solemnly reported that a group of shakers and triangles had 0%
+       repeated notes against melody's 21.1%, and that the kick and sub
+       had too many leaps. Percussion has no melody to measure. It also
+       marked the marimba down for 78.7% leaps when that library only
+       contains C, F, G and B — the instrument's own note set, being
+       reported as a fault in the writing.
+
+       Burying four real findings under thirty-two spurious ones is the
+       failure this call was built to prevent, so both are filtered out
+       here: an instrument is only asked about melody if most of its
+       events carry a pitch, and only if it has enough distinct notes
+       available for the answer to be about the part rather than the
+       sampler. */
+    const evByInst=new Map();
+    for(const e of (sch.events||[])){
+      const pd=S.pads[e.pad]; const key=pd&&pd.inst;
+      if(!key) continue;
+      if(!evByInst.has(key)) evByInst.set(key,{n:0,pitched:0});
+      const r=evByInst.get(key); r.n++; if(e.midi!=null) r.pitched++;
+    }
+    const pitchedInsts=[], percussive=[], tooSparse=[];
     for(const n of names){
+      const r=evByInst.get(n);
+      if(!r || r.n<4) continue;
+      if(r.pitched/r.n < 0.6){ percussive.push(n); continue; }
+      let avail=0;
+      try{ avail=new Set((window.MVX.instPads(n)||[])
+        .map(x=>S.pads[x.pad]&&S.pads[x.pad].srcNote).filter(v=>v!=null)).size; }catch(e){}
+      if(avail && avail<7){ tooSparse.push(n+' ('+avail+' notes in the pack)'); continue; }
+      pitchedInsts.push(n);
+    }
+
+    for(const n of pitchedInsts){
       const mo=await run('motif:'+n,()=>window.MVX.motif(n,{src}));
       for(const f of ((mo&&mo.findings)||[])) add('motif','material', n+': '+f,
         'state a figure and bring it back — transposed, inverted, augmented');
       const me=await run('melody:'+n,()=>window.MVX.melody(n,{src}));
       for(const f of ((me&&me.findings)||[])) add('melody','shape', n+': '+f, '');
+    }
+    /* continuity is about holes in a held part, which applies to anything */
+    for(const n of names){
       const co=await run('continuity:'+n,()=>window.MVX.continuity(n,{src}));
       for(const f of (((co&&co.findings)||[]))) add('continuity','holes', n+': '+f, '');
     }
-    /* 9. and how they sit against each other */
-    if(names.length>1){
-      const cp=await run('counterpoint',()=>window.MVX.counterpoint(names.slice(0,4),{src}));
-      for(const f of ((cp&&cp.findings)||[])) add('counterpoint','voices', f, '');
+    /* 9. and how the real lines sit against each other */
+    if(pitchedInsts.length>1){
+      const cp=await run('counterpoint',()=>window.MVX.counterpoint(pitchedInsts.slice(0,4),{src}));
+      for(const f of ((cp&&cp.findings)||[])) add('counterpoint','voices', f,
+        'give them separate rhythms, or let one hold while the other moves');
     }
-    /* 10. dynamics over the whole thing */
-    const dy=await run('dynamics',()=>window.MVX.dynamics());
-    for(const f of ((dy&&dy.findings)||[])) add('dynamics','range', f, '');
+    /* 10. dynamics is per instrument — it asks whether that pad has more
+       than one recording, so velocity can change tone and not only
+       volume. Called with no argument it simply threw, and the only
+       reason anyone knew is that review() reports what it could not
+       run. */
+    for(const n of pitchedInsts){
+      const dy=await run('dynamics:'+n,()=>window.MVX.dynamics(n));
+      if(dy && dy.layers===1) add('dynamics','range', n+': '+dy.says,
+        'load a pack with velocity layers, or vary the writing instead');
+      for(const f of ((dy&&dy.findings)||[])) add('dynamics','range', n+': '+f, '');
+    }
 
     const ORDER={ 'out-of-range':0, stretched:1, empty:1, forward:2, 'small-speaker':2,
       metre:3, 'off-reference':3, buried:4, squashed:4, range:5, material:5,
@@ -11528,7 +11574,9 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     findings.sort((a,b)=>(ORDER[a.severity]==null?9:ORDER[a.severity])
       -(ORDER[b.severity]==null?9:ORDER[b.severity]));
     const hard=findings.filter(f=>(ORDER[f.severity]==null?9:ORDER[f.severity])<=3).length;
-    return { src, instruments:names, findings, ran, skipped,
+    return { src, instruments:names, melodic:pitchedInsts,
+      notAskedAboutMelody:{percussion:percussive, sparsePack:tooSparse},
+      findings, ran, skipped,
       counts:{total:findings.length, serious:hard, toolsRun:ran.length, toolsSkipped:skipped.length},
       passed:hard===0,
       says:(hard?hard+' thing'+(hard>1?'s':'')+' worth fixing before this is bounced'
