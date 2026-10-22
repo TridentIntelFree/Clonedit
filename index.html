@@ -14667,6 +14667,32 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         add('compare','off-reference', n, '');
     }
 
+    /* 2c. AN AUTOMATION LANE ONLY EXISTS IN ITS OWN PATTERN, and the
+       parameter keeps whatever that lane left it at for every pattern
+       afterwards that has no lane of its own. This is invisible in the
+       arrangement and silent in every other check: a master lowpass
+       automated down to 6.6kHz in a four-bar intro stayed at 6.6kHz for
+       the rest of a two-minute track, which measured as the top octave
+       sitting 25dB under the reference while the one pattern the levels
+       had been solved on measured almost exactly right. Two renders
+       went into chasing that before the lane was found. */
+    if(src==='song' && S.song && S.song.length){
+      const inSong=[...new Set(S.song.map(e=>e.pat))].filter(i=>S.patterns[i]);
+      const lanes=new Map();
+      for(const i of inSong) for(const k of Object.keys((S.patterns[i].autom)||{}))
+        lanes.set(k,(lanes.get(k)||[]).concat(i));
+      for(const [target, pats] of lanes){
+        const missing=inSong.filter(i=>!pats.includes(i));
+        if(!missing.length) continue;
+        const t=autoTargets[target];
+        add('automation','lingering', target+' ('+((t&&t.name)||target)+') is automated in '
+          +'pattern'+(pats.length>1?'s':'')+' '+pats.join(', ')+' but not in '
+          +missing.join(', ')+'. Those patterns do not reset it — they inherit whatever the '
+          +'last lane left, for as long as they play.',
+          'give every pattern in the song its own lane for this target, even if the value is flat');
+      }
+    }
+
     /* 3. PERCEIVED loudness, which is not energy. This is the check that
           was missing when the bells came back too loud. */
     const ld=await run('loudness',()=>window.MVX.loudness(
@@ -14768,7 +14794,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       for(const f of ((dy&&dy.findings)||[])) add('dynamics','range', n+': '+f, '');
     }
 
-    const ORDER={ 'out-of-range':0, stretched:1, empty:1, forward:2, 'small-speaker':2,
+    const ORDER={ 'out-of-range':0, stretched:1, empty:1, lingering:1, forward:2, 'small-speaker':2,
       metre:3, 'off-reference':3, buried:4, squashed:4, range:5, material:5,
       shape:6, voices:6, holes:6, narrow:7, 'no-reference':8 };
     findings.sort((a,b)=>(ORDER[a.severity]==null?9:ORDER[a.severity])

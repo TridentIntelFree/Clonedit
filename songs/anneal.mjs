@@ -360,17 +360,42 @@ await mk(7,()=>{ const o=[];
   return o; });
 
 /* ---- MOVEMENT ACROSS THE REPEATS --------------------------------------
-   Eight slots is the limit, so the same pattern has to come round more
-   than once. Automation is what keeps that from being a loop: the master
-   filter opens across the intro and closes into the bridge, and the
-   level steps between sections so the piece has somewhere to go. */
-await call('automate','mfilt',[[0,0.42],[48,0.72],[63,0.80]],{pattern:0});
-await call('automate','mfilt',[[0,0.80],[32,0.62],[63,0.52]],{pattern:5});
-await call('automate','mfilt',[[0,0.56],[32,0.74],[63,0.88]],{pattern:6});
+   Eight slots is the limit, so patterns come round more than once and
+   automation is what keeps that from being a loop.
+
+   TWO THINGS ABOUT mfilt THAT COST A WHOLE RENDER. It is a master
+   LOWPASS, and its normalised value maps to frequency as 120*150^x, so
+   the gentle-looking numbers the first version used were brutal: 0.42
+   is a lowpass at 984Hz and 0.52 is 1.6kHz. The top octave was being
+   removed from the master bus for a third of the track.
+
+   And an automation lane only exists in the pattern that has one. A
+   parameter is left wherever the last lane put it, so the 6.6kHz the
+   intro ended on was inherited by every pattern after it that had no
+   lane of its own. The whole song measured 25dB under the reference at
+   8-16kHz while the single pattern the levels were solved on measured
+   almost exactly right, and the difference was entirely this.
+
+   So every pattern now states its own value, mostly wide open, and the
+   movement that is left is a real but modest sweep. 0.88 is 9.9kHz,
+   which is audible as a closing without gutting anything. */
+await call('automate','mfilt',[[0,0.74],[40,0.92],[63,1.0]],{pattern:0});
+await call('automate','mfilt',[[0,1.0]],{pattern:1});
+await call('automate','mfilt',[[0,1.0]],{pattern:2});
+await call('automate','mfilt',[[0,1.0]],{pattern:3});
+await call('automate','mfilt',[[0,1.0]],{pattern:4});
+await call('automate','mfilt',[[0,1.0],[32,0.94],[63,0.88]],{pattern:5});
+await call('automate','mfilt',[[0,0.90],[32,0.96],[63,1.0]],{pattern:6});
+await call('automate','mfilt',[[0,1.0]],{pattern:7});
+/* level moves between sections, so the piece has somewhere to go */
 await call('automate','mvol',[[0,0.62],[63,0.78]],{pattern:0});
-await call('automate','mvol',[[0,0.74],[63,0.70]],{pattern:5});
-await call('automate','mvol',[[0,0.76],[63,0.92]],{pattern:6});
-await call('automate','mvol',[[0,0.95],[63,0.88]],{pattern:7});
+await call('automate','mvol',[[0,0.86]],{pattern:1});
+await call('automate','mvol',[[0,0.90]],{pattern:2});
+await call('automate','mvol',[[0,0.90]],{pattern:3});
+await call('automate','mvol',[[0,0.92]],{pattern:4});
+await call('automate','mvol',[[0,0.78],[63,0.74]],{pattern:5});
+await call('automate','mvol',[[0,0.80],[63,0.94]],{pattern:6});
+await call('automate','mvol',[[0,0.98],[63,0.92]],{pattern:7});
 
 /* ---- THE ARRANGEMENT --------------------------------------------------- */
 await call('set',{pattern:0, songOn:true, songLoop:false,
