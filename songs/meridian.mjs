@@ -119,6 +119,21 @@ const stage=async(pad,targetDb,label)=>{
     +'dB -> '+String(targetDb).padStart(4)+'dB  gain '+gg.toFixed(2)
     +(want>2?'   CANNOT REACH — needs '+want.toFixed(1)+', cap 2. Wrong sound for the job.':''));
 };
+/* DID THIS SOUND COME OUT THE COLOUR IT WAS MEANT TO BE. One render
+   of one pattern, the moment the sound exists, which is the only
+   point at which the answer is still cheap to act on. Judged only
+   over the bands the sound actually occupies — a bass marked against
+   a whole-mix target at 8-16kHz is being penalised for having no
+   cymbals in it. */
+const audited=async(pad,label)=>{
+  const r=await call('audit',pad,{});
+  console.log('  audit '+label.padEnd(6)+'mean '+String(r.meanErrorDb).padStart(6)
+    +'dB over '+r.judgedOver+' bands   worst '+r.worst+' '
+    +(r.worstDb>0?'+':'')+r.worstDb+'dB');
+  if(Math.abs(r.worstDb)>=6)
+    console.log('         '+String(r.findings[r.findings.length-1]).slice(0,116));
+  return r; };
+
 const placed=async(pad,label)=>{
   const r=await call('place',pad);
   const top=[...r.bands].sort((a,b)=>b.pad-a.pad).slice(0,3)
@@ -192,7 +207,7 @@ await call('pad',BASS,{inst:'bass', ftype:'lowpass', fcut:0.52, fres:0.5, drv:0.
   att:0.03, dec:1.6, sus:0.6, rel:0.9, gain:1.0, name:'bass'});
 await bat([g(BASS,0,0.95), g(BASS,12,0.72), g(BASS,20,0.85)]);
 console.log('\n1. BASS — painted, harmonics through 150-800Hz by construction');
-await stage(BASS,-8,'bass'); await placed(BASS,'bass');
+await stage(BASS,-8,'bass'); await audited(BASS,'bass'); await placed(BASS,'bass');
 
 /* ---- 2. KICK — a door knock, transient-shaped ------------------------- */
 /* sharp attack, short tail, so it cuts without needing high boost —
@@ -210,7 +225,7 @@ await call('pad',KICK,{inst:'drums', pitch:-4, start:startOf('fk:knock2'),
   att:0.001, dec:0.24, sus:0.0, rel:0.10, gain:1.0, eqLo:-7, eqMid:+2, name:'kick'});
 await bat([g(KICK,0,1.0), g(KICK,8,0.5), g(KICK,16,0.92), g(KICK,24,0.55)]);
 console.log('\n2. KICK — door knock, sharp attack and no tail');
-await stage(KICK,-5,'kick'); await placed(KICK,'kick');
+await stage(KICK,-5,'kick'); await audited(KICK,'kick'); await placed(KICK,'kick');
 
 /* ---- 3. AIR — rain frozen, with a slow filter drifting over it -------- */
 /* 0.18Hz is a cycle every five and a half seconds: slower than the bar,
@@ -223,7 +238,7 @@ await call('pad',AIR,{inst:'air', ftype:'lowpass', fcut:0.72, fres:1.1,
   att:1.4, dec:2.6, sus:0.85, rel:2.8, gain:1.0, eqLo:-9, rev:0.40, name:'air'});
 await bat([['step',AIR,0,0.6],['step',AIR,16,0.45]]);
 console.log('\n3. AIR — frozen rain under a 0.18Hz filter sweep');
-await stage(AIR,-13,'air'); await placed(AIR,'air');
+await stage(AIR,-13,'air'); await audited(AIR,'air'); await placed(AIR,'air');
 
 /* ---- 4. BELL — painted at real inharmonic ratios, then to tape -------- */
 {
@@ -243,7 +258,7 @@ await call('pad',BELL,{inst:'lead', keepTime:true, att:0.004, dec:1.3, sus:0.3,
 const ROOT=62, LINE=[62,65,69,67,62,70,69,65];
 await bat(LINE.map((n,k)=>g(BELL,k*4,k===0||k===5?0.88:0.6,{pitch:n-ROOT})));
 console.log('\n4. BELL — painted at bell ratios, run to tape');
-await stage(BELL,-11,'bell'); await placed(BELL,'bell');
+await stage(BELL,-11,'bell'); await audited(BELL,'bell'); await placed(BELL,'bell');
 
 /* ---- 5. GHOST — the bell rebuilt out of the found sounds -------------- */
 /* the shape is the bell's, the substance is rain and glass and a can */
@@ -257,7 +272,7 @@ await call('pad',GHOST,{inst:'air', att:0.02, dec:1.6, sus:0.4, rel:1.4,
   gain:1.0, eqLo:-8, rev:0.42, name:'ghost'});
 await bat([['step',GHOST,8,0.5],['step',GHOST,24,0.42]]);
 console.log('\n5. GHOST — the bell rebuilt from glass and rain');
-await stage(GHOST,-17,'ghost'); await placed(GHOST,'ghost');
+await stage(GHOST,-17,'ghost'); await audited(GHOST,'ghost'); await placed(GHOST,'ghost');
 
 /* ---- 6. PERC — a can, on its own clock -------------------------------- */
 /* poly() gives the pad its own BPM: 126 against 84 is three against two,
@@ -271,7 +286,7 @@ await bat([2,10,18,26].map(s=>g(PERC,s,0.5)));
 await tryTo('poly 126 against 84 (3:2)', ()=>call('poly',PERC,
   {bpm:126, cells:6, trig:true}));
 console.log('\n6. PERC — a can at 126 against the grid at 84');
-await stage(PERC,-18,'perc'); await placed(PERC,'perc');
+await stage(PERC,-18,'perc'); await audited(PERC,'perc'); await placed(PERC,'perc');
 
 /* ---- 7. THE THINGS NO TRACK HERE HAS EVER SWITCHED ON ----------------- */
 /* bass-mono below 90Hz so the low end cannot drift off-centre, and the
