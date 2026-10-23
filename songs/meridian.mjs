@@ -36,10 +36,11 @@
      found-sound track written here.
 
    per-step nudge, from measured norms  — samples/groove-norms.json,
-     derived from 1,150 human drum performances. 1.70% of human hits
-     land exactly on the grid; every track bounced here has been at
-     100%. The offsets are in fractions of a sixteenth and `nudge`
-     takes exactly that, so they apply directly.
+     derived from 1,150 human drum performances. The offsets are in
+     fractions of a sixteenth and `nudge` takes exactly that unit, so
+     they apply directly. Do not expect pulse() to show this: its grid
+     tolerance is 53.6ms at this tempo and these offsets are 3-11ms,
+     so it reads 100% either way — as it would for a human drummer.
 
    sidechain, bass-mono, slow LFO  — all three have been in the app the
      whole time and no track has used any of them.
@@ -303,8 +304,9 @@ console.log('   -> '+String(lo.says).slice(0,120));
 const pu=await call('pulse',{src:'song'});
 console.log('\npulse: autocorr '+pu.pulseStrength+'  beat '+pu.onGrid.beat
   +'%  sixteenth '+pu.onGrid.sixteenth+'%  buried-by '+pu.beatBuriedBy);
-console.log('   (human drummers land exactly on the grid 1.70% of the time;'
-  +' every previous track here was at 100%)');
+console.log('   (sixteenth% cannot see humanisation: the tolerance is '
+  +(Math.max(0.012,(60/BPM/4)*0.30)*1000).toFixed(0)+'ms at '+BPM+'bpm and the '
+  +'applied nudges are 3-11ms. A human drummer scores 100% here too.)');
 const tr=await call('translate',{src:'song'});
 console.log('small speaker: '+String(tr.says).slice(0,140));
 

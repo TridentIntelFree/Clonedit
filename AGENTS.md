@@ -286,6 +286,34 @@ Group found sounds by the job they do — bass, drums, air, lead — not
 by what they were recorded from. The groups are what `balance()`
 moves, so they should be the things you would want to move together.
 
+## pulse() is not a humanisation check, and cannot be
+
+`pulse()` counts an onset as on-grid within
+
+```
+tol = max(12ms, a sixteenth * 0.30)      // 53.6ms at 84bpm
+```
+
+That width is right for the question it asks — *can a listener find
+the beat* — and useless for the question it looks like it answers.
+Human micro-timing is far smaller than the window: the median offset
+across 1,150 performances in the Groove corpus is 0.075 of a
+sixteenth, 13.4ms at 84bpm. **A human drummer scores ~100% on
+`sixteenth` too.**
+
+So "sixteenth 100%" was never evidence that a track is robotic, and
+MERIDIAN still reporting 100% after every step was nudged is not
+evidence the nudges failed. They are applied — the scheduler does
+`when += lk.nudge * sd` in three places — they are simply five times
+smaller than the tolerance.
+
+The comparison to avoid is the one made here first: the study script's
+"1.70% land exactly on the grid" is EXACT EQUALITY, and setting it
+against pulse's windowed 100% is two different measurements wearing
+the same word. To verify humanisation, measure onset deviation
+directly against the grid, the way `scripts/study-groove.py` does to
+the corpus — do not ask `pulse()`, which is built not to care.
+
 ## Two layers of one sample do not simply add up
 
 TENEMENT's sub and body are the same recording — `dk:train`, same

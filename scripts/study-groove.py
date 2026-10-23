@@ -103,8 +103,15 @@ def main():
     NAMES = {0: 'beat (1/4)', 1: 'e (1/16)', 2: 'and (1/8)', 3: 'a (1/16)'}
     print(f"Groove MIDI: {files} performances in 4/4, {hits} hits, "
           f"{skipped} files skipped")
-    print(f"exactly on the grid: {100.0*exact/max(1,hits):.2f}% "
-          f"(this repo's own tracks: 100%)\n")
+    # NOT comparable to pulse()'s "sixteenth 100%". This is exact
+    # equality; pulse() counts an onset as on-grid within a tolerance of
+    # max(12ms, a sixteenth * 0.30) — 53.6ms at 84bpm. The median offset
+    # in this very corpus is 0.075 of a sixteenth, 13.4ms at that tempo,
+    # so a human drummer also scores ~100% there. pulse() measures
+    # whether a listener finds the grid, not whether the timing is human.
+    print(f"exactly on the grid: {100.0*exact/max(1,hits):.2f}%")
+    print("  (exact equality — not the same question pulse() asks, which "
+          "allows ~54ms at 84bpm\n   and would score this corpus near 100% too)\n")
 
     print(f"{'position':<13}{'n':>7}{'median':>9}{'mean':>8}{'ms':>8}"
           f"{'|late':>7}{'vel':>6}")
