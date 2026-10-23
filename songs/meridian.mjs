@@ -157,7 +157,6 @@ await usePattern(0,{plen:PLEN, clear:true});
        because the ear infers a fundamental from its harmonic series
        whether or not the fundamental is there, which is the same
        reason this bass works on a phone at all. */
-    partials:[
     /* v4 traded one error for its neighbour: 20-60 fell from +21.7 to
        +10.2, and 120-250 rose to +7.7 because 165 and 220Hz both live
        there. Each level below is set from the measured miss — the
