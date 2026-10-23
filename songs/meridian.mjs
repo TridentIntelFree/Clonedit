@@ -280,9 +280,18 @@ for(const b of (cmp.bands||[])) console.log('   '+String(b.band).padEnd(10)
 console.log('   -> '+String(cmp.says||'').slice(0,160));
 
 const bal=await tryTo('balance against the reference', ()=>call('balance',{src:'song'}));
-if(bal && bal.moves) for(const m of bal.moves)
-  console.log('   suggest '+String(m.group||m.inst).padEnd(8)
-    +String(m.db).padStart(7)+'dB'+(m.capped?'  (AT CAP — the sound is wrong, not the level)':''));
+/* the rows are `pads`, not `moves`. Guessing a field name is how
+   compare() once printed nine NaNs in this repo; the shape is
+   {instrument, gain, suggested, changeDb, owns, ownsShare}. */
+if(bal && bal.pads) for(const m of bal.pads)
+  console.log('   suggest '+String(m.instrument).padEnd(8)
+    +String(m.changeDb).padStart(7)+'dB   gain '+m.gain+' -> '+m.suggested
+    +'   owns '+m.owns+' ('+m.ownsShare+'%)');
+for(const c of (bal&&bal.capped)||[]) console.log('   CAPPED: '+String(c).slice(0,110));
+if(bal && bal.fit){ console.log('   fit after the suggested moves:');
+  for(const f of bal.fit) console.log('     '+String(f.band).padEnd(10)
+    +'got '+String(f.got).padStart(7)+'  want '+String(f.want).padStart(7)
+    +'  '+((f.got-f.want)>=0?'+':'')+(f.got-f.want).toFixed(1)); }
 
 const lo=await call('loudness',{src:'song'});
 console.log('\nbrightness (perceived minus measured):');
