@@ -442,6 +442,45 @@ The wider version of this trap: before concluding that an edit failed
 to achieve its goal, check that the edit changed anything at all. Two
 identical measurements are not a weak effect, they are no effect.
 
+## audit(pad) — did the sound come out the way you meant it to
+
+`place()` asks whether a sound has somewhere to sit among the others.
+`audit()` asks the earlier question, and the one nothing here used to
+ask: **is the sound itself the colour you were trying to make.**
+
+The gap this fills cost two whole iterations of a track. A bass was
+painted with its fundamental cut nine decibels to empty the sub.
+`paint()` did exactly as instructed — the partials were faithfully
+what the spec said — and the mix did not move, because `paint()`
+normalises. The SOUND matched the SPEC. The spec did not achieve the
+GOAL, and nothing compared those two things until a whole-track
+render twenty minutes later reported the band unchanged to the
+decimal.
+
+```
+await JBH.audit(bassPad)        // against the loaded reference()
+→ { judgedOver: 5, notOccupied: ['2k-4k','4k-8k','8k-16k','1k-2k'],
+    worst: '20-60', worstDb: 8.4, meanErrorDb: 5.62,
+    suggest: { eqLo: -6.6, eqMid: -1.1, eqHi: null },
+    says: 'worst band is 20-60Hz at +8.4dB, mean error 5.62dB over
+           the 5 bands it occupies. On a sampled pad, try eqLo -6.6,
+           eqMid -1.1.' }
+```
+
+**It predicts the bounce.** That bass audited at +8.4dB in 20-60Hz
+and the finished mix measured +8.2dB there. Five seconds on one
+pattern, against twenty minutes for the whole track, for the same
+answer.
+
+**It judges only the bands the sound occupies** — within 20dB of its
+own loudest. The first version compared all nine and so marked a bass
+down at 8-16kHz, where a bass has nothing and the reference has
+cymbals; it called that the worst band at -53dB and advised eqHi +43,
+which would have destroyed the sound. That is the identical mistake
+`place()` had already had fixed out of its `owns`, made again in a new
+call in the same week. A single sound is not meant to look like a
+mix. It is meant to have the right colour where it lives.
+
 ## Nothing in this app looks at the time axis
 
 Every analyser here reports an INTEGRATED figure over the whole

@@ -15096,6 +15096,119 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         :'it has a place and is not in anything else\'s way.' };
   },
 
+  /* DID THE SOUND COME OUT THE WAY YOU MEANT IT TO?
+
+     place() asks whether a sound has somewhere to sit among the
+     others. This asks a different and earlier question: is the sound
+     itself the colour you were trying to make. Nothing here asked it,
+     and the cost was two full iterations of a track.
+
+     A bass was painted with its 55Hz fundamental cut nine decibels to
+     empty the sub. paint() did exactly as it was told — the partials
+     were faithfully what the spec said — and the mix did not move,
+     because paint() normalises and every other partial had been
+     scaled down in the same edit. The SOUND matched the spec. The
+     spec did not achieve the goal, and the gap between those two
+     things was invisible until a whole-track render twenty minutes
+     later said the band had not shifted by a single decibel.
+
+     So: render this pad alone, take its nine-band shape normalised
+     against its own total, and set it beside the shape you wanted.
+     One render of one pattern, cheap enough to run on every sound as
+     it is made, which is the only moment the answer is still cheap to
+     act on.
+
+     `want` is a profile — anything with a `shape` of {band, rel} —
+     so a reference loaded with reference() works, as does a bare
+     array, as does the profile of another pad you are matching. */
+  async audit(padIdx, opt){
+    const o=opt||{}, i=padIdx|0, p=S.pads[i];
+    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    const src=o.src||'pat';
+    const buf=await renderMix(new Set([i]), new Set(), {loops:o.loops||1, src, noTail:true});
+    if(!buf) throw new Error('pad '+i+(p.name?' ('+p.name+')':'')+' plays nothing in '
+      +(src==='song'?'the song':'this pattern')+' — write a step for it first');
+    const be=await bandEnergy(buf);
+    if(!be) throw new Error('could not measure pad '+i);
+    const got=specShape(be);
+
+    /* what we were aiming at */
+    let want=o.want;
+    if(want && want.shape) want=want.shape;
+    if(!want && refSpec && refSpec.shape) want=refSpec.shape;
+    if(!Array.isArray(want) || !want.length)
+      throw new Error('audit(pad, {want}) needs a target shape — a profile '
+        +'({shape:[{band,rel}…]}), an array of those, or a reference() already loaded');
+    const wantOf=(band)=>{ const w=want.find(x=>x.band===band); return w?+w.rel:null; };
+
+    /* ONLY THE BANDS THIS SOUND ACTUALLY OCCUPIES. The first version
+       compared every band, and so judged a bass against a whole-mix
+       reference at 8-16kHz, where a bass has nothing and the
+       reference has cymbals. It called that its worst band, -53dB,
+       and advised eqHi +43 — advice that would ruin the sound. The
+       mean error was 21.78dB and almost all of it was bands the sound
+       is not in.
+       This is the identical mistake place() already had to have fixed
+       out of its `owns`, made again in a new call. A single sound is
+       not supposed to look like a mix; it is supposed to have the
+       right colour WHERE IT LIVES. So the comparison runs over bands
+       within 20dB of this sound's own loudest, and the rest are
+       reported as unoccupied rather than counted as error. */
+    let peak=-999; for(const g of got) if(g.rel>peak) peak=g.rel;
+    const rows=[], outside=[];
+    for(const g of got){
+      const w=wantOf(g.band);
+      if(w==null) continue;
+      const row={band:g.band, lo:g.lo, got:g.rel, want:+w.toFixed(1),
+        delta:+(g.rel-w).toFixed(1)};
+      (g.rel>=peak-20) ? rows.push(row) : outside.push(g.band);
+    }
+    if(!rows.length) throw new Error('this sound has no band within 20dB of its own '
+      +'loudest that the target also covers — there is nothing meaningful to compare');
+    let worst=rows[0], sum=0;
+    for(const r of rows){ sum+=Math.abs(r.delta);
+      if(Math.abs(r.delta)>Math.abs(worst.delta)) worst=r; }
+    const mean=+(sum/rows.length).toFixed(2);
+
+    /* HOW TO IMPROVE IT, not merely how wrong it is. The three shelves
+       are the controls actually on a pad, so the errors are collapsed
+       onto them; a painted sound gets told about its partials instead,
+       since a shelf cannot fix a spectrum you authored. */
+    const avg=(f)=>{ const xs=rows.filter(r=>f(r.lo)); return xs.length
+      ? +(xs.reduce((a,c)=>a+c.delta,0)/xs.length).toFixed(1) : null; };
+    const suggest={ eqLo:avg(lo=>lo<250), eqMid:avg(lo=>lo>=250&&lo<2000),
+                    eqHi:avg(lo=>lo>=2000) };
+    for(const k in suggest) if(suggest[k]!=null) suggest[k]=+(-suggest[k]).toFixed(1);
+
+    const findings=[];
+    if(mean<1.5) findings.push('this sound is the colour you asked for — mean error '
+      +mean+'dB across the '+rows.length+' band'+(rows.length===1?'':'s')+' it occupies'
+      +(outside.length?(', ignoring '+outside.length+' it is not in'):'')+'.');
+    else {
+      /* a shelf over bands the sound does not occupy is not a
+         suggestion, it is noise — say nothing rather than "+null" */
+      const shelf=Object.keys(suggest).filter(k=>suggest[k]!=null)
+        .map(k=>k+' '+(suggest[k]>=0?'+':'')+suggest[k]).join(', ');
+      findings.push('worst band is '+worst.band+'Hz at '
+        +(worst.delta>0?'+':'')+worst.delta+'dB, mean error '+mean+'dB over the '
+        +rows.length+' band'+(rows.length===1?'':'s')+' it occupies.'
+        +(shelf?(' On a sampled pad, try '+shelf+'.'):''));
+    }
+    if(Math.abs(worst.delta)>=6)
+      findings.push('a '+Math.abs(worst.delta)+'dB miss in one band is usually the sound '
+        +'rather than its tone controls. If it was painted, move the partials that live in '
+        +worst.band+'Hz against the partial whose band already measures right — and note '
+        +'that paint() normalises, so scaling them ALL is the same as scaling none.');
+
+    return { pad:i, name:p.name||('pad '+i), src, bands:rows,
+      /* named, so that a sound judged over three bands is not mistaken
+         for one judged over nine */
+      judgedOver:rows.length, notOccupied:outside,
+      meanErrorDb:mean, worst:worst.band, worstDb:worst.delta, suggest, findings,
+      says:findings[0] };
+  },
+
+
   /* HOLD ONE MOMENT OF A SOUND FOR AS LONG AS YOU LIKE.
 
      paint() can make anything, provided you already know the partials

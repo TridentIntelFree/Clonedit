@@ -533,6 +533,26 @@ const TOOLS = [
       hiLossHz: { type: 'number' }, hiss: { type: 'number' },
       name: { type: 'string' }, seed: { type: 'integer' } } } },
 
+  { name: 'jbh_audit', description:
+      'DID THE SOUND COME OUT THE WAY YOU MEANT IT TO. place() asks whether a sound has '
+      + 'somewhere to sit among the others; this asks the earlier question — is the sound '
+      + 'itself the colour you were trying to make. Renders the pad alone, takes its '
+      + 'nine-band shape normalised against its own total, and sets it beside the shape you '
+      + 'wanted, which can be a reference() already loaded or any {shape:[{band,rel}]} '
+      + 'profile. It judges ONLY the bands the sound actually occupies — within 20dB of its '
+      + 'own loudest — because a bass compared against a whole-mix target at 8-16kHz is '
+      + 'being marked down for having no cymbals in it. One render of one pattern, so it is '
+      + 'cheap enough to run on every sound as it is made, which is the only moment the '
+      + 'answer is still cheap to act on: a bass audited at +8.4dB in 20-60Hz went on to '
+      + 'measure +8.2dB in the finished mix, so this predicts the bounce in seconds rather '
+      + 'than in twenty minutes.',
+    inputSchema: { type: 'object', required: ['pad'], properties: {
+      pad: { type: 'integer', description: 'the pad to judge' },
+      want: { type: 'object', description: 'target profile {shape:[{band,rel}]}; '
+        + 'omit to use the loaded reference()' },
+      src: { type: 'string', enum: ['pat', 'song'] },
+      loops: { type: 'integer' } } } },
+
   { name: 'jbh_place', description:
       'DOES THIS ONE SOUND HAVE A PLACE, against everything already loaded. This is the '
       + 'check the one-sound-at-a-time method needs: you decided the song wanted a bass, you '
@@ -649,6 +669,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
                                 wow: a.wow, wowHz: a.wowHz, flutter: a.flutter,
                                 flutterHz: a.flutterHz, drift: a.drift, sat: a.sat,
                                 hiLossHz: a.hiLossHz, hiss: a.hiss, name: a.name, seed: a.seed }]));
+      case 'jbh_audit':       return ok(await jbh('audit', [a.pad,
+                                { want: a.want, src: a.src, loops: a.loops }]));
       case 'jbh_place':       return ok(await jbh('place', [a.pad,
                                 { src: a.src, loops: a.loops }]));
       case 'jbh_freeze':      return ok(await jbh('freeze', [a.from, { pad: a.pad, at: a.at,
