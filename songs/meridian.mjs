@@ -294,6 +294,37 @@ if(bal && bal.fit){ console.log('   fit after the suggested moves:');
     +'got '+String(f.got).padStart(7)+'  want '+String(f.want).padStart(7)
     +'  '+((f.got-f.want)>=0?'+':'')+(f.got-f.want).toFixed(1)); }
 
+/* ---- 9b. APPLY THE SOLVER, THEN ASK AGAIN ----------------------------- */
+/* balance() suggests and never applies, which is right — but a
+   suggestion nobody tests is just an opinion. This applies the gains
+   it proposed and re-runs compare(), so the log says whether the
+   solver actually closed the gap or only claimed it would. Set
+   APPLY=false to get the suggestion without the experiment. */
+const APPLY=true;
+if(APPLY && bal && bal.pads && bal.pads.length){
+  const padsOfInst={};
+  for(let i=0;i<64;i++){ const p=await call('pad',i).catch(()=>null);
+    if(p && p.inst) (padsOfInst[p.inst]=padsOfInst[p.inst]||[]).push(i); }
+  for(const m of bal.pads){
+    const list=padsOfInst[m.instrument]||[];
+    for(const i of list) await call('pad',i,{gain:m.suggested});
+    console.log('   applied '+String(m.instrument).padEnd(8)+' gain -> '+m.suggested
+      +'  ('+(m.changeDb>=0?'+':'')+m.changeDb+'dB, '+list.length+' pad'
+      +(list.length===1?'':'s')+')');
+  }
+  const cmp2=await call('compare',{src:'song'});
+  console.log('\n   COMPARE AFTER balance():');
+  let before=0, after=0, n=0;
+  for(const b of (cmp2.bands||[])){
+    const was=(cmp.bands||[]).find(x=>x.band===b.band);
+    if(was){ before+=Math.abs(was.delta); after+=Math.abs(b.delta); n++; }
+    console.log('     '+String(b.band).padEnd(10)+'delta '+String(b.delta).padStart(7)
+      +(was?('   was '+String(was.delta).padStart(7)):''));
+  }
+  if(n) console.log('   mean |delta| '+(before/n).toFixed(1)+'dB -> '+(after/n).toFixed(1)
+    +'dB  '+(after<before?'BETTER':'WORSE — the solver did not help'));
+}
+
 const lo=await call('loudness',{src:'song'});
 console.log('\nbrightness (perceived minus measured):');
 for(const x of (lo.pads||[]).slice(0,8))
