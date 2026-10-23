@@ -158,13 +158,18 @@ await usePattern(0,{plen:PLEN, clear:true});
        whether or not the fundamental is there, which is the same
        reason this bass works on a phone at all. */
     partials:[
-      {hz:f,     level:0.10, at:0, dur:1.00},   /* 55Hz — present, not dominant */
-      {hz:f*2,   level:0.22, at:0, dur:0.92},   /* 110Hz */
-      {hz:f*3,   level:0.45, at:0, dur:0.80},   /* 165Hz — phone territory */
-      {hz:f*4,   level:0.40, at:0, dur:0.70},   /* 220Hz */
-      {hz:f*6,   level:0.30, at:0, dur:0.55},   /* 330Hz */
-      {hz:f*8,   level:0.22, at:0, dur:0.42},   /* 440Hz */
-      {hz:f*11,  level:0.12, at:0, dur:0.30}]});/* 605Hz */
+    /* v4 traded one error for its neighbour: 20-60 fell from +21.7 to
+       +10.2, and 120-250 rose to +7.7 because 165 and 220Hz both live
+       there. Each level below is set from the measured miss — the
+       band was X dB over, so the partials in it come down by X. */
+    partials:[
+      {hz:f,     level:0.035,at:0, dur:1.00},   /* 55Hz  was +10.2 over */
+      {hz:f*2,   level:0.17, at:0, dur:0.92},   /* 110Hz was  +2.8 */
+      {hz:f*3,   level:0.19, at:0, dur:0.80},   /* 165Hz was  +7.7 */
+      {hz:f*4,   level:0.17, at:0, dur:0.70},   /* 220Hz   "       */
+      {hz:f*6,   level:0.19, at:0, dur:0.55},   /* 330Hz was  +4.2 */
+      {hz:f*8,   level:0.14, at:0, dur:0.42},   /* 440Hz   "       */
+      {hz:f*11,  level:0.12, at:0, dur:0.30}]});/* 605Hz was  -0.1 */
 }
 await call('pad',BASS,{inst:'bass', ftype:'lowpass', fcut:0.52, fres:0.5, drv:0.18,
   att:0.03, dec:1.6, sus:0.6, rel:0.9, gain:1.0, name:'bass'});
@@ -283,9 +288,12 @@ await bat(LINE.map((n,k)=>g(BELL,k*4,k===0||k===5?0.88:0.6,{pitch:n-ROOT})));
 
 await call('set',{pattern:0, songOn:true, songLoop:false,
   song:[{pat:1,reps:2},{pat:2,reps:2},{pat:0,reps:2},{pat:3,reps:2},
-        {pat:2,reps:1},{pat:0,reps:2},{pat:3,reps:2},{pat:1,reps:2}]});
+        {pat:2,reps:2},{pat:0,reps:3},{pat:3,reps:3},{pat:2,reps:2},
+        {pat:0,reps:3},{pat:3,reps:2},{pat:1,reps:1}]});
 
 const sch=await call('schedule',{src:'song', full:false});
+if(Math.abs(sch.seconds-137)>20) console.log('  !! the brief asked for about 2:17 and '
+  +'this is '+sch.seconds.toFixed(0)+'s — reps sum wrong');
 console.log('\n'+sch.notes+' notes · '+sch.seconds.toFixed(1)+'s ('
   +Math.floor(sch.seconds/60)+':'+String(Math.round(sch.seconds%60)).padStart(2,'0')
   +') · stretched '+JSON.stringify(sch.stretched||[]));
