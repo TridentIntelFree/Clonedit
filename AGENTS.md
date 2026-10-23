@@ -254,6 +254,55 @@ manifest's `cat`, and all twelve found sounds declare `DRUMS`, so it
 reports one row for the pack and tells you nothing about any sample in
 it. Measure these per file.
 
+## A found sound belongs to no group, and three tools go quiet
+
+`instrument()` tags every pad it makes with an `inst`. `sound()` does
+not, because a found sound is not an instrument. Three of the most
+useful calls here filter on exactly that tag, so on a track built from
+found sounds they do not fail — they simply find nothing and say
+nothing:
+
+| call | what it filters on | what you get |
+|---|---|---|
+| `motif()` | pads with an `inst` | no lines, no finding |
+| `counterpoint()` | two or more such lines | no voices, no finding |
+| `balance()` | `p.inst` groups | *"no instruments on the board"* |
+
+TENEMENT lost all three this way. Its material was never examined, and
+the one call that solves a mix against a reference could not be run on
+it at all. `review({quick:true})` now says so under COULD NOT APPLY,
+but the quiet half is worse than the loud half: a check that finds
+nothing to look at reads exactly like a check that passed.
+
+The fix needs no new code and was verified in the browser. `pad()`
+assigns whatever key it is handed, and `inst` is just a key:
+
+```
+await JBH.sound('dk:train', 0)
+JBH.pad(0, { inst: 'bass' })        // now balance() can see it
+```
+
+Group found sounds by the job they do — bass, drums, air, lead — not
+by what they were recorded from. The groups are what `balance()`
+moves, so they should be the things you would want to move together.
+
+## There is no correct tonal balance either, only a correct one for this piece
+
+The loudness section below says the level is a decision about the
+music. The same is true of the spectrum, and more sharply. A measured
+ambient-hall reference in this repo sits at −27dB in 20-60Hz and −29.5
+in 8-16k: a dark, mid-centred shape with almost no sub. Matching a
+beat-driven track to it would be wrong by about 19dB in the bass, and
+matching an ambient piece to a drum track's profile would be equally
+wrong the other way.
+
+So a reference is per-piece, or at least per-genre, and
+`samples/ref-*.json` is a collection rather than a setting. Load the
+one that fits what you are making. Having none loaded is still worse
+than having an imperfect one — without a reference `compare()` does not
+run at all, and a mix can pass every per-pad check while its total
+shape is tilted badly, which is exactly what happened to TENEMENT.
+
 ## Stage from a measured peak, and let it fail loudly
 
 Gain is capped at 2. That matters more than it sounds, because the
