@@ -16590,6 +16590,27 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         poly:Object.keys(pat.poly||{}).map(k=>+k).filter(k=>pat.poly[k].on) };
     };
     if(!props) return readBack();
+    /* CONFIGURING A PATTERN DOES NOT SELECT IT, AND THAT COST A WHOLE
+       TRACK. step() and note() write to S.patterns[S.pattern] — the
+       SELECTED pattern — while this call only ever configured the one
+       named by `idx`. So the usual shape
+
+           pattern(1, {plen:32, clear:true});  step(pad, 0, 0.9); …
+
+       cleared pattern 1 and then wrote every step into pattern 0,
+       which was still selected. Three tracks were bounced that way.
+       MERIDIAN came out 62% digital silence where the empty patterns
+       played, with all four patterns' notes piled on top of each other
+       where pattern 0 did — "mostly silence with a big crash of random
+       in the middle", which is exactly what it was.
+
+       readBack() has always returned `selected`, and it was false every
+       time. Reporting a thing is not the same as the caller noticing
+       it, so: pass {select:true} to select as well as configure, and
+       clearing a pattern you have not selected now says so loudly,
+       because clearing is what you do in order to write. */
+    if(props.select) S.pattern=clamp(n,0,NPAT-1);
+    const wroteElsewhere = (props.clear||props.copyFrom!=null) && S.pattern!==n;
     /* copyFrom first, so the same call can duplicate a pattern and then
        adjust it — which is how a variation actually gets written. */
     if(props.copyFrom!=null){
@@ -16650,7 +16671,12 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     bumpLocks();
     try{ drawSeq(); drawPads(); drawSong(); }catch(e){}
     dirty();
-    return readBack();
+    const rb=readBack();
+    if(wroteElsewhere) rb.warning='pattern '+n+' was '
+      +(props.clear?'cleared':'copied into')+' but pattern '+S.pattern+' is still the '
+      +'SELECTED one, so step() and note() will write there, not here. Pass '
+      +'{select:true} to switch to it.';
+    return rb;
   },
   /* EUCLID, as a call rather than as three boxes and a button. Spreads hits
      as evenly as a number allows, which is what people everywhere do, and

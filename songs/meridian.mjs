@@ -75,6 +75,13 @@ const call=async(n,...a)=>{ const r=await page.evaluate(([x,y])=>
 const bat=async l=>{ const r=await call('batch',l);
   if(r.failed) throw new Error(JSON.stringify(r.results.filter(x=>!x.ok).slice(0,2)));
   return r; };
+/* select, then write — and prove it took, because the opposite of this
+   is three bounced tracks of silence */
+const usePattern=async(n,props)=>{
+  const r=await call('pattern',n,Object.assign({select:true},props||{}));
+  if(r.warning) throw new Error('pattern '+n+': '+r.warning);
+  if(r.selected!==true) throw new Error('pattern '+n+' did not become selected');
+  return r; };
 /* the exotic calls are flourishes, not structure: if one fails the
    track must still bounce, and the log must say which one went */
 const tryTo=async(label,fn)=>{ try{ const r=await fn(); console.log('  + '+label+': '
@@ -130,7 +137,7 @@ console.log('reference loaded: '+(ref&&ref.name||'?')+'  '+REF.lufs+' LUFS, cres
 
 const BASS=0, KICK=1, AIR=2, BELL=3, GHOST=4, PERC=5;
 const PLEN=32;
-await call('pattern',0,{plen:PLEN, clear:true});
+await usePattern(0,{plen:PLEN, clear:true});
 
 /* ---- 1. BASS — one painted sound, its own harmonics ------------------- */
 /* 55Hz fundamental with partials deliberately placed through 150-800Hz,
@@ -244,23 +251,23 @@ const ALL=[...[0,12,20].map((s,i)=>g(BASS,s,[0.95,0.72,0.85][i])),
   ...[2,10,18,26].map(s=>g(PERC,s,0.5))];
 
 /* 1 — air and bass only: the opening */
-await call('pattern',1,{plen:PLEN, clear:true});
+await usePattern(1,{plen:PLEN, clear:true});
 await bat([g(BASS,0,0.8), g(BASS,20,0.7), ['step',AIR,0,0.55]]);
 
 /* 2 — add the kick and the bell */
-await call('pattern',2,{plen:PLEN, clear:true});
+await usePattern(2,{plen:PLEN, clear:true});
 await bat([...[0,12,20].map((s,i)=>g(BASS,s,[0.9,0.7,0.8][i])),
   ...[[0,1.0],[16,0.9]].map(([s,v])=>g(KICK,s,v)),
   ['step',AIR,0,0.6]]);
 await bat(LINE.map((n,k)=>g(BELL,k*4,k===0?0.85:0.55,{pitch:n-ROOT})));
 
 /* 3 — everything, the line inverted */
-await call('pattern',3,{plen:PLEN, clear:true});
+await usePattern(3,{plen:PLEN, clear:true});
 await bat(ALL);
 await bat(LINE.map((n,k)=>g(BELL,k*4,k===3?0.9:0.58,{pitch:(ROOT*2-n)-ROOT})));
 
 /* 0 gets the line the right way up */
-await call('pattern',0,{});
+await usePattern(0,{});
 await bat(LINE.map((n,k)=>g(BELL,k*4,k===0||k===5?0.88:0.6,{pitch:n-ROOT})));
 
 await call('set',{pattern:0, songOn:true, songLoop:false,
