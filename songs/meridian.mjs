@@ -168,14 +168,25 @@ await usePattern(0,{plen:PLEN, clear:true});
        So the levels below are ratios, fixed against the one partial
        whose band already measures right (605Hz, +0.7), each divided
        by the miss in the band it occupies, then renormalised. */
+    /* SHAPED TO THE REFERENCE CURVE, NOT NUDGED TOWARDS IT. Two
+       rounds of "move each partial by the miss in its band" just
+       walked the problem up the spectrum: the bass stopped owning
+       20-60 and started owning 120-250, which then read +7.3. Hand
+       tuning seven partials against nine bands at twenty minutes a
+       render is not convergence.
+       Each level is now the reference's own relative level for the
+       band that partial sits in, divided by the root of how many
+       partials share that band so the band total is right, then
+       renormalised. The sound is built to the target instead of
+       being argued towards it. */
     partials:[
-      {hz:f,     level:0.150,at:0, dur:1.00},   /* 55Hz   band was +10.2 */
-      {hz:f*2,   level:0.581,at:0, dur:0.92},   /* 110Hz  band was  +5.3 */
-      {hz:f*3,   level:1.000,at:0, dur:0.80},   /* 165Hz  band was  +6.8 */
-      {hz:f*4,   level:0.889,at:0, dur:0.70},   /* 220Hz    "           */
-      {hz:f*6,   level:0.879,at:0, dur:0.55},   /* 330Hz  band was  +4.4 */
-      {hz:f*8,   level:0.644,at:0, dur:0.42},   /* 440Hz    "           */
-      {hz:f*11,  level:0.632,at:0, dur:0.30}]});/* 605Hz  band was  -0.7 */
+      {hz:f,     level:0.136,at:0, dur:1.00},   /* 55Hz  -> 20-60    ref -27.0 */
+      {hz:f*2,   level:0.537,at:0, dur:0.92},   /* 110Hz -> 60-120   ref -15.1 */
+      {hz:f*3,   level:0.555,at:0, dur:0.80},   /* 165Hz -> 120-250  ref -11.8 */
+      {hz:f*4,   level:0.555,at:0, dur:0.70},   /* 220Hz    "                  */
+      {hz:f*6,   level:0.715,at:0, dur:0.55},   /* 330Hz -> 250-500  ref  -9.6 */
+      {hz:f*8,   level:0.715,at:0, dur:0.42},   /* 440Hz    "                  */
+      {hz:f*11,  level:1.000,at:0, dur:0.30}]});/* 605Hz -> 500-1k   ref  -9.7 */
 }
 await call('pad',BASS,{inst:'bass', ftype:'lowpass', fcut:0.52, fres:0.5, drv:0.18,
   att:0.03, dec:1.6, sus:0.6, rel:0.9, gain:1.0, name:'bass'});
@@ -188,9 +199,15 @@ await stage(BASS,-8,'bass'); await placed(BASS,'bass');
    and it is the sidechain trigger, so it takes an unducked path. */
 await call('pack','samples/foundkit.json');
 await call('sound','fk:knock2',KICK);
+/* place() says the kick owns 20-60 and balance() puts drums at 28% of
+   that band, so the sub excess was never the bass's alone — it was
+   attributed there for two whole iterations on the strength of
+   place() saying "bass owns 20-60", which answers which pad DOMINATES
+   a band, not what fraction of it each pad supplies. eqLo takes the
+   weight off without touching the knock's body. */
 await call('pad',KICK,{inst:'drums', pitch:-4, start:startOf('fk:knock2'),
   ftype:'lowpass', fcut:0.58, drv:0.38,
-  att:0.001, dec:0.24, sus:0.0, rel:0.10, gain:1.0, eqMid:+2, name:'kick'});
+  att:0.001, dec:0.24, sus:0.0, rel:0.10, gain:1.0, eqLo:-7, eqMid:+2, name:'kick'});
 await bat([g(KICK,0,1.0), g(KICK,8,0.5), g(KICK,16,0.92), g(KICK,24,0.55)]);
 console.log('\n2. KICK — door knock, sharp attack and no tail');
 await stage(KICK,-5,'kick'); await placed(KICK,'kick');
