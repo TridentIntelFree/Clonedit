@@ -157,18 +157,25 @@ await usePattern(0,{plen:PLEN, clear:true});
        because the ear infers a fundamental from its harmonic series
        whether or not the fundamental is there, which is the same
        reason this bass works on a phone at all. */
-    /* v4 traded one error for its neighbour: 20-60 fell from +21.7 to
-       +10.2, and 120-250 rose to +7.7 because 165 and 220Hz both live
-       there. Each level below is set from the measured miss — the
-       band was X dB over, so the partials in it come down by X. */
+    /* PAINT NORMALISES, SO ONLY THE RATIOS MEAN ANYTHING. v5 cut the
+       fundamental from 0.10 to 0.035 and the mix did not move one
+       decibel — 20-60 read -16.8 in v4 and -16.8 in v5 — because
+       every other partial was scaled down with it. paint() ends with
+       g = 0.9/pk, so an across-the-board reduction is discarded: the
+       fundamental's level RELATIVE to the rest went 0.22 to 0.18, a
+       change of 1.7dB, not the 9dB intended. The solo peak was -1.0dB
+       both times, which should have given it away.
+       So the levels below are ratios, fixed against the one partial
+       whose band already measures right (605Hz, +0.7), each divided
+       by the miss in the band it occupies, then renormalised. */
     partials:[
-      {hz:f,     level:0.035,at:0, dur:1.00},   /* 55Hz  was +10.2 over */
-      {hz:f*2,   level:0.17, at:0, dur:0.92},   /* 110Hz was  +2.8 */
-      {hz:f*3,   level:0.19, at:0, dur:0.80},   /* 165Hz was  +7.7 */
-      {hz:f*4,   level:0.17, at:0, dur:0.70},   /* 220Hz   "       */
-      {hz:f*6,   level:0.19, at:0, dur:0.55},   /* 330Hz was  +4.2 */
-      {hz:f*8,   level:0.14, at:0, dur:0.42},   /* 440Hz   "       */
-      {hz:f*11,  level:0.12, at:0, dur:0.30}]});/* 605Hz was  -0.1 */
+      {hz:f,     level:0.150,at:0, dur:1.00},   /* 55Hz   band was +10.2 */
+      {hz:f*2,   level:0.581,at:0, dur:0.92},   /* 110Hz  band was  +5.3 */
+      {hz:f*3,   level:1.000,at:0, dur:0.80},   /* 165Hz  band was  +6.8 */
+      {hz:f*4,   level:0.889,at:0, dur:0.70},   /* 220Hz    "           */
+      {hz:f*6,   level:0.879,at:0, dur:0.55},   /* 330Hz  band was  +4.4 */
+      {hz:f*8,   level:0.644,at:0, dur:0.42},   /* 440Hz    "           */
+      {hz:f*11,  level:0.632,at:0, dur:0.30}]});/* 605Hz  band was  -0.7 */
 }
 await call('pad',BASS,{inst:'bass', ftype:'lowpass', fcut:0.52, fres:0.5, drv:0.18,
   att:0.03, dec:1.6, sus:0.6, rel:0.9, gain:1.0, name:'bass'});

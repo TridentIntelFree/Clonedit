@@ -416,6 +416,32 @@ if (r.warning || r.selected !== true) throw new Error(r.warning);
 `readBack()` has always returned `selected`, and it was false every
 time. A field nobody reads is not a safeguard.
 
+## paint() normalises, so only the ratios mean anything
+
+`paint()` ends with `g = 0.9/pk`. Every partial level you hand it is
+relative to the others and the absolute scale is thrown away.
+
+That is easy to know and easy to forget. A bass here had 20-60Hz
+measuring +10.2dB over the reference, so its 55Hz fundamental was cut
+from 0.10 to 0.035 — nine decibels — and the mix did not move. The
+band read -16.8 before and -16.8 after, identical to the decimal,
+because the other six partials had been scaled down in the same pass.
+Relative to them the fundamental went from 0.22 to 0.18: a change of
+1.7dB, not 9.
+
+The tell was there and went unread. A painted pad's solo peak is
+always about -1.0dB, because 0.9 full scale is what the normaliser
+produces; staging it reported `solo -1.0dB` in both versions, which
+is what "this sound did not change" looks like.
+
+So: pick the partial whose band already measures right, hold it
+fixed, and move the others against it. Dividing every level by its
+band's error and renormalising is the same as doing nothing.
+
+The wider version of this trap: before concluding that an edit failed
+to achieve its goal, check that the edit changed anything at all. Two
+identical measurements are not a weak effect, they are no effect.
+
 ## Nothing in this app looks at the time axis
 
 Every analyser here reports an INTEGRATED figure over the whole
