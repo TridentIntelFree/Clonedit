@@ -286,6 +286,40 @@ Group found sounds by the job they do — bass, drums, air, lead — not
 by what they were recorded from. The groups are what `balance()`
 moves, so they should be the things you would want to move together.
 
+## Two layers of one sample do not simply add up
+
+TENEMENT's sub and body are the same recording — `dk:train`, same
+pitch, same start, same steps — split by a lowpass at 105Hz and a
+resonant bandpass at 374Hz. Being the same source they are perfectly
+time-aligned, so the obvious expectation is that they reinforce. They
+do not, because the two filters impose different group delay, and
+where their skirts overlap the copies partly cancel:
+
+```
+120-250Hz   sub -26.3   body -31.4   sum -27.8   power-sum -25.1   -2.7dB
+```
+
+Everywhere else the delta is within half a decibel, because the two
+occupy different bands and never meet. 2.7dB is not a catastrophe, but
+it sits exactly in the band that joins the bass to the midrange, and it
+was free to avoid: move the band-split apart, or flip the polarity of
+one layer and measure which way is louder.
+
+Measure this whenever one source is split across layers. The method is
+`place(a)` and `place(b)` for the parts, `spectrum()` for the sum, and
+a power sum to compare against — if the measured sum falls below the
+power sum, the layers are fighting.
+
+**And check that the measurement varies.** The first run of this
+reported all nine bands cancelling by exactly -3.0dB, which is not a
+physical result; a real phase interaction swings about with frequency.
+A constant was the signature of a broken test: `spectrum()` was being
+passed `{pads:[0]}` to isolate a layer, it has no such option, the
+filter was dropped silently and all three calls measured the whole
+mix. Power-summing a number with itself is +3dB, so the artefact was
+exactly -3.0 every time. spectrum() now refuses a pad filter by name
+instead of ignoring it.
+
 ## There is no correct tonal balance either, only a correct one for this piece
 
 The loudness section below says the level is a decision about the

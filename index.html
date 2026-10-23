@@ -13860,6 +13860,18 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
 
   async spectrum(opt){
     const o=opt||{};
+    /* THIS MEASURES THE WHOLE MIX AND HAS NEVER DONE ANYTHING ELSE.
+       It was called as spectrum({pads:[0]}) to isolate one pad; the
+       option does not exist, was dropped without a word, and three
+       calls meant to compare a pad, another pad and their sum all
+       returned the same full-mix numbers. They looked plausible — the
+       arithmetic on them even produced a tidy, entirely fictional
+       "-3.0dB in every band". An option that is ignored silently is
+       worse than one that is missing, so it is refused by name. */
+    if(o.pads!=null || o.only!=null || o.pad!=null)
+      throw new Error('spectrum() measures the whole mix and takes no pad filter. '
+        +'For one pad against the rest use place(pad); for a pad on its own use '
+        +'render({only:[pad]}).');
     const buf=await renderMix(null,null,
       {loops:o.loops||1, src:o.src||'pat', noTail:o.noTail!==false});
     if(!buf) return null;
