@@ -146,14 +146,25 @@ await usePattern(0,{plen:PLEN, clear:true});
 {
   const f=55;
   await call('paint',{pad:BASS, midi:33, seconds:3.2, name:'bass', seed:11,
+    /* THE FUNDAMENTAL IS THE QUIETEST PARTIAL, ON PURPOSE. v3 had 55Hz
+       at level 1.00 — the loudest thing in the sound was the one the
+       reference wants least — and the mix came out +21.7dB at 20-60
+       against it, measured outside the app. balance() correctly
+       refused to fix that with gain: it suggested 0dB for bass and
+       repaired the other eight bands instead, which is the solver
+       saying the SOUND is wrong, not the level.
+       So the weight moves up into 165-605Hz. The pitch survives
+       because the ear infers a fundamental from its harmonic series
+       whether or not the fundamental is there, which is the same
+       reason this bass works on a phone at all. */
     partials:[
-      {hz:f,     level:1.00, at:0, dur:1.00},
-      {hz:f*2,   level:0.62, at:0, dur:0.92},
-      {hz:f*3,   level:0.40, at:0, dur:0.80},   /* 165Hz — phone territory */
-      {hz:f*4,   level:0.30, at:0, dur:0.70},
-      {hz:f*6,   level:0.20, at:0, dur:0.55},   /* 330Hz */
-      {hz:f*8,   level:0.13, at:0, dur:0.42},   /* 440Hz */
-      {hz:f*11,  level:0.07, at:0, dur:0.30}]});/* 605Hz */
+      {hz:f,     level:0.10, at:0, dur:1.00},   /* 55Hz — present, not dominant */
+      {hz:f*2,   level:0.22, at:0, dur:0.92},   /* 110Hz */
+      {hz:f*3,   level:0.45, at:0, dur:0.80},   /* 165Hz — phone territory */
+      {hz:f*4,   level:0.40, at:0, dur:0.70},   /* 220Hz */
+      {hz:f*6,   level:0.30, at:0, dur:0.55},   /* 330Hz */
+      {hz:f*8,   level:0.22, at:0, dur:0.42},   /* 440Hz */
+      {hz:f*11,  level:0.12, at:0, dur:0.30}]});/* 605Hz */
 }
 await call('pad',BASS,{inst:'bass', ftype:'lowpass', fcut:0.52, fres:0.5, drv:0.18,
   att:0.03, dec:1.6, sus:0.6, rel:0.9, gain:1.0, name:'bass'});
