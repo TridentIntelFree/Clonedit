@@ -467,10 +467,31 @@ await JBH.audit(bassPad)        // against the loaded reference()
            eqMid -1.1.' }
 ```
 
-**It predicts the bounce.** That bass audited at +8.4dB in 20-60Hz
-and the finished mix measured +8.2dB there. Five seconds on one
-pattern, against twenty minutes for the whole track, for the same
-answer.
+**It predicts the bounce only where the sound dominates the band.**
+That bass audited at +8.4dB in 20-60Hz and the finished mix measured
++8.2dB there — five seconds against twenty minutes for the same
+answer — because the bass is what fills that band.
+
+It does not generalise, and the first version of this section claimed
+it did on the strength of that one sound. Run across a whole track:
+
+| sound | audit | the finished mix in that band |
+|---|---|---|
+| bass | 20-60 **+8.0** | **+8.1** |
+| kick | 20-60 **+15.7** | +8.1 |
+| perc | 8k-16k **+29.0** | **-1.5** |
+
+The percussion is the worst-shaped sound in the piece by a wide
+margin and the mix is fine where it lives, because it sits 18dB down
+and contributes almost nothing. The kick is twice as far out in the
+sub as the bass and the bass is still what the mix shows, because a
+short transient carries little energy.
+
+So audit() measures a sound's COLOUR, not its CONTRIBUTION. Read it
+with place(), which says how the sound stands against the others: a
+large audit error on a pad that place() shows owning its band is
+worth fixing, and the same error on a pad 18dB under everything is
+not. Neither call answers the other's question.
 
 **It judges only the bands the sound occupies** — within 20dB of its
 own loudest. The first version compared all nine and so marked a bass
