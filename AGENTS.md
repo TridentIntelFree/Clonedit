@@ -387,6 +387,69 @@ reports it cannot get there, change the sound — a different source, a
 different part of it, a filter that is not sitting on the only region
 it has — rather than the number.
 
+## Configuring a pattern does not select it
+
+`step()` and `note()` write to `S.patterns[S.pattern]` — the SELECTED
+pattern. `pattern(n, props)` configures the pattern named by `n` and
+until recently did not select it. So the obvious shape
+
+```
+pattern(1, {plen:32, clear:true});   step(pad, 0, 0.9);  …
+```
+
+cleared pattern 1 and wrote every step into pattern 0, which was
+still selected. **Three tracks were bounced that way.** MERIDIAN came
+out 62% digital silence wherever an empty pattern played, with all
+four patterns' notes piled on top of each other wherever pattern 0
+did. The listener's words were "mostly silence with a big crash of
+random in the middle", which is an exact description of that bug.
+
+Pass `{select:true}`. Clearing or copying into a pattern that is not
+selected now sets a `warning` on the result, because clearing is what
+you do in order to write. Better still, assert it:
+
+```
+const r = await call('pattern', n, {select:true, clear:true});
+if (r.warning || r.selected !== true) throw new Error(r.warning);
+```
+
+`readBack()` has always returned `selected`, and it was false every
+time. A field nobody reads is not a safeguard.
+
+## Nothing in this app looks at the time axis
+
+Every analyser here reports an INTEGRATED figure over the whole
+render. `compare()`, `loudness()`, `place()`, `pulse()` and the rest
+see the piece as one lump, and integrated LUFS is *gated*, so silence
+is excluded from it by definition. A track can be two thirds empty
+and score beautifully — MERIDIAN did: -16.2 LUFS, 95% beat, every pad
+owning its own band, and 53 of its 86 seconds at -91dB.
+
+Worse, every one of those numbers came from the app measuring its own
+output with its own code. That is circular. If an analyser is wrong,
+or simply silent about a whole class of fault, the mix is broken in
+exactly the way nothing will report.
+
+So **check the bounced file with something that is not this app**:
+
+```
+node scripts/verify-bounce.mjs <file> --ref samples/ref-*.json
+```
+
+It uses ffmpeg and asks what the app cannot — is any of it silent and
+for how long, does the level hold across the duration, does it clip
+or carry DC, how wide is it, how far is its spectrum from a
+reference. The level map it prints, one bar per ten seconds, makes a
+hole obvious at a glance.
+
+Run it before sending anything to anyone. And note that it was
+validated against a known-bad file before being trusted, which is how
+three bugs *in the checker* turned up — a regex that matched the
+first per-frame line instead of the summary and reported -70 LUFS for
+a -16.1 file, and two checks testing for field names this ffmpeg
+never prints, which therefore ran silently and passed silently. A
+checker nobody has run against a known-bad input is not a checker.
+
 ## The norms are measured, not recalled
 
 | check | measured from |
