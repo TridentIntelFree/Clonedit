@@ -1,0 +1,294 @@
+{
+ "stepsPerBar": 16,
+ "barsPerPhrase": 4,
+ "A": {
+  "chords": [
+   "Dm",
+   "Bb",
+   "F",
+   "C"
+  ],
+  "melody": [
+   {
+    "step": 0,
+    "len": 2,
+    "midi": 74
+   },
+   {
+    "step": 2,
+    "len": 2,
+    "midi": 76
+   },
+   {
+    "step": 4,
+    "len": 2,
+    "midi": 74
+   },
+   {
+    "step": 6,
+    "len": 2,
+    "midi": 74
+   },
+   {
+    "step": 8,
+    "len": 2,
+    "midi": 69
+   },
+   {
+    "step": 10,
+    "len": 2,
+    "midi": 74
+   },
+   {
+    "step": 12,
+    "len": 2,
+    "midi": 72
+   },
+   {
+    "step": 14,
+    "len": 2,
+    "midi": 70
+   },
+   {
+    "step": 16,
+    "len": 2,
+    "midi": 65
+   },
+   {
+    "step": 18,
+    "len": 8,
+    "midi": 62
+   },
+   {
+    "step": 26,
+    "len": 2,
+    "midi": 60
+   },
+   {
+    "step": 28,
+    "len": 2,
+    "midi": 62
+   },
+   {
+    "step": 30,
+    "len": 2,
+    "midi": 60
+   },
+   {
+    "step": 32,
+    "len": 2,
+    "midi": 65
+   },
+   {
+    "step": 34,
+    "len": 2,
+    "midi": 69
+   },
+   {
+    "step": 36,
+    "len": 2,
+    "midi": 65
+   },
+   {
+    "step": 38,
+    "len": 2,
+    "midi": 67
+   },
+   {
+    "step": 40,
+    "len": 2,
+    "midi": 69
+   },
+   {
+    "step": 42,
+    "len": 2,
+    "midi": 67
+   },
+   {
+    "step": 44,
+    "len": 2,
+    "midi": 72
+   },
+   {
+    "step": 46,
+    "len": 2,
+    "midi": 67
+   },
+   {
+    "step": 48,
+    "len": 2,
+    "midi": 60
+   },
+   {
+    "step": 50,
+    "len": 8,
+    "midi": 60
+   }
+  ],
+  "bass": [
+   {
+    "step": 0,
+    "len": 13,
+    "midi": 50
+   },
+   {
+    "step": 16,
+    "len": 13,
+    "midi": 46
+   },
+   {
+    "step": 32,
+    "len": 13,
+    "midi": 41
+   },
+   {
+    "step": 48,
+    "len": 13,
+    "midi": 48
+   }
+  ],
+  "measured": {
+   "distinct": 9,
+   "range": 16,
+   "leaps": 45.5
+  }
+ },
+ "B": {
+  "chords": [
+   "Dm",
+   "Bb",
+   "A7",
+   "Dm"
+  ],
+  "melody": [
+   {
+    "step": 0,
+    "len": 2,
+    "midi": 65
+   },
+   {
+    "step": 2,
+    "len": 4,
+    "midi": 74
+   },
+   {
+    "step": 6,
+    "len": 4,
+    "midi": 62
+   },
+   {
+    "step": 10,
+    "len": 2,
+    "midi": 62
+   },
+   {
+    "step": 12,
+    "len": 2,
+    "midi": 62
+   },
+   {
+    "step": 14,
+    "len": 2,
+    "midi": 62
+   },
+   {
+    "step": 16,
+    "len": 2,
+    "midi": 62
+   },
+   {
+    "step": 18,
+    "len": 4,
+    "midi": 65
+   },
+   {
+    "step": 22,
+    "len": 4,
+    "midi": 65
+   },
+   {
+    "step": 26,
+    "len": 2,
+    "midi": 69
+   },
+   {
+    "step": 28,
+    "len": 2,
+    "midi": 69
+   },
+   {
+    "step": 30,
+    "len": 2,
+    "midi": 67
+   },
+   {
+    "step": 32,
+    "len": 2,
+    "midi": 65
+   },
+   {
+    "step": 34,
+    "len": 4,
+    "midi": 65
+   },
+   {
+    "step": 38,
+    "len": 4,
+    "midi": 64
+   },
+   {
+    "step": 42,
+    "len": 2,
+    "midi": 72
+   },
+   {
+    "step": 44,
+    "len": 2,
+    "midi": 77
+   },
+   {
+    "step": 46,
+    "len": 2,
+    "midi": 79
+   },
+   {
+    "step": 48,
+    "len": 2,
+    "midi": 77
+   },
+   {
+    "step": 50,
+    "len": 4,
+    "midi": 79
+   }
+  ],
+  "bass": [
+   {
+    "step": 0,
+    "len": 13,
+    "midi": 50
+   },
+   {
+    "step": 16,
+    "len": 13,
+    "midi": 46
+   },
+   {
+    "step": 32,
+    "len": 13,
+    "midi": 45
+   },
+   {
+    "step": 48,
+    "len": 13,
+    "midi": 50
+   }
+  ],
+  "measured": {
+   "distinct": 9,
+   "range": 17,
+   "leaps": 31.6
+  }
+ },
+ "source": "magenta chord_pitches_improv temp 1.0, best of 14 per phrase by variety"
+}
