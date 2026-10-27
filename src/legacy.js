@@ -12996,6 +12996,42 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      still have no idea that a manifest can lie about pitch, or that
      gain means nothing until you know what the pad is holding. */
   howto(){ return {
+    /* WHAT MATTERS BEFORE ANY OF THE REST OF IT. Everything else this
+       call returns is about sound. A track bounced here passed every
+       one of those checks — no silence, -16.2 LUFS, four bands inside
+       half a decibel of the reference, every pad owning its own band
+       — and the listener's verdict was "drone machine noise". It was:
+       its bass held one pitch for two minutes and five of its six
+       sounds never changed note. Nothing here measures whether the
+       harmony moves. */
+    first: [
+      'WRITE MUSIC, NOT TEXTURE. Chords that change, a melody with contour. If every '
+        + 'pad plays one pitch you have made a drone however well it is mixed. magenta '
+        + 'is installed for this: require("@magenta/music/node/music_rnn") — not the '
+        + 'barrel, which pulls in Tone and fails — and MusicRNN on '
+        + 'storage.googleapis.com/magentadata/js/checkpoints/music_rnn/chord_pitches_improv '
+        + 'writes a melody against a chord progression. Generate several and choose; the '
+        + 'same seed and temperature gave 12% leaps on one draw and 40% on the next.',
+      'REAL INSTRUMENTS NEED REAL SAMPLES, AND WHAT MAKES THEM REAL IS VELOCITY LAYERS. '
+        + 'A ghost note and an accent should be different recordings, not one waveform at '
+        + 'two gains. samples/nakeddrums.json is a recorded kit with five layers on the '
+        + 'kick and three round robins; swapping it in for a synthesised one moved the '
+        + 'pulse autocorrelation from 0.53 to 0.65 and the crest from 14.4 to 18.3. Load '
+        + 'it with instrument() so the sampler picks layers by velocity — sound() on a '
+        + 'single pad throws that away.',
+      'A FOUND SOUND IS NOT A DRUM. A door knock pitched down four semitones with drive '
+        + 'on it is a loud distorted door knock, and was heard as "a strange percussive '
+        + 'noise". pulse() reported no findable beat and was disbelieved; it was right. '
+        + 'Processing changes a sound, it does not change what the sound is of.',
+      'A PACK NAMED "real" MAY NOT BE. real-cc0-full contains mvxkit, which is '
+        + 'synthesised: durations of exactly 0.450, 0.220, 0.060 and 0.400 seconds, mono, '
+        + 'no source URL. Real recordings do not land on round numbers. A manifest that '
+        + 'names a URL per sample is a real library; one that names bare filenames was '
+        + 'generated.',
+      'THESE CHECKS CANNOT TELL YOU WHETHER IT IS MUSIC. They detect brokenness — '
+        + 'silence, clipping, DC, a sound with nowhere to sit — and passing all of them '
+        + 'means only that it is not broken. Play it to someone.',
+    ],
     order: [
       'Build it ONE SOUND AT A TIME. Decide what the song needs next — a bass, a high, a '
         + 'pulse — then make that one thing and finish it before starting the next. The '

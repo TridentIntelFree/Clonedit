@@ -94,7 +94,7 @@ test('the two calls that teach the workflow are exposed, and first', () => {
 });
 
 test('howto() carries the traps, not just the happy path', () => {
-  const m = /howto\(\)\s*\{\s*return\s*\{([\s\S]{0,6000}?)\n  \},/.exec(legacy);
+  const m = /howto\(\)\s*\{\s*return\s*\{([\s\S]{0,16000}?)\n  \},/.exec(legacy);
   assert.ok(m, 'howto() not found or no longer returns an object literal');
   const body = m[1];
   assert.ok(/order:/.test(body), 'howto() should give the order to work in');
@@ -108,6 +108,24 @@ test('howto() carries the traps, not just the happy path', () => {
     ['perceived loudness', /perceived|loudness\(\)/i],
     ['bass harmonics on small speakers', /harmonic/i],
   ]) assert.ok(re.test(body), 'howto() no longer mentions ' + what);
+
+  /* THE LESSONS THAT COST A WHOLE WEEK, AND WHICH THE REST OF THIS CALL
+     WILL QUIETLY DROWN IF THEY ARE NOT PINNED. A track passed every
+     mixing check here and was heard as "drone machine noise": its bass
+     held one pitch throughout and nothing in the app measures whether
+     the harmony moves. These belong before the sound advice, not
+     after it. */
+  assert.ok(/first:/.test(body),
+    'howto() must lead with what matters before mixing — see the drone');
+  const first = /first:\s*\[([\s\S]*?)\n    \],/.exec(body);
+  assert.ok(first, 'howto().first should be a list');
+  for (const [what, re] of [
+    ['writing music rather than texture', /WRITE MUSIC|chords that change/i],
+    ['velocity layers being what makes a kit real', /velocity layer/i],
+    ['a found sound not being a drum', /found sound is not a drum/i],
+    ['packs that lie about being real', /may not be|synthesised/i],
+    ['the checks not being able to hear music', /cannot tell you whether it is music/i],
+  ]) assert.ok(re.test(first[1]), 'howto().first no longer mentions ' + what);
 });
 
 test('review() reports what it could not run', () => {

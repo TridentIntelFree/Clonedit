@@ -24,6 +24,85 @@ being repeatable, which is why `review()` runs all of them and reports
 which ones it could not reach — a check that silently did not run reads
 exactly like a check that passed.
 
+## Read this before the rest of the file
+
+Everything below this section is about sound: levels, spectra, phase,
+loudness. It is all true and it is all secondary. A track was bounced
+here that passed every one of those checks — no silence, -16.2 LUFS,
+four bands inside half a decibel of the reference, every pad owning
+its own band — and the listener's verdict was **"drone machine
+noise"**.
+
+It was. Its bass held one pitch for two minutes seventeen, and five
+of its six sounds never changed note at all. A static bass under a
+looping figure is a drone by construction, and **nothing in this app
+measures whether the harmony moves**, so nine bands of spectral
+analysis called it fine.
+
+The four things that actually turned that around, in the order they
+mattered:
+
+**1. Write music, not texture.** Chords that change. A melody with
+contour. If every pad plays one pitch you have made a drone no matter
+how it is mixed. `magenta` is installed for exactly this —
+`chord_pitches_improv` writes a melody against a stated progression
+and loads from Google Cloud Storage, which is reachable from here
+when HuggingFace and PyPI's torch index are not:
+
+```js
+const mm = require('@magenta/music/node/music_rnn');   // not the barrel:
+const m = new mm.MusicRNN(                             // index pulls in Tone
+  'https://storage.googleapis.com/magentadata/js/checkpoints/music_rnn/chord_pitches_improv');
+await m.initialize();
+await m.continueSequence(seed, 58, 0.9, ['Dm','Bb','F','C']);
+```
+
+Generate several and choose — the same seed and temperature gave 12%
+leaps on one draw and 40% on the next.
+
+**2. Use real samples for real instruments.** A drum kit must have
+VELOCITY LAYERS: a ghost note and an accent should be different
+recordings of a stick hitting a drum, not one waveform at two gains.
+`samples/nakeddrums.json` is a genuinely recorded kit — five velocity
+layers on the kick, three round robins — and swapping it in for a
+synthesised one took the pulse autocorrelation from 0.53 to 0.65 and
+the crest from 14.4 to 18.3. Load it with `instrument()` so the
+sampler picks layers by velocity; `sound()` on one pad throws that
+away.
+
+**3. A found sound is not a drum.** A door knock pitched down four
+semitones with drive on it is a loud distorted door knock. The
+listener called it "a strange percussive noise" and that is exactly
+what it was. Processing changes a sound; it does not change what the
+sound is of. Found recordings are wonderful for texture and wrong for
+the thing carrying the beat.
+
+**4. The checks cannot tell you whether it is music.** They detect
+BROKENNESS — silence, clipping, DC, a sound with nowhere to sit — and
+that is worth having. They say nothing about whether anyone would
+want to hear it, and passing them all is not evidence of anything
+except that it is not broken. Play it to someone.
+
+## A pack named "real" may not be
+
+`samples/real-cc0-full.json` contains `mvxkit`, which is synthesised.
+The tell was in the files, not the name: durations of exactly 0.450,
+0.220, 0.060 and 0.400 seconds, mono, no source URL, no attribution.
+Real recordings do not land on round numbers and 60ms is shorter than
+any miked hi-hat.
+
+Before trusting a pack to be what it says, check one file:
+
+```
+ffprobe -v error -show_entries format=duration -of csv=p=0 <file>
+```
+
+A round duration, a missing source field, one sample per instrument
+and no velocity layers all point the same way. The manifests that
+carry a real library name a URL per sample — `nakeddrums` points at
+the sfzinstruments mirror, `foundkit` at ESC-50 — and the ones that
+do not are generated.
+
 ## The order
 
 0. Read `samples/atlas-*.json` for the pack you are about to use, or

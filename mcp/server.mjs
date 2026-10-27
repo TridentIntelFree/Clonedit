@@ -92,11 +92,20 @@ async function jbh(method, args = []) {
 
 const TOOLS = [
   { name: 'jbh_howto', description:
-      'START HERE. The order to do things in, the traps that are not guessable from the API, '
-      + 'and the measured norms every check is scored against. Costs nothing and returns no '
-      + 'audio. Read it before writing anything: the API will not tell you that a sample pack '
-      + 'can lie about pitch by an octave, that gain is a multiplier on whatever the pad '
-      + 'happens to hold, or that a beat can be perfectly on the grid and still inaudible.',
+      'START HERE. Costs nothing, returns no audio, and leads with the four things that '
+      + 'decide whether what you make is music rather than how cleanly it is mixed — '
+      + 'because a track bounced from this app passed every mixing check it has (no '
+      + 'silence, -16.2 LUFS, four bands inside half a decibel of its reference, every pad '
+      + 'owning a band) and was heard as "drone machine noise". Its bass held one pitch '
+      + 'throughout, and NOTHING HERE MEASURES WHETHER THE HARMONY MOVES. `first` covers '
+      + 'that: write chords that change and a melody with contour (magenta is installed '
+      + 'for it), give real instruments real samples with velocity layers, do not expect a '
+      + 'processed door knock to be a kick, distrust a pack named "real", and remember '
+      + 'that every check in this app detects brokenness and none of them can hear music. '
+      + 'Then the rest: the order to work in, the traps that are not guessable from the '
+      + 'API — a pack can lie about pitch by an octave, gain is a multiplier on whatever '
+      + 'the pad holds, a beat can be dead on the grid and still inaudible — and the '
+      + 'measured norms every check is scored against.',
     inputSchema: { type: 'object', properties: {} } },
 
   { name: 'jbh_review', description:
