@@ -95,6 +95,17 @@ const P=JSON.parse(readFileSync(OUT+'songs/parts-holloway.json','utf8'));
    written against it rather than against the root alone */
 const CHORD={ Am:[9,0,4], F:[5,9,0], C:[0,4,7], G:[7,11,2],
               Dm:[2,5,9], E7:[4,8,11,2] };
+/* dominants, and their roots: on these the altered tensions b9/#9/b13
+   are the point rather than a fault, so a note must not be "corrected"
+   off them. Only the natural 11 genuinely cannot sit on a dominant. */
+const DOM={ E7:4 };
+const rubsCh=(m,chName)=>{
+  const ch=CHORD[chName]; if(!ch) return false;
+  const pc=((m%12)+12)%12;
+  if(ch.includes(pc)) return false;
+  if(DOM[chName]!=null && [1,3,8].includes((pc-DOM[chName]+12)%12)) return false;
+  return ch.some(t=>(pc-t+12)%12===1);
+};
 const G=JSON.parse(readFileSync(OUT+'samples/groove-norms.json','utf8'));
 
 const exe=await findBrowser(); const srv=await serve();
@@ -258,7 +269,16 @@ const writePhrase=async(idx, ph, kind, vel)=>{
        whatever is consonant in both chords */
     const mid=over([r+7, r+12, third+12, r+10, r+9]);
     const walks = (b%2===1) && kind!=='sparse';
-    if(!walks) lhNotes.push([r,at,0.74],[over([third, r+12, r+7]),at+10,0.44]);
+    /* IN A TWO-NOTE BAR THE SECOND NOTE IS THE THIRD, and preferring a
+       common tone over it was a regression this check caught. `over()`
+       looks for a pitch in both chords first, which in a held bar
+       quietly swapped the third for the octave or the fifth: 7 bars of
+       the track ended up stating no third at all, and bars that state
+       no third are how one stray chromatic got to define the harmony
+       in the first place. Bach states a third in 94.6% of sonorities.
+       So the third wins unless it genuinely rubs the next chord. */
+    const held = rubs(third, there) ? over([r+12, r+7, third]) : third;
+    if(!walks) lhNotes.push([r,at,0.74],[held,at+10,0.44]);
     else lhNotes.push([r,at,0.8],[third,at+6,0.46],[mid,at+10,0.52],[lead,at+14,0.42]);
   }
   await bat(lhNotes.map(([m,st,v])=>['note','lh', m, st, V(v), {nudge:groove(st)}]));
@@ -311,7 +331,23 @@ const writePhrase=async(idx, ph, kind, vel)=>{
   /* in a sparse section the line keeps only what lands on a beat, so
      the texture thins rather than merely quietens */
   const play=kind==='sparse' ? timed.filter(n=>n.step%4===0) : timed;
-  await bat(play.map(n=>
+  /* AND THE MELODY GETS THE SAME TEST. chord_pitches_improv writes
+     against the chord it is given and mostly lands well, but it put an
+     A over E7 — the natural 11 on a dominant, which is the one note a
+     dominant cannot take — and harmony() found three of them. Rather
+     than hand-editing magenta's line, any note that beats against its
+     own chord is moved to the nearest chord tone, which is a semitone
+     or two and leaves the contour alone. */
+    const snapped=play.map(n=>{
+      const chName=ph.chords[Math.floor(n.step/16)%ph.chords.length], ch=CHORD[chName];
+      if(!rubsCh(n.midi, chName)) return n;
+      for(const d of [1,-1,2,-2,3,-3]){
+        const m=n.midi+d;
+        if(ch.includes(((m%12)+12)%12)) return {midi:m, step:n.step};
+      }
+      return n;
+    });
+  await bat(snapped.map(n=>
     ['note','rh', n.midi, n.step,
      V(n.step%8===0?0.82:(n.step%4===0?0.66:0.54)), {nudge:groove(n.step)}]));
   /* kit: under the piano, not in front of it. Velocity does real work

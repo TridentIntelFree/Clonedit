@@ -37,6 +37,28 @@ def dur(tok):
     if m.group(2): q = (4.0/d) * (2 - 0.5**len(m.group(2)))
     return q
 
+def phrases_of(path):
+    """Phrase lengths in quarter notes, split at fermatas (';')."""
+    try: lines = [l.rstrip('\n') for l in open(path, encoding='utf-8', errors='replace')]
+    except Exception: return []
+    spines = None; q = 0.0; out = []
+    for l in lines:
+        if not l or l.startswith('!'): continue
+        f = l.split('\t')
+        if l.startswith('**'): spines = len(f); continue
+        if l.startswith('*') or l.startswith('='): continue
+        if spines is None or len(f) != spines: continue
+        step = None
+        for tok in f:
+            if tok == '.' or tok == '': continue
+            d = dur(tok)
+            if d is not None: step = d if step is None else min(step, d)
+        if step is None: continue
+        q += step
+        if ';' in l: out.append(q); q = 0.0
+    return out
+
+
 def grid_of(path):
     """[ [midi-or-None per voice] ] — one row per attack point."""
     try: lines = [l.rstrip('\n') for l in open(path, encoding='utf-8', errors='replace')]
@@ -61,6 +83,13 @@ def grid_of(path):
         grid.append(list(cur))
     return grid
 
+# FORM, measured from the same corpus and the same parse. Harmony is
+# not the only thing nothing here checks: no analyser in this app looks
+# at phrase structure either, and HOLLOWAY's eight phrases are all
+# exactly four bars long. Bach marks phrase ends with fermatas, so the
+# question costs nothing extra to ask while the files are open.
+phrase_len = collections.Counter(); phrases_per = collections.Counter()
+
 vert = collections.Counter(); vertN = 0
 semitone_bare = 0          # two voices one semitone apart
 semitone_comp = 0          # ... an octave or more apart: the minor 9th
@@ -72,6 +101,11 @@ role = collections.Counter()
 files = 0
 
 for path in sys.argv[1:]:
+    ph = phrases_of(path)
+    if len(ph) >= 2:
+        phrases_per[len(ph)] += 1
+        for x in ph: phrase_len[round(x/4.0, 2)] += 1
+
     grid = grid_of(path)
     if len(grid) < 8: continue
     files += 1
@@ -185,6 +219,18 @@ mean = sum(k*v for k, v in held_hist.items())/tot if tot else 0
 print('   mean voices held              %6.2f' % mean)
 print('   at least one held             %6.2f%%' % pct(tot-held_hist[0], tot))
 print()
+print('FORM — PHRASE LENGTHS, from the fermatas that mark them')
+_pt = sum(phrase_len.values())
+if _pt:
+    print('   phrases                       %d' % _pt)
+    print('   per chorale, mean             %6.2f'
+          % (sum(k*v for k, v in phrases_per.items())/sum(phrases_per.values())))
+    print('   distinct lengths used         %d' % len(phrase_len))
+    for k, v in phrase_len.most_common(6):
+        print('      %5.2f bars                %6.1f%%' % (k, pct(v, _pt)))
+    print('   the single commonest length   %6.1f%%  (so %.0f%% are NOT it)'
+          % (pct(max(phrase_len.values()), _pt), 100-pct(max(phrase_len.values()), _pt)))
+print()
 print('DOES A DISSONANCE MOVE BY STEP')
 print('   voices in a semitone relation %d' % diss_total)
 print('   all of them, step next        %6.2f%%' % pct(diss_stepped, diss_total))
@@ -225,6 +271,15 @@ if os.environ.get('HARMONY_NORMS_OUT'):
             'already_clashing_pct': round(pct(role['upper_held']-role['upper_prepared'], role['upper']), 2),
             'arrived_new_pct': round(pct(role['upper']-role['upper_held'], role['upper']), 2),
         },
+        'phrases': _pt,
+        'phrases_per_piece_mean': round(
+            sum(k*v for k, v in phrases_per.items())/sum(phrases_per.values()), 2)
+            if phrases_per else None,
+        'distinct_phrase_lengths': len(phrase_len),
+        'phrase_length_bars_pct': {str(k): round(pct(v, _pt), 2)
+                                   for k, v in phrase_len.most_common(8)},
+        'commonest_phrase_length_pct': round(pct(max(phrase_len.values()), _pt), 2)
+            if phrase_len else None,
         'semitone_clash_lower_note': {
             'n': role['lower'],
             'steps_next_pct': round(pct(role['lower_stepped'], role['lower']), 2),

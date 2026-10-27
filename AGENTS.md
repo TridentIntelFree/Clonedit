@@ -24,6 +24,25 @@ being repeatable, which is why `review()` runs all of them and reports
 which ones it could not reach — a check that silently did not run reads
 exactly like a check that passed.
 
+**And `review()` is not the whole app either.** It calls twelve:
+`schedule`, `critique`, `loudness`, `translate`, `compare`,
+`dynamics`, `continuity`, `pulse`, `melody`, `motif`, `counterpoint`
+and `harmony`. Five analysers exist that it never calls, and a clean
+review reads like full coverage while they sit unrun:
+
+| not in `review()` | when to run it |
+|---|---|
+| `place(sound)` | per sound as it goes in — step 1d. The one that distinguishes absent from quiet. |
+| `audit(sound)` | per sound, needs a reference. Is this the colour you meant. |
+| `balance()` | needs a reference. Solves the group levels instead of guessing them. |
+| `spectrum()` | the whole mix's shape, when you want the numbers rather than a verdict. |
+| `levels()` | per-pad levels; `critique()` reads it, but it is worth seeing raw. |
+
+Three of those five — `audit`, `balance` and `compare` — need a
+reference, so **with none loaded a quarter of the app cannot run at
+all** and `review()` will still say "nothing serious". That is not the
+same sentence as "this was checked".
+
 ## Read this before the rest of the file
 
 Everything below this section is about sound: levels, spectra, phase,
@@ -357,6 +376,34 @@ way" is a refusal, and underneath it the melodic checks are silently not
 running. The third is that `counterpoint()`'s phrasing is literal.
 "Chords with a tune on top" is a description of the part, not a grade,
 and the fix is to let one voice hold still.
+
+### Nothing here looks at form either, and the number is damning
+
+`harmony()` closed the gap on whether the notes fit the chords.
+Phrase structure is the same kind of hole and is still open: no
+analyser in this app asks how long a phrase is or whether they are
+all the same length.
+
+Measured from the same chorales, off the fermatas that mark their
+phrase ends (`scripts/study-harmony.py` reports it):
+
+```
+2411 phrases, 6.52 per chorale
+58 distinct phrase lengths
+the commonest, 2 bars, is 39.7% — so 60% of phrases are NOT it
+```
+
+HOLLOWAY has eight phrases. Every one is exactly four bars. **One
+distinct length, 100%.** The arrangement varies dynamics and texture
+across those phrases, which is why the level map now moves 12dB, but
+the grid underneath never budges, and four-square is audible as
+four-square however the surface is dressed.
+
+Some of Bach's variety comes from hymn texts with uneven lines rather
+than from free choice, so 58 lengths is an upper bound on what a
+composer picks deliberately. It is still not one. If you are writing
+here and the phrase length is a constant, that is a decision you made
+by not making it.
 
 ## One sound at a time, not a palette
 
