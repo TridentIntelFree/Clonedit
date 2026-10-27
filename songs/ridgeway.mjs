@@ -95,16 +95,24 @@ for(const pd of pianoPads)
   await call('pad',pd,{att:0.002, dec:1.1, sus:0.0, rel:0.35, gain:0.55,
     rev:0.16, name:'piano'});
 
-/* pulse: a door knock, short, just enough to carry time */
-await call('pack','samples/foundkit.json');
-await call('sound','fk:knock2',40);
-/* the first bounce had no findable pulse at all — loudness-weighted
-   onsets autocorrelated at 0.007 — because the knock sat under a
-   piano playing twenty-three notes a phrase. It carries the time, so
-   it has to be the loudest thing on the beat, not a garnish. */
-await call('pad',40,{inst:'drums', pitch:-4, start:0.028,
-  ftype:'lowpass', fcut:0.55, drv:0.35,
-  att:0.001, dec:0.22, sus:0.0, rel:0.08, gain:1.4, eqLo:0, eqMid:+2, name:'kick'});
+/* A KICK, BECAUSE A DOOR KNOCK IS NOT ONE. The previous bounce used
+   fk:knock2 pitched down four semitones with drive on it, and the
+   listener's verdict was "a strange percussive noise" — which is an
+   accurate description of a loud distorted recording of someone
+   knocking on a door. Processing does not turn a found sound into a
+   drum; it turns it into a processed found sound.
+   pulse() had said so and was ignored. It reported no findable beat
+   at 0.007, then 0.017 after the knock was doubled in level, and
+   that was read as the metric being broken rather than as the track
+   genuinely having nothing on it that reads as a beat. Doubling the
+   gain of a sound that is not a kick makes a louder not-a-kick. */
+await call('pack','samples/real-cc0-full.json');
+await call('sound','mvxkit:kick01',40);
+await call('pad',40,{inst:'drums', att:0.001, dec:0.26, sus:0.0, rel:0.09,
+  gain:0.95, eqLo:+2, name:'kick'});
+await call('sound','mvxkit:hatclosed01',41);
+await call('pad',41,{inst:'drums', att:0.001, dec:0.07, sus:0.0, rel:0.04,
+  gain:0.34, eqLo:-9, name:'hat'});
 
 /* ---- THE PHRASES ------------------------------------------------------ */
 const writePhrase=async(patIdx, ph, dense)=>{
@@ -119,10 +127,12 @@ const writePhrase=async(patIdx, ph, dense)=>{
   /* melody */
   await bat(ph.melody.filter(n=>n.step<PLEN)
     .map(n=>['note','piano', n.midi, n.step, n.step%4===0?0.85:0.62]));
-  /* pulse on the beat, and through the final bar so the phrase does
-     not fall silent before the next one starts */
+  /* kick on the beat and through the final bar so the phrase does not
+     fall silent before the next begins; hat on the offbeats to mark
+     the time without competing with the piano */
   const hits=dense ? [0,8,16,24,32,40,48,56,60] : [0,16,32,48,56,60];
-  await bat(hits.map(s=>['step',40,s,s%16===0?1.0:(s>=56?0.55:0.6)]));
+  await bat(hits.map(s=>['step',40,s,s%16===0?1.0:(s>=56?0.6:0.7)]));
+  if(dense) await bat([4,12,20,28,36,44,52].map(s=>['step',41,s,0.5]));
 };
 
 await writePhrase(0, P.A, true);     /* A — full */
