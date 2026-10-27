@@ -158,7 +158,7 @@ for(const f of (q.findings||[]).slice(0,4)) console.log('  ['+f.severity+'] '+f.
 /* ---- LEVEL, TWO RENDERS ----------------------------------------------- */
 await call('set',{mTrim:-12, compAmt:0.08});
 const probe=await call('render',{src:'song',loops:1,loudness:true});
-const trim=Math.max(-30, Math.min(0, -12 + (TARGET_LUFS - probe.lufs)));
+const trim=Math.max(-24, Math.min(12, -12 + (TARGET_LUFS - probe.lufs)));
 console.log('\nprobe -12 -> '+probe.lufs.toFixed(1)+' LUFS -> trim '+trim.toFixed(1));
 await call('set',{mTrim:+trim.toFixed(1)});
 const m=await call('render',{src:'song',loops:1,loudness:true});

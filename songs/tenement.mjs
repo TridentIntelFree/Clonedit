@@ -284,7 +284,7 @@ console.log('small speaker: '+String(tr.says).slice(0,130));
 /* ---- 11. LEVEL BY MEASUREMENT, TWO RENDERS -------------------------- */
 await call('set',{mTrim:-12, compAmt:0.14});
 const probe=await call('render',{src:'song',loops:1,loudness:true});
-const trim=Math.max(-30, Math.min(0, -12 + (TARGET_LUFS - probe.lufs)));
+const trim=Math.max(-24, Math.min(12, -12 + (TARGET_LUFS - probe.lufs)));
 console.log('\nprobe -12 -> '+probe.lufs.toFixed(1)+' LUFS crest '+probe.crestDb.toFixed(1)
   +' -> trim '+trim.toFixed(1));
 await call('set',{mTrim:+trim.toFixed(1)});

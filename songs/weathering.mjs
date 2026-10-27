@@ -356,7 +356,7 @@ console.log('pulse: autocorr '+pu.pulseStrength+'  beat '+pu.onGrid.beat+'%  bur
 /* ---- LEVEL, IN TWO RENDERS -------------------------------------------- */
 await call('set',{mTrim:-12, compAmt:0.12});
 const probe=await call('render',{src:'song',loops:1,loudness:true});
-const trim=Math.max(-30, Math.min(0, -12 + (TARGET_LUFS - probe.lufs)));
+const trim=Math.max(-24, Math.min(12, -12 + (TARGET_LUFS - probe.lufs)));
 console.log('\nprobe at -12 → '+probe.lufs.toFixed(1)+' LUFS, crest '+probe.crestDb.toFixed(1)
   +' → trim '+trim.toFixed(1)+' for '+TARGET_LUFS);
 await call('set',{mTrim:+trim.toFixed(1)});
