@@ -128,9 +128,11 @@ do not are generated.
    c. write its part — `note()` for pitched lines, `step()` for the
       rest.
 
-   d. `place(pad)`. What band does it own, what is covering it, what is
-      it covering. Fix it now, while it is the only thing you are
-      thinking about and nothing else has been built on top of it.
+   d. `place(pad)` — or `place('name')` for a sampled instrument,
+      which is spread over many pads and is still one sound. What band
+      does it own, what is covering it, what is it covering. Fix it
+      now, while it is the only thing you are thinking about and
+      nothing else has been built on top of it.
 
    e. `review({quick:true})` every few sounds, since it is free.
 
@@ -141,11 +143,21 @@ do not are generated.
 3. `review({src:'song'})`. Fix what it names, in the order it names them.
    Run it again. This should mostly confirm. If it finds a sound with
    nowhere to sit, that sound was placed badly and you skipped 1d.
-4. `render({loudness:true})` across a few `mTrim` values, choose by
-   measurement, then bounce. Make sure the ladder BRACKETS your target:
+4. One `render({loudness:true})` at a known `mTrim`, then solve for the
+   trim rather than laddering: the master is linear, so
+
+   ```
+   trim = probeTrim + (targetLufs - probeLufs)       // clamp -24..12
+   ```
+
+   lands within a few tenths in one extra render. A ladder of three or
+   four trims was the method here for a long time, costs that many
+   renders, and still misses whenever it does not bracket the target —
    a denser arrangement is far hotter than a sparse one, and a ladder
    whose quietest rung is already too loud fails every gate and writes
-   no file.
+   no file. Probe from somewhere definitely too quiet, −12, and let the
+   arithmetic do the rest. If it asks for more than +12 the pads are
+   staged too low; say so rather than clamping silently.
 
 ## Check while you build, not after
 
@@ -160,10 +172,16 @@ the schedule, which the app already knows exactly:
 
 | free | what it answers |
 |---|---|
-| `pulse()` | is there a beat a listener can find |
-| `motif()` | does anything in this line ever come back |
-| `melody()` | is this a tune or a scale with a rhythm |
-| `counterpoint()` | are these two voices actually one voice |
+| `pulse({src})` | is there a beat a listener can find |
+| `motif(inst, {src})` | does anything in this line ever come back |
+| `melody(inst, {src})` | is this a tune or a scale with a rhythm |
+| `counterpoint([inst,inst], {src})` | are these two voices actually one voice |
+
+Three of them take an instrument tag POSITIONALLY, not in the options
+object — `melody('rh', {src:'song'})`, not `melody({instrument:'rh'})`.
+The MCP tools take `{instrument}` because that is how MCP passes
+arguments, and copying that shape into a browser call passes an object
+where a name goes and gets nothing back.
 
 That is most of what matters while writing, and it is instant.
 `review({quick:true})` runs exactly those and nothing else, so it can
@@ -173,6 +191,29 @@ phone — belongs at the end, where it was always going to live.
 
 A song script should look like: write a pattern, `review({quick:true})`,
 write the next one. Not: write everything, then look.
+
+### What those four actually say, on a track that is not broken
+
+Worth knowing before you run them, because their findings sound like
+style notes and are not. Every one of these came out of HOLLOWAY, each
+cost one edit to a part, and none of them needed a render:
+
+| it said | what was true | the edit |
+|---|---|---|
+| *100% of the gaps in this part are the same length* | the left hand was one root per bar — four whole notes a phrase | give it a walk: root, fifth, octave, chromatic approach |
+| *70% of the gaps the same length* | `chord_pitches_improv` writes a pitch per step, and its step numbers are not a rhythm | keep each pitch in its bar, lay the bar out on a rhythmic cell |
+| *repeated notes 1.6% against 21.1% in real melody* | having merged every repeat, the tune now had fewer than tunes have | cap a run at two rather than collapsing it to one |
+| *oblique motion 0% against 68% in Palestrina — that is chords with a tune on top* | both hands moved on every beat, so neither was ever the one holding | the left hand holds in the odd bars and walks in the even ones |
+
+Three things to take from that. The first is that **the two melodic
+findings pointed in opposite directions** — too few repeats after a fix
+for too many — so these are ranges to land inside, not directions to
+push in. The second is that `melody()` and `motif()` will not report at
+all on a part whose rhythm is too regular; "too regular to measure this
+way" is a refusal, and underneath it the melodic checks are silently not
+running. The third is that `counterpoint()`'s phrasing is literal.
+"Chords with a tune on top" is a description of the part, not a grade,
+and the fix is to let one voice hold still.
 
 ## One sound at a time, not a palette
 
@@ -219,6 +260,32 @@ why a review takes a quarter of an hour; `place()` costs the same
 whether the song has three sounds in it or thirty, so it can be run on
 every sound as it goes in without ever being the slow part.
 
+**A sound is usually not one pad.** `instrument()` lays a sampled
+piano across one pad per sampled note — eleven of them for a melody
+spanning two octaves — and those are not eleven sounds, they are one.
+`place()` and `audit()` took a pad index, so handed the middle one
+they rendered a single note of the piano and set it against *the other
+ten notes of the same piano*, which they had counted among "everything
+else". A piano trio's melody came back `owns 250-500 by -6.1dB` — the
+reading that means absent — in a mix where the piano is the loudest
+thing in the room. Picking a representative pad does not rescue it:
+the same code took the middle of the kit, landed on a hi-hat the part
+never plays, and threw.
+
+Both calls now take an instrument tag, a list of pads, or one pad, and
+whatever they are handed is the sound:
+
+```
+await JBH.place('rh')      // every pad tagged rh, as one sound
+await JBH.place([4,5,6])
+await JBH.place(bassPad)   // still works
+```
+
+So on a track built with `instrument()`, pass the name. On one built
+with `sound()`, tag the pads first — `pad(i,{inst:'bass'})` — which is
+the same fix the found-sound section asks for, and for the same
+reason.
+
 ## There is no correct loudness
 
 Every track bounced in this repo was aimed at about −11.5 LUFS, as
@@ -260,6 +327,26 @@ complaint it produced was "the strings sound unnatural". Run
 refuses to report until its detector passes signals whose answers are
 known, because the first version of that detector read harmonics as
 fundamentals and declared a correct library 12 semitones out.
+
+Read its verdict, not just its headline. It picks samples from the
+EDGES of each instrument's range, because that is where a naming error
+shows — and the edges are also where the detector fails. A piano's
+bottom A is 27.5Hz, under what a 16kHz mono clip resolves, and its top
+C has a hammer thud louder than its fundamental. Run at the old default
+of three picks, a correct 88-note library gave
+
+    salamander  3  +0.0 st  33%  SPLIT — only 1/3 agree; two conventions
+    DO NOT WRITE MELODIES ON THESE UNTIL UNDERSTOOD
+
+while its nine interior notes all read within 0.2 semitones. Two of
+three votes were samples the detector could not hear, counted as
+disagreements. It now takes five picks and only counts an outlier as
+evidence of a second convention when it lands within a semitone and a
+half of an octave or two from the median — a naming scheme splits a
+library at exactly -12, a detector failure scatters to +18.8 and -76.7.
+Both known-bad cases still trip it: a whole library declared an octave
+low reads `DECLARED PITCH IS WRONG by about 12 semitones`, and a pack
+with its upper half renamed reads `SPLIT — 3/6 read an octave out`.
 
 **Gain is a multiplier on whatever the pad holds.** A full-scale synth at
 gain 0.4 is far louder than a field recording at gain 2.0. Sources here
@@ -444,6 +531,38 @@ than having an imperfect one — without a reference `compare()` does not
 run at all, and a mix can pass every per-pad check while its total
 shape is tilted badly, which is exactly what happened to TENEMENT.
 
+**The collection currently holds one.** `samples/ref-ambient-hall.json`
+is the whole of it, so for anything that is not ambient the advice
+above has nothing to act on. HOLLOWAY is a piano trio, and measured
+against that profile it reads
+
+```
+20-60   +5.2    250-500  +3.8    2k-4k   -7.3
+60-120  +5.5    500-1k   +4.8    4k-8k   -8.3
+120-250 +5.3    1k-2k    -1.9    8k-16k  -5.1
+```
+
+— five decibels hot through everything a piano's body does and eight
+down through everything a hall's air does, which is not a verdict on
+the mix, it is the difference between a piano trio and an ambient
+record. Chasing it would take four decibels out of the register the
+piece lives in and put eight into a band a piano has little in. So it
+was bounced with no reference and `compare()` did not run.
+
+(The first draft of this paragraph said "told its left hand is 15dB
+too loud". Nobody had measured that; it was a plausible number written
+to make a point, and the real figure is +5.5. The habit this file
+keeps warning about is easy to fall into while writing the warning.)
+
+Do not paper over that by loading the wrong one, and do not invent
+band numbers — a fabricated reference is worse than none, because
+`balance()` will solve a real mix against it. The route the file
+already gives is the right one: `scripts/reference-profile.mjs <file>`
+measures any local audio and writes a profile, so one recording of the
+kind of thing you are making, measured once, fixes this permanently
+for that genre. What it must not be is one of this repo's own bounces,
+which only propagates whatever is already wrong here.
+
 ## Stage from a measured peak, and let it fail loudly
 
 Gain is capped at 2. That matters more than it sounds, because the
@@ -521,7 +640,7 @@ The wider version of this trap: before concluding that an edit failed
 to achieve its goal, check that the edit changed anything at all. Two
 identical measurements are not a weak effect, they are no effect.
 
-## audit(pad) — did the sound come out the way you meant it to
+## audit(sound) — did the sound come out the way you meant it to
 
 `place()` asks whether a sound has somewhere to sit among the others.
 `audit()` asks the earlier question, and the one nothing here used to
@@ -538,6 +657,8 @@ decimal.
 
 ```
 await JBH.audit(bassPad)        // against the loaded reference()
+                                // or audit('bass') for a sampled
+                                // instrument, which is many pads
 → { judgedOver: 5, notOccupied: ['2k-4k','4k-8k','8k-16k','1k-2k'],
     worst: '20-60', worstDb: 8.4, meanErrorDb: 5.62,
     suggest: { eqLo: -6.6, eqMid: -1.1, eqHi: null },
@@ -606,6 +727,27 @@ for how long, does the level hold across the duration, does it clip
 or carry DC, how wide is it, how far is its spectrum from a
 reference. The level map it prints, one bar per ten seconds, makes a
 hole obvious at a glance.
+
+**Read that level map for the opposite fault too, which it will not
+flag.** HOLLOWAY's first bounce came out between −17.8 and −19.7dB in
+every single window — eighty-four seconds at one level — and the
+checker's verdict is `ok level varies 2dB across the piece`, because
+it tests for a hole, and a flat piece has no hole. It passed and it
+had no arc: the arrangement alternated a "full" and a "sparse"
+pattern, but only the kit thinned between them, and the kit is not
+what you hear. The piano played the same part at the same velocity
+from end to end.
+
+The fix is written as music, not as a master setting: the same phrase
+at three dynamics in three pattern slots, the quiet sections keeping
+only the melody notes that land on a beat. On a sampled piano that is
+also a timbre change rather than a level change, since velocity picks
+a different recording — which is the whole argument for velocity
+layers, used for expression rather than just for realism.
+
+So the question to ask of the level map is not only "is any of it
+empty" but "does it go anywhere". Nothing in this repo answers the
+second one.
 
 Run it before sending anything to anyone. And note that it was
 validated against a known-bad file before being trusted, which is how
@@ -740,3 +882,33 @@ is wrong.
 instruments, write the parts, run the checks, choose a master setting by
 measurement, write the WAV. The bounces are gitignored; the scripts are
 the artefact. `songs/README.md` says what each one was written against.
+
+## This file has been tested by use, and that is how it should be read
+
+`songs/holloway.mjs` was written as a test of this document rather than
+of the app: build a track from nothing but what `howto()` and this file
+tell a reader who has never seen the repo, and write down every place
+the instructions proved insufficient. Four did, and all four are fixed
+above rather than listed here:
+
+- `howto().says`, the one line a reader who reads one line gets, still
+  summarised the whole file as a mixing procedure. Followed exactly it
+  produces a well-balanced drone, which is the failure the rest of the
+  file exists to prevent.
+- `place()` and `audit()` took a pad index, and a sampled instrument is
+  one sound spread over a pad per note — so the headline method,
+  `place()` each sound as it goes in, measured one note of a piano
+  against the rest of the same piano. The melody read −6.1dB, meaning
+  absent; by instrument tag the same audio reads +12.4dB.
+- `audit-pitch.mjs` condemned a correct library, because two of its
+  three picks were the top and bottom notes its detector cannot hear.
+- the one reference profile in the repo is ambient, so for anything
+  else the advice to always load one has nothing to act on.
+
+Two of those were in calls written *in this repo to prevent exactly the
+mistake they then made*, which is the argument for the exercise. A
+document about a tool is only true of the version of the tool it was
+written against, and the cheapest way to find where it has drifted is
+to follow it literally and record every place it does not work. If you
+are reading this a long way downstream: do that again, and add what you
+find to the section it belongs in rather than to a list at the end.

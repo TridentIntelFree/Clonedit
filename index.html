@@ -15014,18 +15014,53 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
 
      `masks` and `maskedBy` are the useful half. A sound that owns no
      band and is 20dB under everywhere is not quiet, it is absent, and
-     no amount of turning it up will give it somewhere to sit. */
+     no amount of turning it up will give it somewhere to sit.
+
+     A SOUND IS NOT ALWAYS ONE PAD, and taking only a pad index made
+     this call useless on the instruments it was written to serve.
+     instrument() lays a sampled piano across eleven pads — one per
+     sampled note — and they are not eleven sounds, they are one. Asked
+     for the middle pad, this rendered a single note of the piano and
+     set it against the OTHER TEN NOTES OF THE SAME PIANO, which it had
+     dutifully counted among "everything else". The melody of a piano
+     trio came back owning nothing, by -6.1dB, in a mix where the piano
+     is the loudest thing in the room.
+
+     Picking a representative pad does not rescue it either: the first
+     attempt took the middle of each group and landed on a hi-hat the
+     part never plays, so the call threw instead.
+
+     So it takes an instrument name, or a list of pads, or one pad.
+     Whatever it is handed is the sound, and everything not in it is
+     what the sound has to fit into. */
   async place(padIdx, opt){
-    const o=opt||{}, i=padIdx|0, p=S.pads[i];
-    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    const o=opt||{};
+    const mineSet=new Set();
+    if(typeof padIdx==='string'){
+      for(let k=0;k<NPADS;k++) if(S.pads[k] && S.pads[k].bufId>=0 && S.pads[k].inst===padIdx)
+        mineSet.add(k);
+      if(!mineSet.size) throw new Error('no pads carry the instrument "'+padIdx+'" — '
+        +'instrument() tags them, sound() does not');
+    } else if(Array.isArray(padIdx)){
+      for(const k of padIdx){ const j=k|0;
+        if(S.pads[j] && S.pads[j].bufId>=0) mineSet.add(j); }
+      if(!mineSet.size) throw new Error('none of those pads has a sample on it');
+    } else {
+      const j=padIdx|0;
+      if(!S.pads[j] || S.pads[j].bufId<0) throw new Error('pad '+j+' has no sample on it');
+      mineSet.add(j);
+    }
+    const i=[...mineSet][0], p=S.pads[i];
+    const label=(typeof padIdx==='string') ? padIdx
+      : mineSet.size>1 ? mineSet.size+' pads' : (p.name||('pad '+i));
     const src=o.src||'pat', ro={loops:o.loops||1, src, noTail:true};
 
-    const mine=await renderMix(new Set([i]), new Set(), ro);
-    if(!mine) throw new Error('pad '+i+(p.name?' ('+p.name+')':'')+' plays nothing in '
+    const mine=await renderMix(new Set(mineSet), new Set(), ro);
+    if(!mine) throw new Error(label+' plays nothing in '
       +(src==='song'?'the song':'this pattern')+' — write a step for it first');
     /* everything else that sounds, which is the thing it has to fit into */
     const others=new Set();
-    for(let k=0;k<NPADS;k++) if(k!==i && S.pads[k] && S.pads[k].bufId>=0) others.add(k);
+    for(let k=0;k<NPADS;k++) if(!mineSet.has(k) && S.pads[k] && S.pads[k].bufId>=0) others.add(k);
     const rest=others.size?await renderMix(others, new Set(), ro):null;
 
     const mb=await bandEnergy(mine);
@@ -15088,7 +15123,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     if(rel!=null && rel>3) findings.push('it is '+rel+'dB louder than everything else put '
       +'together. Almost certainly too much for one sound.');
 
-    return { pad:i, name:p.name||('pad '+i), src, against:others.size,
+    return { pad:i, pads:[...mineSet], name:label, src, against:others.size,
       bands:rows, owns:owns?owns.band:null, ownsBy:owns?owns.over:null,
       weakest:worst?worst.band:null, relLufs:rel, findings,
       peakBand:peak>-999?+peak.toFixed(1):null,
@@ -15121,15 +15156,36 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      `want` is a profile — anything with a `shape` of {band, rel} —
      so a reference loaded with reference() works, as does a bare
      array, as does the profile of another pad you are matching. */
+  /* Takes the same three forms place() does — an instrument name, a
+     list of pads, or one pad — and for the same reason: the colour of a
+     sampled piano is the colour of the eleven pads together, and one
+     note of it is not that. */
   async audit(padIdx, opt){
-    const o=opt||{}, i=padIdx|0, p=S.pads[i];
-    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    const o=opt||{};
+    const mineSet=new Set();
+    if(typeof padIdx==='string'){
+      for(let k=0;k<NPADS;k++) if(S.pads[k] && S.pads[k].bufId>=0 && S.pads[k].inst===padIdx)
+        mineSet.add(k);
+      if(!mineSet.size) throw new Error('no pads carry the instrument "'+padIdx+'" — '
+        +'instrument() tags them, sound() does not');
+    } else if(Array.isArray(padIdx)){
+      for(const k of padIdx){ const j=k|0;
+        if(S.pads[j] && S.pads[j].bufId>=0) mineSet.add(j); }
+      if(!mineSet.size) throw new Error('none of those pads has a sample on it');
+    } else {
+      const j=padIdx|0;
+      if(!S.pads[j] || S.pads[j].bufId<0) throw new Error('pad '+j+' has no sample on it');
+      mineSet.add(j);
+    }
+    const i=[...mineSet][0], p=S.pads[i];
+    const label=(typeof padIdx==='string') ? padIdx
+      : mineSet.size>1 ? mineSet.size+' pads' : (p.name||('pad '+i));
     const src=o.src||'pat';
-    const buf=await renderMix(new Set([i]), new Set(), {loops:o.loops||1, src, noTail:true});
-    if(!buf) throw new Error('pad '+i+(p.name?' ('+p.name+')':'')+' plays nothing in '
+    const buf=await renderMix(new Set(mineSet), new Set(), {loops:o.loops||1, src, noTail:true});
+    if(!buf) throw new Error(label+' plays nothing in '
       +(src==='song'?'the song':'this pattern')+' — write a step for it first');
     const be=await bandEnergy(buf);
-    if(!be) throw new Error('could not measure pad '+i);
+    if(!be) throw new Error('could not measure '+label);
     const got=specShape(be);
 
     /* what we were aiming at */
@@ -15200,7 +15256,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         +worst.band+'Hz against the partial whose band already measures right — and note '
         +'that paint() normalises, so scaling them ALL is the same as scaling none.');
 
-    return { pad:i, name:p.name||('pad '+i), src, bands:rows,
+    return { pad:i, pads:[...mineSet], name:label, src, bands:rows,
       /* named, so that a sound judged over three bands is not mistaken
          for one judged over nine */
       judgedOver:rows.length, notOccupied:outside,
@@ -16287,10 +16343,26 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       'place(pad) answers the question the one-at-a-time method asks: against everything '
         + 'else loaded, what band does this sound own, what is covering it, what is it '
         + 'covering. Two renders rather than one per pad, so it is cheap enough to run on '
-        + 'every sound as it goes in.',
+        + 'every sound as it goes in. Pass an instrument tag, not a pad index, for anything '
+        + 'instrument() built: a sampled piano is one sound spread over a pad per note, and '
+        + 'placing one of those pads measures a single note against the rest of the same '
+        + 'piano. audit() takes the same three forms.',
     ],
-    says:'Make one sound, place() it, then make the next. review() at the end confirms; it is '
-      + 'a poor way to discover.' };
+    /* THIS LINE IS THE WHOLE FILE FOR ANYONE WHO READS ONE LINE, and for
+       a long time it described only the mixing half. It said "make one
+       sound, place() it, make the next" — true, and the advice that
+       matters least. An agent that followed it exactly would write a
+       drone with nine bands inside half a decibel, which is what
+       happened: a track passed every check here and the listener's
+       verdict was "drone machine noise", because its bass held one
+       pitch for two minutes and nothing in this app measures whether
+       the harmony moves. `first` leads for that reason, and so does
+       this. */
+    says:'Write music first: chords that change, a line with contour. Nothing here measures '
+      + 'whether the harmony moves, so a mix that passes every check can still be a drone. '
+      + 'Then real samples with velocity layers for real instruments, then one sound at a '
+      + 'time — make it, place() it, make the next. review() at the end confirms; it is a '
+      + 'poor way to discover, and passing it is not evidence anyone would want to hear it.' };
   },
 
   /* HOLES IN A PART THAT IS SUPPOSED TO BE HELD.

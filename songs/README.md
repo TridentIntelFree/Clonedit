@@ -19,6 +19,14 @@ and learned from.
 | `three-bodies.mjs` | contrapuntal, C dorian, 140bpm. Three voices on 3/5/8-step cycles so they rarely move together, meeting at the bar line. Synthesised palette, long overlapping tails. |
 | `subsidence.mjs` | dark and heavy, 168bpm. Field recordings for percussion, a three-layer bass — sine sub for weight, octave for the note, Reese and FM growl for dirt. |
 | `salvage.mjs` | 150bpm, every percussion sound a field recording: a door knock is the kick, breaking glass the snare, a dripping tap the hi-hat. |
+| `weathering.mjs` | A aeolian, 88bpm. Almost nothing in it is an instrument — written after a sampled glockenspiel turned out to hold only G, C and Ab. |
+| `slow-glass.mjs` | A aeolian, 88bpm. One decision per lesson from the session that preceded it, nothing carried over from the track before. |
+| `crosscurrent.mjs` | A aeolian, 92bpm. The first use of `poly()` — real 3:4:5 cross-rhythm inside one bar, after six tracks on a single grid at a single tempo. |
+| `tenement.mjs` | 96bpm, every sound a real recording of something that is not an instrument: a door knock, keys, a train, a fire, glass, a hinge. It is also where `motif()`, `counterpoint()` and `balance()` were found to go silent on a track built with `sound()`, because they filter on the `inst` tag only `instrument()` sets. |
+| `meridian.mjs` | ambient with a pulse, 84bpm, 2:17. Eight versions. It scored -16.2 LUFS with every pad owning its own band and came back as "drone machine noise" — its bass held one pitch throughout and five of six sounds never changed note. The track that proved nothing here measures whether the harmony moves. |
+| `ridgeway.mjs` | D minor, 96bpm, 1:10. The first track whose notes were not written by hand: the melody comes from magenta's `chord_pitches_improv` over a stated progression. |
+| `kitwork.mjs` | a drum solo, 104bpm, 37s. Recorded kit only (`nakeddrums`), with velocity layers and round robins, after a version built on a synthesised "real" pack was identified as fake on hearing. Swapping the kit took the pulse autocorrelation from 0.53 to 0.65 and the crest from 14.4 to 18.3. |
+| `holloway.mjs` | A minor, 92bpm, piano trio. Written as a test of the documentation rather than of the app: build a track using only what AGENTS.md and `howto()` tell a fresh agent, and record every place that proved insufficient — see below. |
 
 Each one ends by asking the app what is wrong before it bounces —
 `critique()`, `translate()`, `counterpoint()`, `loudness()` — and those

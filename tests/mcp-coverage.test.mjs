@@ -126,6 +126,19 @@ test('howto() carries the traps, not just the happy path', () => {
     ['packs that lie about being real', /may not be|synthesised/i],
     ['the checks not being able to hear music', /cannot tell you whether it is music/i],
   ]) assert.ok(re.test(first[1]), 'howto().first no longer mentions ' + what);
+
+  /* AND THE ONE LINE SOMEONE WHO READS ONE LINE GETS. `first` can be
+     perfectly written and still never reached: an agent that takes
+     howto().says as the summary of the call gets whatever that string
+     holds. It held "make one sound, place() it, then make the next" —
+     true, and the advice that matters least — for as long as `first`
+     existed above it, which is how the same drone would have been
+     written by a reader who did everything right. */
+  const says = /\n    says:'([\s\S]*?)'\s*\};/.exec(body);
+  assert.ok(says, 'howto().says should be a string');
+  assert.ok(/harmony moves|drone|Write music/i.test(says[1]),
+    'howto().says must lead with the writing, not the mixing — it reads: '
+      + says[1].slice(0, 90));
 });
 
 test('review() reports what it could not run', () => {

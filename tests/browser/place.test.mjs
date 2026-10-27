@@ -119,6 +119,55 @@ export default async function ({ browser, base }) {
       !/^(4000|8000)-/.test(sparse.owns || ''),
       'owns ' + sparse.owns + ' by ' + sparse.ownsBy + 'dB');
 
+    /* ---- the bug a fresh agent hit on its first real track ---------- */
+    t.head('A SAMPLED INSTRUMENT IS ONE SOUND, NOT ONE PAD PER NOTE');
+    /* instrument() lays a piano across a pad per sampled note. place()
+       took a pad index, so the documented method — place() each sound
+       as it goes in — rendered ONE NOTE and set it against the other
+       ten notes of the same piano, which it counted among "everything
+       else". A piano trio's melody came back owning nothing, by
+       -6.1dB, in a mix where the piano was the loudest thing in it. */
+    const grouped = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('piano', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 57, hi: 81 });
+      await window.JBH.instrument('sub', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 30, hi: 40, max: 1 });
+      const keys = window.JBH.instPads('piano').map(x => x.pad);
+      const sub = window.JBH.instPads('sub')[0].pad;
+      window.JBH.pad(sub, { ftype: 'lowpass', fcut: 0.10 });
+      window.JBH.pattern(0, { plen: 16, clear: true });
+      await window.JBH.batch([...keys.map((p, i) => ['step', p, i, 0.8]),
+        ['step', sub, 0, 0.9], ['step', sub, 8, 0.9]]);
+      return { pads: keys.length,
+        one: await window.JBH.place(keys[Math.floor(keys.length / 2)]),
+        all: await window.JBH.place('piano'),
+        list: await window.JBH.place(keys) };
+    });
+    t.ok('the piano is spread over several pads',
+      grouped.pads >= 5, grouped.pads + ' pads tagged piano');
+    t.ok('placed by name, all of them are the sound',
+      grouped.all.pads.length === grouped.pads,
+      'place("piano") measured ' + grouped.all.pads.length + ' pads');
+    t.ok('and the rest of the piano is no longer counted against it',
+      grouped.all.against < grouped.one.against,
+      'by name: against ' + grouped.all.against + ' · by pad: against '
+        + grouped.one.against);
+    t.ok('which is the difference between owning its band and owning nothing',
+      grouped.all.ownsBy > grouped.one.ownsBy,
+      'one note ' + grouped.one.ownsBy + 'dB → whole piano ' + grouped.all.ownsBy + 'dB');
+    t.ok('a list of pads reads the same as the tag',
+      grouped.list.ownsBy === grouped.all.ownsBy && grouped.list.owns === grouped.all.owns,
+      'list ' + grouped.list.owns + '/' + grouped.list.ownsBy
+        + ' vs tag ' + grouped.all.owns + '/' + grouped.all.ownsBy);
+    const byName = await page.evaluate(async () => {
+      try { await window.JBH.place('nosuchinstrument'); return 'no error'; }
+      catch (e) { return e.message; }
+    });
+    t.ok('an unknown tag is refused, and says why a tag might be missing',
+      /no pads carry/.test(byName) && /sound\(\) does not/.test(byName),
+      byName.slice(0, 110));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

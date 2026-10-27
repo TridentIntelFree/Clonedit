@@ -1,0 +1,276 @@
+{
+ "stepsPerBar": 16,
+ "barsPerPhrase": 4,
+ "A": {
+  "chords": [
+   "Am",
+   "F",
+   "C",
+   "G"
+  ],
+  "melody": [
+   {
+    "step": 0,
+    "len": 2,
+    "midi": 72
+   },
+   {
+    "step": 2,
+    "len": 2,
+    "midi": 69
+   },
+   {
+    "step": 4,
+    "len": 2,
+    "midi": 74
+   },
+   {
+    "step": 6,
+    "len": 2,
+    "midi": 72
+   },
+   {
+    "step": 8,
+    "len": 2,
+    "midi": 69
+   },
+   {
+    "step": 10,
+    "len": 6,
+    "midi": 72
+   },
+   {
+    "step": 16,
+    "len": 2,
+    "midi": 72
+   },
+   {
+    "step": 18,
+    "len": 2,
+    "midi": 71
+   },
+   {
+    "step": 20,
+    "len": 6,
+    "midi": 69
+   },
+   {
+    "step": 26,
+    "len": 2,
+    "midi": 79
+   },
+   {
+    "step": 28,
+    "len": 2,
+    "midi": 72
+   },
+   {
+    "step": 30,
+    "len": 2,
+    "midi": 76
+   },
+   {
+    "step": 32,
+    "len": 2,
+    "midi": 79
+   },
+   {
+    "step": 34,
+    "len": 2,
+    "midi": 79
+   },
+   {
+    "step": 36,
+    "len": 2,
+    "midi": 76
+   },
+   {
+    "step": 38,
+    "len": 2,
+    "midi": 79
+   },
+   {
+    "step": 40,
+    "len": 2,
+    "midi": 79
+   },
+   {
+    "step": 42,
+    "len": 6,
+    "midi": 79
+   },
+   {
+    "step": 48,
+    "len": 2,
+    "midi": 74
+   },
+   {
+    "step": 50,
+    "len": 2,
+    "midi": 67
+   },
+   {
+    "step": 52,
+    "len": 4,
+    "midi": 67
+   },
+   {
+    "step": 56,
+    "len": 2,
+    "midi": 55
+   }
+  ],
+  "bass": [
+   {
+    "step": 0,
+    "midi": 45
+   },
+   {
+    "step": 16,
+    "midi": 41
+   },
+   {
+    "step": 32,
+    "midi": 48
+   },
+   {
+    "step": 48,
+    "midi": 43
+   }
+  ]
+ },
+ "B": {
+  "chords": [
+   "Am",
+   "Dm",
+   "E7",
+   "Am"
+  ],
+  "melody": [
+   {
+    "step": 0,
+    "len": 2,
+    "midi": 81
+   },
+   {
+    "step": 2,
+    "len": 2,
+    "midi": 83
+   },
+   {
+    "step": 4,
+    "len": 6,
+    "midi": 72
+   },
+   {
+    "step": 12,
+    "len": 2,
+    "midi": 74
+   },
+   {
+    "step": 14,
+    "len": 2,
+    "midi": 76
+   },
+   {
+    "step": 16,
+    "len": 2,
+    "midi": 74
+   },
+   {
+    "step": 18,
+    "len": 2,
+    "midi": 76
+   },
+   {
+    "step": 20,
+    "len": 2,
+    "midi": 77
+   },
+   {
+    "step": 22,
+    "len": 2,
+    "midi": 76
+   },
+   {
+    "step": 24,
+    "len": 2,
+    "midi": 76
+   },
+   {
+    "step": 26,
+    "len": 2,
+    "midi": 74
+   },
+   {
+    "step": 28,
+    "len": 4,
+    "midi": 83
+   },
+   {
+    "step": 32,
+    "len": 2,
+    "midi": 76
+   },
+   {
+    "step": 34,
+    "len": 8,
+    "midi": 76
+   },
+   {
+    "step": 44,
+    "len": 2,
+    "midi": 69
+   },
+   {
+    "step": 46,
+    "len": 2,
+    "midi": 72
+   },
+   {
+    "step": 48,
+    "len": 2,
+    "midi": 81
+   },
+   {
+    "step": 50,
+    "len": 2,
+    "midi": 81
+   },
+   {
+    "step": 52,
+    "len": 2,
+    "midi": 72
+   },
+   {
+    "step": 54,
+    "len": 2,
+    "midi": 74
+   },
+   {
+    "step": 56,
+    "len": 2,
+    "midi": 76
+   }
+  ],
+  "bass": [
+   {
+    "step": 0,
+    "midi": 45
+   },
+   {
+    "step": 16,
+    "midi": 50
+   },
+   {
+    "step": 32,
+    "midi": 40
+   },
+   {
+    "step": 48,
+    "midi": 45
+   }
+  ]
+ },
+ "source": "magenta chord_pitches_improv temp 1.0, best of 16 per phrase"
+}

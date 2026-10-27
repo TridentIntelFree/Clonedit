@@ -28,7 +28,33 @@
    A difference of a semitone or so is tuning and measurement. Anything
    past three is a naming scheme that means something other than pitch,
    and the instrument should not be played melodically until it is
-   understood. */
+   understood.
+
+   WHAT A DISAGREEING READING MEANS, AND THE WOLF THIS USED TO CRY. The
+   picks are spread to the edges of each instrument's range on purpose,
+   because a naming error shows at the edges. But the edges are also
+   where the DETECTOR fails: a piano's bottom A is 27.5Hz, under what a
+   16kHz mono clip resolves, and its top C has a hammer thud louder than
+   its fundamental. Run on a correct 88-note library at the default three
+   picks, this reported
+
+     undefined  3  +0.0 st  33%  SPLIT — only 1/3 agree; two conventions
+     DO NOT WRITE MELODIES ON THESE UNTIL UNDERSTOOD
+
+   on a piano whose nine interior notes all read within 0.2 semitones.
+   Two of its three votes were unmeasurable samples counted as
+   disagreements, and the headline verdict was the most alarming one the
+   script can print. A check that says that about a correct library gets
+   ignored, and then it may as well not exist.
+
+   What separates the two cases is whether the disagreements CLUSTER
+   somewhere musical. A library with two naming conventions in it splits
+   by an octave or two — the odd readings pile up at -12 or +12 from the
+   median. A detector failure scatters: +18.8 here, -76.7 there, nowhere
+   near any octave. So an outlier is only counted as evidence of a second
+   convention when it lands within 1.5 semitones of the median plus or
+   minus an octave or two; anything else is reported as unmeasurable,
+   which is what it is. */
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -38,14 +64,27 @@ import { fundamentalRobust, midiOfHz, selfTest } from './lib/pitch.mjs';
 
 const MANIFEST = process.argv[2];
 if (!MANIFEST) { console.error('usage: node scripts/audit-pitch.mjs <manifest.json> [per-inst]'); process.exit(2); }
-const PER = +(process.argv[3] || 3);
+/* Five, not three. Three picks on a wide-range instrument are the
+   bottom, the middle and the top, and on anything sampled across more
+   than about four octaves two of those three are the ones the detector
+   cannot read — so a correct library had a single interior reading
+   carrying the whole verdict. */
+const PER = +(process.argv[3] || 5);
 
 const man = JSON.parse(readFileSync(MANIFEST, 'utf8'));
 const pitched = man.samples.filter(s => s.note != null);
+/* Grouped by `inst` where a manifest carries one. A single-instrument
+   pack does not — salamander is 180 piano samples with no `inst` field
+   anywhere — and keying on the missing property put the whole library
+   under one group printed as the literal word "undefined", which reads
+   like a bug in the pack rather than a pack that simply holds one
+   instrument. Fall back to the manifest's own name. */
+const label = man.name || MANIFEST.replace(/^.*\/|\.json$/g, '');
 const byInst = new Map();
 for (const s of pitched) {
-  if (!byInst.has(s.inst)) byInst.set(s.inst, []);
-  byInst.get(s.inst).push(s);
+  const k = s.inst || label;
+  if (!byInst.has(k)) byInst.set(k, []);
+  byInst.get(k).push(s);
 }
 
 /* The detector lives in scripts/lib/pitch.mjs and carries its own
@@ -121,12 +160,21 @@ try {
        naming conventions in it splits into two groups, whereas a good
        folder with one bad measurement does not. */
     const agree = ds.filter(d => Math.abs(d - med) < 1.5).length;
-    const frac = agree / ds.length;
-    const odd = ds.length - agree;
+    /* An outlier is evidence of a SECOND CONVENTION only if it sits an
+       octave or two off the median — that is what a naming scheme does.
+       Scattered readings are the detector failing on a note it cannot
+       hear, and counting those as disagreements is what made this
+       script condemn a correct piano. */
+    const conv = ds.filter(d => Math.abs(d - med) >= 1.5
+      && [12, -12, 24, -24].some(o => Math.abs(d - med - o) < 1.5)).length;
+    const junk = ds.length - agree - conv;
+    const frac = (agree + conv) ? agree / (agree + conv) : 0;
     rows.push([inst, diffs.length, med, frac,
       Math.abs(med) > 1.5 ? 'DECLARED PITCH IS WRONG by about ' + Math.round(med) + ' semitones'
-        : frac < 0.7 ? 'SPLIT — only ' + agree + '/' + ds.length + ' agree; likely two conventions'
-          : odd ? 'ok (' + odd + ' sample' + (odd > 1 ? 's' : '') + ' unmeasurable — short or very low)'
+        : (conv >= 2 && frac < 0.85)
+          ? 'SPLIT — ' + conv + '/' + (agree + conv) + ' read an octave out; two conventions'
+          : junk ? 'ok (' + junk + ' sample' + (junk > 1 ? 's' : '')
+              + ' unmeasurable — too low, too short, or no clear fundamental)'
             : 'ok']);
   }
 } finally { rmSync(tmp, { recursive: true, force: true }); }

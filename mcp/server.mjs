@@ -552,11 +552,18 @@ const TOOLS = [
       + 'own loudest — because a bass compared against a whole-mix target at 8-16kHz is '
       + 'being marked down for having no cymbals in it. One render of one pattern, so it is '
       + 'cheap enough to run on every sound as it is made, which is the only moment the '
-      + 'answer is still cheap to act on: a bass audited at +8.4dB in 20-60Hz went on to '
-      + 'measure +8.2dB in the finished mix, so this predicts the bounce in seconds rather '
-      + 'than in twenty minutes.',
+      + 'answer is still cheap to act on. It measures a sound\'s COLOUR, not its '
+      + 'CONTRIBUTION, and so predicts the finished mix only where that sound dominates the '
+      + 'band: a bass audited at +8.4dB in 20-60Hz went on to measure +8.2dB in the bounce, '
+      + 'while percussion audited at +29dB in 8-16k landed at -1.5dB because it sits 18dB '
+      + 'down and contributes almost nothing. Read it next to place(), which says how the '
+      + 'sound stands against the others; neither call answers the other\'s question.',
     inputSchema: { type: 'object', required: ['pad'], properties: {
-      pad: { type: 'integer', description: 'the pad to judge' },
+      pad: { description: 'the sound to judge: an instrument tag from instrument(), a list '
+        + 'of pads, or one pad index. A sampled instrument is one sound spread over a pad '
+        + 'per note, so pass its name — judging one of those pads judges one note.',
+        anyOf: [{ type: 'integer' }, { type: 'string' },
+          { type: 'array', items: { type: 'integer' } }] },
       want: { type: 'object', description: 'target profile {shape:[{band,rel}]}; '
         + 'omit to use the loaded reference()' },
       src: { type: 'string', enum: ['pat', 'song'] },
@@ -572,9 +579,16 @@ const TOOLS = [
       + 'that is not a level problem — turning it up makes the mix louder without making room. '
       + 'Run it on every sound as it goes in, rather than discovering at the end that three '
       + 'things are fighting over 200-500Hz. Cheap enough to afford: two renders, not one per '
-      + 'pad like critique().',
+      + 'pad like critique(). PASS AN INSTRUMENT TAG for anything instrument() built: a '
+      + 'sampled piano is one sound spread over a pad per sampled note, and placing one of '
+      + 'those pads renders a single note and sets it against the other ten notes of the '
+      + 'same piano — which reported a piano trio\'s melody as owning nothing, by -6.1dB, in '
+      + 'a mix where the piano was the loudest thing in it.',
     inputSchema: { type: 'object', required: ['pad'], properties: {
-      pad: { type: 'integer', description: 'the pad to judge' },
+      pad: { description: 'the sound to judge: an instrument tag from instrument(), a list '
+        + 'of pads, or one pad index',
+        anyOf: [{ type: 'integer' }, { type: 'string' },
+          { type: 'array', items: { type: 'integer' } }] },
       src: { type: 'string', enum: ['pat', 'song'], description: 'default pat' },
       loops: { type: 'integer' } } } },
 
