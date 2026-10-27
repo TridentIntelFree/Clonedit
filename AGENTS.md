@@ -102,6 +102,71 @@ that is worth having. They say nothing about whether anyone would
 want to hear it, and passing them all is not evidence of anything
 except that it is not broken. Play it to someone.
 
+**5. NEVER MOVE A MUSICAL PARAMETER TO IMPROVE A NUMBER.** This is
+the one that cost the most and it is the hardest to feel coming,
+because every individual step looks like diligence.
+
+Two tracks, both bounced from this app, measured side by side. One was
+written by another agent and the listener called it "very good". The
+other is HOLLOWAY, built over hours of exactly the loop this file
+recommends — run the free checks, fix what they name, run them again —
+and the listener's verdict was "worse than previous bad samples:
+timing bad, chord progression bad, levels bad".
+
+| | the good one | HOLLOWAY |
+|---|---|---|
+| level variation, 10s windows | 2 dB | **12 dB** |
+| loudness range | 4.2 LU | **10.3 LU** |
+| fine-grained RMS spread (p95−p5) | 14.5 dB | **23.8 dB** |
+| onsets per second | 5.90 | 6.37 |
+| crest | 15 | 14.7 |
+| LUFS | −16.5 | −16.0 |
+| minor ninths | — | **0** |
+
+**Every dynamics measure in this repo ranks HOLLOWAY above the track
+that is actually better.** Not by a little. The listener needed about
+a minute.
+
+Each of the three faults traces to a measurement being served:
+
+- *Timing.* `melody()` refuses to report on a line whose note gaps are
+  too uniform. To clear that refusal the generated pitches were dealt
+  onto four invented arrays of step offsets — `[0,4,6,10,12,14]` and
+  friends — which bear no relation to the notes landing on them. Where
+  a bar held more pitches than the array had slots, the overflow
+  clamped to step 15, so one phrase fires at steps 12, 14 and 15 and
+  then the downbeat. Three times a cycle. An audible stumble that
+  exists only because a card-dealing mechanism had no musical meaning
+  to fall back on.
+- *Levels.* The section below says to read the level map for flatness.
+  So the arrangement was pushed to a 12dB arc and the opening fades in
+  from −28dB — to satisfy a sentence written in this file. The good
+  track sits at 2dB.
+- *Harmony.* `harmony()` asks whether the notes fit the chords. It
+  never asks whether the progression is worth hearing, so Am F C G went
+  unquestioned, and the bass arpeggiates root–third–fifth–approach in
+  every single bar because the check wanted a third stated. That is an
+  exercise, not a part.
+
+This is Goodhart's law with a bounce attached. Every measure here is
+reasonable as a FAULT DETECTOR and harmful as a TARGET. The moment a
+number becomes the thing being improved, the music becomes whatever
+satisfies the number, and these numbers are all blind in the same
+direction — they cannot see whether anyone wants to hear it.
+
+So: run the checks, read them as pass/fail, and fix what is BROKEN.
+If a check reports something and the musical answer is "that is fine
+as it is", that is a legitimate answer and the number stays where it
+is. When a check refuses to measure — `melody()` on a too-regular
+line, `motif()` with no instrument tag — the fix is to understand why,
+not to perturb the material until the refusal goes away.
+
+And when the material itself is the problem, the answer is better
+material, not more constraint satisfaction. `@magenta/music` is
+already installed with 29 reachable checkpoints; `trio_16bar` writes
+melody, bass and drums as one coherent thing in about three seconds on
+CPU. It was sitting unused while all of the above was hand-assembled.
+
 ## A pack named "real" may not be
 
 `samples/real-cc0-full.json` contains `mvxkit`, which is synthesised.
