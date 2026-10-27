@@ -99,18 +99,33 @@ if(inf.worstBend>2) throw new Error('bends of '+inf.worstBend
   +' semitones — past about two a stretched sample stops sounding like a piano');
 if(inf.dynamics<4) throw new Error('only '+inf.dynamics+' velocity layers reached');
 
-/* THE ENVELOPE IS A DAMPER. sus:0 with a nine-second decay is how a
-   struck string behaves — it starts dying immediately and takes a long
-   time about it. The note's written length closes the gate, and the
-   release is the damper felt landing. Together that is a pedal. */
+/* THE ENVELOPE IS A DAMPER, AND THE PEDAL HAS TO CHANGE.
+
+   The first version used dec:9 — a struck string really does take
+   that long to die, so it looked right. It is not, because the pedal
+   never lifts: a note written for four beats went on sounding for
+   ten seconds, which at 56bpm is two and a third BARS, so every
+   chord was still ringing through the two after it. harmony() found
+   ten notes a semitone from a chord three changes later, the worst
+   being D held over an F# minor against its C#.
+
+   That is not a number needing improvement, it is mud. A pianist
+   lifts the pedal when the harmony changes. Five seconds puts the
+   ring at about a bar and a third: the bar line still blurs, which
+   is the whole point of a nocturne, but the previous chord has
+   faded well down before the next one is established.
+
+   GAIN. 0.75 left the bounce at -23.2 LUFS with the sample peak at
+   -7.2dB — seven decibels of headroom unused, and the master could
+   not recover it. The level belongs at the pad. */
 const pads=inf.pads;
 for(let i=0;i<pads.length;i++){
   /* panned by register, the way the strings lie under a lid: bass to
      the left of the player, treble to the right. Narrow, because this
      is one instrument in a room and not a stereo effect. */
   const t=i/(pads.length-1);
-  await call('pad', pads[i], { att:0.002, dec:9, sus:0, rel:0.9,
-    gain:0.75, pan:-0.3+t*0.6, rev:0.5, dly:0.1 });
+  await call('pad', pads[i], { att:0.002, dec:5, sus:0, rel:0.9,
+    gain:1.40, pan:-0.3+t*0.6, rev:0.5, dly:0.1 });
 }
 
 /* ---- THE PIECE ------------------------------------------------------
@@ -209,14 +224,33 @@ if((sch.stretched||[]).length) console.log('   stretched: '
   +sch.stretched.map(s=>s.pad+' by '+s.semitones).join(', '));
 
 /* ---- LEVEL, AND THE FILE, BEFORE THE SLOW READ-ONLY PASS ------------- */
-await call('set',{mTrim:-12});
-const probe=await call('render',{src:'song',loops:1,loudness:true});
-const trim=Math.max(-24, Math.min(12, -12+(TARGET_LUFS-probe.lufs)));
-await call('set',{mTrim:+trim.toFixed(1)});
-const m=await call('render',{src:'song',loops:1,loudness:true});
-console.log('probe '+probe.lufs.toFixed(1)+' -> trim '+trim.toFixed(1)
-  +' -> '+m.lufs.toFixed(1)+' LUFS  tp '+m.truePeakDb.toFixed(2)
-  +'  crest '+m.crestDb.toFixed(1)+(m.clipping?'  CLIP':''));
+/* THE MASTER IS NOT LINEAR, so solving the trim in one step misses.
+   AGENTS.md step 4 says it is and I wrote that; on this track a
+   request for +21.9dB of trim produced +16.2dB of loudness, a slope
+   of 0.74, and the bounce landed 5.7dB under target with the limiter
+   nowhere near engaging. So: measure, solve, measure again, and use
+   the slope the first two points actually show rather than the one
+   the arithmetic assumes. */
+let trim=-12, m=null, prev=null;
+for(let pass=0; pass<3; pass++){
+  await call('set',{mTrim:+trim.toFixed(1)});
+  m=await call('render',{src:'song',loops:1,loudness:true});
+  console.log('  trim '+trim.toFixed(1).padStart(6)+' -> '+m.lufs.toFixed(1)+' LUFS'
+    +'  tp '+m.truePeakDb.toFixed(2)+'  crest '+m.crestDb.toFixed(1)
+    +(m.clipping?'  CLIP':''));
+  const err=TARGET_LUFS-m.lufs;
+  if(Math.abs(err)<0.3) break;
+  /* slope from the two points we have, defaulting to 1 on the first */
+  const slope=(prev && Math.abs(trim-prev.t)>0.5)
+    ? Math.max(0.4, Math.min(1.2, (m.lufs-prev.l)/(trim-prev.t))) : 1;
+  prev={t:trim, l:m.lufs};
+  const next=Math.max(-24, Math.min(12, trim+err/slope));
+  if(Math.abs(next-trim)<0.2) break;
+  trim=next;
+}
+if(m.lufs<TARGET_LUFS-1) console.log('   !! still '+(TARGET_LUFS-m.lufs).toFixed(1)
+  +'dB under target with trim at '+trim.toFixed(1)+' — raise the pad gains, '
+  +'the master cannot recover what was never staged');
 if(errors.length) console.log('ERRORS:',errors.slice(0,3));
 const wav=await call('render',{src:'song',loops:1,wav:true,depth:24,loudness:true});
 writeFileSync(OUT+'nocturne.wav', Buffer.from(wav.wavBase64,'base64'));
