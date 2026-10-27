@@ -48,3 +48,7 @@ meridian.wav
 ridgeway.wav
 kitwork.wav
 holloway.wav
+
+# listening copies encoded from the bounces — same rule as the WAVs,
+# the script is the artefact and the audio is not
+*.mp3
