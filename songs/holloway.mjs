@@ -462,14 +462,42 @@ console.log('   minor 9ths '+hm.minorNinths.length+' · passing-only '
   +hm.passingOnly+' · suspensions '+hm.suspensions.length
   +' · notes ringing into a chord they belong to '+hm.carriedConsonant);
 
+/* ---- LEVEL, AND WRITE THE FILE, BEFORE THE EXPENSIVE READ-ONLY PASS --
+   The documented order puts review() before the bounce, and for a
+   human sitting at the machine that is right: do not ship what you
+   have not checked. But review() does not MODIFY anything — it renders
+   and measures — so a bounce written before it is byte-identical to
+   one written after, and writing it first means a crash twenty minutes
+   into the review does not cost the file.
+
+   That is not hypothetical here. Two renders of this track were lost
+   to container restarts that landed during review(), each time with
+   the checks already passed and printed and the WAV never written. The
+   ordering rule is about not SHIPPING unchecked audio, which is a
+   decision made by a person reading the output, not by the order two
+   read-only calls happen to run in. */
+await call('set',{mTrim:-12, compAmt:0.08, mCeil:-2.0});
+const probe=await call('render',{src:'song',loops:1,loudness:true});
+const wanted=-12 + (TARGET_LUFS - probe.lufs);
+const trim=Math.max(-24, Math.min(12, wanted));
+console.log('\nprobe -12 -> '+probe.lufs.toFixed(1)+' LUFS -> trim '+trim.toFixed(1));
+if(wanted>12.01) console.log('   !! wanted '+wanted.toFixed(1)+'dB; the pads are staged too quiet');
+await call('set',{mTrim:+trim.toFixed(1)});
+const m=await call('render',{src:'song',loops:1,loudness:true});
+console.log('   '+m.lufs.toFixed(1)+' LUFS  tp '+m.truePeakDb.toFixed(2)
+  +'  crest '+m.crestDb.toFixed(1)+(m.clipping?'  CLIP':''));
+if(errors.length) console.log('ERRORS:',errors.slice(0,3));
+const wav=await call('render',{src:'song',loops:1,wav:true,depth:24,loudness:true});
+writeFileSync(OUT+'holloway.wav', Buffer.from(wav.wavBase64,'base64'));
+console.log('WAV '+(wav.bytes/1048576).toFixed(1)+'MB · '+Math.floor(wav.seconds/60)+':'
+  +String(Math.round(wav.seconds%60)).padStart(2,'0')+'   (written before review, which changes nothing)');
+
 /* ---- STEP 3: the full review, which is the expensive half ------------
-   The documented order says to run this once everything is in and each
-   sound already fits, and to expect it mostly to confirm. compare() is
-   not among what it can run here: the repo's only reference profile is
-   an ambient hall at -27dB in the sub, and a piano trio matched to
-   that would be told to delete its left hand. So tonal balance is NOT
-   checked on this track, and that is a gap in the repo rather than a
-   decision about the music. */
+   compare() is not among what it can run here: the repo's only
+   reference profile is an ambient hall at -27dB in the sub, and a
+   piano trio matched to that would be told to delete its left hand. So
+   tonal balance is NOT checked on this track, and that is a gap in the
+   repo rather than a decision about the music. */
 const rv=await call('review',{src:'song', chords:PROG});
 console.log('\nREVIEW — '+String(rv.says||''));
 for(const f of (rv.findings||[]).slice(0,10))
@@ -487,21 +515,7 @@ console.log('\nCOVERAGE — '+(rv.counts?rv.counts.toolsRun:'?')+' checks ran, '
   +(rv.counts?rv.counts.toolsSkipped:'?')+' could not');
 console.log('   ran: '+(rv.ran||[]).join(', '));
 if((rv.skipped||[]).length) console.log('   did not: '+rv.skipped.map(s=>String(s).split(' — ')[0]).join(', '));
-
-/* ---- LEVEL. mTrim is clamp(want,-24,12) — it goes to +12 ------------- */
-await call('set',{mTrim:-12, compAmt:0.08, mCeil:-2.0});
-const probe=await call('render',{src:'song',loops:1,loudness:true});
-const wanted=-12 + (TARGET_LUFS - probe.lufs);
-const trim=Math.max(-24, Math.min(12, wanted));
-console.log('\nprobe -12 -> '+probe.lufs.toFixed(1)+' LUFS -> trim '+trim.toFixed(1));
-if(wanted>12.01) console.log('   !! wanted '+wanted.toFixed(1)+'dB; the pads are staged too quiet');
-await call('set',{mTrim:+trim.toFixed(1)});
-const m=await call('render',{src:'song',loops:1,loudness:true});
-console.log('   '+m.lufs.toFixed(1)+' LUFS  tp '+m.truePeakDb.toFixed(2)
-  +'  crest '+m.crestDb.toFixed(1)+(m.clipping?'  CLIP':''));
-if(errors.length) console.log('ERRORS:',errors.slice(0,3));
-const wav=await call('render',{src:'song',loops:1,wav:true,depth:24,loudness:true});
-writeFileSync(OUT+'holloway.wav', Buffer.from(wav.wavBase64,'base64'));
-console.log('WAV '+(wav.bytes/1048576).toFixed(1)+'MB · '+Math.floor(wav.seconds/60)+':'
-  +String(Math.round(wav.seconds%60)).padStart(2,'0'));
+if((rv.counts&&rv.counts.serious)>0)
+  console.log('\n!! review found '+rv.counts.serious+' serious thing(s) AFTER the file was '
+    +'written. The WAV on disk is the one just measured — fix and re-run before sending it.');
 await browser.close(); srv.close();

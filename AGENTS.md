@@ -159,9 +159,22 @@ do not are generated.
    with a finished mix you want to sound like. **Before** judging tone —
    without it, tonal balance is not checked at all and `critique()`
    says so.
-3. `review({src:'song'})`. Fix what it names, in the order it names them.
-   Run it again. This should mostly confirm. If it finds a sound with
-   nowhere to sit, that sound was placed badly and you skipped 1d.
+3. `review({src:'song', chords:[…]})`. Fix what it names, in the order
+   it names them. Run it again. This should mostly confirm. If it
+   finds a sound with nowhere to sit, that sound was placed badly and
+   you skipped 1d. Pass the progression or the harmony is not checked
+   and it says so under `no-progression`.
+
+   **Write the WAV before this, not after.** `review()` renders and
+   measures and modifies nothing, so a bounce written before it is
+   byte-identical to one written after — and this pass takes twenty
+   minutes. Two renders of HOLLOWAY were lost to container restarts
+   that landed inside `review()`, each with every check already passed
+   and printed and no file on disk. The rule "check before you ship"
+   is about a person reading the output and deciding, not about the
+   order two read-only calls happen to run in. Write the file, then
+   review, and re-run if the review finds something; the script should
+   say loudly if it did.
 4. One `render({loudness:true})` at a known `mTrim`, then solve for the
    trim rather than laddering: the master is linear, so
 
