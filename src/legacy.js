@@ -11320,6 +11320,345 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      one the grid implies. Then the same question is asked per pad, which
      is what makes it useful: it names which pads are holding the beat up
      and which are smearing it. */
+
+  /* DO THE NOTES FIT THE CHORDS — the check this app did not have.
+     ====================================================================
+
+     The listener's words on HOLLOWAY were "real structure but
+     distasteful chordage", and every analyser here agreed the track was
+     fine. They would: `melody()` and `motif()` measure a line against
+     itself, `counterpoint()` measures two lines against each other, and
+     NOT ONE OF THEM KNOWS WHAT THE CHORD IS. A line can score at the
+     folk norm for contour and recurrence while sitting a semitone off
+     the harmony in every bar, which is exactly what happened.
+
+     The reason it was never checkable is that nothing in the app holds
+     a progression. Pads hold samples; patterns hold steps; there is no
+     key, no chord, nowhere the harmony is written down. So this takes
+     it as a DECLARATION — `harmony({chords:['Am','F','C','G']})` — and
+     the act of stating it is half the value, because a progression you
+     cannot write down is one you have not decided.
+
+     WHAT MAKES A NOTE WRONG, and why it is not "not in the chord".
+     Most good music is mostly non-chord tones. The rule that actually
+     predicts a sour note is the minor ninth: a pitch sounding a
+     SEMITONE ABOVE a chord tone beats against it. That is the standard
+     account of why the 4th is the avoid note over a major chord — it is
+     a semitone above the 3rd — and it is why the 11th is fine over a
+     minor chord, where the 3rd is a whole tone below it.
+
+     Run against HOLLOWAY's walking bass it named four notes and let two
+     pass, which is the calibration worth having:
+
+       C# over Am   semitone above the b3        flagged
+       A# over Am   semitone above the root      flagged
+       G# over C    semitone above the 5th       flagged
+       G# over G    semitone above the root      flagged
+       F# over Am   the Dorian 13th              allowed
+       B  over F    the Lydian #11               allowed
+
+     AND IT HAS TO KNOW ABOUT SUSTAIN, which is the part a theory book
+     will not tell you, because a theory book assumes a note stops when
+     it is written to stop. A chromatic approach note on beat 4 is
+     correct practice — it is how walking bass works — and the textbook
+     reason it works is that it is SHORT. On a sampled piano with a
+     1.9-second decay in a 2.6-second bar it is not short. It is still
+     sounding when the next chord arrives.
+
+     THE ANSWER IS NOT TO SHORTEN IT. That ring is where the continuity
+     in a piano trio comes from: the bar lines stop being seams because
+     something is always still sounding across them. Damping everything
+     to fit its own bar buys clean harmony and spends the legato, which
+     is a bad trade and the obvious wrong fix.
+
+     What a held note owes is to land somewhere in the chord it rings
+     into. There are exactly two ways to do that and both are old:
+
+       a COMMON TONE — it belongs to both chords, and the overlap is
+       pure glue, the standard way of joining two harmonies;
+
+       a SUSPENSION — it does not belong to the new chord, is heard as
+       a dissonance on the new downbeat, and RESOLVES BY STEP onto a
+       chord tone just after. That is not a flaw, it is one of the
+       oldest expressive devices there is; what makes it work is the
+       resolution, and a suspension that never resolves is just a
+       wrong note held for a long time.
+
+     So: every note gets its ring time from the pad's own envelope and
+     is judged against every chord it is still sounding in, and a
+     carried dissonance that steps onto a chord tone within a beat is
+     counted as a suspension and not reported. HOLLOWAY's F# rang into
+     an F major, made a minor ninth against the root, and then leapt
+     away — neither common tone nor suspension, so it is just the
+     clash. The count of notes that DO ring across a bar line into a
+     chord they belong to comes back as `carriedConsonant`, because
+     that number wants to be high.
+
+     THE THIRD. A texture of roots, fifths and octaves does not state
+     major or minor at all, and then one stray chromatic is the most
+     harmonically defining event in the bar. The third and seventh are
+     the guide tones; the fifth is the one you can drop. So it reports
+     bars whose third nothing plays.
+
+     What it says on material where nothing is wrong: nothing. */
+  async harmony(opt){
+    const o=opt||{}, src=o.src||'song';
+    const chords=o.chords;
+    if(!Array.isArray(chords) || !chords.length)
+      throw new Error('harmony() needs the progression you wrote to — '
+        +'harmony({chords:["Am","F","C","G"]}), one per bar, cycled. Nothing in '
+        +'this app records what the harmony is meant to be: pads hold samples, '
+        +'patterns hold steps, and no key is stored anywhere. It cannot be '
+        +'inferred from the notes either, because inferring it from the notes '
+        +'is what makes a wrong note look correct.');
+
+    /* ---- chord symbols -> pitch classes ------------------------------
+       Deliberately a small vocabulary. A parser that silently accepts
+       what it does not understand would report a clean bill of health
+       on a progression it never read, which is the quiet failure this
+       file keeps running into. Anything unrecognised throws. */
+    const LETTER={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+    const QUAL=[
+      [/^(maj7|M7|Δ7?)$/i,            [0,4,7,11]],
+      [/^(m7b5|ø7?|min7b5)$/i,        [0,3,6,10]],
+      [/^(dim7|o7)$/i,                [0,3,6,9]],
+      [/^(dim|o)$/i,                  [0,3,6]],
+      [/^(aug|\+)$/i,                 [0,4,8]],
+      [/^(m7|min7|-7)$/i,             [0,3,7,10]],
+      [/^(mmaj7|mM7)$/i,              [0,3,7,11]],
+      [/^(m6|min6|-6)$/i,             [0,3,7,9]],
+      [/^(m|min|-)$/i,                [0,3,7]],
+      [/^(sus4|sus)$/i,               [0,5,7]],
+      [/^sus2$/i,                     [0,2,7]],
+      [/^6$/i,                        [0,4,7,9]],
+      [/^(7|dom7)$/i,                 [0,4,7,10]],
+      [/^(9)$/i,                      [0,4,7,10,2]],
+      [/^(m9|min9|-9)$/i,             [0,3,7,10,2]],
+      [/^(maj9|M9)$/i,                [0,4,7,11,2]],
+      [/^$/,                          [0,4,7]],
+    ];
+    const parse=(sym)=>{
+      const m=/^([A-Ga-g])([#b]?)(.*)$/.exec(String(sym).trim());
+      if(!m) throw new Error('harmony(): cannot read the chord "'+sym+'"');
+      let root=LETTER[m[1].toUpperCase()];
+      if(m[2]==='#') root++; if(m[2]==='b') root--;
+      root=((root%12)+12)%12;
+      const tail=m[3].replace(/\s+/g,'');
+      for(const [re,iv] of QUAL) if(re.test(tail))
+        return { sym:String(sym).trim(), root, pcs:iv.map(x=>(root+x)%12),
+          third:(root+(iv.includes(3)?3:iv.includes(5)&&!iv.includes(4)?null:4))%12,
+          hasThird:iv.includes(3)||iv.includes(4),
+          /* a major third with a minor seventh: the chord whose job is
+             tension, and the only one with altered tensions available */
+          dominant:iv.includes(4)&&iv.includes(10) };
+      throw new Error('harmony(): do not know the chord quality in "'+sym+'". '
+        +'Known: maj m 7 m7 maj7 m9 9 maj9 6 m6 dim dim7 aug sus2 sus4 m7b5 mmaj7.');
+    };
+    const prog=chords.map(parse);
+
+    /* schedule() returns `notes` as a COUNT and the events themselves as
+       `events`, and only when full is not false. Reading sch.notes as the
+       array gives a number, whose .filter is undefined — which is how
+       this returned "nothing pitched is playing" on a pattern with
+       sixteen notes in it the first time it ran. */
+    const sch=await window.MVX.schedule({src, full:true});
+    if(!sch || !Array.isArray(sch.events) || !sch.events.length)
+      return { ran:false, says:'nothing is scheduled to play.' };
+
+    /* bar length. 4/4 is assumed and said so, rather than guessed at
+       silently from a pattern length that may be 32 or 64 steps. */
+    const beats=o.beatsPerBar||4;
+    const barSec=beats*60/(S.bpm||120);
+    const chordAt=(t)=>prog[Math.floor(t/barSec+1e-9)%prog.length];
+    const barAt=(t)=>Math.floor(t/barSec+1e-9);
+
+    /* HOW LONG A NOTE IS ACTUALLY SOUNDING. A step `len` lock says so
+       outright. Otherwise it is the pad's own envelope, and for the
+       sus:0 shape every sampled instrument here uses, that is the decay
+       plus the release — which on a piano is most of a bar and is the
+       whole reason an approach note stopped being an approach note. */
+    const ring=(n)=>{
+      if(n.len>0) return n.len;
+      const p=S.pads[n.pad]; if(!p) return 0.1;
+      const a=+p.att||0, d=+p.dec||0, r=+p.rel||0, s=+p.sus||0;
+      return s>0 ? Math.max(0.1, a+d+r+barSec*0.5) : Math.max(0.05, a+d+r);
+    };
+
+    /* DRUMS ARE NOT A VOICE. instrument() lays a kit out by MIDI note
+       like anything else, so a ride cymbal arrives here as "note 51"
+       with a srcNote behind it and nothing about the data says it is
+       not a pitch. Run across HOLLOWAY without this, the first finding
+       was `kit 51 against lh 52` and the count was 314 false relations
+       and 359 minor ninths, almost all of them a cymbal against the
+       piano. That is the same disease review() had to have cured twice
+       — melodic checks run on shakers — and a check drowning four real
+       findings in three hundred spurious ones may as well not exist.
+       The excluded pads are named in the result rather than dropped
+       quietly, because a check that silently did not look at something
+       reads exactly like a check that passed. */
+    const PERC=/^(DRUMS|PERC|FX)$/i;
+    const isPerc=(pad)=>{ const p=S.pads[pad]; return !!(p && PERC.test(p.srcCat||'')); };
+    const skippedPerc=[...new Set(sch.events.filter(n=>n.midi!=null && isPerc(n.pad))
+      .map(n=>(S.pads[n.pad]&&S.pads[n.pad].inst)||('pad'+n.pad)))];
+    const pitched=sch.events.filter(n=>n.midi!=null && !isPerc(n.pad));
+    if(!pitched.length)
+      return { ran:false, percussionIgnored:skippedPerc,
+        says:'nothing pitched is playing — harmony() has nothing to judge'
+          +(skippedPerc.length?'. '+skippedPerc.join(', ')+' '
+            +(skippedPerc.length>1?'are':'is')+' percussion, and a drum laid out '
+            +'by MIDI note is not a voice':'. Pitched parts come from note(), '
+            +'not step()')+'.' };
+
+    const ev=pitched.map(n=>({ ...n, pc:((n.midi%12)+12)%12,
+      end:n.t+ring(n), inst:(S.pads[n.pad]&&S.pads[n.pad].inst)||('pad'+n.pad) }));
+
+    /* ---- 1. the minor ninth, against every chord a note sounds in ----
+       A note is checked in every bar it is still sounding in, not only
+       the one it started in, because the ring is the point. */
+    const byInstTime={};
+    for(const e of ev) (byInstTime[e.inst]=byInstTime[e.inst]||[]).push(e);
+    for(const k in byInstTime) byInstTime[k].sort((a,b)=>a.t-b.t);
+    /* Does this voice step onto a chord tone of the new chord shortly
+       after the bar line? Then the dissonance was a suspension and
+       resolved, which is a device rather than a mistake.
+
+       AND HAS THE DISSONANCE ACTUALLY STOPPED BY THEN. This is the
+       condition the first version left out, and leaving it out made
+       the check useless on exactly the material it was written for.
+       HOLLOWAY's F#2 approach steps down a semitone onto F2 at the
+       bar line — a textbook resolution, so it was counted as a
+       suspension and not reported. But the F# is still ringing: the
+       pad decays for 2.5 seconds and the F arrives 50 milliseconds
+       later, so the two sound TOGETHER for two more beats. That is
+       not a suspension resolving, it is a semitone cluster in the
+       bass, and it was two of the four notes the listener heard as
+       wrong. A suspension releases the dissonance as the resolution
+       speaks; if the dissonance is still sounding a beat later,
+       nothing has resolved. */
+    const resolves=(e, bar)=>{
+      const line=byInstTime[e.inst]||[], edge=bar*barSec, ch=prog[bar%prog.length];
+      for(const n of line){
+        if(n.t<=edge+1e-6) continue;
+        if(n.t>edge+barSec/beats*1.01) break;     // within a beat of the change
+        const step=Math.abs(n.midi-e.midi);
+        if(!(step===1||step===2) || !ch.pcs.includes(n.pc)) return false;
+        return e.end <= n.t + barSec/beats;       // and it has let go
+      }
+      return false;
+    };
+    const clashes=[], suspensions=[];
+    let carriedConsonant=0;
+    for(const e of ev){
+      const first=barAt(e.t), last=barAt(Math.max(e.t, e.end-1e-6));
+      for(let b=first; b<=last; b++){
+        const ch=prog[b%prog.length], carried=b>first;
+        if(ch.pcs.includes(e.pc)){ if(carried) carriedConsonant++; continue; }
+        /* ON A DOMINANT SEVENTH THE SEMITONE RULE OVER-FIRES, and it did
+           here on real music: a b9 is a semitone above the root, so
+           E7b9 resolving to Am — the most ordinary cadence in a minor
+           key — came back as a fault. The altered tensions b9, #9 and
+           b13 are what a dominant is FOR; the one note that genuinely
+           clashes on it is the natural 11, a semitone above the major
+           third, and that stays flagged. */
+        if(ch.dominant && [1,3,8].includes((e.pc-ch.root+12)%12)){
+          if(carried) carriedConsonant++; continue; }
+        const under=ch.pcs.find(pc=>(e.pc-pc+12)%12===1);
+        if(under==null){ if(carried) carriedConsonant++; continue; }  // a tension
+        const held=Math.min(e.end,(b+1)*barSec)-Math.max(e.t,b*barSec);
+        const row={ inst:e.inst, pad:e.pad, midi:e.midi, pc:e.pc,
+          t:+e.t.toFixed(2), bar:b, chord:ch.sym, over:under,
+          heldBeats:+(held/(barSec/beats)).toFixed(2), carried };
+        if(carried && resolves(e,b)) suspensions.push(row); else clashes.push(row);
+      }
+    }
+    /* A SHORT NOTE PASSING THROUGH IS NOT A FAULT and must not be
+       reported as one, or the check cries wolf on every grace note in
+       the repo. The line is half a beat: under that it is ornament,
+       over it the ear hears it as harmony. */
+    const real=clashes.filter(c=>c.heldBeats>=0.5);
+
+    /* ---- 2. two voices a semitone apart at the same moment ---------- */
+    const sorted=[...ev].sort((a,b)=>a.t-b.t);
+    const rubs=[];
+    for(let i=0;i<sorted.length;i++){
+      for(let j=i+1;j<sorted.length && sorted[j].t<sorted[i].end;j++){
+        const a=sorted[i], b2=sorted[j];
+        if(a.inst===b2.inst) continue;            // one hand's own cluster
+        const d=Math.abs(a.midi-b2.midi);
+        if(d!==1 && d!==13) continue;             // semitone, or minor 9th
+        const ovl=Math.min(a.end,b2.end)-b2.t;
+        if(ovl < barSec/beats*0.5) continue;
+        rubs.push({ t:+b2.t.toFixed(2), bar:barAt(b2.t), chord:chordAt(b2.t).sym,
+          a:a.inst+' '+a.midi, b:b2.inst+' '+b2.midi, apart:d===1?'semitone':'minor 9th' });
+      }
+    }
+
+    /* ---- 3. bars whose third nothing plays -------------------------- */
+    const lastBar=barAt(Math.max(...ev.map(e=>e.t)));
+    const noThird=[];
+    for(let b=0;b<=lastBar;b++){
+      const ch=prog[b%prog.length];
+      if(!ch.hasThird) continue;
+      const sounding=ev.filter(e=>barAt(e.t)===b);
+      if(!sounding.length) continue;
+      if(!sounding.some(e=>e.pc===ch.third)) noThird.push({bar:b, chord:ch.sym});
+    }
+
+    /* ---- what to say ------------------------------------------------- */
+    const NM=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const byInst={};
+    for(const c of real) (byInst[c.inst]=byInst[c.inst]||[]).push(c);
+    const findings=[];
+    for(const inst of Object.keys(byInst)){
+      const list=byInst[inst], worst=list.slice().sort((a,b)=>b.heldBeats-a.heldBeats)[0];
+      const carried=list.filter(c=>c.carried).length;
+      findings.push({ kind:'minor-ninth', inst, count:list.length, carried,
+        says:inst+': '+list.length+' note'+(list.length>1?'s':'')+' sounding a semitone '
+          +'above a chord tone for half a beat or more — worst is '+NM[worst.pc]
+          +' over '+worst.chord+' in bar '+worst.bar+', held '+worst.heldBeats
+          +' beats'+(worst.carried?' after ringing in from the bar before':'')
+          +'. That is the interval that beats; it is why the 4th is the avoid '
+          +'note over a major chord.'
+          +(carried?' '+carried+' of them rang in from the previous bar. Do not '
+            +'fix that by shortening the note — the ring across the bar line is '
+            +'what joins the bars. Change the PITCH so it lands in the new chord '
+            +'(a common tone), or make it step onto a chord tone just after the '
+            +'change (a suspension), which this counts as resolved and does not '
+            +'report.':'') });
+    }
+    if(suspensions.length) findings.push({ kind:'suspensions-found', count:suspensions.length,
+      severity:'note', says:suspensions.length+' carried dissonance'
+        +(suspensions.length>1?'s resolve':' resolves')+' by step onto a chord tone '
+        +'and '+(suspensions.length>1?'were':'was')+' not counted against the piece. '
+        +'Those are suspensions, which are the point rather than the problem.' });
+    if(rubs.length) findings.push({ kind:'false-relation', count:rubs.length,
+      says:rubs.length+' moment'+(rubs.length>1?'s':'')+' where two voices sound a '
+        +'semitone apart — first at bar '+rubs[0].bar+' over '+rubs[0].chord+', '
+        +rubs[0].a+' against '+rubs[0].b+'. Between different voices that is a '
+        +'false relation, and it reads as a wrong note rather than as colour.' });
+    if(noThird.length) findings.push({ kind:'no-third', count:noThird.length,
+      says:noThird.length+' bar'+(noThird.length>1?'s':'')+' state no third at all '
+        +'('+noThird.slice(0,4).map(x=>x.chord+' in bar '+x.bar).join(', ')
+        +(noThird.length>4?', …':'')+'). Roots, fifths and octaves do not say major '
+        +'or minor, so whatever chromatic note is in the bar becomes the one '
+        +'defining it. The third and seventh are the guide tones; the fifth is '
+        +'the one to drop.' });
+
+    const bad=findings.filter(f=>f.severity!=='note');
+    return { ran:true, src, chords:chords.slice(), bars:lastBar+1,
+      percussionIgnored:skippedPerc,
+      notes:pitched.length, barSeconds:+barSec.toFixed(3),
+      minorNinths:real, passingOnly:clashes.length-real.length,
+      suspensions, carriedConsonant,
+      falseRelations:rubs.slice(0,20), barsWithNoThird:noThird, findings,
+      says: bad.length
+        ? bad.length+' thing'+(bad.length>1?'s':'')+' the harmony is '
+          +'doing that will read as wrong notes — '+bad[0].says
+        : 'every note sits in or beside its chord, no two voices rub at a '
+          +'semitone, and every chord states its third. '+carriedConsonant
+          +' notes ring across a bar line into a chord they belong to.' };
+  },
+
   async pulse(opt){
     const o=opt||{}, src=o.src||'song';
     const sch=await window.MVX.schedule({src, full:true});
@@ -11526,12 +11865,19 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        after every element, and against what is already there.
 
        The reason that was not happening is that review() is expensive,
-       and the reason it is expensive is the renders. But four of the
-       checks do not render at all: pulse(), motif(), melody() and
-       counterpoint() all read the schedule, which the app already
-       knows exactly. "Is there a beat", "does anything come back",
-       "is this line a tune", "are these two voices one voice" are
-       free, and they are most of what matters while writing.
+       and the reason it is expensive is the renders. But five of the
+       checks do not render at all: pulse(), motif(), melody(),
+       counterpoint() and harmony() all read the schedule, which the
+       app already knows exactly. "Is there a beat", "does anything
+       come back", "is this line a tune", "are these two voices one
+       voice" and "do the notes fit the chords" are free, and they are
+       most of what matters while writing.
+
+       harmony() is the one that cannot be run for you, because it
+       needs a progression and nothing in this app stores one. Pass
+       {chords:[…]} and quick:true will run it; leave it out and it is
+       listed under what could not run, rather than quietly omitted —
+       the harmony is the thing the other four are blindest to.
 
        So quick:true runs those and nothing else. It is instant, it can
        be called after every pattern, and the expensive half — levels,
@@ -11575,7 +11921,26 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
          They therefore never reach `skipped` either, and the whole
          thing reported "nothing flagged — 2 free checks" over a track
          whose material had not been examined at all. Say it. */
+      /* harmony() is free like the rest and is the one none of the
+         others can stand in for — they measure lines against
+         themselves and against each other, and not one of them knows
+         what the chord is. It cannot be run without being told the
+         progression, because nothing in this app stores one, so the
+         only honest thing is to run it when given chords and to say
+         out loud when it was not. */
+      if(Array.isArray(o.chords) && o.chords.length){
+        const hm=await run('harmony',()=>window.MVX.harmony({src, chords:o.chords,
+          beatsPerBar:o.beatsPerBar}));
+        for(const f of ((hm&&hm.findings)||[]))
+          if(f.severity!=='note') findings.push({tool:'harmony', severity:'harmony',
+            says:f.says, fix:''});
+      }
       const notApplicable=[];
+      if(!(Array.isArray(o.chords) && o.chords.length))
+        notApplicable.push('harmony — no progression was given, so nothing checked whether '
+          +'the notes fit the chords. Nothing in this app stores a key or a progression, and '
+          +'it must not be guessed from the notes, because guessing it from the notes is what '
+          +'makes a wrong note look correct. Pass {chords:["Am","F",…]}, one per bar.');
       if(!lines.length) notApplicable.push('motif and counterpoint — no pad belongs to an '
         +'instrument, so there is no line to examine. Pads loaded with sound() are bare; '
         +'melodic material written on them is invisible to both.');
@@ -11778,9 +12143,28 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       for(const f of ((dy&&dy.findings)||[])) add('dynamics','range', n+': '+f, '');
     }
 
+    /* 11. and whether any of it fits the chords, which every check
+       above is blind to: they measure lines against themselves and
+       against each other and none of them knows what the harmony is.
+       It needs the progression because nothing here stores one, so
+       without it this says so under no-progression rather than
+       passing in silence — the same rule as compare() without a
+       reference, and for the same reason. */
+    if(Array.isArray(o.chords) && o.chords.length){
+      const hm=await run('harmony',()=>window.MVX.harmony({src, chords:o.chords,
+        beatsPerBar:o.beatsPerBar}));
+      for(const f of ((hm&&hm.findings)||[])) if(f.severity!=='note')
+        add('harmony','harmony', f.says,
+          'change the pitch so it lands in the chord it rings into, not the length');
+    } else add('harmony','no-progression','the notes were not checked against any '
+      +'harmony: no progression was given. melody(), motif() and counterpoint() all '
+      +'passed and none of them knows what the chord is, so this is not covered by '
+      +'them. Pass {chords:["Am","F",…]}, one per bar.',
+      'review({src, chords:[…]}) with the progression you wrote to');
+
     const ORDER={ 'out-of-range':0, stretched:1, empty:1, lingering:1, forward:2, 'small-speaker':2,
-      metre:3, 'off-reference':3, buried:4, squashed:4, range:5, material:5,
-      shape:6, voices:6, holes:6, narrow:7, 'no-reference':8 };
+      metre:3, 'off-reference':3, harmony:3, buried:4, squashed:4, range:5, material:5,
+      shape:6, voices:6, holes:6, narrow:7, 'no-reference':8, 'no-progression':8 };
     findings.sort((a,b)=>(ORDER[a.severity]==null?9:ORDER[a.severity])
       -(ORDER[b.severity]==null?9:ORDER[b.severity]));
     const hard=findings.filter(f=>(ORDER[f.severity]==null?9:ORDER[f.severity])<=3).length;

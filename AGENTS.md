@@ -176,6 +176,7 @@ the schedule, which the app already knows exactly:
 | `motif(inst, {src})` | does anything in this line ever come back |
 | `melody(inst, {src})` | is this a tune or a scale with a rhythm |
 | `counterpoint([inst,inst], {src})` | are these two voices actually one voice |
+| `harmony({chords, src})` | do the notes fit the chords — see below |
 
 Three of them take an instrument tag POSITIONALLY, not in the options
 object — `melody('rh', {src:'song'})`, not `melody({instrument:'rh'})`.
@@ -191,6 +192,148 @@ phone — belongs at the end, where it was always going to live.
 
 A song script should look like: write a pattern, `review({quick:true})`,
 write the next one. Not: write everything, then look.
+
+### The fifth free check: do the notes fit the chords
+
+`harmony({chords:[…]})` is the one question the other four cannot ask.
+`melody()` and `motif()` measure a line against itself,
+`counterpoint()` measures two lines against each other, and **not one
+of them knows what the chord is**. So a part can score at the folk
+norm for contour and recurrence, pass every mixing check, and sit a
+semitone off the harmony in every bar. HOLLOWAY did, and the verdict
+was "real structure but distasteful chordage".
+
+It takes the progression because **nothing in this app stores one**.
+Pads hold samples, patterns hold steps, there is no key written
+anywhere. It must not be inferred from the notes either, because
+inferring the harmony from the notes is precisely what makes a wrong
+note look correct. Declaring it is half the value: a progression you
+cannot write down is one you have not decided.
+
+**The rule is the minor ninth, not "outside the chord".** Most good
+music is mostly non-chord tones, and a check that flagged them would
+flag everything. What actually beats is a pitch sounding a SEMITONE
+ABOVE a chord tone. That is the standard account of why the 4th is the
+avoid note over a major chord — it is a semitone above the 3rd — and
+why the 11th is fine over a minor chord, where the 3rd is a whole tone
+below it.
+
+That account came off theory websites, so it was measured against
+Bach's 371 chorales the way every other norm here was
+(`scripts/study-harmony.py`, `samples/harmony-norms.json`). It holds.
+Across 179,005 sounding voice-pairs the semitone-or-minor-9th class is
+**1.08%** — the second rarest thing in the corpus — against 16.1% for
+the perfect fifth and 15.3% for the minor third. Bach is not avoiding
+dissonance; the tritone is at 3.9% and the minor seventh at 3.8%. He
+is avoiding *this interval*.
+
+Two things the measurement changed. The major seventh is **0.79%**,
+RARER than the semitone class — so it is not the safe contrast I had
+written it as, at least not in four-part chorale texture, and the
+claim came out of this file. And the bare semitone (0.36%) is half as
+common as the compound minor ninth (0.72%): where Bach uses the
+interval at all he tends to spread it across an octave, which is a
+reason to be most suspicious of a semitone rub low and close — which
+is exactly where HOLLOWAY's was, F♯2 against F2.
+
+On HOLLOWAY's bass the check named four notes and let two pass:
+
+| | |
+|---|---|
+| C♯ over Am | semitone above the ♭3 — **flagged** |
+| A♯ over Am | semitone above the root — **flagged** |
+| G♯ over C | semitone above the 5th — **flagged** |
+| F♯ over F | semitone above the root — **flagged** |
+| F♯ over Am | the Dorian 13th — allowed |
+| B over F | the Lydian ♯11 — allowed |
+
+**A ringing note is not the fault. Where it lands is.** This is the
+part no theory book covers, because a theory book assumes a note stops
+when it is written to stop. A chromatic approach on beat 4 is correct
+walking-bass practice and the textbook reason it works is that it is
+SHORT — but on a sampled piano with a 1.9-second decay in a
+2.6-second bar it is not short, and it is still sounding when the next
+chord arrives.
+
+The wrong fix is to damp it. That ring is where the continuity in a
+trio comes from; the bar lines stop being seams because something is
+always still sounding across them. Shortening everything to fit its
+own bar buys clean harmony and spends the legato. What a held note
+owes is to land somewhere in the chord it rings into, and there are
+two ways:
+
+- a **common tone** — it belongs to both chords, and the overlap is
+  pure glue;
+- a **suspension** — it does not belong to the new chord, is heard as
+  a dissonance on the downbeat, and *resolves by step* onto a chord
+  tone just after.
+
+`harmony()` counts the first in `carriedConsonant`, a number that
+wants to be high, and does not report the second at all.
+
+**How high is "high" is also measured.** Across 27,931 chord changes
+in the chorales, Bach holds at least one voice through **77.9%** of
+them, a mean of **1.53 of his four**. Holding across the change is the
+norm, not an effect — but he holds one or two voices, not all of them,
+and the distribution is flat: 22% hold nothing, 31% hold one, 19% two,
+28% three. A sampled piano with a two-second decay holds *everything*,
+which is past the top of that range, and that is why every note late
+in the bar has to be chosen against the next chord and not just the
+approach note.
+
+**But a suspension has to let go.** The first version of this check
+tested only "does the voice step onto a chord tone", and that made it
+useless on the exact material it was written for: HOLLOWAY's F♯2
+steps down a semitone onto F2 at the bar line, textbook, so it was
+counted as resolved — while still ringing, so the two sounded
+*together* for two more beats. That is not a resolution, it is a
+semitone cluster in the bass, and it was half the complaint. A
+suspension releases the dissonance as the resolution speaks. The
+check now requires the dissonance to be over within a beat of its
+resolution, and on this piano that means a chromatic approach is
+simply never a suspension — which is the true answer for this
+instrument.
+
+**And the corpus says preparation matters more than resolution**,
+which is the reverse of what this file first asserted. Asked which
+voice of a semitone clash moves, the answer was 50% — the shape of a
+number with two populations in it. Split by role: the **lower** note
+steps away 72.5% of the time and the upper note only 27.3%, because
+the commonest semitone clash in a chorale is a leading tone sitting
+*under* a held note, not a suspension hanging over one. So "it
+resolves" is a weak test. What separates Bach's semitone clashes from
+HOLLOWAY's is where they came FROM:
+
+| the upper note of a semitone clash | Bach |
+|---|---|
+| was sounding before, and was consonant then — a prepared suspension | **49.5%** |
+| arrived new on the clash | 39.4% |
+| was already clashing and goes on clashing | **11.1%** |
+
+That last row is the rarest case in the corpus, about one voice-pair
+in a thousand overall, and it is precisely what HOLLOWAY's approach
+notes were doing: a chromatic that was a non-chord tone when it was
+struck, still a non-chord tone when the harmony changed under it, and
+never consonant at any point. Bach's dissonances are nearly always
+notes that were *consonant a moment ago*. If a held note is going to
+clash, it should have arrived as a chord tone.
+
+**And play the third.** Roots, fifths and octaves state no quality at
+all, so whatever chromatic happens to be in the bar becomes the note
+defining it. The third and seventh are the guide tones; the fifth is
+the one to drop. **94.6%** of Bach's sonorities state a third.
+HOLLOWAY's left hand was root–fifth–octave in every bar — four bars of
+four, no third anywhere, 0% — which is why one stray approach note
+could sour the whole thing. The convention it should have followed is
+root on 1, **third on 2**, fifth on 3, approach on 4.
+
+**One exception, because the rule over-fires on a dominant.** A ♭9 is
+by definition a semitone above the root, so E7♭9 resolving to Am — the
+most ordinary cadence in a minor key — came back as a fault the first
+time this ran on real music. The altered tensions ♭9, ♯9 and ♭13 are
+what a dominant is for. The note that genuinely cannot go over one is
+the natural 11, a semitone above the major third, and that stays
+flagged — it is what Dm's fifth became when it rang on into E7.
 
 ### What those four actually say, on a track that is not broken
 
@@ -762,6 +905,7 @@ checker nobody has run against a known-bad input is not a checker.
 | check | measured from |
 |---|---|
 | `counterpoint()` | 70 Palestrina scores — 68% of moves between a pair of voices are oblique |
+| `harmony()` | J.S. Bach, 370 of the 371 chorales — the semitone/minor-9th class is 1.08% of 179,005 sounding voice-pairs, 94.6% of sonorities state a third, and at least one voice is held through 77.9% of chord changes |
 | `melody()` | Essen Folksong Collection, 8514 melodies |
 | `motif()` | 8196 of those melodies, bucketed by length: recurrence above the same intervals reshuffled is about +28 overall, +51 for lines of 96 notes or more |
 

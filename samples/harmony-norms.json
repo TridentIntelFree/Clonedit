@@ -1,0 +1,45 @@
+{
+ "corpus": "J.S. Bach, 371 four-part chorales (kern, craigsapp/bach-371-chorales)",
+ "scores": 370,
+ "sonorities": 29884,
+ "voice_pairs": 179005,
+ "vertical_interval_class_pct": {
+  "unison/octave": 11.977,
+  "semitone / minor 9th": 1.082,
+  "whole tone / major 9th": 4.168,
+  "minor 3rd": 15.259,
+  "major 3rd": 13.202,
+  "perfect 4th": 11.59,
+  "tritone": 3.9,
+  "perfect 5th": 16.074,
+  "minor 6th": 8.427,
+  "major 6th": 9.787,
+  "minor 7th": 3.748,
+  "major 7th": 0.787
+ },
+ "semitone_or_minor9_pct": 1.082,
+ "semitone_bare_pct": 0.364,
+ "minor9_or_wider_pct": 0.718,
+ "major7_pct": 0.787,
+ "sonorities_stating_a_third_pct": 94.63,
+ "chord_changes": 27931,
+ "mean_voices_held_of_4": 1.527,
+ "at_least_one_voice_held_pct": 77.85,
+ "voices_held_pct": {
+  "0": 22.15,
+  "1": 30.9,
+  "2": 19.03,
+  "3": 27.92
+ },
+ "semitone_clash_upper_note": {
+  "n": 1906,
+  "steps_next_pct": 27.33,
+  "prepared_consonant_before_pct": 49.53,
+  "already_clashing_pct": 11.07,
+  "arrived_new_pct": 39.4
+ },
+ "semitone_clash_lower_note": {
+  "n": 1919,
+  "steps_next_pct": 72.54
+ }
+}

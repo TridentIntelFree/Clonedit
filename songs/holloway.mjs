@@ -91,6 +91,10 @@ import { findBrowser, serve, boot } from '/home/user/Clonedit/tests/browser/harn
 import { writeFileSync, readFileSync } from 'node:fs';
 const OUT='/home/user/Clonedit/', BPM=92, TARGET_LUFS=-16.0;
 const P=JSON.parse(readFileSync(OUT+'songs/parts-holloway.json','utf8'));
+/* the progression, as pitch classes, because the left hand has to be
+   written against it rather than against the root alone */
+const CHORD={ Am:[9,0,4], F:[5,9,0], C:[0,4,7], G:[7,11,2],
+              Dm:[2,5,9], E7:[4,8,11,2] };
 const G=JSON.parse(readFileSync(OUT+'samples/groove-norms.json','utf8'));
 
 const exe=await findBrowser(); const srv=await serve();
@@ -200,7 +204,38 @@ const writePhrase=async(idx, ph, kind, vel)=>{
   for(let b=0;b<ph.bass.length;b++){
     const r=ph.bass[b].midi, at=ph.bass[b].step;
     const next=ph.bass[(b+1)%ph.bass.length].midi;
-    const lead=next-r>0 ? next-1 : next+1;
+    const here=CHORD[ph.chords[b]], there=CHORD[ph.chords[(b+1)%ph.bass.length]];
+    /* THE NOTE THAT SOURED THE FIRST VERSION. This was next±1 — a
+       chromatic approach to the following root, which is correct
+       walking-bass practice and correct because the note is SHORT. On
+       a piano with a 1.9s decay in a 2.6s bar it is not short: it is
+       still sounding when the next chord lands. It produced C# over
+       Am against the melody's C natural, A# over Am, G# over C and
+       G# over G, and the verdict on the bounce was "distasteful
+       chordage".
+       The ring is wanted — it is what joins the bars in a trio — so
+       the fix is the pitch, not the length. Prefer an approach that
+       is a semitone from the target AND a tone of the chord it is
+       ringing into; failing that, one that is at least not a semitone
+       above anything in either chord. */
+    const fits=(m,ch)=>ch.includes(((m%12)+12)%12);
+    const rubs=(m,ch)=>ch.some(pc=>((((m%12)+12)%12)-pc+12)%12===1);
+    const lead=[next-1, next+1, next-2, next+2]
+      .find(m=>fits(m,there) && !rubs(m,here))
+      ?? [next-1,next+1,next-2,next+2].find(m=>!rubs(m,here) && !rubs(m,there))
+      ?? next-5;                      /* the dominant approach, always safe */
+    /* AND THE SAME TEST FOR EVERY NOTE LATE IN THE BAR, not just the
+       approach. Fixing only the approach left A over E7 — Dm's fifth,
+       ringing on into the next bar against its G#, a natural 11 over a
+       dominant, which is the one note a dominant genuinely cannot take.
+       With a 2.5s decay in a 2.6s bar EVERYTHING from the second beat
+       on crosses the bar line, so every one of those slots has to be
+       chosen against the chord it rings into as well as the one it is
+       played over. Prefer a common tone; take any consonance otherwise. */
+    const over=(cands)=>cands.find(m=>fits(m,here) && fits(m,there))
+      ?? cands.find(m=>fits(m,here) && !rubs(m,there))
+      ?? cands.find(m=>!rubs(m,here) && !rubs(m,there))
+      ?? r;
     /* OBLIQUE MOTION, which is what counterpoint() came back for.
        Walking under every bar put the reading at 0% oblique against
        68% in Palestrina, and its words were exact: "the voices are
@@ -212,9 +247,19 @@ const writePhrase=async(idx, ph, kind, vel)=>{
        So the left hand holds in the odd bars and walks in the even
        ones. The walk is still there, and there is now something for
        it to walk away from. */
+    /* AND THE THIRD, which the first version never played anywhere.
+       Root, fifth and octave do not say major or minor, so the chord
+       quality was being decided by whatever chromatic happened to be
+       in the bar. The convention is root on 1, third on 2, fifth on
+       3, approach on 4; the third and seventh are the guide tones and
+       the fifth is the one to drop. */
+    const third=r+(here.includes((r+3)%12)?3:4);
+    /* the beat-3 slot: the fifth where the fifth works, otherwise
+       whatever is consonant in both chords */
+    const mid=over([r+7, r+12, third+12, r+10, r+9]);
     const walks = (b%2===1) && kind!=='sparse';
-    if(!walks) lhNotes.push([r,at,0.74],[r+12,at+10,0.44]);
-    else lhNotes.push([r,at,0.8],[r+7,at+6,0.46],[r+12,at+10,0.6],[lead,at+14,0.42]);
+    if(!walks) lhNotes.push([r,at,0.74],[over([third, r+12, r+7]),at+10,0.44]);
+    else lhNotes.push([r,at,0.8],[third,at+6,0.46],[mid,at+10,0.52],[lead,at+14,0.42]);
   }
   await bat(lhNotes.map(([m,st,v])=>['note','lh', m, st, V(v), {nudge:groove(st)}]));
   /* RIGHT HAND: the generated line, with repeated notes merged.
@@ -331,16 +376,23 @@ for(const name of ['rh','lh','kit']){
   if(pl.findings && pl.findings.length) console.log('        '+pl.findings[0].slice(0,110));
 }
 
+/* which phrase each pattern slot holds, so the progression handed to
+   harmony() is DERIVED from the arrangement rather than restated next
+   to it. Restated, the two drift the first time the song order moves
+   and the check then measures the right notes against the wrong bars,
+   which is worse than not running it. */
+const PHRASE={0:'A', 1:'B', 2:'A', 3:'B', 4:'A', 5:'A'};
+const SONG=[2,4,1,0,3,0,1,5];
 await call('set',{pattern:0, songOn:true, songLoop:false,
-  song:[{pat:2,reps:1},{pat:4,reps:1},{pat:1,reps:1},{pat:0,reps:1},
-        {pat:3,reps:1},{pat:0,reps:1},{pat:1,reps:1},{pat:5,reps:1}]});
+  song:SONG.map(p=>({pat:p, reps:1}))});
 
 const sch=await call('schedule',{src:'song', full:false});
 console.log('\n'+sch.notes+' notes · '+sch.seconds.toFixed(1)+'s ('
   +Math.floor(sch.seconds/60)+':'+String(Math.round(sch.seconds%60)).padStart(2,'0')+')');
 console.log('A: '+P.A.chords.join(' ')+'   B: '+P.B.chords.join(' '));
 
-const q=await call('review',{quick:true});
+const PROG=[].concat(...SONG.map(p=>P[PHRASE[p]].chords));
+const q=await call('review',{quick:true, chords:PROG});
 console.log('\nQUICK — '+String(q.says||'').slice(0,150));
 for(const f of (q.findings||[]).slice(0,6)) console.log('  ['+f.severity+'] '+f.says.slice(0,110));
 if(q.notApplicable) for(const n of q.notApplicable.slice(0,4))
@@ -363,6 +415,17 @@ try { const cp=await call('counterpoint', ['rh','lh'], {src:'song'});
   console.log('counterpoint '+String(cp.says||'').slice(0,115)); } catch(e){
   console.log('counterpoint — '+String(e.message).slice(0,80)); }
 
+/* DO THE NOTES FIT THE CHORDS. None of the four checks above can ask
+   this — they measure lines against themselves and against each other,
+   and not one of them knows what the chord is. The progression has to
+   be declared because nothing in the app stores one. */
+const hm=await call('harmony',{src:'song', chords:PROG});
+console.log('\nharmony  '+String(hm.says||'').slice(0,150));
+for(const f of (hm.findings||[])) console.log('   ['+f.kind+'] '+f.says.slice(0,130));
+console.log('   minor 9ths '+hm.minorNinths.length+' · passing-only '
+  +hm.passingOnly+' · suspensions '+hm.suspensions.length
+  +' · notes ringing into a chord they belong to '+hm.carriedConsonant);
+
 /* ---- STEP 3: the full review, which is the expensive half ------------
    The documented order says to run this once everything is in and each
    sound already fits, and to expect it mostly to confirm. compare() is
@@ -371,12 +434,23 @@ try { const cp=await call('counterpoint', ['rh','lh'], {src:'song'});
    that would be told to delete its left hand. So tonal balance is NOT
    checked on this track, and that is a gap in the repo rather than a
    decision about the music. */
-const rv=await call('review',{src:'song'});
+const rv=await call('review',{src:'song', chords:PROG});
 console.log('\nREVIEW — '+String(rv.says||''));
-for(const f of (rv.findings||[]).slice(0,8))
+for(const f of (rv.findings||[]).slice(0,10))
   console.log('  ['+f.severity+'] '+String(f.says).slice(0,120));
 /* skipped is a list of strings, "name — why" */
-for(const s of (rv.skipped||[]).slice(0,6)) console.log('  [skipped] '+String(s).slice(0,110));
+for(const s of (rv.skipped||[]).slice(0,8)) console.log('  [skipped] '+String(s).slice(0,110));
+
+/* EVERY TOOL, AND WHICH ONES DID NOT LOOK. The founding complaint in
+   AGENTS.md is a track bounced using six of seventeen analysers, and
+   the three that would have caught the fault were among the eleven
+   that were not run. A count of findings says nothing without a count
+   of what was asked — a check that did not run reads exactly like a
+   check that passed. */
+console.log('\nCOVERAGE — '+(rv.counts?rv.counts.toolsRun:'?')+' checks ran, '
+  +(rv.counts?rv.counts.toolsSkipped:'?')+' could not');
+console.log('   ran: '+(rv.ran||[]).join(', '));
+if((rv.skipped||[]).length) console.log('   did not: '+rv.skipped.map(s=>String(s).split(' — ')[0]).join(', '));
 
 /* ---- LEVEL. mTrim is clamp(want,-24,12) — it goes to +12 ------------- */
 await call('set',{mTrim:-12, compAmt:0.08, mCeil:-2.0});

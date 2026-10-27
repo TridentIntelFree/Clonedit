@@ -419,6 +419,33 @@ const TOOLS = [
     inputSchema: { type: 'object', required: ['instruments'], properties: {
       instruments: { type: 'array', items: { type: 'string' } }, src: { type: 'string' } } } },
 
+  { name: 'jbh_harmony', description:
+      'DO THE NOTES FIT THE CHORDS. The one question the other melodic checks cannot ask: '
+      + 'jbh_melody and jbh_motif measure a line against itself, jbh_counterpoint measures two '
+      + 'lines against each other, and none of them knows what the chord is — so a part can '
+      + 'score at the folk norm for contour and recurrence while sitting a semitone off the '
+      + 'harmony in every bar. Nothing in the app stores a key or a progression, so you must '
+      + 'declare the one you wrote to; it cannot be inferred from the notes, because inferring '
+      + 'it from the notes is what makes a wrong note look correct. Reports three things. (1) '
+      + 'MINOR NINTHS: a pitch sounding a semitone above a chord tone, which is the interval '
+      + 'that actually beats and the reason the 4th is the avoid note over a major chord — not '
+      + '"notes outside the chord", most good music is mostly non-chord tones. (2) FALSE '
+      + 'RELATIONS: two voices a semitone apart at the same moment. (3) BARS WITH NO THIRD, '
+      + 'where roots and fifths leave the chord quality unstated and a stray chromatic becomes '
+      + 'the note defining it. It judges every chord a note is STILL RINGING IN, not just the '
+      + 'one it started in, because a sampled piano decays across the bar line — but a held '
+      + 'note is not a fault and must not be shortened, since that ring is what joins the bars: '
+      + 'a carried note that belongs to the new chord is a common tone, one that steps onto a '
+      + 'chord tone just after is a suspension and is not reported, and `carriedConsonant` '
+      + 'counts the good ones. Free: reads the schedule, renders nothing.',
+    inputSchema: { type: 'object', required: ['chords'], properties: {
+      chords: { type: 'array', items: { type: 'string' }, description:
+        'one chord per bar, cycled over the piece, e.g. ["Am","F","C","G"]. Known qualities: '
+        + 'maj m 7 m7 maj7 m9 9 maj9 6 m6 dim dim7 aug sus2 sus4 m7b5 mmaj7. An unrecognised '
+        + 'symbol throws rather than being skipped.' },
+      beatsPerBar: { type: 'integer', description: 'default 4' },
+      src: { type: 'string', enum: ['pat', 'song'] } } } },
+
   { name: 'jbh_continuity', description:
       'HOLES IN A PART THAT IS SUPPOSED TO BE HELD. A string bed written as one note a bar '
       + 'stops inside each bar and reads as play, cut, silence, play. Real voices rest about a '
@@ -667,6 +694,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_loudness':    return ok(await jbh('loudness', [{ src: a.src, loops: a.loops }]));
       case 'jbh_translate':   return ok(await jbh('translate', [{ src: a.src }]));
       case 'jbh_pulse':       return ok(await jbh('pulse', [{ src: a.src }]));
+      case 'jbh_harmony':     return ok(await jbh('harmony', [{ chords: a.chords,
+                                beatsPerBar: a.beatsPerBar, src: a.src }]));
       case 'jbh_motif':       return ok(await jbh('motif', [a.instrument, { src: a.src }]));
       case 'jbh_melody':      return ok(await jbh('melody', [a.instrument, { src: a.src }]));
       case 'jbh_counterpoint':return ok(await jbh('counterpoint', [a.instruments, { src: a.src }]));
