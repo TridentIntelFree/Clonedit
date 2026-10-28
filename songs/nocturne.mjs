@@ -301,20 +301,52 @@ const dyn=(bar)=>{ const {p}=placeIn(bar); return 0.90+0.20*Math.sin(Math.PI*p);
    halfway, and the chord again before the bar turns. Every note damps
    at the bar line, which is the pedal changing with the harmony.
 
-     [index into LH, step, roll offset in steps, beats, velocity]   */
-const LHEV=[ [0,  0, 0,    4.0, 0.44],
-             [1,  4, 0,    3.0, 0.30], [2, 4, 0.13, 3.0, 0.29],
-             [3,  4, 0.26, 3.0, 0.31],
-             [-1, 8, 0,    2.0, 0.30],                 /* -1 = root + octave */
-             [1, 12, 0,    1.0, 0.27], [2,12, 0.13, 1.0, 0.26],
-             [3, 12, 0.26, 1.0, 0.28] ];
+     AND THE BAR MUST NOT BE SQUARE. The first version of this put its
+     four events on steps 0, 4, 8 and 12 — exactly the four beats,
+     every bar, identically — and the humanisation audibly went out of
+     the piece even though the rubato code had not changed. pulse()
+     measured it: beat accuracy went from 69.7% to 90.5%. Rubato on
+     top of a metronomic grid still reads as metronomic, because the
+     grid is what the ear locks to.
+
+     The arc it replaced had onsets at 0, 4, 6, 8, 10 and 12, so some
+     of it fell off the beat. So the chords keep their fusing roll but
+     the bar gets its uneven positions back, a single moving note
+     between them, and three figures that alternate so no two
+     consecutive bars scan alike.
+
+     [index into LH (-1 = root+octave), step, beats, velocity]   */
+const FIGS=[
+  [ [0,0,4.0,0.44], [1,4,2.5,0.30],[2,4,2.5,0.29],[3,4,2.5,0.31],
+    [2,7,1.0,0.25], [-1,8,2.0,0.30],
+    [1,12,1.0,0.27],[2,12,1.0,0.26],[3,12,1.0,0.28] ],
+  [ [0,0,4.0,0.44], [1,3,3.0,0.29],[2,3,3.0,0.30],[3,3,3.0,0.28],
+    [-1,7,2.5,0.31], [3,10,1.5,0.24],
+    [1,13,0.8,0.26],[2,13,0.8,0.27],[3,13,0.8,0.25] ],
+  [ [0,0,4.0,0.44], [1,5,2.5,0.31],[2,5,2.5,0.29],[3,5,2.5,0.30],
+    [-1,9,1.8,0.29], [1,11,1.2,0.23],
+    [2,14,0.6,0.25],[3,14,0.6,0.27] ],
+];
+/* a hand does not roll a chord the same way twice: the spread varies
+   and it sometimes falls from the top instead of rising to it */
+const rollOf=(n,k)=>{ const span=0.14+rnd()*0.22, down=rnd()<0.28;
+  return +(( down ? (n-1-k) : k)*span/Math.max(1,n-1)).toFixed(3); };
 
 const writeBar=async(bar, slot)=>{
   const at=slot*16, N=[], d=dyn(bar);
   const lhN=rubato(bar,'lh'), melN=rubato(bar,'mel');
-  LHEV.forEach(([i,st,roll,beats,v])=>{
+  /* three figures, rotated, so no two consecutive bars scan alike */
+  const fig=FIGS[bar%FIGS.length];
+  /* notes sharing a step are one rolled chord; roll them together */
+  const groups={};
+  fig.forEach((e,idx)=>{ (groups[e[1]]=groups[e[1]]||[]).push(idx); });
+  fig.forEach(([i,st,beats,v],idx)=>{
+    const g=groups[st], k=g.indexOf(idx);
+    const roll = g.length>1 ? rollOf(g.length,k) : 0;
     const midi = i<0 ? LH[bar][0]+12 : LH[bar][i];
-    N.push(['note','pf', midi, at+st, Math.min(1, v*d),
+    /* and no two strikes of the same chord are at quite the same weight */
+    const jitter = 1 + (rnd()*2-1)*0.07;
+    N.push(['note','pf', midi, at+st, Math.min(1, v*d*jitter),
       {beats, nudge:+(lhN+roll-(st===0?0.05:0)).toFixed(3)}]);
   });
   const last=MEL[bar].length-1;
