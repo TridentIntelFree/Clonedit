@@ -186,25 +186,52 @@ const LH=ROOTS.map((root,b)=>{
   const tenth=above(Math.max(sev, root+12), c.th);
   return [root, fifth, sev, tenth, sev, fifth];
 });
-/* the melody, with its gaps. [midi, step, beats, vel] */
+/* THE MELODY, DECORATED. The first version was 41 notes over 18 bars —
+   two or three a bar, a chord-tone outline with passing notes between.
+   Harmonically correct and melodically thin, and the listener's word
+   for it was that the weakness is the complexity of the tune.
+
+   It was. A nocturne melody is a singing line that gets DECORATED:
+   neighbour notes and turns around the structural pitches, scalar
+   cascades between them, and real filigree where the piece peaks. The
+   skeleton below is the same one — the harmony was never the problem —
+   with the surface written in, and the decoration shaped across the
+   piece rather than sprinkled evenly: section A states the tune almost
+   plainly, A' answers it more floridly, B carries the climax and the
+   only run, and the return is spare again.
+
+   What that did to the shape, against the Essen norms:
+
+                      before      after    real melody
+       steps           26.9%      55.1%        46.9%
+       leaps           34.5%      16.7%        13.1%
+
+   It lurched before and it walks now. Repeated notes come out at 2.6%
+   against a norm of 21.1 and are being left alone: a florid line does
+   not restate pitches much, and adding repeats to move a statistic is
+   the mistake lesson 5 in AGENTS.md is about.
+
+   [midi, step, beats, vel], 16 steps to the bar */
 const MEL=[
-  /*  0 F#m   */ [[73,0,2,.42],[71,8,1,.34],[69,12,2.5,.38]],
-  /*  1 Dmaj7 */ [[66,4,2.5,.36],[74,12,1.5,.33]],
-  /*  2 Bm7   */ [[74,0,1.5,.40],[73,6,1,.30],[71,10,2.5,.36]],
-  /*  3 E     */ [[71,0,2,.38],[68,8,3,.32]],
-  /*  4 A     */ [[76,0,2,.46],[73,8,2,.38]],
-  /*  5 C#m   */ [[68,0,1.5,.36],[76,6,1,.44],[73,10,1.5,.38]],
-  /*  6 Dmaj7 */ [[74,0,2,.42],[78,8,2.5,.50]],
-  /*  7 C#7   */ [[71,0,2,.38],[68,8,2.5,.32]],
-  /*  8 Bm7   */ [[78,0,1.5,.48],[76,6,1,.40],[74,10,2,.42]],
-  /*  9 E     */ [[76,0,2,.46],[71,8,2,.38]],
-  /* 10 A     */ [[73,0,1,.42],[76,4,1,.48],[81,8,2.5,.62]],   // the top
-  /* 11 F#m   */ [[81,0,1.5,.55],[80,6,1,.46],[78,10,2,.48]],
-  /* 12 D     */ [[78,0,2,.46],[74,8,2,.40]],
-  /* 13 C#7   */ [[73,0,2,.38],[71,8,2.5,.30]],
-  /* 14 F#m   */ [[73,0,2,.34],[69,8,2.5,.28]],
-  /* 15 Dmaj7 */ [[66,0,4,.30]],                                // held
-  /* 16 Bm7   */ [[74,0,2,.30],[71,8,2.5,.26]],
+  /*  0 F#m   */ [[73,0,1,.40],[71,4,.5,.30],[73,6,.5,.32],[69,8,1.5,.38],[71,14,.5,.28]],
+  /*  1 Dmaj7 */ [[69,0,1,.36],[66,4,1,.34],[69,8,.5,.30],[74,10,.5,.34],[73,12,1,.36]],
+  /*  2 Bm7   */ [[74,0,1,.40],[73,4,.5,.32],[71,6,.5,.34],[69,8,1,.36],[71,12,1,.34]],
+  /*  3 E     */ [[71,0,1.5,.38],[73,6,.5,.28],[68,8,2,.34]],
+  /*  4 A     */ [[76,0,1,.44],[73,4,.5,.34],[76,6,.5,.36],[81,8,1,.46],[80,12,.5,.38],[78,14,.5,.36]],
+  /*  5 C#m   */ [[76,0,1,.40],[68,4,1,.34],[71,8,.5,.32],[73,10,.5,.34],[76,12,1,.38]],
+  /*  6 Dmaj7 */ [[74,0,1,.42],[78,4,1,.44],[76,8,.5,.36],[74,10,.5,.34],[73,12,1,.38]],
+  /*  7 C#7   */ [[71,0,1.5,.38],[68,6,.5,.30],[71,8,.5,.32],[73,10,1.5,.36]],
+  /*  8 Bm7   */ [[74,0,1,.42],[78,4,1,.44],[81,8,1,.48],[78,12,1,.42]],
+  /*  9 E     */ [[80,0,1.5,.46],[78,6,.5,.38],[76,8,1,.42],[71,12,1,.36]],
+  /* 10 A     */ [[73,0,.5,.40],[76,2,.5,.42],[81,4,1,.50],
+                  /* the one cascade, falling off the top of the piece */
+                  [80,8,.25,.34],[78,9,.25,.34],[76,10,.25,.34],[73,11,.25,.34],[71,12,1,.38]],
+  /* 11 F#m   */ [[81,0,1.5,.55],[80,6,.5,.44],[78,8,1,.48],[73,12,1,.40]],
+  /* 12 D     */ [[78,0,1,.46],[76,4,.5,.38],[74,6,.5,.40],[69,8,1,.38],[74,12,1,.38]],
+  /* 13 C#7   */ [[73,0,1,.40],[71,4,.5,.34],[68,6,.5,.32],[71,8,1,.34],[73,12,1,.36]],
+  /* 14 F#m   */ [[73,0,2,.34],[69,8,1.5,.28],[71,14,.5,.24]],
+  /* 15 Dmaj7 */ [[69,0,2,.30],[66,8,2,.26]],
+  /* 16 Bm7   */ [[74,0,1,.30],[73,4,.5,.26],[71,6,.5,.26],[69,8,2,.28]],
   /* 17 F#m   */ [[66,0,4,.26],[73,8,4,.20]],                   // ring out
 ];
 
