@@ -315,16 +315,27 @@ const dyn=(bar)=>{ const {p}=placeIn(bar); return 0.90+0.20*Math.sin(Math.PI*p);
      between them, and three figures that alternate so no two
      consecutive bars scan alike.
 
+     THE BASS KEEPS TIME. The first attempt at un-squaring this moved
+     everything off the beat — two of three figures put nothing at all
+     on beats 2, 3 or 4 — and pulse() fell from 90.5% to 47.4%. That
+     is as far wrong in the other direction. Nocturne rubato is the
+     left hand keeping time while the right is free over it; freeing
+     both removes the frame the melody's rubato is heard against, and
+     floating over nothing is not rubato, it is drifting.
+
+     So the bass is pinned to beats 1 and 3, which is the spine, and
+     only the chords and the passing notes move around it.
+
      [index into LH (-1 = root+octave), step, beats, velocity]   */
 const FIGS=[
   [ [0,0,4.0,0.44], [1,4,2.5,0.30],[2,4,2.5,0.29],[3,4,2.5,0.31],
     [2,7,1.0,0.25], [-1,8,2.0,0.30],
     [1,12,1.0,0.27],[2,12,1.0,0.26],[3,12,1.0,0.28] ],
-  [ [0,0,4.0,0.44], [1,3,3.0,0.29],[2,3,3.0,0.30],[3,3,3.0,0.28],
-    [-1,7,2.5,0.31], [3,10,1.5,0.24],
+  [ [0,0,4.0,0.44], [1,5,2.0,0.29],[2,5,2.0,0.30],[3,5,2.0,0.28],
+    [-1,8,2.5,0.31], [3,11,1.2,0.24],
     [1,13,0.8,0.26],[2,13,0.8,0.27],[3,13,0.8,0.25] ],
-  [ [0,0,4.0,0.44], [1,5,2.5,0.31],[2,5,2.5,0.29],[3,5,2.5,0.30],
-    [-1,9,1.8,0.29], [1,11,1.2,0.23],
+  [ [0,0,4.0,0.44], [1,3,2.5,0.31],[2,3,2.5,0.29],[3,3,2.5,0.30],
+    [-1,8,2.0,0.29], [1,10,1.5,0.23],
     [2,14,0.6,0.25],[3,14,0.6,0.27] ],
 ];
 /* a hand does not roll a chord the same way twice: the spread varies
