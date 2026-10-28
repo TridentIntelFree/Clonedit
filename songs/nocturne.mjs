@@ -235,14 +235,51 @@ const MEL=[
   /* 17 F#m   */ [[66,0,4,.26],[73,8,4,.20]],                   // ring out
 ];
 
-/* RUBATO, NOT A GROOVE. A nocturne breathes: the melody arrives a
-   little after the bar and the bass a little before it, and no two
-   bars agree about how much. These are fractions of a step and the
-   step here is 67ms, so they are small — but a piano where every
-   onset is exact is the one thing a real one never is. */
+/* RUBATO IS SHAPE, NOT NOISE — and the first version of this had it
+   exactly backwards. Every onset got a random nudge of plus or minus
+   a tenth of a step, about 27ms of jitter, and the master `human` was
+   set to 0.10, which the scheduler turns into plus or minus 1.2ms of
+   further randomness. Two layers of noise and not one deliberate
+   shape. The verdict was that it lacks fluidity, and random timing is
+   precisely what unsteady sounds like: a player who cannot hold time,
+   rather than one who is bending it.
+
+   Real rubato has three parts, and the app already does the hardest:
+
+   `humanDrift` is two summed sines — a slow continuous wander of the
+   whole tempo, which is the ebb a performance has and a sequencer
+   does not. It was sitting unused at 0 while `human` was set to a
+   random jitter that does nothing audible. That is the "reach for
+   what is already there" lesson again.
+
+   THE HANDS COME APART. This is the defining feature of the style:
+   the left hand keeps time and the right is free over it. A fixed,
+   consistent lag of the melody behind the bass is heard as expression;
+   the same amount applied at random is heard as sloppiness.
+
+   AND THE PHRASE RELAXES INTO ITS CADENCE. A player slows at the end
+   of a phrase and picks up again at the start of the next. That is
+   one curve per phrase, not one value per note. */
 let rs=0x9E3779B1;
 const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
-const lean=(amount)=>+(amount+(rnd()*2-1)*0.10).toFixed(3);
+
+/* which phrase a bar belongs to, and how far through it: 4, 4, 6, 4 */
+const PHRASE=[[0,4],[4,4],[8,6],[14,4]];
+const placeIn=(bar)=>{ for(const [s,n] of PHRASE) if(bar>=s && bar<s+n)
+  return {p:(bar-s)/(n-1||1), first:s, n}; return {p:0, first:0, n:4}; };
+
+/* nudge in fractions of a step. The melody sits consistently behind the
+   left hand, both relax into the cadence, and a little noise is left on
+   top because a player is not a curve either — but it is a quarter of
+   what it was, and it is no longer the only thing happening. */
+const rubato=(bar, voice)=>{
+  const {p}=placeIn(bar);
+  const apart = voice==='mel' ? 0.09 : -0.05;
+  const cadence = 0.34*Math.pow(Math.max(0,(p-0.70)/0.30), 2);
+  return +(apart + cadence + (rnd()*2-1)*0.028).toFixed(3);
+};
+/* and the phrase swells toward its middle and eases off at both ends */
+const dyn=(bar)=>{ const {p}=placeIn(bar); return 0.90+0.20*Math.sin(Math.PI*p); };
 
 /* the arc across the bar: where each of the six left-hand notes falls,
    how long it is held, and how hard. The bass note carries the weight
@@ -253,15 +290,25 @@ const LHFIG=[ [0,2.0,0.44], [4,1.5,0.31], [6,1.5,0.33],
               [8,1.5,0.34], [10,1.5,0.30], [12,2.0,0.29] ];
 
 const writeBar=async(bar, slot)=>{
-  const at=slot*16, N=[];
-  /* the left hand leans fractionally early — a pianist's left hand
-     lands before the beat and the right follows it */
+  const at=slot*16, N=[], d=dyn(bar);
+  const lhN=rubato(bar,'lh'), melN=rubato(bar,'mel');
   LHFIG.forEach(([st,beats,v],i)=>{
-    N.push(['note','pf', LH[bar][i], at+st, v,
-      {beats, nudge:lean(st===0?-0.12:-0.05)}]);
+    /* the bass note of the arc is placed first and the rest follow it,
+       which is how the hand actually rolls through a spread chord */
+    N.push(['note','pf', LH[bar][i], at+st, Math.min(1, v*d),
+      {beats, nudge:+(lhN-(st===0?0.05:0)).toFixed(3)}]);
   });
-  for(const [m,st,beats,v] of MEL[bar])
-    N.push(['note','pf', m, at+st, v, {beats, nudge:lean(st===0?0.10:0.04)}]);
+  const last=MEL[bar].length-1;
+  MEL[bar].forEach(([m,st,beats,v],i)=>{
+    /* AGOGIC: the note a phrase arrives on is leaned on — held a little
+       longer and allowed to come a little late. It is the oldest
+       expressive device there is and it costs two numbers. */
+    const {p}=placeIn(bar);
+    const arrival = (i===last && p>0.99);
+    N.push(['note','pf', m, at+st, Math.min(1, v*d),
+      {beats: arrival?beats*1.5:beats,
+       nudge: +(melN+(arrival?0.12:0)).toFixed(3)}]);
+  });
   await bat(N);
 };
 
@@ -279,7 +326,11 @@ await call('set',{pattern:0, songOn:true, songLoop:false,
 /* ---- THE ROOM -------------------------------------------------------
    A piano recorded dry and played back dry is a sampler. These are the
    master controls the previous track never touched. */
-await call('set',{ revLvl:0.55, delayFb:0.25, human:0.10,
+/* humanDrift is the two-sine tempo wander and it was sitting at 0
+   while `human` — plus or minus 1.2ms of randomness — was set to 0.10
+   and doing nothing audible. They are now the other way round: the
+   drift carries the ebb and the random is a trace. */
+await call('set',{ revLvl:0.55, delayFb:0.25, human:0.03, humanDrift:0.55,
   mAir:1.0, mWidth:1.1, compAmt:0.04, mCeil:-1.5 });
 
 const sch=await call('schedule',{src:'song', full:false});
@@ -297,7 +348,17 @@ if((sch.stretched||[]).length) console.log('   stretched: '
    nowhere near engaging. So: measure, solve, measure again, and use
    the slope the first two points actually show rather than the one
    the arithmetic assumes. */
-let trim=-12, m=null, prev=null;
+/* PROBE NEAR THE ANSWER, NOT FAR BELOW IT. Three bounces in a row
+   landed 2.5 to 3dB hot because the first probe sat at -12, where this
+   piece measures about -33 LUFS. Integrated loudness is GATED, so down
+   there a dynamic piece has its quiet half excluded from the figure
+   and the trim-to-loudness slope reads about 0.6; up where the track
+   actually lives it is 0.99. The solver learned the wrong slope in the
+   blind spot, extrapolated, hit the +12 cap and overshot — and the
+   limiter then took six decibels of crest off a piece whose whole
+   point is its dynamics. Starting close means the first slope it
+   measures is the one that applies. */
+let trim=8, m=null, prev=null;
 for(let pass=0; pass<3; pass++){
   await call('set',{mTrim:+trim.toFixed(1)});
   m=await call('render',{src:'song',loops:1,loudness:true});
