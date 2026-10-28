@@ -121,6 +121,55 @@ export default async function ({ browser, base }) {
     t.ok('a chord symbol it cannot read throws instead of being skipped',
       /do not know the chord quality/.test(refused.bogus), refused.bogus.slice(0, 100));
 
+    /* ---- the bug that made this check lie about a correct piece ---- */
+    t.head('CASE IS THE DISTINCTION IN A CHORD SYMBOL');
+    /* The quality list opened with /^(maj7|M7|Δ7?)$/i, which matches
+       "m7". Every minor seventh was judged against a MAJOR seventh:
+       Bm7 read as B D# F# A#, the written D came back a non-chord
+       tone, and the check reported "Bm7 states no third" on bars whose
+       third was sitting right there. It said so about a correct
+       nocturne three times before anyone looked at the regex.
+
+       Tested through the real call rather than against the regexes: a
+       single D over Bm7 is the third and must not be flagged, and the
+       same D over Bmaj7 IS a semitone under its D#, so the two have to
+       come out differently. */
+    const cased = await page.evaluate(async () => {
+      const run = async (chord) => {
+        await window.JBH.clear();
+        await window.JBH.set({ bpm: 120 });
+        await window.JBH.instrument('v', { pack: 'samples/salamander.json',
+          match: '^sal:', lo: 45, hi: 70 });
+        for (const x of window.JBH.instPads('v'))
+          window.JBH.pad(x.pad, { att: 0.002, dec: 0.5, sus: 0, rel: 0.1 });
+        window.JBH.pattern(0, { plen: 16, clear: true, select: true });
+        /* B, D, F# — a B minor triad with its third on top */
+        await window.JBH.batch([['note', 'v', 59, 0, 0.7, { beats: 2 }],
+          ['note', 'v', 62, 0, 0.7, { beats: 2 }], ['note', 'v', 66, 0, 0.7, { beats: 2 }]]);
+        const h = await window.JBH.harmony({ src: 'pat', chords: [chord] });
+        return { noThird: h.barsWithNoThird.length, m9: h.minorNinths.length };
+      };
+      return { minor: await run('Bm7'), major: await run('Bmaj7'), upperM: await run('BM7') };
+    });
+    /* The first draft of this asserted that the D would read as a minor
+       ninth over Bmaj7. It does not, and should not: D sits a semitone
+       BELOW that chord's D#, and the rule flags only the semitone
+       above, which is the interval that beats. The discriminator that
+       does separate the two readings is the third — present in Bm7,
+       absent from Bmaj7 — which is the exact thing the case bug
+       destroyed. */
+    t.ok('a D over Bm7 is the third, not a stranger',
+      cased.minor.noThird === 0,
+      'Bm7: ' + cased.minor.noThird + ' bars without a third');
+    t.ok('the same D over Bmaj7 is not its third, whose D# nothing played',
+      cased.major.noThird === 1,
+      'Bmaj7: ' + cased.major.noThird + ' bars without a third');
+    t.ok('BM7 means major seventh, the opposite of Bm7',
+      cased.upperM.noThird === cased.major.noThird
+        && cased.upperM.noThird !== cased.minor.noThird,
+      'BM7 reads like Bmaj7 (' + cased.upperM.noThird + ') and not like Bm7 ('
+        + cased.minor.noThird + ')');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

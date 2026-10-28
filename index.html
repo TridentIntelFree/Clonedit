@@ -14613,23 +14613,37 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        on a progression it never read, which is the quiet failure this
        file keeps running into. Anything unrecognised throws. */
     const LETTER={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+    /* CASE IS THE DISTINCTION IN A CHORD SYMBOL, so none of these may
+       be case-insensitive on the m. `m` is minor and `M` is major, and
+       for a while this list opened with /^(maj7|M7|Δ7?)$/i — which
+       matches "m7". Every minor seventh in a progression was therefore
+       judged against a MAJOR seventh chord: Bm7 was read as B D# F# A#,
+       the written D came back as a non-chord tone, and the check
+       reported "Bm7 states no third" on bars whose third was sitting
+       right there. It said that about a correct nocturne three times
+       and was twice waved away as a bug somewhere else, which it was —
+       here. /^(m9|min9|-9)$/i swallowed M9 the same way.
+
+       So the m/M forms are matched case-SENSITIVELY, and only the
+       spelled-out words, where no ambiguity exists, are allowed /i. */
     const QUAL=[
-      [/^(maj7|M7|Δ7?)$/i,            [0,4,7,11]],
-      [/^(m7b5|ø7?|min7b5)$/i,        [0,3,6,10]],
+      [/^(maj7|Maj7|MAJ7|M7|Δ7?)$/,   [0,4,7,11]],
+      [/^(m7b5|min7b5)$/,             [0,3,6,10]],
+      [/^(ø7?)$/,                     [0,3,6,10]],
       [/^(dim7|o7)$/i,                [0,3,6,9]],
       [/^(dim|o)$/i,                  [0,3,6]],
       [/^(aug|\+)$/i,                 [0,4,8]],
-      [/^(m7|min7|-7)$/i,             [0,3,7,10]],
-      [/^(mmaj7|mM7)$/i,              [0,3,7,11]],
-      [/^(m6|min6|-6)$/i,             [0,3,7,9]],
-      [/^(m|min|-)$/i,                [0,3,7]],
+      [/^(mmaj7|mM7|minmaj7)$/,       [0,3,7,11]],
+      [/^(m7|min7|-7)$/,              [0,3,7,10]],
+      [/^(m6|min6|-6)$/,              [0,3,7,9]],
+      [/^(m9|min9|-9)$/,              [0,3,7,10,2]],
+      [/^(maj9|Maj9|MAJ9|M9)$/,       [0,4,7,11,2]],
+      [/^(m|min|-)$/,                 [0,3,7]],
       [/^(sus4|sus)$/i,               [0,5,7]],
       [/^sus2$/i,                     [0,2,7]],
-      [/^6$/i,                        [0,4,7,9]],
+      [/^6$/,                         [0,4,7,9]],
       [/^(7|dom7)$/i,                 [0,4,7,10]],
-      [/^(9)$/i,                      [0,4,7,10,2]],
-      [/^(m9|min9|-9)$/i,             [0,3,7,10,2]],
-      [/^(maj9|M9)$/i,                [0,4,7,11,2]],
+      [/^(9)$/,                       [0,4,7,10,2]],
       [/^$/,                          [0,4,7]],
     ];
     const parse=(sym)=>{
