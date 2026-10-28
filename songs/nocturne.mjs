@@ -358,8 +358,8 @@ if((sch.stretched||[]).length) console.log('   stretched: '
    limiter then took six decibels of crest off a piece whose whole
    point is its dynamics. Starting close means the first slope it
    measures is the one that applies. */
-let trim=8, m=null, prev=null;
-for(let pass=0; pass<3; pass++){
+let trim=8, m=null, lo=null, hi=null;   /* lo: too quiet, hi: too loud */
+for(let pass=0; pass<4; pass++){
   await call('set',{mTrim:+trim.toFixed(1)});
   m=await call('render',{src:'song',loops:1,loudness:true});
   console.log('  trim '+trim.toFixed(1).padStart(6)+' -> '+m.lufs.toFixed(1)+' LUFS'
@@ -367,12 +367,19 @@ for(let pass=0; pass<3; pass++){
     +(m.clipping?'  CLIP':''));
   const err=TARGET_LUFS-m.lufs;
   if(Math.abs(err)<0.3) break;
-  /* slope from the two points we have, defaulting to 1 on the first */
-  const slope=(prev && Math.abs(trim-prev.t)>0.5)
-    ? Math.max(0.4, Math.min(1.2, (m.lufs-prev.l)/(trim-prev.t))) : 1;
-  prev={t:trim, l:m.lufs};
-  const next=Math.max(-24, Math.min(12, trim+err/slope));
-  if(Math.abs(next-trim)<0.2) break;
+  if(err>0) lo={t:trim,l:m.lufs}; else hi={t:trim,l:m.lufs};
+  /* BRACKET AND INTERPOLATE once both sides are known, because the
+     response is not a line. The limiter puts a knee in it: measured
+     between trim 4.2 and 8 on this piece the slope is 2.21, and a
+     solver that clamps slope to 1.2 — as the previous one did —
+     overshoots straight back past the target and oscillates between
+     the two points it has. Two points that straddle the answer are
+     worth more than any assumption about the curve between them. */
+  let next;
+  if(lo && hi) next = lo.t + (hi.t-lo.t)*(TARGET_LUFS-lo.l)/(hi.l-lo.l);
+  else next = trim + err/1.0;
+  next=Math.max(-24, Math.min(12, next));
+  if(Math.abs(next-trim)<0.15) break;
   trim=next;
 }
 if(m.lufs<TARGET_LUFS-1) console.log('   !! still '+(TARGET_LUFS-m.lufs).toFixed(1)
