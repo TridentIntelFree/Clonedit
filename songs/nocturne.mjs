@@ -401,9 +401,23 @@ for(let pass=0; pass<4; pass++){
   if(Math.abs(next-trim)<0.15) break;
   trim=next;
 }
-if(m.lufs<TARGET_LUFS-1) console.log('   !! still '+(TARGET_LUFS-m.lufs).toFixed(1)
-  +'dB under target with trim at '+trim.toFixed(1)+' — raise the pad gains, '
-  +'the master cannot recover what was never staged');
+/* TWO DIFFERENT FAILURES, and the first version of this message named
+   only one of them. "Raise the pad gains, the master cannot recover
+   what was never staged" is true when the trim has run out of range;
+   it is nonsense when the trim is sitting at 7.4 with nearly five
+   decibels still in hand, which is what it printed. There the solver
+   simply ran out of passes, and the honest thing is to say which. */
+if(m.lufs<TARGET_LUFS-1){
+  if(trim>11.5) console.log('   !! '+(TARGET_LUFS-m.lufs).toFixed(1)
+    +'dB under target and mTrim is at its +12 ceiling — raise the pad gains, '
+    +'the master cannot recover what was never staged');
+  else console.log('   !! '+(TARGET_LUFS-m.lufs).toFixed(1)+'dB under target, '
+    +'trim '+trim.toFixed(1)+' with room to spare: the solver ran out of passes, '
+    +'not out of headroom.\n      Worth asking whether the target is right before '
+    +'chasing it — the last '+(12-trim).toFixed(1)+'dB of trim here is bought almost '
+    +'entirely by the limiter, and crest went 17.4 at this level against 13.7 at the '
+    +'top. For an atmospheric piece this may already be where it belongs.');
+}
 if(errors.length) console.log('ERRORS:',errors.slice(0,3));
 const wav=await call('render',{src:'song',loops:1,wav:true,depth:24,loudness:true});
 writeFileSync(OUT+'nocturne.wav', Buffer.from(wav.wavBase64,'base64'));
