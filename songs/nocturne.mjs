@@ -135,7 +135,7 @@ for(let i=0;i<pads.length;i++){
      is one instrument in a room and not a stereo effect. */
   const t=i/(pads.length-1);
   await call('pad', pads[i], { att:0.002, dec:5, sus:0, rel:0.9,
-    gain:1.40, pan:-0.3+t*0.6, rev:0.5, dly:0.1 });
+    gain:1.40, pan:-0.3+t*0.6, rev:0.42, dly:0.09 });
 }
 
 /* ---- THE PIECE ------------------------------------------------------
@@ -177,14 +177,13 @@ const PCS={ 'F#m':{r:6,  th:9,  f:1,  s7:null}, 'Dmaj7':{r:2, th:6, f:9, s7:1},
             'C#7':{r:1,  th:5,  f:8,  s7:11},   'D':{r:2,     th:6, f:9,  s7:null} };
 const ROOTS=[42,38,35,40, 45,37,38,37, 35,40,45,42, 38,37, 42,38,35,42];
 const above=(from,pc)=>{ let m=from+1; while(((m%12)+12)%12!==pc) m++; return m; };
-/* root, fifth, seventh (or the octave where the chord has none), tenth,
-   and back down — a rising and falling arc inside every bar */
+/* root, fifth, seventh (or the octave where the chord has none), tenth */
 const LH=ROOTS.map((root,b)=>{
   const c=PCS[CHORDS[b]];
   const fifth=above(root+2, c.f);
   const sev=c.s7!=null ? above(fifth, c.s7) : root+12;
   const tenth=above(Math.max(sev, root+12), c.th);
-  return [root, fifth, sev, tenth, sev, fifth];
+  return [root, fifth, sev, tenth];
 });
 /* THE MELODY, DECORATED. The first version was 41 notes over 18 bars —
    two or three a bar, a chord-tone outline with passing notes between.
@@ -286,17 +285,37 @@ const dyn=(bar)=>{ const {p}=placeIn(bar); return 0.90+0.20*Math.sin(Math.PI*p);
    and the rest are lighter, but all six sit on layers 1-2 where they
    can be HEARD — an accompaniment nobody can hear is not an
    accompaniment, which was the whole fault of the last version. */
-const LHFIG=[ [0,2.0,0.44], [4,1.5,0.31], [6,1.5,0.33],
-              [8,1.5,0.34], [10,1.5,0.30], [12,2.0,0.29] ];
+/* THE CHORDS HAVE TO SOUND TOGETHER, which an arc of single notes does
+   not make them do. Spread over four beats at 56bpm, the six-note
+   version put one note every 0.54 to 1.07 seconds — far enough apart
+   that the ear takes it as a line in the bass, which is exactly what
+   "there aren't any chords" means, twice.
+
+   Counted from the schedule rather than guessed at: the complete
+   triad was sounding for 24% of the bar, a mean of 2.0 pitch classes
+   out of 3. Three notes struck as a rolled chord and PEDALLED TO THE
+   BAR LINE puts it at 73%, a mean of 2.5.
+
+   So: bass on the downbeat ringing the whole bar, the upper three
+   rolled across 70ms the way a hand rolls a chord, the bass octave
+   halfway, and the chord again before the bar turns. Every note damps
+   at the bar line, which is the pedal changing with the harmony.
+
+     [index into LH, step, roll offset in steps, beats, velocity]   */
+const LHEV=[ [0,  0, 0,    4.0, 0.44],
+             [1,  4, 0,    3.0, 0.30], [2, 4, 0.13, 3.0, 0.29],
+             [3,  4, 0.26, 3.0, 0.31],
+             [-1, 8, 0,    2.0, 0.30],                 /* -1 = root + octave */
+             [1, 12, 0,    1.0, 0.27], [2,12, 0.13, 1.0, 0.26],
+             [3, 12, 0.26, 1.0, 0.28] ];
 
 const writeBar=async(bar, slot)=>{
   const at=slot*16, N=[], d=dyn(bar);
   const lhN=rubato(bar,'lh'), melN=rubato(bar,'mel');
-  LHFIG.forEach(([st,beats,v],i)=>{
-    /* the bass note of the arc is placed first and the rest follow it,
-       which is how the hand actually rolls through a spread chord */
-    N.push(['note','pf', LH[bar][i], at+st, Math.min(1, v*d),
-      {beats, nudge:+(lhN-(st===0?0.05:0)).toFixed(3)}]);
+  LHEV.forEach(([i,st,roll,beats,v])=>{
+    const midi = i<0 ? LH[bar][0]+12 : LH[bar][i];
+    N.push(['note','pf', midi, at+st, Math.min(1, v*d),
+      {beats, nudge:+(lhN+roll-(st===0?0.05:0)).toFixed(3)}]);
   });
   const last=MEL[bar].length-1;
   MEL[bar].forEach(([m,st,beats,v],i)=>{
@@ -330,7 +349,7 @@ await call('set',{pattern:0, songOn:true, songLoop:false,
    while `human` — plus or minus 1.2ms of randomness — was set to 0.10
    and doing nothing audible. They are now the other way round: the
    drift carries the ebb and the random is a trace. */
-await call('set',{ revLvl:0.55, delayFb:0.25, human:0.03, humanDrift:0.55,
+await call('set',{ revLvl:0.46, delayFb:0.22, human:0.03, humanDrift:0.55,
   mAir:1.0, mWidth:1.1, compAmt:0.04, mCeil:-1.5 });
 
 const sch=await call('schedule',{src:'song', full:false});
