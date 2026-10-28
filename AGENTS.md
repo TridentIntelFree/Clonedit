@@ -629,6 +629,34 @@ RMS meter reports. `loudness()` gives perceived minus measured; anything
 at +10 dB or more will jump out of the mix no matter how tidy the RMS
 looks.
 
+**Per-pad LUFS counts FREQUENT as LOUD.** `loudness()` reports an
+integrated figure per pad, and integrated means summed over the whole
+render — so a sound that plays sixteen times a bar accumulates far
+more of it than one that plays four times, at the same actual level.
+K-weighting then discounts everything under 100 Hz by design. Put the
+two together on a drum break and the meter reads:
+
+```
+Ride  -12.6    Hats  -16.5    Snare  -26.6    Kick  -32.2
+```
+
+which looks like a kick buried twenty decibels under the cymbals and
+is mostly an artefact of the kick playing a quarter as often, down
+where the weighting curve is steepest. Raising it twenty decibels to
+answer the number would have wrecked the mix.
+
+The actual fault was upstream and the figures did point at it, read
+the other way round: the hats were written on every sixteenth, ten
+strokes a second at 150bpm, and no hi-hat part that dense belongs in
+a break. Thinning them to eighths fixed the balance without touching
+a gain.
+
+So read per-pad LUFS as a density map, not a balance. For balance ask
+`place()`, which renders the sound against everything else and answers
+the question that matters — does it own a band, or does it own nothing
+anywhere. Those are different questions and only one of them is about
+level.
+
 **Bass carries by its harmonics.** Below about 400 Hz nothing is
 reproduced on a phone. A near-pure sine sub is felt on a large speaker
 and simply absent on a small one, which reads as "the bass isn't clear"
@@ -833,17 +861,37 @@ which only propagates whatever is already wrong here.
 
 ## Stage from a measured peak, and let it fail loudly
 
-Gain is capped at 2. That matters more than it sounds, because the
+**`stage()` DOES NOT EXIST.** It is not in `src/legacy.js`, it is not in
+`mcp/server.mjs`, it is not on `window.JBH`. The worked example below
+was written into this file as though it were a call anyone could make,
+complete with output nothing ever printed, and it sat here through
+several tracks before someone tried to use it. Staging is a thing you
+have to do by hand: render the pad alone, read the peak, compute the
+gain, and check the result against the cap yourself.
+
+That is worth more than the lost call. A fabricated transcript in a
+document about not fabricating numbers is the same failure as the
+"+15dB too loud" figure a few sections up — a plausible illustration
+written to make a true point, which then reads as a measurement. If an
+example in this file shows output, it should be output something
+actually produced. Delete it otherwise.
+
+The principle it was illustrating does hold. Gain is capped at 2, the
 honest way to set levels is to render each pad alone, read its peak,
 and compute the gain that puts it on target — and when that arithmetic
 asks for more than 2, the right response is to say so rather than
-silently clamp:
+silently clamp. Something like:
 
-```
-stage(pad, -14)
-→ solo peak -70.1dB  target -14dB  gain 2.00
-  CANNOT REACH IT — needs 638.3, cap is 2.
-  The sound is wrong for the job, not the level.
+```js
+/* render() takes `only`, a list of pads — not `pads`, and not `solo` —
+   and returns a LINEAR `peak`, not a dB one. Both of those were got
+   wrong on the first attempt at writing this paragraph. */
+const solo   = await render({only:[i], src:'song'});
+const peakDb = 20 * Math.log10(Math.max(solo.peak, 1e-6));
+const want   = Math.pow(10, (targetDb - peakDb) / 20) * padGain;
+if (want > 2) throw new Error('pad '+i+' needs gain '+want.toFixed(1)
+  +' to reach '+targetDb+'dB and the cap is 2. The sound is wrong for '
+  +'the job, not the level.');
 ```
 
 A clamped gain looks like a staged level and is not one. The bell tree

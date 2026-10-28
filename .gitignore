@@ -49,6 +49,13 @@ ridgeway.wav
 kitwork.wav
 holloway.wav
 
+# Any bounce written to the working directory. This used to be a list of
+# filenames, one per track, which meant every new song leaked its WAV into
+# the first commit that ran `git add -A` before someone noticed. The rule is
+# structural now: a WAV at the REPO ROOT is a bounce, a WAV under samples/ is
+# a source. The names above are kept so nothing already ignored changes.
+/*.wav
+
 # listening copies encoded from the bounces — same rule as the WAVs,
 # the script is the artefact and the audio is not
 *.mp3

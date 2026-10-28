@@ -64,3 +64,4 @@ metal — triangle 1.8dB down, cabasa 1.5, shaker 1.6, bell tree 5.4 — and
 the two glockenspiels, which are pitched *and* bright at 19 and 21dB
 down. The air in `anneal.mjs` comes from those; the mallets underneath
 are allowed to be warm.
+| `alberto.mjs` | 150bpm, 1:30, drums only. The first break here written as a CHOP rather than as a pattern: one bar of source material, sixteen slices, eight orders over them, plus stutter / pitch / drop. Every bar re-uses the same slices and no two bars are the same. Written toward an Aphex Twin-shaped track; the melodic half is not in it yet. |
