@@ -208,11 +208,31 @@ await call('sound','studio:bass_sub_c1',SUBPAD);
 /* sound() sets no `inst`, and three calls filter on exactly that tag —
    motif(), counterpoint() and balance() go silent rather than failing.
    TENEMENT lost all three this way. Group by the JOB, not the source. */
-await call('pad',BASSPAD,{gain:0.95, att:0.002, dec:0.9, sus:0.15, rel:0.18,
-  pan:0, rev:0.05, dly:0, drv:0.16, inst:'bass'});
-await call('pad',SUBPAD, {gain:0.60, att:0.004, dec:0.8, sus:0.10, rel:0.15,
-  pan:0, rev:0,    dly:0, inst:'bass'});
 const BASS_ROOT=36, SUB_ROOT=24;   // the pitch each sample was recorded at
+
+/* AND srcNote, OR THE BASS IS INVISIBLE TO EVERY PITCHED ANALYSER.
+   AGENTS.md records that sound() sets no `inst` and that motif(),
+   counterpoint() and balance() therefore go quiet. That is half of it.
+   The other half costs more: harmony(), melody() and motif() all read
+   `n.midi` off the schedule, and a schedule event only carries a midi
+   when its pad has a srcNote. sound() sets none, so a pad played with
+   pitch locks SOUNDS correct — the scheduler transposes regardless —
+   and reads to every analyser as if it were not playing.
+
+   The first run of this track hit exactly that: harmony() reported
+   "13/60 bars state no third", naming every Bm7 bar, while the bass
+   was playing a D in each of them. It was reading the lead alone. And
+   melody('bass') came back with every field undefined, which prints as
+   `undefined%` and looks like a formatting bug rather than a part that
+   was never examined.
+
+   harmony()'s own fallback message says "Pitched parts come from
+   note(), not step()" — true, and not the whole truth, because step()
+   on a pad WITH a srcNote is read fine. The field is the thing. */
+await call('pad',BASSPAD,{gain:0.95, att:0.002, dec:0.9, sus:0.15, rel:0.18,
+  pan:0, rev:0.05, dly:0, drv:0.16, inst:'bass', srcNote:BASS_ROOT, srcCat:'BASS'});
+await call('pad',SUBPAD, {gain:0.60, att:0.004, dec:0.8, sus:0.10, rel:0.15,
+  pan:0, rev:0,    dly:0, inst:'sub',  srcNote:SUB_ROOT,  srcCat:'BASS'});
 
 /* ---- THE SOURCE BREAK ------------------------------------------------
    One bar, sixteen slices. Everything in the piece is this, reordered.
@@ -569,23 +589,41 @@ console.log('harmony: '+ha.minorNinths.length+' minor ninths, '
 for(const f of (ha.findings||[]).slice(0,4)) console.log('   ! '+f.says);
 if(!ha.findings||!ha.findings.length) console.log('   -> '+String(ha.says).slice(0,130));
 
+/* melody() puts its figures under `got`, not at the top level, and the
+   first version of this printed me.stepwisePct — a field that does not
+   exist — so every line read `undefined%`. An undefined is not a
+   finding; print the object the call actually returns. */
 for(const inst of ['lead','bass']){
   const me=await call('melody',inst,{src:'song'});
   const mo=await call('motif',inst,{src:'song'});
-  console.log(inst+': '+(me&&me.ran===false
-    ? 'melody REFUSED — '+String(me.says).slice(0,90)
-    : 'steps '+(me&&me.stepwisePct)+'% leaps '+(me&&me.leapPct)
-      +'% repeats '+(me&&me.repeatedPct)+'%')
-    +' | motif '+(mo&&mo.ran===false ? 'REFUSED' : (mo&&mo.score)));
+  if(!me || me.ran===false){ console.log(inst+': melody did not run — '
+    +String(me&&me.says).slice(0,100)); }
+  else { const g=me.got||{}, n=me.norm||{};
+    console.log(inst+': '+me.notes+' notes  steps '+g.step+'% (norm '+n.step
+      +')  leaps '+g.leap+'% ('+n.leap+')  repeats '+g.repeat+'% ('+n.repeat
+      +')  range '+g.range+'st');
+    for(const f of (me.findings||[]).slice(0,2)) console.log('     - '+f); }
+  console.log('   motif: '+(!mo||mo.ran===false ? 'did not run'
+    : 'pitch '+mo.pitch+' (floor '+(mo.norm&&mo.norm.pitchFloor)+') rhythm '
+      +mo.rhythm+' — '+String(mo.says).slice(0,80)));
 }
 const cp=await call('counterpoint',['lead','bass'],{src:'song'});
-console.log('counterpoint lead/bass: oblique '+(cp&&cp.obliquePct)
-  +'% (Palestrina 68%)  parallel '+(cp&&cp.parallelPct)+'%');
+console.log('counterpoint lead/bass: '+String(cp&&cp.says).slice(0,150));
 
 const pu=await call('pulse',{src:'song'});
 console.log('pulse: autocorr '+pu.pulseStrength+'  beat '+pu.onGrid.beat
   +'%  sixteenth '+pu.onGrid.sixteenth+'%  buried-by '+pu.beatBuriedBy);
 console.log('   -> '+String(pu.says).slice(0,160));
+
+/* CHECKS_ONLY=1 stops here. Everything above renders nothing — it reads
+   the schedule the app already knows — and everything below costs about
+   half an hour. The free half is the half worth iterating on, and
+   AGENTS.md's advice to run it after every pattern is unusable if the
+   only way to reach it is through the slow half. */
+if(process.env.CHECKS_ONLY){
+  console.log('\nCHECKS_ONLY — stopping before the renders.');
+  await browser.close(); srv.close(); process.exit(0);
+}
 
 const lo=await call('loudness',{src:'song'});
 console.log('\nbrightness (perceived minus measured):');
