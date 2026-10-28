@@ -83,6 +83,16 @@ const usePattern=async(n,props)=>{
   const r=await call('pattern',n,Object.assign({select:true},props||{}));
   if(r.warning) throw new Error('pattern '+n+': '+r.warning);
   if(r.selected!==true) throw new Error('pattern '+n+' did not become selected');
+  /* AND THE LENGTH HAS TO HAVE TAKEN. note() does clamp(step,0,L-1),
+     so a pattern that is shorter than the part being written does not
+     fail — it FOLDS every later bar onto the last step of the pattern.
+     The previous bounce had bars 14 to 17 playing each other's notes
+     and nothing said a word; the pitches were all present in the
+     schedule, just not where they were written. A length nobody reads
+     back is not a length. */
+  if(props && props.plen!=null && r.plen!==props.plen)
+    throw new Error('pattern '+n+' asked for plen '+props.plen+' and came back '
+      +r.plen+' — steps past the end would fold onto the last one');
   return r; };
 
 await call('clear');
@@ -139,20 +149,43 @@ for(let i=0;i<pads.length;i++){
 const CHORDS=['F#m','Dmaj7','Bm7','E', 'A','C#m','Dmaj7','C#7',
               'Bm7','E','A','F#m', 'D','C#7', 'F#m','Dmaj7','Bm7','F#m'];
 
-/* bass: root for the whole bar, octave halfway. A floor that does not
-   restrike, which is what lets everything above it blur. */
-const BASS=[
-  [42,54],[38,50],[35,47],[40,52],   [45,57],[37,49],[38,50],[37,49],
-  [35,47],[40,52],[45,57],[42,54],   [38,50],[37,49],
-  [42,54],[38,50],[35,47],[42,54],
-];
-/* inner voice: the third and the seventh — the notes that say what the
-   chord IS. The fifth is the one you can leave out. */
-const INNER=[
-  [57,61],[54,61],[62,57],[56,59],   [61,64],[64,56],[54,61],[53,59],
-  [62,57],[56,59],[61,64],[57,61],   [54,57],[53,59],
-  [57,61],[54,61],[62,57],[57,61],
-];
+/* THE LEFT HAND IS AN ARPEGGIO, WHICH IS HOW A NOCTURNE STATES ITS
+   HARMONY. The first version gave it a root held for the whole bar
+   plus its octave, and put the third and the seventh — the only notes
+   that say what the chord is — in a separate inner voice written at
+   velocity 0.19 to 0.22.
+
+   That does not work on a velocity-layered sampler. pickLayerIdx is
+   floor(v * 6), so 0.19 and 0.22 both land on layer 1 while the
+   melody at 0.34 to 0.62 sits on layers 2 and 3: a quieter RECORDING
+   as well as a lower gain, about twelve decibels down, underneath
+   five seconds of reverb. The listener's report was "there were no
+   chords in the tune", and there were not — a bass note, a melody,
+   and haze in between.
+
+   The real fault is underneath that. A sustained root with a tune
+   over it is a drone with a tune over it, whatever the inner voice is
+   doing. A nocturne's left hand MOVES THROUGH the chord: bass note,
+   then up through the fifth and seventh to the tenth and back. That
+   both states the harmony and is the thing that flows.
+
+   Built from the chord rather than typed out, so the third is always
+   present as the tenth and nothing has to be checked by eye. */
+const PCS={ 'F#m':{r:6,  th:9,  f:1,  s7:null}, 'Dmaj7':{r:2, th:6, f:9, s7:1},
+            'Bm7':{r:11, th:2,  f:6,  s7:9},    'E':{r:4,     th:8, f:11, s7:null},
+            'A':{r:9,    th:1,  f:4,  s7:null}, 'C#m':{r:1,   th:4, f:8,  s7:null},
+            'C#7':{r:1,  th:5,  f:8,  s7:11},   'D':{r:2,     th:6, f:9,  s7:null} };
+const ROOTS=[42,38,35,40, 45,37,38,37, 35,40,45,42, 38,37, 42,38,35,42];
+const above=(from,pc)=>{ let m=from+1; while(((m%12)+12)%12!==pc) m++; return m; };
+/* root, fifth, seventh (or the octave where the chord has none), tenth,
+   and back down — a rising and falling arc inside every bar */
+const LH=ROOTS.map((root,b)=>{
+  const c=PCS[CHORDS[b]];
+  const fifth=above(root+2, c.f);
+  const sev=c.s7!=null ? above(fifth, c.s7) : root+12;
+  const tenth=above(Math.max(sev, root+12), c.th);
+  return [root, fifth, sev, tenth, sev, fifth];
+});
 /* the melody, with its gaps. [midi, step, beats, vel] */
 const MEL=[
   /*  0 F#m   */ [[73,0,2,.42],[71,8,1,.34],[69,12,2.5,.38]],
@@ -184,16 +217,22 @@ let rs=0x9E3779B1;
 const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
 const lean=(amount)=>+(amount+(rnd()*2-1)*0.10).toFixed(3);
 
+/* the arc across the bar: where each of the six left-hand notes falls,
+   how long it is held, and how hard. The bass note carries the weight
+   and the rest are lighter, but all six sit on layers 1-2 where they
+   can be HEARD — an accompaniment nobody can hear is not an
+   accompaniment, which was the whole fault of the last version. */
+const LHFIG=[ [0,2.0,0.44], [4,1.5,0.31], [6,1.5,0.33],
+              [8,1.5,0.34], [10,1.5,0.30], [12,2.0,0.29] ];
+
 const writeBar=async(bar, slot)=>{
   const at=slot*16, N=[];
-  const [root, oct]=BASS[bar];
-  /* the bass is fractionally early — a pianist's left hand lands before
-     the beat and the right hand follows it */
-  N.push(['note','pf', root, at+0, 0.40, {beats:4, nudge:lean(-0.12)}]);
-  N.push(['note','pf', oct,  at+8, 0.28, {beats:2.5, nudge:lean(-0.08)}]);
-  const [third, seventh]=INNER[bar];
-  N.push(['note','pf', third,   at+2,  0.22, {beats:3.5, nudge:lean(0)}]);
-  N.push(['note','pf', seventh, at+10, 0.19, {beats:2,   nudge:lean(0)}]);
+  /* the left hand leans fractionally early — a pianist's left hand
+     lands before the beat and the right follows it */
+  LHFIG.forEach(([st,beats,v],i)=>{
+    N.push(['note','pf', LH[bar][i], at+st, v,
+      {beats, nudge:lean(st===0?-0.12:-0.05)}]);
+  });
   for(const [m,st,beats,v] of MEL[bar])
     N.push(['note','pf', m, at+st, v, {beats, nudge:lean(st===0?0.10:0.04)}]);
   await bat(N);
