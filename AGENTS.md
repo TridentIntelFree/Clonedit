@@ -716,6 +716,63 @@ manifest's `cat`, and all twelve found sounds declare `DRUMS`, so it
 reports one row for the pack and tells you nothing about any sample in
 it. Measure these per file.
 
+## tape() silently de-registers an instrument
+
+`instPads(name)` finds a pad by three things at once:
+
+```js
+S.pads[i].inst===name && S.pads[i].bufId>=0 && S.pads[i].srcNote!=null
+```
+
+`tape()` ends by calling `loadIntoTarget()`, which resets the pad in
+place and clears both `inst` and `srcNote`. Its very next line tries
+to put one of them back:
+
+```js
+if(p.srcNote!=null) S.pads[target].srcNote=p.srcNote;   // p IS S.pads[target]
+```
+
+`p` was captured as `S.pads[i]` at the top of the function, and when
+no `pad:` option is passed `target === i`, so `p` and
+`S.pads[target]` are the same object — already reset. The guard reads
+null and the restore does nothing. `inst` is never restored at all.
+
+So the pad keeps its taped audio and stops being part of the
+instrument. Nothing throws. The failure surfaces much later, at the
+first `note()` call, as
+
+```
+no instrument "lead" — call instrument() first
+```
+
+which reads as *the instrument() call is missing* rather than *it was
+undone forty lines ago*, and that is the expensive part: the error
+names the wrong cause.
+
+Until it is fixed in the app, capture the mapping before taping and
+put it back by hand, then assert that the instrument survived:
+
+```js
+const roots=new Map(pads.map(x=>[x.pad, x.note]));
+for(const x of pads) await tape(x.pad, {...});
+for(const x of pads) await pad(x.pad, {inst:'lead', srcNote:roots.get(x.pad)});
+if((await instPads('lead')).length !== pads.length)
+  throw new Error('tape() cost the instrument some of its pads');
+```
+
+The same shape of bug is worth suspecting in any call that rewrites a
+pad's buffer — `freeze()`, `paint()`, `resynth()`, `mutate()` — since
+they all end by loading a new buffer onto a pad. Only `tape()` has
+been checked.
+
+**And tape() is the wrong call on a velocity-layered kit anyway.** It
+reads ONE buffer off the pad and writes one back. `nakeddrums`' kick
+pad is five velocity layers by three round robins — fifteen separate
+recordings of a beater hitting a head — and that layering is the whole
+reason the kit sounds like drums rather than like a drum machine. The
+wobble is worth having on a single-sample mallet or a pad. On the kit
+it would buy a tape artefact and spend the instrument.
+
 ## A found sound belongs to no group, and three tools go quiet
 
 `instrument()` tags every pad it makes with an `inst`. `sound()` does
