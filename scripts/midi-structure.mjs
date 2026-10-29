@@ -27,7 +27,7 @@
    It is a reading tool. It makes no judgement about whether a form is
    good, because nothing can.                                          */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
 
 /* ---- SMF PARSING ------------------------------------------------------
@@ -297,8 +297,36 @@ if(rows.length>1){
   const top=sorted[0];
   console.log('  the single commonest length accounts for '
     +(100*top[1]/allPhr.length).toFixed(1)+'% of phrases');
-  console.log('\n  For comparison, from this repo\'s own notes:');
-  console.log('    Bach, 371 chorales   2411 phrases, 58 distinct, commonest 39.7%');
+  /* THE COMPARISON COMES FROM THE MEASUREMENT, NOT FROM A NOTE.
+     These two lines used to be hardcoded from AGENTS.md: "Bach, 371
+     chorales, 2411 phrases, 58 distinct, commonest 39.7%". Measuring
+     it again off the fermatas in music21's 433 Bach scores gives a
+     similar phrase COUNT and nothing like the same distribution — 18
+     distinct lengths with 2 bars at 67.8%, where the note says 58 and
+     39.7%. So the figure a reader was being invited to compare their
+     music against was one nobody could reproduce, printed with the
+     authority of a measurement.
+     samples/form-norms.json is written by scripts/study-form.py and
+     is read here if it exists. If it does not, this says so rather
+     than falling back on the number that does not reproduce. */
+  let ref=null;
+  try{ ref=JSON.parse(readFileSync(
+    new URL('../samples/form-norms.json', import.meta.url), 'utf8')); }catch(e){}
+  console.log('\n  For comparison:');
+  if(ref && ref.bach && ref.bach.phrases){
+    const b=ref.bach;
+    console.log('    Bach chorales        '+b.phrases+' phrases, '
+      +b.phrase_distinct_lengths+' distinct, commonest '+b.phrase_commonest_bars
+      +' bars at '+b.phrase_commonest_pct+'%');
+    console.log('                         (measured off '+b.scores_read
+      +' scores by scripts/study-form.py — read its header before trusting '
+      +'anything else in that file)');
+  } else {
+    console.log('    no measured norms on disk. Run scripts/study-form.py with');
+    console.log('    /usr/bin/python3.13 to write samples/form-norms.json.');
+    console.log('    AGENTS.md quotes 58 distinct lengths at 39.7% for Bach and');
+    console.log('    that figure does not reproduce, so it is not printed here.');
+  }
   console.log('    HOLLOWAY             8 phrases, 1 distinct, commonest 100%');
   const med=[...rows].map(r=>r.harmonicChangePct).sort((a,b)=>a-b);
   console.log('\n  harmony changes per bar transition: median '
