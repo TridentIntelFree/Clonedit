@@ -760,6 +760,64 @@ where they come back into alignment. On a grid that relationship is invisible.</
     <button id="btnRowClr">CLR ROW</button>
     <button id="btnPatClr">CLR PTN</button>
   </div>
+
+  <!-- KEY AND CHORDS. The app stored neither until now: pads held
+       samples, patterns held steps, and the harmony lived only in
+       whatever the person was holding in their head. It sits on the
+       SEQ tab and not with the project settings because chords belong
+       to a PATTERN here — one symbol per bar of it — which keeps a
+       pattern harmonically closed and lets it be dropped anywhere in
+       the arrangement.
+
+       Declaring is half the value. A key you cannot write down is one
+       you have not decided, and the checker refuses to infer one from
+       the notes because inferring the harmony from the notes is what
+       makes a wrong note look correct. -->
+  <h3 style="margin-top:12px">KEY &amp; CHORDS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; one chord per bar of this pattern</span></h3>
+  <div class="row" style="gap:4px;flex-wrap:wrap">
+    <span class="lbl">KEY</span>
+    <select id="mlTonic" aria-label="Key tonic">
+      <option value="">&mdash;</option>
+      <option>C</option><option>C#</option><option>D</option><option>Eb</option>
+      <option>E</option><option>F</option><option>F#</option><option>G</option>
+      <option>Ab</option><option>A</option><option>Bb</option><option>B</option>
+    </select>
+    <select id="mlMode" aria-label="Key mode">
+      <option value="major">major</option><option value="minor">minor</option>
+      <option value="dorian">dorian</option><option value="phrygian">phrygian</option>
+      <option value="lydian">lydian</option><option value="mixolydian">mixolydian</option>
+      <option value="locrian">locrian</option>
+    </select>
+    <span class="grow"></span>
+    <span id="mlKeyChords" style="font-size:10px;color:var(--txt-dim)"></span>
+  </div>
+  <div class="row" style="gap:4px">
+    <span class="lbl" id="mlBarsLbl">BARS</span>
+    <input id="mlChords" class="grow" type="text" spellcheck="false"
+      aria-label="Chords for this pattern, one per bar"
+      placeholder="Bm7, Gmaj7, Dmaj7, A">
+    <button id="mlSet" title="Write these chords onto the selected pattern">SET</button>
+  </div>
+  <div id="mlInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 0;line-height:1.5"></div>
+
+  <!-- INFILL. Writes nothing until a candidate is chosen, because a
+       model that hands over a finished part overwhelms you with
+       content and frustrates you with randomness; what helps is
+       constraining it to one voice over one span and offering
+       options. Same shape as MUTATE and BALANCE, which suggest. -->
+  <div class="row" style="gap:4px;flex-wrap:wrap;margin-top:6px">
+    <span class="lbl">WRITE</span>
+    <select id="mlInst" class="grow" aria-label="Which instrument to write for"></select>
+    <select id="mlRole" aria-label="What kind of part">
+      <option value="bass">bass</option><option value="lead" selected>lead</option>
+      <option value="arp">arp</option><option value="pad">pad</option>
+    </select>
+    <button id="mlOffer" title="Offer several ways to play it. Writes nothing.">OFFER</button>
+  </div>
+  <div class="row" style="gap:4px" id="mlPickRow" hidden>
+    <select id="mlPick" class="grow" aria-label="Which candidate to write"></select>
+    <button id="mlApply" title="Write the chosen one onto this pattern">WRITE IT</button>
+  </div>
   <div id="polyPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
     <!-- Said in the open, not folded away. The one thing that surprised a tester
          about this panel is that the lane is a SECOND rhythm running on its own
@@ -25705,6 +25763,10 @@ function drawSeq(){
 }
 let seqLockMode=false, seqSelStep=-1, seqSelPoly=false;
 function drawSteps(){
+  /* the key/chords panel follows the SELECTED pattern, since chords
+     belong to a pattern here — drawn from the same place the grid is
+     so the two can never show different patterns */
+  try{ drawMusicalLayer(); }catch(e){}
   const gr=$('stepgrid'); gr.innerHTML='';
   const pat=curPat(), row=pat.steps[S.seqPad];
   /* The pattern, at the project's tempo — nothing else. A pad with a poly lane
@@ -26599,6 +26661,154 @@ function snapToScale(semi){ return S.scaleLock ? snapSemitone(semi, S.scaleName)
 function scaleLabel(){
   return NOTE_NAMES[S.scaleRoot|0]+' '+($('scaleName').selectedOptions[0]?$('scaleName').selectedOptions[0].textContent:S.scaleName);
 }
+
+/* ---- KEY & CHORDS, AND INFILL, IN THE INTERFACE ---------------------
+   The musical layer went in with an API and no UI, which is the exact
+   gap the SOUND TOOLS buttons were added to close for the generators
+   and which reopened one level down for their controls. A capability
+   only an agent can reach is half a capability.
+
+   Everything here reads and writes the same S.key / S.chords the API
+   does, so the panel and a script cannot disagree about what the
+   harmony is — which was the original point of storing it at all. */
+function mlBars(){ return Math.max(1, Math.round(patLen(S.patterns[S.pattern])/16)); }
+
+function drawMusicalLayer(){
+  if(!$('mlTonic')) return;
+  const k=S.key, bars=mlBars();
+  $('mlTonic').value = k ? k.tonic : '';
+  /* Only overwrite the mode when there IS a key. Resetting it to major
+     whenever none is declared meant choosing the mode before the tonic
+     silently reverted it: the mode change clears the key (no tonic
+     yet), the redraw then reads major back out of the empty state, and
+     the next tonic change reads major off the select. Picking dorian
+     then F# gave F# major. The person's half-made choice is theirs
+     until they finish it. */
+  if(k) $('mlMode').value = k.mode;
+  $('mlBarsLbl').textContent = bars+(bars===1?' BAR':' BARS');
+  /* what fits the key, so "what could go here" is answerable without
+     the person having to know — suggestion, never a constraint */
+  if(k && typeof keyChords==='function'){
+    const c=keyChords(k.tonic,k.mode);
+    $('mlKeyChords').textContent = c.length? ('in key: '+c.join(' ')) : '';
+  } else $('mlKeyChords').textContent='';
+  const list=S.chords[S.pattern];
+  if(document.activeElement!==$('mlChords'))
+    $('mlChords').value = list ? list.join(', ') : '';
+  const info=$('mlInfo');
+  if(!list || !list.length){
+    info.textContent='No chords on pattern '+(S.pattern+1)
+      +'. Without them harmony() has nothing to check against, and it will not '
+      +'infer them from the notes — that is what makes a wrong note look correct.';
+  } else {
+    let t='Pattern '+(S.pattern+1)+': '+list.join(' ');
+    if(list.length!==bars) t+='  — '+list.length+' chord'+(list.length===1?'':'s')
+      +' over '+bars+' bar'+(bars===1?'':'s')+', so the list repeats to fill it.';
+    try{
+      const pr=window.MVX.progression({src:S.song&&S.song.length?'song':'pat'});
+      if(pr.bars) t+='   ·   '+pr.says;
+    }catch(e){}
+    info.textContent=t;
+  }
+  /* the instruments there are to write for */
+  const sel=$('mlInst'); if(sel){
+    const names=[...new Set(S.pads.filter(p=>p&&p.bufId>=0&&p.inst).map(p=>p.inst))];
+    const cur=sel.value;
+    /* textContent, not innerHTML. An instrument name comes from
+       instrument() or from a loaded project, so it is input; the rest
+       of this file builds <option>s the same way for the same reason. */
+    sel.textContent='';
+    if(names.length){
+      for(const n of names){ const o=document.createElement('option');
+        o.value=n; o.textContent=n; sel.appendChild(o); }
+    } else {
+      const o=document.createElement('option');
+      o.value=''; o.textContent='no tagged instruments'; sel.appendChild(o);
+    }
+    if(names.indexOf(cur)>=0) sel.value=cur;
+    sel.disabled=!names.length;
+    if($('mlOffer')) $('mlOffer').disabled=!names.length;
+  }
+}
+
+if($('mlTonic')){
+  const setKey=()=>{
+    const t=$('mlTonic').value;
+    try{ if(!t) window.MVX.key(null); else window.MVX.key(t, $('mlMode').value); }
+    catch(e){ lcd(e.message); }
+    drawMusicalLayer();
+    lcd(S.key? ('KEY '+S.key.tonic+' '+S.key.mode) : 'KEY CLEARED — undeclared');
+  };
+  $('mlTonic').addEventListener('change',setKey);
+  $('mlMode').addEventListener('change',setKey);
+
+  $('mlSet').addEventListener('click',()=>{
+    const raw=$('mlChords').value.trim();
+    if(!raw){ window.MVX.chords(S.pattern,null); drawMusicalLayer();
+      lcd('CHORDS CLEARED on pattern '+(S.pattern+1)); return; }
+    const list=raw.split(/[,\s]+/).filter(Boolean);
+    /* read every symbol before writing any of them, so a typo in the
+       fourth chord does not leave the first three applied */
+    if(typeof chordInfo==='function'){
+      const bad=list.filter(x=>!chordInfo(x));
+      if(bad.length){ lcd('CANNOT READ: '+bad.join(' ')+' — m7 is minor, M7 is major');
+        $('mlInfo').textContent='Not written. These are not chords I can read: '
+          +bad.join(', ')+'. Nothing was changed, so a typo in one symbol does not '
+          +'leave the others half-applied.'; return; }
+    }
+    try{
+      const r=window.MVX.chords(S.pattern,list);
+      drawMusicalLayer();
+      lcd('CHORDS SET on pattern '+(S.pattern+1)+(r.warning?' (see note)':''));
+    }catch(e){ lcd(e.message); $('mlInfo').textContent=e.message; }
+  });
+  $('mlChords').addEventListener('blur',drawMusicalLayer);
+
+  /* ---- OFFER / WRITE IT ------------------------------------------- */
+  let mlCands=null, mlOpts=null;
+  $('mlOffer').addEventListener('click',async()=>{
+    const inst=$('mlInst').value;
+    if(!inst) return;
+    const b=$('mlOffer'); b.disabled=true; const was=b.textContent; b.textContent='…';
+    try{
+      const opts={ from:0, bars:mlBars(), n:5, role:$('mlRole').value,
+        src:'pat', seed:(Date.now()&0x7fffffff) };
+      const r=await window.MVX.infill(inst,opts);
+      mlCands=r.candidates; mlOpts=opts;
+      const pick=$('mlPick');
+      pick.textContent='';
+      r.candidates.forEach((c,i)=>{
+        const o=document.createElement('option');
+        o.value=String(c.seed);
+        o.textContent=(i===0?'best on the numbers — ':'')
+          +c.score.notes+' notes, '+c.score.got.step+'% steps, '
+          +c.score.got.leap+'% leaps'
+          +(c.score.minorNinths?(', '+c.score.minorNinths+' clashes'):'')
+          +(c.score.barsWithNoThird?(', '+c.score.barsWithNoThird+' bars no third'):'');
+        pick.appendChild(o);
+      });
+      $('mlPickRow').hidden=false;
+      $('mlInfo').textContent=r.says;
+      lcd(r.candidates.length+' WAYS TO PLAY '+inst.toUpperCase()+' — nothing written yet');
+    }catch(e){ $('mlInfo').textContent=e.message; lcd('INFILL: '+String(e.message).slice(0,60)); }
+    finally{ b.disabled=false; b.textContent=was; }
+  });
+
+  $('mlApply').addEventListener('click',async()=>{
+    if(!mlCands||!mlOpts) return;
+    const seed=+$('mlPick').value;
+    const b=$('mlApply'); b.disabled=true;
+    try{
+      const r=await window.MVX.infill($('mlInst').value,
+        Object.assign({},mlOpts,{apply:seed}));
+      drawSteps(); drawNotes(); dirty();
+      $('mlInfo').textContent=r.says+' Press OFFER again for another set, or undo.';
+      lcd('WROTE '+r.wrote+' NOTES for '+r.inst);
+    }catch(e){ $('mlInfo').textContent=e.message; lcd(String(e.message).slice(0,60)); }
+    finally{ b.disabled=false; }
+  });
+}
+
 function drawScaleLock(){
   $('btnScaleLock').classList.toggle('on',!!S.scaleLock);
   $('scaleRoot').value=String(S.scaleRoot|0);

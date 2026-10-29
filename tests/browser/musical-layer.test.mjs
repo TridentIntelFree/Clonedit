@@ -159,6 +159,88 @@ export default async function ({ browser, base }) {
       round.key.tonic === 'F#' && round.chords.length === 4,
       round.key.tonic + ' ' + round.key.mode + ' / ' + round.chords.join(' '));
 
+
+    t.head('THE KEY & CHORDS PANEL DRIVES THE REAL STATE');
+    /* The musical layer went in with an API and no UI, which is the
+       gap the SOUND TOOLS buttons were added to close for the
+       generators and which reopened one level down for their
+       controls. A capability only an agent can reach is half a
+       capability — and a panel that exists and is not wired reads
+       exactly like a panel that works, so this drives the controls
+       and reads the answer out of S, not out of the panel. */
+    const ml = await page.evaluate(async () => {
+      await window.JBH.clear();
+      window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+      const fire = (id, v) => { const el = document.getElementById(id);
+        el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); };
+      const present = ['mlTonic', 'mlMode', 'mlChords', 'mlSet', 'mlInfo',
+        'mlInst', 'mlRole', 'mlOffer', 'mlPick', 'mlApply']
+        .map(id => ({ id, found: !!document.getElementById(id) }));
+      fire('mlMode', 'dorian'); fire('mlTonic', 'F#');
+      const key = window.JBH.key();
+      document.getElementById('mlChords').value = 'F#m7, D, A, E';
+      document.getElementById('mlSet').click();
+      const chords = window.JBH.chords(0);
+      /* a symbol it cannot read must leave the rest alone */
+      document.getElementById('mlChords').value = 'Am, Fsplork, C, G';
+      document.getElementById('mlSet').click();
+      const afterBad = window.JBH.chords(0);
+      const badMsg = document.getElementById('mlInfo').textContent;
+      return { present, key, chords, afterBad, badMsg,
+        keyHint: document.getElementById('mlKeyChords').textContent,
+        bars: document.getElementById('mlBarsLbl').textContent };
+    });
+    for (const p of ml.present) t.ok('there is a ' + p.id, p.found, p.found ? 'present' : 'MISSING');
+    t.ok('the key selects write the real key',
+      ml.key && ml.key.tonic === 'F#' && ml.key.mode === 'dorian', JSON.stringify(ml.key));
+    t.ok('SET writes the chords onto the selected pattern',
+      ml.chords && ml.chords.join(' ') === 'F#m7 D A E', String(ml.chords));
+    t.ok('the panel knows how many bars the pattern is',
+      /4 BARS/.test(ml.bars), ml.bars);
+    t.ok('and suggests what fits the key, from tonal',
+      /in key:/.test(ml.keyHint) && ml.keyHint.split(' ').length > 3,
+      ml.keyHint.slice(0, 70));
+    t.ok('AN UNREADABLE SYMBOL LEAVES THE EARLIER ONES ALONE',
+      ml.afterBad.join(' ') === 'F#m7 D A E',
+      'still ' + ml.afterBad.join(' ') + ' — a typo in one chord must not half-apply the list');
+    t.ok('and it says which symbol it could not read',
+      /Fsplork/.test(ml.badMsg), ml.badMsg.slice(0, 90));
+
+    t.head('OFFER WRITES NOTHING UNTIL WRITE IT IS PRESSED');
+    const off = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('bass', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 36, hi: 55 });
+      window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+      window.JBH.chords(0, ['Bm7', 'Gmaj7', 'Dmaj7', 'A']);
+      window.JBH.key('D', 'major');
+      const wait = async (id) => { for (let i = 0; i < 150; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (!document.getElementById(id).disabled) return; } };
+      document.getElementById('mlRole').value = 'bass';
+      document.getElementById('mlOffer').click();
+      await wait('mlOffer');
+      const opts = [...document.getElementById('mlPick').options].map(o => o.textContent);
+      const afterOffer = (await window.JBH.schedule({ src: 'pat', full: false })).notes;
+      const hidden = document.getElementById('mlPickRow').hidden;
+      document.getElementById('mlApply').click();
+      await wait('mlApply');
+      const afterApply = (await window.JBH.schedule({ src: 'pat', full: false })).notes;
+      return { opts, afterOffer, afterApply, hidden,
+        info: document.getElementById('mlInfo').textContent };
+    });
+    t.ok('OFFER lists several candidates with their numbers',
+      off.opts.length >= 2 && /notes/.test(off.opts[0]),
+      off.opts.length + ': ' + (off.opts[0] || '').slice(0, 60));
+    t.ok('the first is marked as best on the numbers, not as best',
+      /best on the numbers/.test(off.opts[0] || ''), (off.opts[0] || '').slice(0, 40));
+    t.ok('and NOTHING is written by offering',
+      off.afterOffer === 0, off.afterOffer + ' notes after OFFER');
+    t.ok('the picker only appears once there is something to pick',
+      off.hidden === false, 'shown after offering');
+    t.ok('WRITE IT is what actually writes',
+      off.afterApply > 0, off.afterOffer + ' notes -> ' + off.afterApply);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

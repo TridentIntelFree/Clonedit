@@ -744,6 +744,64 @@ where they come back into alignment. On a grid that relationship is invisible.</
     <button id="btnRowClr">CLR ROW</button>
     <button id="btnPatClr">CLR PTN</button>
   </div>
+
+  <!-- KEY AND CHORDS. The app stored neither until now: pads held
+       samples, patterns held steps, and the harmony lived only in
+       whatever the person was holding in their head. It sits on the
+       SEQ tab and not with the project settings because chords belong
+       to a PATTERN here — one symbol per bar of it — which keeps a
+       pattern harmonically closed and lets it be dropped anywhere in
+       the arrangement.
+
+       Declaring is half the value. A key you cannot write down is one
+       you have not decided, and the checker refuses to infer one from
+       the notes because inferring the harmony from the notes is what
+       makes a wrong note look correct. -->
+  <h3 style="margin-top:12px">KEY &amp; CHORDS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; one chord per bar of this pattern</span></h3>
+  <div class="row" style="gap:4px;flex-wrap:wrap">
+    <span class="lbl">KEY</span>
+    <select id="mlTonic" aria-label="Key tonic">
+      <option value="">&mdash;</option>
+      <option>C</option><option>C#</option><option>D</option><option>Eb</option>
+      <option>E</option><option>F</option><option>F#</option><option>G</option>
+      <option>Ab</option><option>A</option><option>Bb</option><option>B</option>
+    </select>
+    <select id="mlMode" aria-label="Key mode">
+      <option value="major">major</option><option value="minor">minor</option>
+      <option value="dorian">dorian</option><option value="phrygian">phrygian</option>
+      <option value="lydian">lydian</option><option value="mixolydian">mixolydian</option>
+      <option value="locrian">locrian</option>
+    </select>
+    <span class="grow"></span>
+    <span id="mlKeyChords" style="font-size:10px;color:var(--txt-dim)"></span>
+  </div>
+  <div class="row" style="gap:4px">
+    <span class="lbl" id="mlBarsLbl">BARS</span>
+    <input id="mlChords" class="grow" type="text" spellcheck="false"
+      aria-label="Chords for this pattern, one per bar"
+      placeholder="Bm7, Gmaj7, Dmaj7, A">
+    <button id="mlSet" title="Write these chords onto the selected pattern">SET</button>
+  </div>
+  <div id="mlInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 0;line-height:1.5"></div>
+
+  <!-- INFILL. Writes nothing until a candidate is chosen, because a
+       model that hands over a finished part overwhelms you with
+       content and frustrates you with randomness; what helps is
+       constraining it to one voice over one span and offering
+       options. Same shape as MUTATE and BALANCE, which suggest. -->
+  <div class="row" style="gap:4px;flex-wrap:wrap;margin-top:6px">
+    <span class="lbl">WRITE</span>
+    <select id="mlInst" class="grow" aria-label="Which instrument to write for"></select>
+    <select id="mlRole" aria-label="What kind of part">
+      <option value="bass">bass</option><option value="lead" selected>lead</option>
+      <option value="arp">arp</option><option value="pad">pad</option>
+    </select>
+    <button id="mlOffer" title="Offer several ways to play it. Writes nothing.">OFFER</button>
+  </div>
+  <div class="row" style="gap:4px" id="mlPickRow" hidden>
+    <select id="mlPick" class="grow" aria-label="Which candidate to write"></select>
+    <button id="mlApply" title="Write the chosen one onto this pattern">WRITE IT</button>
+  </div>
   <div id="polyPanel" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px">
     <!-- Said in the open, not folded away. The one thing that surprised a tester
          about this panel is that the lane is a SECOND rhythm running on its own
