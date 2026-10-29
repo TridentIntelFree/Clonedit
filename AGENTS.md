@@ -256,6 +256,67 @@ do not are generated.
    arithmetic do the rest. If it asks for more than +12 the pads are
    staged too low; say so rather than clamping silently.
 
+## The app stores a key and a progression now
+
+It did not, and most of this file was shaped by that absence. Pads held
+samples, patterns held steps, and the harmony existed only in whatever
+the writer was holding in their head — so `harmony()` had to be HANDED
+a progression, every song script kept a second copy of it beside the
+checker's, form could only be measured from exported MIDI outside the
+app, and anything generating notes had nothing to generate them
+against.
+
+```
+key('D', 'major')                              declare it, read it, clear it
+chords(0, ['Bm7','Gmaj7','Dmaj7','A'])         one symbol per BAR of that pattern
+progression({src:'song'})                      the arrangement's chords, expanded
+```
+
+**Chords belong to a PATTERN, not to an absolute song bar.** A pattern
+is the reusable block here, so carrying its own bars keeps it
+harmonically closed and lets it be dropped anywhere in the
+arrangement; the song's progression is then whatever its pattern order
+spells out. Written against song bars, every chord would break the
+moment the arrangement changed.
+
+`harmony()` reads this when it is not handed a list. What has not
+changed is the refusal to guess — with nothing declared it still
+refuses and still says why. A HALF-declared progression is refused
+too, rather than checked in the bars that have a chord and skipped in
+the bars that do not, which reads exactly like a harmony that passed.
+
+It is on the **SEQ tab** as well, so a person can set it without an
+API. The chord box parses every symbol before writing any of them: a
+typo in the fourth chord does not leave the first three applied.
+
+### infill() — one voice, one span, several answers
+
+```
+infill('bass', {from:0, bars:4, role:'bass', n:5})   offers, writes nothing
+infill('bass', {from:0, bars:4, apply:<seed>})       writes that one
+```
+
+It is not a generator and the distinction is the point. The research
+on co-creative music tools converges on it: a model that hands over a
+finished part overwhelms the person with content and frustrates them
+with randomness, and what helps is constraining generation to one
+VOICE over one SPAN and offering options. So this returns candidates
+with the numbers they score on and the seed that reproduces each, and
+writing is a second call. It suggests, like `balance()` and
+`mutate()`.
+
+**The rhythm is chosen first.** A figure is taken per bar from a small
+library and the pitches are written into its slots, so every note has
+a real position and a real length. Generating pitches and dealing them
+onto invented step offsets is what gave HOLLOWAY its audible stumble,
+and it is the easiest mistake to make again the moment a generator
+returns a pitch per step.
+
+Candidates are ranked by FAULT — minor ninths, then bars with no
+third, then distance from the Essen norms — which is **not** ranked by
+worth. Nothing here can hear them. If the one ranked fifth sounds
+best, the ranking is wrong and the ear is right.
+
 ## Check while you build, not after
 
 Everything in this file was being run once, at the end, on a finished
@@ -300,12 +361,16 @@ norm for contour and recurrence, pass every mixing check, and sit a
 semitone off the harmony in every bar. HOLLOWAY did, and the verdict
 was "real structure but distasteful chordage".
 
-It takes the progression because **nothing in this app stores one**.
-Pads hold samples, patterns hold steps, there is no key written
-anywhere. It must not be inferred from the notes either, because
-inferring the harmony from the notes is precisely what makes a wrong
-note look correct. Declaring it is half the value: a progression you
-cannot write down is one you have not decided.
+It took the progression as an argument because **nothing in this app
+stored one** — pads held samples, patterns held steps, and no key was
+written anywhere. That is fixed: `key()` and `chords()` store it and
+this reads it, as the section above describes. Pass `{chords:[…]}`
+only to check a part against a progression you have not committed to.
+
+What has not changed, and must not: it is never inferred from the
+notes, because inferring the harmony from the notes is precisely what
+makes a wrong note look correct. Declaring it is half the value — a
+progression you cannot write down is one you have not decided.
 
 **The rule is the minor ninth, not "outside the chord".** Most good
 music is mostly non-chord tones, and a check that flagged them would
@@ -455,12 +520,21 @@ running. The third is that `counterpoint()`'s phrasing is literal.
 "Chords with a tune on top" is a description of the part, not a grade,
 and the fix is to let one voice hold still.
 
-### Nothing here looks at form either, and the number is damning
+### Form is measured outside the app, by one script
 
-`harmony()` closed the gap on whether the notes fit the chords.
-Phrase structure is the same kind of hole and is still open: no
-analyser in this app asks how long a phrase is or whether they are
-all the same length.
+`harmony()` closed the gap on whether the notes fit the chords. Phrase
+structure was the same kind of hole: no analyser in the app asks how
+long a phrase is or whether they are all the same length, and none
+does now either — the app sees a schedule, and form is easier to read
+off a score.
+
+`scripts/midi-structure.mjs` reads a MIDI file and reports phrase
+lengths, repeating units, harmonic rhythm and a letter-per-bar form
+map. Run it on anything you can export. **Read its header first**: its
+own phrase detector looked for silence, which is how a chorale marks a
+phrase and is not how continuous music marks one, and it reported "one
+phrase, 120 bars" on a dense track before the periodicity pass was
+added.
 
 Measured from the same chorales, off the fermatas that mark their
 phrase ends (`scripts/study-harmony.py` reports it):
