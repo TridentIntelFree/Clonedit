@@ -2925,6 +2925,29 @@ const S = {
   scOn:false, scTrig:0, scDepth:0.6, scRel:0.25,
   autoTarget:'mfilt',
   song:[], songOn:false, songLoop:true,
+  /* THE MUSICAL LAYER. Until this existed the app stored no key and no
+     progression anywhere: pads held samples, patterns held steps, and
+     the harmony lived only in whatever the writer was holding in their
+     head. The cost was concrete and recurring — harmony() had to be
+     HANDED a progression as an argument, every song script kept a
+     second copy of it that could drift from the first, form could only
+     be measured from exported MIDI outside the app, and anything
+     generating notes had nothing to generate them against.
+
+     `key` is the tonic and mode. `chords` maps a pattern index to one
+     chord symbol per BAR of that pattern, so a pattern stays
+     harmonically closed and can be dropped anywhere in the song and
+     still make sense — which is how the progression ends up following
+     the arrangement instead of fighting it. The song's full
+     progression is then whatever its pattern order spells out, which
+     progression() expands.
+
+     Empty by default. An undeclared key is an honest "not decided",
+     and must not be guessed at: inferring the harmony from the notes
+     is exactly what makes a wrong note look correct. */
+  key:null,               // {tonic:'D', mode:'major'} once declared
+  chords:{},              // patternIndex -> ['Bm7','Gmaj7',…], one per bar
+  sections:{},            // songIndex -> a name for that block
   morph:{ on:false, from:0, to:1, bars:8, curve:'weight', mode:'once', vel:true, amt:0, pos:0 },
   /* master chain (OUT tab). Neutral by default: flat EQ, natural width, and a
      ceiling just under 0 so nothing changes until it is asked to. */
@@ -10427,6 +10450,105 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      they are reachable here, under the field names the app itself uses.
      Called with no props each one READS; called with props it writes and
      returns what it ended up as. */
+  /* ---- THE MUSICAL LAYER ---------------------------------------------
+     Three calls, because until now the app held no key and no
+     progression and both the person and the agent had to carry them
+     in their head. Everything that cost: harmony() took the chords as
+     an ARGUMENT, so a song script kept a second copy that could drift
+     from the first; form could only be measured from exported MIDI
+     outside the app; and nothing writing notes had anything to write
+     them against. */
+
+  /* key() — declare it, or read it back. Declaring is half the value:
+     a key you cannot write down is one you have not decided. */
+  key(tonic, mode){
+    if(tonic===undefined) return S.key ? Object.assign({}, S.key) : null;
+    if(tonic===null){ S.key=null; dirty(); return null; }
+    const t=String(tonic).trim();
+    if(!/^[A-Ga-g][#b]?$/.test(t))
+      throw new Error('key needs a tonic like "D", "F#" or "Bb" — got "'+tonic+'"');
+    S.key={ tonic:t[0].toUpperCase()+t.slice(1), mode:String(mode||'major').toLowerCase() };
+    dirty();
+    return Object.assign({}, S.key);
+  },
+
+  /* chords(pat, [..]) — one symbol per BAR of that pattern.
+
+     Per pattern rather than per song position, because a pattern is
+     the reusable block here. Carrying its own bars keeps it
+     harmonically closed, so it can be dropped anywhere in the song
+     and still make sense, and the song's progression is then whatever
+     its pattern order spells out. Writing chords against absolute
+     song bars instead would break the moment the arrangement changed. */
+  chords(pat, list){
+    if(pat===undefined){
+      const out={}; for(const k of Object.keys(S.chords)) out[k]=S.chords[k].slice();
+      return out;
+    }
+    const i=clamp(pat|0,0,NPAT-1);
+    if(list===undefined) return S.chords[i]? S.chords[i].slice() : null;
+    if(list===null){ delete S.chords[i]; dirty(); return null; }
+    if(!Array.isArray(list) || !list.length || !list.every(x=>typeof x==='string'))
+      throw new Error('chords needs an array of symbols, one per bar — '
+        +'e.g. chords(0, ["Bm7","Gmaj7","Dmaj7","A"])');
+    const bars=Math.max(1, Math.round(patLen(S.patterns[i])/16));
+    S.chords[i]=list.map(x=>String(x).trim());
+    dirty();
+    const r={ pattern:i, chords:S.chords[i].slice(), bars };
+    /* A warning rather than a throw: the pattern length may legitimately
+       be changed afterwards, and refusing the write would make the
+       order of two edits matter. But silence here would let a four-bar
+       pattern carry three chords and leave the fourth bar reading the
+       first one again, which is the sort of thing you hear and cannot
+       find. */
+    if(S.chords[i].length!==bars)
+      r.warning='pattern '+i+' is '+bars+' bar'+(bars===1?'':'s')+' and you gave '
+        +S.chords[i].length+' chord'+(S.chords[i].length===1?'':'s')
+        +'. progression() repeats the list to fill the pattern.';
+    return r;
+  },
+
+  /* progression({src}) — the declared harmony expanded bar by bar.
+
+     This is what harmony() reads when it is not handed a list, and it
+     is the thing that did not exist: the song's actual chord sequence,
+     derived from the arrangement rather than written out a second
+     time beside it. */
+  progression(opt){
+    const o=opt||{}, src=o.src||'song';
+    const out=[], gaps=[];
+    const push=(pi, bars)=>{
+      const list=S.chords[pi];
+      for(let b=0;b<bars;b++){
+        if(list && list.length) out.push(list[b % list.length]);
+        else { out.push(null); if(gaps.indexOf(pi)<0) gaps.push(pi); }
+      }
+    };
+    if(src==='song' && S.song && S.song.length){
+      for(const sq of S.song){
+        const bars=Math.max(1, Math.round(patLen(S.patterns[sq.pat])/16));
+        for(let r=0;r<Math.max(1,sq.reps|0);r++) push(sq.pat, bars);
+      }
+    } else {
+      const pi=S.pattern;
+      push(pi, Math.max(1, Math.round(patLen(S.patterns[pi])/16)));
+    }
+    const declared=out.filter(x=>x!=null).length;
+    return { src, bars:out.length, chords:out, declared,
+      undeclaredPatterns:gaps,
+      key:S.key?Object.assign({},S.key):null,
+      says: !out.length ? 'nothing is arranged to play.'
+        : declared===0 ? 'no chords are declared. chords(pattern,[…]) writes them, '
+            +'and until then harmony() has nothing to check against — it must not '
+            +'infer them from the notes, because that is what makes a wrong note '
+            +'look correct.'
+        : declared<out.length ? declared+' of '+out.length+' bars have a chord; pattern'
+            +(gaps.length>1?'s ':' ')+gaps.join(', ')+' '+(gaps.length>1?'have':'has')
+            +' none.'
+        : out.length+' bars, '+new Set(out).size+' distinct chords'
+            +(S.key?(' in '+S.key.tonic+' '+S.key.mode):', no key declared') };
+  },
+
   pad(i, props){
     const p=S.pads[clamp(i|0,0,NPADS-1)];
     if(!props) return JSON.parse(JSON.stringify(p));
@@ -11403,14 +11525,34 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      What it says on material where nothing is wrong: nothing. */
   async harmony(opt){
     const o=opt||{}, src=o.src||'song';
-    const chords=o.chords;
-    if(!Array.isArray(chords) || !chords.length)
-      throw new Error('harmony() needs the progression you wrote to — '
-        +'harmony({chords:["Am","F","C","G"]}), one per bar, cycled. Nothing in '
-        +'this app records what the harmony is meant to be: pads hold samples, '
-        +'patterns hold steps, and no key is stored anywhere. It cannot be '
-        +'inferred from the notes either, because inferring it from the notes '
-        +'is what makes a wrong note look correct.');
+    /* THE PROGRESSION IS STORED NOW, so this reads it rather than
+       demanding it. It used to throw unless handed a list, because
+       nothing in the app recorded what the harmony was meant to be —
+       which forced every song script to keep its own copy beside the
+       checker's, two sources of truth that could drift apart without
+       either one looking wrong.
+
+       An explicit {chords:[…]} still wins, for checking a part
+       against a progression you have not committed to. What has not
+       changed is the refusal to GUESS: with nothing declared and
+       nothing passed it still says so, because inferring the harmony
+       from the notes is what makes a wrong note look correct. */
+    let chords=o.chords, chordSource='passed in';
+    if(!Array.isArray(chords) || !chords.length){
+      const pr=window.MVX.progression({src});
+      if(pr.declared>0 && pr.declared===pr.bars){ chords=pr.chords; chordSource='declared on the patterns'; }
+      else if(pr.declared>0) throw new Error('only '+pr.declared+' of '+pr.bars
+        +' bars have a chord declared — pattern'+(pr.undeclaredPatterns.length>1?'s ':' ')
+        +pr.undeclaredPatterns.join(', ')+' '+(pr.undeclaredPatterns.length>1?'have':'has')
+        +' none. Fill them with chords(pattern,[…]) or pass the whole progression '
+        +'explicitly; a half-declared harmony would be checked against itself in '
+        +'the bars that have one and silently skipped in the bars that do not.');
+      else throw new Error('no progression. Declare it once with '
+        +'key("D","major") and chords(0,["Bm7","Gmaj7","Dmaj7","A"]) — one symbol '
+        +'per bar of that pattern — or pass harmony({chords:[…]}) for a one-off. '
+        +'It is not inferred from the notes, because inferring the harmony from '
+        +'the notes is what makes a wrong note look correct.');
+    }
 
     /* ---- chord symbols -> pitch classes ------------------------------
        Deliberately a small vocabulary. A parser that silently accepts
@@ -11659,7 +11801,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         +'the one to drop.' });
 
     const bad=findings.filter(f=>f.severity!=='note');
-    return { ran:true, src, chords:chords.slice(), bars:lastBar+1,
+    return { ran:true, src, chords:chords.slice(), chordSource,
+      key:S.key?Object.assign({},S.key):null, bars:lastBar+1,
       percussionIgnored:skippedPerc,
       notes:pitched.length, barSeconds:+barSec.toFixed(3),
       minorNinths:real, passingOnly:clashes.length-real.length,
@@ -21359,6 +21502,7 @@ function sessionFileDoc(){
     mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
+    key:S.key, chords:S.chords, sections:S.sections,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
 }
 window.MVX.sessionFile=function(name){
@@ -21680,6 +21824,33 @@ function applySessionDoc(doc, bufs){
   S.scDepth=(doc.scDepth!=null)?doc.scDepth:0.6; S.scRel=(doc.scRel!=null)?doc.scRel:0.25;
   S.song=Array.isArray(doc.song)?doc.song.map(x=>({pat:clamp(x.pat|0,0,NPAT-1),reps:clamp(x.reps|0,1,64)})):[];
   S.songOn=!!doc.songOn; S.songLoop=(doc.songLoop!=null)?!!doc.songLoop:true; songPos=0; songRep=0;
+  /* THE MUSICAL LAYER comes back validated rather than trusted. A
+     document is an input: a chord list of the wrong shape, or a key
+     with a tonic that is not a note, has to become "undeclared"
+     rather than reaching harmony() and being analysed as though it
+     meant something. An older project has none of this and gets the
+     honest empty answer, which is what "no progression declared"
+     is for. */
+  S.key = (doc.key && typeof doc.key.tonic==='string'
+    && /^[A-Ga-g][#b]?$/.test(doc.key.tonic))
+    ? { tonic:doc.key.tonic, mode:String(doc.key.mode||'major') } : null;
+  S.chords = {};
+  if(doc.chords && typeof doc.chords==='object'){
+    for(const k of Object.keys(doc.chords)){
+      const i=k|0; if(i<0 || i>=NPAT) continue;
+      const v=doc.chords[k];
+      if(Array.isArray(v) && v.every(x=>typeof x==='string'))
+        S.chords[i]=v.slice(0,64).map(x=>String(x).slice(0,16));
+    }
+  }
+  S.sections = {};
+  if(doc.sections && typeof doc.sections==='object'){
+    for(const k of Object.keys(doc.sections)){
+      const i=k|0; if(i<0 || i>256) continue;
+      if(typeof doc.sections[k]==='string')
+        S.sections[i]=String(doc.sections[k]).slice(0,32);
+    }
+  }
   if(LIVE && LIVE._inst){
     hardSet(LIVE._inst.g.gain,S.inst.vol); hardSet(LIVE._inst.rv.gain,S.inst.rev); hardSet(LIVE._inst.dl.gain,S.inst.dly);
   }
@@ -22004,6 +22175,7 @@ function snapshotSession(){
     mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
+    key:S.key, chords:S.chords, sections:S.sections,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
 }
 let autosaving=false, saveBroken=false;
@@ -22122,6 +22294,7 @@ function undoSnap(){
     mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
+    key:S.key, chords:S.chords, sections:S.sections,
     pads:S.pads, patterns:S.patterns };
 }
 function cloneSnap(x){ return JSON.parse(JSON.stringify(x)); }
@@ -22303,6 +22476,15 @@ function projNew(){
   S.patterns=Array.from({length:NPAT},()=>newPattern());
   S.buffers=[]; S.trax=Array.from({length:NTRAX},()=>newTrack());
   S.song=[]; S.songOn=false; S.chain=[]; S.chainOn=false; S.chainPos=0; S.morph.on=false; S.morph.amt=0; S.morph.pos=0; morphBuf=null;
+  /* The musical layer is project state, so NEW PROJECT must drop it.
+     Left in, the previous song's key and chords sit silently under the
+     empty patterns of the next one — and because harmony() now READS
+     the stored progression instead of being handed one, the next song
+     would be checked against the last song's harmony and report
+     findings about chords nobody had written. Caught by a test that
+     cleared between blocks and found pattern 1 still carrying four
+     chords from two blocks earlier. */
+  S.key=null; S.chords={}; S.sections={};
   S.pattern=0; S.bank=0; S.editPad=0; S.seqPad=0;
   S.scOn=false; workBuf=null; slices=[]; selSlice=-1;
   Object.keys(warpOrig).forEach(k=>delete warpOrig[k]);

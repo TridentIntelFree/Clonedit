@@ -419,14 +419,49 @@ const TOOLS = [
     inputSchema: { type: 'object', required: ['instruments'], properties: {
       instruments: { type: 'array', items: { type: 'string' } }, src: { type: 'string' } } } },
 
+  { name: 'jbh_key', description:
+      'DECLARE THE KEY, or read it back. Until this existed the app stored no key anywhere and '
+      + 'the harmony lived only in whatever the writer held in their head, which is why the '
+      + 'checker had to be handed a progression as an argument and every song script kept a '
+      + 'second copy of it that could drift from the first. Call with no arguments to read, '
+      + 'with a tonic and mode to set, with null to clear. Declaring is half the value: a key '
+      + 'you cannot write down is one you have not decided.',
+    inputSchema: { type: 'object', properties: {
+      tonic: { type: 'string', description: 'D, F#, Bb — omit to read back' },
+      mode: { type: 'string', description: 'major, minor, dorian… default major' } } } },
+
+  { name: 'jbh_chords', description:
+      'WRITE THE PROGRESSION ONTO A PATTERN \u2014 one chord symbol per BAR of it, e.g. '
+      + '["Bm7","Gmaj7","Dmaj7","A"] on a 64-step (4 bar) pattern. Per pattern rather than per '
+      + 'song position, because a pattern is the reusable block here: carrying its own bars '
+      + 'keeps it harmonically closed, so it can be dropped anywhere in the arrangement and '
+      + 'still make sense, and the song\u2019s progression is then whatever its pattern order '
+      + 'spells out. Chords written against absolute song bars would break the moment the '
+      + 'arrangement changed. Omit the list to read a pattern back, omit everything to read all.',
+    inputSchema: { type: 'object', properties: {
+      pattern: { type: 'integer' },
+      chords: { type: 'array', items: { type: 'string' } } } } },
+
+  { name: 'jbh_progression', description:
+      'THE DECLARED HARMONY, EXPANDED BAR BY BAR over the song or the current pattern. This is '
+      + 'what jbh_harmony reads when it is not handed a list, and it is the thing that did not '
+      + 'exist before: the actual chord sequence of the arrangement, derived from the song '
+      + 'order rather than written out a second time beside it. Reports which patterns have no '
+      + 'chords declared, because a half-declared harmony checked in the bars that have one and '
+      + 'skipped in the bars that do not reads exactly like a harmony that passed. Free.',
+    inputSchema: { type: 'object', properties: {
+      src: { type: 'string', enum: ['pat', 'song'] } } } },
+
   { name: 'jbh_harmony', description:
       'DO THE NOTES FIT THE CHORDS. The one question the other melodic checks cannot ask: '
       + 'jbh_melody and jbh_motif measure a line against itself, jbh_counterpoint measures two '
       + 'lines against each other, and none of them knows what the chord is — so a part can '
       + 'score at the folk norm for contour and recurrence while sitting a semitone off the '
-      + 'harmony in every bar. Nothing in the app stores a key or a progression, so you must '
-      + 'declare the one you wrote to; it cannot be inferred from the notes, because inferring '
-      + 'it from the notes is what makes a wrong note look correct. Reports three things. (1) '
+      + 'harmony in every bar. The progression is STORED now \u2014 declare it once with jbh_key and '
+      + 'jbh_chords and this reads it; pass chords only for a one-off check against something you '
+      + 'have not committed to. With nothing declared and nothing passed it refuses rather than '
+      + 'guessing, because inferring the harmony from the notes is what makes a wrong note look '
+      + 'correct. Reports three things. (1) '
       + 'MINOR NINTHS: a pitch sounding a semitone above a chord tone, which is the interval '
       + 'that actually beats and the reason the 4th is the avoid note over a major chord — not '
       + '"notes outside the chord", most good music is mostly non-chord tones. (2) FALSE '
@@ -719,6 +754,10 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_loudness':    return ok(await jbh('loudness', [{ src: a.src, loops: a.loops }]));
       case 'jbh_translate':   return ok(await jbh('translate', [{ src: a.src }]));
       case 'jbh_pulse':       return ok(await jbh('pulse', [{ src: a.src }]));
+      case 'jbh_key':         return ok(await jbh('key', a.tonic===undefined?[]:[a.tonic, a.mode]));
+      case 'jbh_chords':      return ok(await jbh('chords',
+                                a.pattern===undefined?[]:[a.pattern, a.chords]));
+      case 'jbh_progression': return ok(await jbh('progression', [{ src: a.src }]));
       case 'jbh_harmony':     return ok(await jbh('harmony', [{ chords: a.chords,
                                 beatsPerBar: a.beatsPerBar, src: a.src }]));
       case 'jbh_motif':       return ok(await jbh('motif', [a.instrument, { src: a.src }]));
