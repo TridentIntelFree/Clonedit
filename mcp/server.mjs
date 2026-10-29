@@ -543,12 +543,37 @@ const TOOLS = [
       + 'normalised against its own level, so a quiet corpus can stand in for a loud target and '
       + 'be scaled to fit. The idea is Samplebrain\'s — designed by Richard James, written by '
       + 'Dave Griffiths; this is an independent implementation of the published technique. '
-      + 'Output is a sample on a pad like any other.',
+      + 'Output is a sample on a pad like any other. '
+      + 'MATCHING: bins (4-100 log-spaced spectral bands) and mfcc (0-1, blend in cepstral '
+      + 'coefficients) set how finely two blocks are told apart — 8 bands cannot separate what '
+      + '32 plus MFCC can, and that is the difference between a rebuild and a mush. binRange '
+      + 'narrows it to a frequency subrange. ALGORITHM: basic searches everything; reversed '
+      + 'takes the LEAST similar block; synaptic connects blocks into a similarity network and '
+      + 'searches only the current block\'s neighbours, so the output wanders differently on '
+      + 'each repetition of the target; slide does the same but holds a target block and plays '
+      + 'on when nothing within slideError dB is in reach, which warps the timing. novelty '
+      + 'biases against blocks already used, boredom sets how fast that bias decays, stickiness '
+      + 'keeps a run of the source intact by taking whatever followed the last block when it is '
+      + 'close enough. autotune bends the chosen block toward the target\'s pitch. stretch '
+      + 'repeats each target block, which lengthens the output. blockMs and brainBlockMs are '
+      + 'separate on purpose.',
     inputSchema: { type: 'object', required: ['target'], properties: {
       target: { type: 'integer' },
       brain: { type: 'array', items: { type: 'integer' } },
-      pad: { type: 'integer' }, blockMs: { type: 'number' },
-      jumble: { type: 'number' }, follow: { type: 'boolean' },
+      pad: { type: 'integer' },
+      blockMs: { type: 'number' }, brainBlockMs: { type: 'number' },
+      overlap: { type: 'number' },
+      window: { type: 'string', enum: ['hann', 'rect', 'dodgy'] },
+      bins: { type: 'integer' }, mfcc: { type: 'number' },
+      binRange: { type: 'array', items: { type: 'integer' } },
+      match: { type: 'string', enum: ['shape', 'shape+level'] },
+      algorithm: { type: 'string', enum: ['basic', 'reversed', 'synaptic', 'slide'] },
+      synapses: { type: 'integer' }, slideError: { type: 'number' },
+      novelty: { type: 'number' }, boredom: { type: 'number' },
+      stickiness: { type: 'number' }, stretch: { type: 'integer' },
+      autotune: { type: 'boolean' }, targetMix: { type: 'number' },
+      stereo: { type: 'boolean' }, reversed: { type: 'boolean' },
+      follow: { type: 'boolean' },
       name: { type: 'string' }, seed: { type: 'integer' } } } },
 
   { name: 'jbh_tape', description:
@@ -714,9 +739,25 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_paint':       return ok(await jbh('paint', [{ pad: a.pad, seconds: a.seconds,
                                 lo: a.lo, hi: a.hi, log: a.log, rows: a.rows,
                                 partials: a.partials, midi: a.midi, name: a.name, seed: a.seed }]));
+      /* `jumble` was passed here for a long time and resynth() has no
+         such option — it was replaced by novelty/boredom/stickiness and
+         the MCP surface was never updated. So an agent working over MCP
+         could set a parameter that did nothing and could not reach the
+         seven that worked. mcp-coverage.test.mjs now checks every name
+         passed from here against the options the function actually
+         reads, which is the test that would have caught it. */
       case 'jbh_resynth':     return ok(await jbh('resynth', [{ target: a.target,
-                                brain: a.brain, pad: a.pad, blockMs: a.blockMs,
-                                jumble: a.jumble, follow: a.follow, name: a.name, seed: a.seed }]));
+                                brain: a.brain, pad: a.pad,
+                                blockMs: a.blockMs, brainBlockMs: a.brainBlockMs,
+                                overlap: a.overlap, window: a.window,
+                                bins: a.bins, mfcc: a.mfcc, binRange: a.binRange,
+                                match: a.match, algorithm: a.algorithm,
+                                synapses: a.synapses, slideError: a.slideError,
+                                novelty: a.novelty, boredom: a.boredom,
+                                stickiness: a.stickiness, stretch: a.stretch,
+                                autotune: a.autotune, targetMix: a.targetMix,
+                                stereo: a.stereo, reversed: a.reversed,
+                                follow: a.follow, name: a.name, seed: a.seed }]));
       case 'jbh_tape':        return ok(await jbh('tape', [a.from, { pad: a.pad,
                                 wow: a.wow, wowHz: a.wowHz, flutter: a.flutter,
                                 flutterHz: a.flutterHz, drift: a.drift, sat: a.sat,

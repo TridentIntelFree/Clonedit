@@ -153,3 +153,43 @@ test('review() reports what it could not run', () => {
   assert.ok(/toolsRun|ran\.length/.test(body),
     'review() must say how many checks it managed');
 });
+
+/* AN OPTION THE MCP SERVER PASSES AND THE FUNCTION DOES NOT READ.
+
+   jbh_resynth passed `jumble` for a long time. resynth() has no such
+   option — it was replaced by novelty, boredom and stickiness, and the
+   MCP surface was never updated. So an agent working over MCP could set
+   a knob that did nothing, while the seven that worked were unreachable
+   because the schema did not mention them.
+
+   Nothing caught it, because the existing coverage tests check that a
+   TOOL exists, never that its arguments connect to anything. This walks
+   each generator's dispatch case, takes every `key: a.key` it forwards,
+   and checks the function in src/legacy.js actually reads `o.key`. */
+test('every option the MCP server forwards is one the function reads', () => {
+  const problems = [];
+  for (const g of GENERATORS) {
+    const disp = new RegExp("case 'jbh_" + g + "':[\\s\\S]*?\\]\\)\\);", 'm').exec(mcp);
+    if (!disp) { problems.push(g + ': no dispatch case found'); continue; }
+    /* the object literal the server builds, minus the leading pad/from
+       positional argument */
+    const forwarded = [...disp[0].matchAll(/([A-Za-z][\w]*)\s*:\s*a\.([A-Za-z][\w]*)/g)]
+      .map(m => m[1]);
+    const fn = new RegExp('^\\s{2}(?:async\\s+)?' + g + '\\s*\\(([\\s\\S]*?)\\n  \\},', 'm')
+      .exec(legacy);
+    if (!fn) { problems.push(g + '(): not found in src/legacy.js'); continue; }
+    const body = fn[1];
+    for (const key of new Set(forwarded)) {
+      /* `o.key`, or destructured, or read off the options object under
+         another local name — all of these count as reading it */
+      const read = new RegExp('\\bo\\.' + key + '\\b').test(body)
+        || new RegExp('\\bopt\\.' + key + '\\b').test(body)
+        || new RegExp('[{,]\\s*' + key + '\\s*[,}=:]').test(body);
+      if (!read) problems.push(g + '() is sent `' + key + '` and never reads it');
+    }
+  }
+  assert.deepStrictEqual(problems, [],
+    'the MCP surface and the function have drifted apart:\n  ' + problems.join('\n  ')
+    + '\nAn option that is forwarded but never read is a knob an agent can turn '
+    + 'with no effect, and it reads exactly like a knob that does not work.');
+});

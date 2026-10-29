@@ -579,10 +579,47 @@ This matters because the alternative is circular. Matching your own
 previous bounce only propagates your own mistakes, and for a long time
 that is exactly what was happening here.
 
+## Run `npm run lint` before anything slow
+
+It takes a tenth of a second and it catches the most repeated mistake in
+this repo's history: closing a block comment and then carrying on
+writing prose.
+
+```
+   ...the bar turns, and the approach is honestly available here. */
+   THE APPROACH IS CHOSEN AGAINST BOTH CHORDS, not just taken as the
+```
+
+That is a syntax error, `node --check` finds it instantly, and it
+happened **five times in one session** — twice in `src/legacy.js` and
+three times in one song script. It is not an interesting bug. The whole
+cost is in *when* it surfaces: a song script is parsed at the top of a
+twenty-minute render and nowhere else, so a backgrounded run reports it
+after the wait rather than before.
+
+`scripts/lint-comments.mjs` is the check and `npm run build` now runs
+it. Its first draft flagged seven places and all seven were object
+properties sitting under a comment — `mEqLo:0,` and friends — so it was
+narrowed until it caught every real case and none of those. It carries
+`--self-test` with the five real failures and nine known-good lines in
+it, because a checker nobody has run against a known-bad input is not a
+checker.
+
 ## The traps
 
 These are the ones that cost real work here. None are guessable from the
 API.
+
+**An option the MCP server forwards may not be one the function reads.**
+`jbh_resynth` passed `jumble` for a long time; `resynth()` has no such
+option — it was replaced by `novelty`/`boredom`/`stickiness` and the MCP
+schema was never updated. So an agent working over MCP could set a knob
+with no effect while the seven that worked were unreachable, because the
+schema did not mention them. The coverage tests checked that a TOOL
+existed and never that its arguments connected to anything.
+`tests/mcp-coverage.test.mjs` now walks each generator's dispatch case
+and checks every forwarded name against the options the function
+actually reads. Verified by putting `jumble` back and watching it fail.
 
 **A sample pack can lie about pitch.** VSCO-2 CE names every file an
 octave below what it sounds, and is not consistent with itself: one solo
@@ -1186,8 +1223,48 @@ A piano note rebuilt from vibraphone, marimba and hand chimes takes 633
 blocks out of 2103 candidates. The idea is Samplebrain's, designed by
 Richard James and written by Dave Griffiths; this is an independent
 implementation of a published technique, not a port of their GPL code.
-Matching is on spectral shape with each block normalised against its own
-level, so a quiet corpus can stand in for a loud target.
+
+**This paragraph claimed that for months while the function had about a
+third of the technique in it.** Asked directly whether the features
+matched, the answer had to be no, and finding that out took one clone
+and one read of `docs/manual.md` in their repo. What was missing:
+
+- it compared blocks on **eight** log-spaced bands. Samplebrain uses a
+  hundred frequency bins, or MFCCs, or a blend. Eight numbers cannot
+  separate blocks that a hundred separate easily, so everything matched
+  "near enough" — which is how a rebuild comes out as mush. By far the
+  largest of the gaps, and the least visible.
+- no `synaptic` or `slide` search. Those are not speed optimisations.
+  The manual says synaptic makes the output change on each repetition
+  of the target, and that slide "unpredictably warps the timing". Both
+  are sound-defining and both were absent.
+- no autotune, no separate brain and target block sizes, no adjustable
+  overlap or window, no frequency subrange, no search stretch, no
+  brain/target mix, mono only.
+
+All of that is in now, so the parameters are:
+
+| | |
+|---|---|
+| `bins` 4-100, `mfcc` 0-1 | how finely two blocks are told apart. Defaults are 32 and 0.35, which is 45 dimensions against the old 8. `{bins:8, mfcc:0}` is the old matcher |
+| `binRange [lo,hi]` | compare only that slice of the bins |
+| `algorithm` | `basic`, `reversed`, `synaptic`, `slide` |
+| `synapses`, `slideError` | neighbours to check; the dB error that makes slide hold a block |
+| `novelty`, `boredom`, `stickiness` | bias against what is used, how fast that decays, whether to keep a run of the source intact |
+| `blockMs`, `brainBlockMs` | separate on purpose — their manual says so under each heading |
+| `overlap`, `window` | `hann`, `rect` or `dodgy` (their legacy linear fade) |
+| `autotune` | bend the chosen block toward the target's pitch |
+| `stretch` | repeat each target block. This LENGTHENS the output |
+| `targetMix`, `stereo` | mix the target back in; search L and R separately |
+
+**The lesson is not about this function.** The comment above it was
+headed *WHAT READING THEIR MANUAL CHANGED* and listed four real fixes
+taken from that manual. Someone did read it, acted on the first four
+things, and wrote the result up in the past tense — and that write-up
+then stood as evidence the implementation had caught up with the thing
+it names. Reading a manual and implementing what it describes are
+different events. If you fix some of what a document says, say which
+some.
 
 `freeze(pad, opt)` holds one instant of a sound for as long as you
 like. `paint()` can make anything provided you already know the

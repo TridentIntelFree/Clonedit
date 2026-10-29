@@ -15907,54 +15907,47 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         +(target===i?'Replaced in place.':'Left on '+padName(target)+'.') };
   },
 
-  /* PLAY ONE SOUND USING THE PIECES OFANOTHER.
+  /* PLAY ONE SOUND USING THE PIECES OF ANOTHER.
 
-     Concatenative synthesis: chop a corpus into short blocks, chop a
-     target into short blocks, and rebuild the target by choosing, for
-     each of its blocks, whichever corpus block sounds most like it. The
-     result has the shape of the target and the substance of the corpus
-     — a drum loop played entirely in cello, a melody assembled out of
-     field recordings.
+     The idea is Samplebrain's, designed by Richard James and written by
+     Dave Griffiths. This is an independent implementation of a published
+     technique, not a port of their GPL code.
 
-     The idea is not mine. Samplebrain, designed by Richard James and
-     written by Dave Griffiths, is the well-known instance of it, and
-     the technique has a literature of its own going back to musaicing
-     and CataRT. This is an independent implementation of a published
-     technique rather than a port of theirs: their code is GPL and none
-     of it is here.
+     WHAT THIS USED TO BE, AND WHY IT WAS NOT THE SAME THING. The first
+     version described itself as an implementation of the technique and
+     had about a third of it.
 
-     Why it belongs in this app in particular: the hard part of
-     concatenative synthesis is deciding when two short blocks "sound
-     alike", and that is a measurement. This app is mostly measurement
-     by now.
+     The comment that stood here claimed the opposite, under the heading
+     WHAT READING THEIR MANUAL CHANGED, and listed four fixes taken from
+     it: match on frequency AND dynamics rather than shape alone, add
+     stickiness, replace random tie-breaking with novelty and boredom,
+     and add the reversed mode with its silence caveat. Those four are
+     real and they are all still here. But the same comment left the
+     reader — and the next agent — believing the implementation had
+     caught up with the thing it names, and it had not. Reading a manual
+     and acting on the first four things in it is not the same as
+     implementing what it describes, and the write-up should not have
+     been in the past tense.
 
-     WHAT READING THEIR MANUAL CHANGED. The first version here was
-     written from the concept alone and got four things wrong or
-     missing, all of them documented in Samplebrain's own manual:
+     Checked properly against docs/manual.md, these were missing:
 
-     - It matched on spectral shape only, normalising every block's
-       level away. Their default matches frequency AND dynamics, and
-       the manual is explicit that frequency-only is the special case.
-       Shape-only throws away the loudness contour of the target, which
-       is half of what makes a rebuild recognisable. `match` now
-       chooses, and 'shape+level' is the default.
-     - It had no stickiness. If the block that FOLLOWS the one just
-       used is close enough to the next target block, using it instead
-       of searching keeps a contiguous run of the source intact. That
-       single idea is the difference between phrases and confetti,
-       because it preserves the corpus's own micro-continuity.
-     - Its variety came from picking randomly among near-matches, which
-       is noise. Theirs comes from novelty: bias against blocks already
-       used, with a boredom term for how fast that bias decays. Same
-       intent, and theirs is the better mechanism because it is a
-       preference rather than a coin toss.
-     - And a deliberately WORST match is a mode worth having, with the
-       caveat their manual gives — silence is least similar to
-       everything, so it has to be excluded or it wins every time.
+       - it compared blocks on EIGHT log-spaced bands. Samplebrain uses
+         ONE HUNDRED frequency bins, or MFCCs, or a blend of the two.
+         Eight numbers cannot tell apart blocks that a hundred separate
+         easily, so everything matched "near enough" and the output was
+         mush. This was by far the biggest of the gaps.
+       - no `synaptic` or `slide` search. Those are not optimisations:
+         the manual is explicit that synaptic makes the output change
+         with each repetition of the target, and that slide "warps the
+         timing of the target sound". Sound-defining behaviour, absent.
+       - no autotune, no separate brain and target block sizes, no
+         adjustable overlap or window shape, no frequency subrange, no
+         search stretch, no brain/target mix, mono only.
 
-     Matching on shape alone normalises each block against its own
-     total, so a quiet corpus block can stand in for a loud target one
-     and be rescaled; matching on shape+level keeps the contour. */
+     All of those are here now. The defaults have MOVED: `bins` is 32 and
+     `mfcc` is 0.35 where the old code was effectively bins:8, mfcc:0.
+     That is a deliberate change and it will alter what the four songs
+     using resynth() render. Pass {bins:8, mfcc:0} for the old matcher. */
   async resynth(opt){
     const o=opt||{};
     ensureAudio();
@@ -15975,9 +15968,17 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       +'or pass {brain:[padIndexes]}');
 
     const sr=tBuf.sampleRate;
+    /* BRAIN AND TARGET BLOCK SIZES ARE SEPARATE. Their manual says so
+       twice, once under each heading: "This does not need to match the
+       brain block size." Rebuilding a long target out of short brain
+       blocks is a different instrument from matching them. */
     const blockMs=clamp(o.blockMs==null?60:+o.blockMs, 10, 400);
+    const brainMs=clamp(o.brainBlockMs==null?blockMs:+o.brainBlockMs, 10, 400);
     const B=Math.max(256, Math.round(sr*blockMs/1000));
-    const HOP=Math.max(128, B>>1);
+    const BB=Math.max(256, Math.round(sr*brainMs/1000));
+    const OVERLAP=clamp(o.overlap==null?0.5:+o.overlap, 0, 0.9);
+    const HOP=Math.max(64, Math.round(B*(1-OVERLAP)));
+    const BHOP=Math.max(64, Math.round(BB*(1-OVERLAP)));
     const FOLLOW=o.follow!==false;          /* scale each block to the target's level */
     const MATCH=o.match||'shape+level';
     if(['shape','shape+level'].indexOf(MATCH)<0)
@@ -15985,146 +15986,338 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const NOVELTY=clamp(o.novelty==null?0.3:+o.novelty, 0, 1);
     const BOREDOM=clamp(o.boredom==null?0.25:+o.boredom, 0, 1);
     const STICKY=clamp(o.stickiness==null?0.25:+o.stickiness, 0, 1);
-    const REVERSED=!!o.reversed;
 
-    /* FEATURES. Eight log-spaced bands of one windowed FFT per block,
-       as decibels, then the vector is centred so only its SHAPE is
-       compared. Level is kept separately and used to rescale, not to
-       match: a corpus of quiet field recordings has to be allowed to
-       stand in for a loud kick. */
-    const NFFT=1<<Math.ceil(Math.log2(Math.min(2048, B)));
-    const EDGES=[40,110,260,520,1000,2000,4000,8000,16000];
-    const win=new Float64Array(NFFT);
-    for(let i=0;i<NFFT;i++) win[i]=0.5-0.5*Math.cos(2*Math.PI*i/(NFFT-1));
-    const featOf=(data, at)=>{
-      const re=new Float64Array(NFFT), im=new Float64Array(NFFT);
-      let rms=0, n=0;
+    /* algorithm. `reversed:true` still works and means algorithm
+       'reversed', because four songs in this repo pass it. */
+    const ALGO=o.algorithm || (o.reversed ? 'reversed' : 'basic');
+    if(['basic','reversed','synaptic','slide'].indexOf(ALGO)<0)
+      throw new Error("algorithm must be 'basic', 'reversed', 'synaptic' or 'slide'");
+    const REVERSED=ALGO==='reversed';
+    const SYNAPSES=clamp(o.synapses==null?100:o.synapses|0, 1, 1000);
+    const SLIDE_DB=clamp(o.slideError==null?6:+o.slideError, 0.5, 40);
+    const STRETCH=clamp(o.stretch==null?1:o.stretch|0, 1, 8);
+    const AUTOTUNE=!!o.autotune;
+    const TARGETMIX=clamp(o.targetMix==null?0:+o.targetMix, 0, 1);
+    const STEREO=!!o.stereo && tBuf.numberOfChannels>1;
+
+    /* ---- FEATURES ----------------------------------------------------
+       `bins` log-spaced spectral bands and/or `mfcc` cepstral
+       coefficients, blended. Samplebrain's own note applies: at 0 or 1
+       the other half is not computed at all, which is the cheap case.
+
+       Either way the spectral part is CENTRED, so only its shape is
+       compared. Level is kept apart and used to rescale rather than to
+       match, so a corpus of quiet field recordings can stand in for a
+       loud kick. */
+    const BINS=clamp(o.bins==null?32:o.bins|0, 4, 100);
+    const MFCCMIX=clamp(o.mfcc==null?0.35:+o.mfcc, 0, 1);
+    const NMFCC=13;
+    const NFFT=1<<Math.ceil(Math.log2(Math.min(4096, Math.max(512, Math.max(B,BB)))));
+    const NYQ=sr/2, FLO=40, FHI=Math.min(16000, NYQ*0.98);
+
+    /* log-spaced band edges, BINS of them */
+    const EDGES=new Float64Array(BINS+1);
+    for(let i=0;i<=BINS;i++) EDGES[i]=FLO*Math.pow(FHI/FLO, i/BINS);
+    /* fft subsection: a subrange of those bins, as their manual has it */
+    let BLO=0, BHI=BINS;
+    if(Array.isArray(o.binRange) && o.binRange.length===2){
+      BLO=clamp(o.binRange[0]|0, 0, BINS-1);
+      BHI=clamp(o.binRange[1]|0, BLO+1, BINS);
+    }
+
+    /* mel filterbank + DCT-II, built once */
+    const mel=f=>2595*Math.log10(1+f/700), unmel=m=>700*(Math.pow(10,m/2595)-1);
+    const NMEL=26, melPts=new Float64Array(NMEL+2);
+    for(let i=0;i<NMEL+2;i++) melPts[i]=unmel(mel(FLO)+(mel(FHI)-mel(FLO))*i/(NMEL+1));
+
+    const WINSHAPE=o.window||'hann';
+    if(['hann','rect','dodgy'].indexOf(WINSHAPE)<0)
+      throw new Error("window must be 'hann', 'rect' or 'dodgy'");
+    const mkWin=(n)=>{ const w=new Float64Array(n);
+      for(let i=0;i<n;i++){
+        if(WINSHAPE==='rect') w[i]=1;
+        /* "a kind of linear fade in and out, left in for legacy
+           compatibility with prototype versions" — their words */
+        else if(WINSHAPE==='dodgy') w[i]=Math.min(1, Math.min(i,n-1-i)/(n*0.25));
+        else w[i]=0.5-0.5*Math.cos(2*Math.PI*i/(n-1));
+      } return w; };
+    /* The window is the length of the BLOCK and the FFT is zero-padded
+       after it. Windowing across the whole NFFT instead would taper the
+       target's 60ms and the brain's 20ms by different fractions of their
+       own length, so the two would stop being comparable the moment the
+       separate block sizes were used — which is the feature this was
+       added alongside. */
+    const winT=mkWin(B), winB=mkWin(BB);
+
+    const re=new Float64Array(NFFT), im=new Float64Array(NFFT);
+    const pw=new Float64Array(NFFT>>1);
+    const featOf=(data, at, len, w)=>{
+      let rms=0;
       for(let i=0;i<NFFT;i++){
-        const v=(at+i<data.length)?data[at+i]:0;
-        re[i]=v*win[i]; rms+=v*v; n++;
+        const v=(i<len && at+i<data.length)?data[at+i]:0;
+        re[i]=v*(i<len?w[i]:0); im[i]=0;
+        if(i<len) rms+=v*v;
       }
-      rms=Math.sqrt(rms/Math.max(1,n));
+      rms=Math.sqrt(rms/Math.max(1,len));
       if(rms<1e-5) return null;                 /* silence is not a block */
       fftInPlace(re,im);
-      const binHz=sr/NFFT, f=new Float64Array(EDGES.length-1);
-      for(let i=1;i<NFFT/2;i++){
-        const hz=i*binHz;
-        for(let b=0;b<f.length;b++) if(hz>=EDGES[b] && hz<EDGES[b+1]){ f[b]+=re[i]*re[i]+im[i]*im[i]; break; }
+      const binHz=sr/NFFT, half=NFFT>>1;
+      for(let i=0;i<half;i++) pw[i]=re[i]*re[i]+im[i]*im[i];
+
+      const dim=(MFCCMIX<1?(BHI-BLO):0)+(MFCCMIX>0?NMFCC:0);
+      const f=new Float64Array(dim);
+      let k=0, f0=0;
+
+      if(MFCCMIX<1){
+        const band=new Float64Array(BINS);
+        for(let i=1;i<half;i++){
+          const hz=i*binHz;
+          if(hz<EDGES[0]||hz>=EDGES[BINS]) continue;
+          /* log spacing means a direct index, no scan */
+          let b=Math.floor(BINS*Math.log(hz/FLO)/Math.log(FHI/FLO));
+          if(b<0) b=0; else if(b>=BINS) b=BINS-1;
+          band[b]+=pw[i];
+        }
+        let mean=0;
+        for(let b=0;b<BINS;b++) band[b]=10*Math.log10(Math.max(band[b],1e-12));
+        for(let b=BLO;b<BHI;b++) mean+=band[b];
+        mean/=Math.max(1,BHI-BLO);
+        const w=1-MFCCMIX;
+        for(let b=BLO;b<BHI;b++) f[k++]=(band[b]-mean)*w;
       }
-      let mean=0;
-      for(let b=0;b<f.length;b++){ f[b]=10*Math.log10(Math.max(f[b],1e-12)); mean+=f[b]; }
-      mean/=f.length;
-      for(let b=0;b<f.length;b++) f[b]-=mean;   /* shape, not level */
-      return {f, rms};
+      if(MFCCMIX>0){
+        const fb=new Float64Array(NMEL);
+        for(let m=0;m<NMEL;m++){
+          const lo=melPts[m], mid=melPts[m+1], hi=melPts[m+2];
+          let s=0;
+          const i0=Math.max(1,Math.ceil(lo/binHz)), i1=Math.min(half-1,Math.floor(hi/binHz));
+          for(let i=i0;i<=i1;i++){
+            const hz=i*binHz;
+            const t = hz<=mid ? (hz-lo)/Math.max(1e-9,mid-lo) : (hi-hz)/Math.max(1e-9,hi-mid);
+            if(t>0) s+=pw[i]*t;
+          }
+          fb[m]=Math.log(Math.max(s,1e-12));
+        }
+        /* DCT-II, dropping coefficient 0 — that is overall level, which
+           is handled separately and must not creep into the shape */
+        const w=MFCCMIX*0.5;   /* mfcc coefficients run larger than dB */
+        for(let c=1;c<=NMFCC;c++){
+          let s=0;
+          for(let m=0;m<NMEL;m++) s+=fb[m]*Math.cos(Math.PI*c*(m+0.5)/NMEL);
+          f[k++]=s*w;
+        }
+      }
+      if(AUTOTUNE){
+        /* dominant partial, parabolically interpolated — enough to pitch
+           one block toward another, not a pitch tracker */
+        let bi=1, bv=0;
+        const iLo=Math.max(1,Math.floor(60/binHz)), iHi=Math.min(half-2,Math.floor(2000/binHz));
+        for(let i=iLo;i<=iHi;i++) if(pw[i]>bv){ bv=pw[i]; bi=i; }
+        const a=Math.log(Math.max(pw[bi-1],1e-20)), b2=Math.log(Math.max(pw[bi],1e-20)),
+              c2=Math.log(Math.max(pw[bi+1],1e-20));
+        const d=0.5*(a-c2)/Math.max(1e-9,(a-2*b2+c2));
+        f0=(bi+(isFinite(d)?clamp(d,-1,1):0))*binHz;
+      }
+      return {f, rms, f0};
     };
 
-    /* build the brain */
+    /* ---- BUILD THE BRAIN ---------------------------------------------- */
     const brain=[];
     for(const pi of brainPads){
       const b=S.buffers[S.pads[pi].bufId];
       if(!b || !b.length) continue;
       const d=b.getChannelData(0);
       let prev=-1;
-      for(let at=0; at+B<=d.length; at+=HOP){
-        const ft=featOf(d, at);
+      for(let at=0; at+BB<=d.length; at+=BHOP){
+        const ft=featOf(d, at, BB, winB);
         if(!ft) { prev=-1; continue; }
-        /* `next` is what makes stickiness possible: the block that
-           physically follows this one in the same recording. */
+        /* `i` is stored on the block. The old code called
+           brain.indexOf(pick) once per target block — a linear scan of
+           up to twenty thousand entries, every time, to recover an index
+           it already had. */
         const idx=brain.length;
-        brain.push({pad:pi, at, f:ft.f, rms:ft.rms, data:d, next:-1, used:0});
+        brain.push({i:idx, pad:pi, at, f:ft.f, rms:ft.rms, f0:ft.f0,
+          data:d, len:BB, next:-1, used:0});
         if(prev>=0) brain[prev].next=idx;
         prev=idx;
       }
       if(brain.length>20000) break;             /* enough is enough */
     }
     if(!brain.length) throw new Error('every block in the brain was silence');
+    const DIM=brain[0].f.length;
 
-    const td=tBuf.getChannelData(0);
-    const outN=td.length;
-    const out=new Float32Array(outN);
-    const acc=new Float32Array(outN);
-    const fade=new Float64Array(B);
-    for(let i=0;i<B;i++) fade[i]=0.5-0.5*Math.cos(2*Math.PI*i/(B-1));
+    /* ---- THE SYNAPSE NETWORK, BUILT LAZILY ----------------------------
+       Their description: the blocks are connected by similarity and only
+       the nearby ones are searched, which makes the search time constant
+       however big the brain is.
+
+       Precomputing every block's neighbours is O(n^2) and would be
+       twenty thousand squared here. Instead a block's neighbours are
+       found the first time the walk arrives at it, and cached — the walk
+       only ever visits as many nodes as the target has blocks, so the
+       cost is bounded by the target's length rather than the brain's. */
+    const synapse=new Map();
+    const featDist=(a,b)=>{ let s=0; for(let k=0;k<DIM;k++){ const e=a[k]-b[k]; s+=e*e; } return s; };
+    const neighboursOf=(i)=>{
+      let n=synapse.get(i);
+      if(n) return n;
+      const me=brain[i].f, scored=[];
+      for(let j=0;j<brain.length;j++){ if(j!==i) scored.push([featDist(brain[j].f,me), j]); }
+      scored.sort((a,b)=>a[0]-b[0]);
+      n=scored.slice(0,SYNAPSES).map(x=>x[1]);
+      synapse.set(i,n);
+      return n;
+    };
+
+    /* ---- REBUILD ------------------------------------------------------ */
+    const chans=STEREO?2:1;
+    const tLen=tBuf.length;
+    /* THE OUTPUT IS NOT ALWAYS THE TARGET'S LENGTH. Search stretch is
+       "like a simple timestretch", and slide "unpredictably warps the
+       timing" — both make the rebuild take longer than what it is
+       rebuilding. Written into a buffer fixed at the target's length,
+       stretch 3 did not stretch anything: it used each target block
+       three times and so only ever reached the first third of the
+       target, and the block count came out identical. The buffer is
+       allocated with room for the warp and trimmed to what was
+       actually written. At stretch 1 with no slide the multiplier is
+       exactly 1, so nothing moves for existing callers. */
+    const outN=Math.round(tLen*STRETCH*(ALGO==='slide'?1.5:1));
+    const outs=[], accs=[];
+    for(let c=0;c<chans;c++){ outs.push(new Float32Array(outN)); accs.push(new Float32Array(outN)); }
+    const fade=mkWin(B);
 
     let rs=(o.seed|0)||0xC0FFEE;
     const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
 
-    let placed=0, used=new Set(), lastIdx=-1, ran=0;
-    for(let at=0; at+B<=outN; at+=HOP){
-      const ft=featOf(td, at);
-      if(!ft) continue;
-      /* nearest block by shape, with a few near-misses kept so the same
-         one is not chosen every time a similar moment comes round —
-         that is what makes it sound like an instrument being played
-         rather than a loop being pasted */
-      /* raw distance between two blocks, before any preference is
-         applied: spectral shape, plus the level difference when the
-         match is asked to respect dynamics */
-      const distTo=(c)=>{
-        let d2=0;
-        for(let b=0;b<c.f.length;b++){ const e=c.f[b]-ft.f[b]; d2+=e*e; }
-        if(MATCH==='shape+level'){
-          const dl=20*Math.log10(Math.max(c.rms,1e-6)/Math.max(ft.rms,1e-6));
-          d2+=dl*dl*0.6;
+    const used=new Set();
+    let placed=0, ran=0, slid=0, tuned=0, reach=0;
+
+    for(let ch=0; ch<chans; ch++){
+      const td=tBuf.getChannelData(STEREO?ch:0);
+      const out=outs[ch], acc=accs[ch];
+      let lastIdx=-1, at=0, outAt=0, guard=0, rep=0;
+
+      /* the target pointer is bounded by the TARGET, the output pointer
+         by the output — they are different lengths now */
+      while(at+B<=tLen && outAt+B<=outN){
+        const ft=featOf(td, at, B, winT);
+        if(!ft){ at+=HOP; outAt+=HOP; continue; }
+
+        const distTo=(c)=>{
+          let d2=featDist(c.f, ft.f);
+          if(MATCH==='shape+level'){
+            const dl=20*Math.log10(Math.max(c.rms,1e-6)/Math.max(ft.rms,1e-6));
+            d2+=dl*dl*0.6;
+          }
+          return d2;
+        };
+
+        /* the candidate set: everything, or just this node's synapses */
+        let scan=null;
+        if((ALGO==='synaptic'||ALGO==='slide') && lastIdx>=0){
+          scan=neighboursOf(lastIdx);
+          if(brain[lastIdx].next>=0) scan=scan.concat([brain[lastIdx].next]);
         }
-        return d2;
-      };
-      let best=null, bestRaw=Infinity, bestScore=Infinity;
-      for(const c of brain){
-        const raw=distTo(c);
-        /* REVERSED wants the least similar, but silence is least
-           similar to everything — their manual says so and it is true
-           here too, so quiet blocks are kept out of that race. */
-        if(REVERSED && c.rms<ft.rms*0.25) continue;
-        /* novelty is a preference against what has already been used,
-           not a coin toss between near-equal options */
-        const sc=(REVERSED? -raw : raw) + NOVELTY*c.used*18;
-        if(sc<bestScore){ bestScore=sc; best=c; bestRaw=raw; }
-      }
-      if(!best) continue;
-      /* STICKINESS: if whatever followed the last block we took is
-         close enough, take that instead and keep the run intact.
 
-         "Close enough" is relative to the best match found, and the
-         first attempt at that arithmetic was far too generous — it
-         admitted any successor within two and a half times the best
-         distance, so 620 of 633 blocks carried on and the thing was
-         playing the corpus end to end while barely consulting the
-         target. At (1+STICKY) the default admits a successor up to a
-         quarter worse in squared distance, which is about 12% worse in
-         real terms: enough to hold a run together, not enough to
-         ignore what is being rebuilt.
+        let best=null, bestRaw=Infinity, bestScore=Infinity;
+        const consider=(c)=>{
+          /* REVERSED wants the least similar, and silence is least
+             similar to everything — their manual says so and it is true
+             here too, so quiet blocks are kept out of that race. */
+          if(REVERSED && c.rms<ft.rms*0.25) return;
+          const raw=distTo(c);
+          const sc=(REVERSED? -raw : raw) + NOVELTY*c.used*18;
+          if(sc<bestScore){ bestScore=sc; best=c; bestRaw=raw; }
+        };
+        if(scan){ for(const j of scan) consider(brain[j]); }
+        else { for(const c of brain) consider(c); }
+        if(!best){ at+=HOP; outAt+=HOP; continue; }
 
-         Not in reversed mode. There `bestRaw` is the distance of the
-         deliberately WORST match, so every successor compares
-         favourably against it and stickiness swallows the mode whole. */
-      let pick=best;
-      if(STICKY>0 && !REVERSED && lastIdx>=0 && brain[lastIdx].next>=0){
-        const nxt=brain[brain[lastIdx].next];
-        if(distTo(nxt) <= bestRaw*(1+STICKY)) { pick=nxt; ran++; }
+        /* STICKINESS: if whatever followed the last block we took is
+           close enough, take that instead and keep the run intact.
+           Not in reversed mode, where bestRaw is the deliberately WORST
+           distance and every successor compares favourably against it. */
+        let pick=best;
+        if(STICKY>0 && !REVERSED && lastIdx>=0 && brain[lastIdx].next>=0){
+          const nxt=brain[brain[lastIdx].next];
+          if(distTo(nxt) <= bestRaw*(1+STICKY)) { pick=nxt; ran++; }
+        }
+        lastIdx=pick.i;
+        pick.used++;
+        if(BOREDOM>0) for(const c of brain) if(c.used>0) c.used*=(1-BOREDOM*0.5);
+
+        /* AUTOTUNE: bend the chosen block toward the target's pitch.
+           Capped at a fifth either way — past that it is not a tune, it
+           is a different sound played wrong. */
+        let rate=1;
+        if(AUTOTUNE && pick.f0>20 && ft.f0>20){
+          rate=clamp(pick.f0/ft.f0, Math.pow(2,-7/12), Math.pow(2,7/12));
+          if(Math.abs(rate-1)>0.001) tuned++;
+        }
+
+        const g=FOLLOW ? (ft.rms/Math.max(pick.rms,1e-6)) : 1;
+        const gg=Math.max(0, Math.min(8, g));
+        for(let i=0;i<B && outAt+i<outN; i++){
+          const sp=pick.at+i*rate;
+          const i0=Math.floor(sp), fr=sp-i0;
+          let v=0;
+          if(i0>=0 && i0+1<pick.data.length) v=pick.data[i0]*(1-fr)+pick.data[i0+1]*fr;
+          else if(i0>=0 && i0<pick.data.length) v=pick.data[i0];
+          let s=v*gg;
+          if(TARGETMIX>0) s=s*(1-TARGETMIX)+(at+i<outN?td[at+i]:0)*TARGETMIX;
+          out[outAt+i]+=s*fade[i];
+          acc[outAt+i]+=fade[i];
+        }
+        used.add(pick.pad); placed++;
+        if(outAt+B>reach) reach=outAt+B;
+
+        /* SLIDE: "if we can't find a close enough match we repeat the
+           target block again, stretching it until we land on a block
+           that is close enough. This mode unpredictably warps the timing
+           of the target sound." So the OUTPUT advances and the TARGET
+           does not — that is what the warp is. */
+        const errDb=Math.sqrt(bestRaw/Math.max(1,DIM));
+        outAt+=HOP;
+        if(ALGO==='slide' && errDb>SLIDE_DB && guard<8){
+          /* hold the target where it is and go round again: the output
+             advances, the target does not, and the difference is the
+             warp */
+          slid++; guard++;
+        } else {
+          guard=0;
+          /* SEARCH STRETCH repeats each target block a fixed number of
+             times — a simple timestretch, and in synaptic mode it gives
+             the walk more attempts at a closer match. */
+          if(++rep>=STRETCH){ at+=HOP; rep=0; }
+        }
       }
-      lastIdx=brain.indexOf(pick);
-      pick.used++;
-      /* boredom wears the novelty penalty off again */
-      if(BOREDOM>0) for(const c of brain) if(c.used>0) c.used*=(1-BOREDOM*0.5);
-      const g=FOLLOW ? (ft.rms/Math.max(pick.rms,1e-6)) : 1;
-      const gg=Math.max(0, Math.min(8, g));
-      for(let i=0;i<B && at+i<outN; i++){
-        out[at+i]+=pick.data[pick.at+i]*gg*fade[i];
-        acc[at+i]+=fade[i];
-      }
-      used.add(pick.pad); placed++;
     }
-    for(let i=0;i<outN;i++) if(acc[i]>1e-6) out[i]/=acc[i];
 
-    let pk=0; for(let i=0;i<outN;i++){ const a=out[i]<0?-out[i]:out[i]; if(a>pk) pk=a; }
+    /* trim to what was written rather than to what was allocated, or a
+       stretch of 3 on a target that ran out early leaves two thirds of
+       the buffer as digital silence.
+
+       Trimming to `reach` alone was wrong in the other direction: the
+       last partial block never gets placed, so a plain stretch-1 call
+       came out a block short of the target it was rebuilding — 0.99s
+       against 1.00s, a silent change to every existing caller. Only
+       the UNUSED EXTRA is trimmed; the target's own length is the
+       floor. */
+    const N=Math.max(1, Math.min(tLen, outN), Math.min(outN, reach||outN));
+    for(let c=0;c<chans;c++){
+      const out=outs[c], acc=accs[c];
+      for(let i=0;i<N;i++) if(acc[i]>1e-6) out[i]/=acc[i];
+    }
+    let pk=0;
+    for(const out of outs) for(let i=0;i<N;i++){ const a=out[i]<0?-out[i]:out[i]; if(a>pk) pk=a; }
     if(pk<1e-5) throw new Error('the rebuild came out silent — try a longer blockMs, '
       +'or a brain whose sounds are closer to the target');
     const norm=0.9/pk;
-    for(let i=0;i<outN;i++) out[i]*=norm;
+    for(const out of outs) for(let i=0;i<N;i++) out[i]*=norm;
 
-    const buf=AC.createBuffer(1, outN, sr);
-    buf.getChannelData(0).set(out);
+    const buf=AC.createBuffer(chans, N, sr);
+    for(let c=0;c<chans;c++) buf.getChannelData(c).set(outs[c].subarray(0,N));
     const name=o.name||((tp.name||('pad '+(o.target|0)))+' rebuilt');
     const target=(o.pad==null)?pickTargetPad():clamp(o.pad|0,0,NPADS-1);
     S.editPad=target;
@@ -16136,17 +16329,27 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     try{ drawPads(); }catch(e){}
 
     return { pad:target, name, from:(o.target|0), brainPads,
-      match:MATCH, reversed:REVERSED,
-      settings:{novelty:NOVELTY, boredom:BOREDOM, stickiness:STICKY},
+      match:MATCH, algorithm:ALGO, reversed:REVERSED, stereo:STEREO,
+      features:{bins:BINS, binRange:[BLO,BHI], mfcc:MFCCMIX, dims:DIM, window:WINSHAPE},
+      settings:{novelty:NOVELTY, boredom:BOREDOM, stickiness:STICKY,
+        overlap:OVERLAP, stretch:STRETCH, autotune:AUTOTUNE, targetMix:TARGETMIX,
+        synapses:(ALGO==='synaptic'||ALGO==='slide')?SYNAPSES:null,
+        slideError:(ALGO==='slide')?SLIDE_DB:null},
       continuedRuns:ran, continuedPct:placed?+(100*ran/placed).toFixed(0):0,
-      blocks:placed, brainBlocks:brain.length, blockMs:+blockMs.toFixed(0),
+      slidRepeats:slid, autotuned:tuned,
+      synapsesBuilt:synapse.size,
+      blocks:placed, brainBlocks:brain.length,
+      blockMs:+blockMs.toFixed(0), brainBlockMs:+brainMs.toFixed(0),
       padsUsed:[...used].map(i=>(S.pads[i]&&S.pads[i].name)||('pad '+i)),
-      seconds:+(outN/sr).toFixed(2),
+      seconds:+(N/sr).toFixed(2), targetSeconds:+(tLen/sr).toFixed(2),
       says:'rebuilt '+(tp.name||('pad '+(o.target|0)))+' out of '+placed+' blocks taken from '
-        +used.size+' pad'+(used.size===1?'':'s')+' ('+brain.length+' candidates). '
-        +'It has the shape of the target and the substance of the brain'
+        +used.size+' pad'+(used.size===1?'':'s')+' ('+brain.length+' candidates, '
+        +DIM+'-dimensional match). It has the shape of the target and the substance '
+        +'of the brain'
         +(ran?(', and '+ran+' of those blocks carried straight on from the one before '
           +'rather than being searched for — that is what keeps runs of the source intact'):'')
+        +(slid?('. '+slid+' target blocks were held and stretched because nothing in reach '
+          +'was within '+SLIDE_DB+'dB — that is the timing warp'):'')
         +'.' };
   },
 
