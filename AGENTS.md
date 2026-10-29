@@ -471,11 +471,39 @@ phrase ends (`scripts/study-harmony.py` reports it):
 the commonest, 2 bars, is 39.7% — so 60% of phrases are NOT it
 ```
 
+**THOSE LAST TWO NUMBERS DO NOT REPRODUCE, and the conclusion drawn
+from them is weaker than it reads.** Measured again off the fermatas
+in music21's 433 Bach scores (`scripts/study-form.py`), the same
+method on the same composer gives **2534 phrases** — close enough —
+but
+
+```
+at the 0.01-bar buckets the original used:  34 distinct, 2 bars = 60.1%
+at half-bar buckets, which is musical:      14 distinct, 2 bars = 68.0%
+```
+
+Either way, **two-bar phrases are most of Bach's chorale phrasing**,
+not 39.7% of it, and the sentence "so 60% of phrases are NOT it" comes
+out backwards: about 60% of them ARE it. Bach's chorale phrasing is
+overwhelmingly regular, which is what you would expect of a genre
+setting metrical hymn stanzas.
+
+The two measurements differ in their source — 370 kern files there,
+433 music21 scores here — and that has not been run down, so this is a
+disagreement rather than a correction. What matters is that the number
+being quoted is not safe to write music against, and the argument it
+was carrying has to stand on less: HOLLOWAY's **one** distinct phrase
+length at **100%** is still more rigid than fourteen at 68%, but the
+gap is nothing like "58 against 1".
+
 HOLLOWAY has eight phrases. Every one is exactly four bars. **One
 distinct length, 100%.** The arrangement varies dynamics and texture
 across those phrases, which is why the level map now moves 12dB, but
 the grid underneath never budges, and four-square is audible as
-four-square however the surface is dressed.
+four-square however the surface is dressed. That is still a real
+finding. It is just not the one Bach's chorales support most strongly,
+and the honest comparison for a piece with a beat is probably not a
+chorale at all.
 
 Some of Bach's variety comes from hymn texts with uneven lines rather
 than from free choice, so 58 lengths is an upper bound on what a

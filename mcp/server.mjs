@@ -419,6 +419,34 @@ const TOOLS = [
     inputSchema: { type: 'object', required: ['instruments'], properties: {
       instruments: { type: 'array', items: { type: 'string' } }, src: { type: 'string' } } } },
 
+  { name: 'jbh_infill', description:
+      'WRITE ONE VOICE INTO ONE SPAN OF BARS, AND OFFER ALTERNATIVES \u2014 not a generator. '
+      + 'A model that hands over a finished piece overwhelms you with content and frustrates '
+      + 'you with randomness; what helps is constraining generation to a particular voice over '
+      + 'a particular span and offering several options to choose between. So this WRITES '
+      + 'NOTHING by default. It returns candidates, each with the numbers it scores on and the '
+      + 'seed that reproduces it exactly, and applying one is a second call naming that seed. '
+      + 'It suggests; it does not apply, like jbh_balance. '
+      + 'THE RHYTHM COMES FIRST: a musical figure is chosen per bar from a small library and '
+      + 'the pitches are written into its slots, so every note has a real position and a real '
+      + 'length. Generating pitches and dealing them onto invented step offsets is how a '
+      + 'previous track here acquired an audible stumble. '
+      + 'Everything is written against the DECLARED progression (jbh_chords) and checked before '
+      + 'it is offered: no pitch a semitone above a chord tone, the third stated in each bar, '
+      + 'the approach into the next bar chosen against both chords. Candidates are ranked by '
+      + 'FAULT \u2014 minor ninths, then missing thirds, then distance from the Essen folk norms '
+      + '\u2014 which is not the same as ranked by worth. Nothing here can hear them.',
+    inputSchema: { type: 'object', required: ['instrument'], properties: {
+      instrument: { type: 'string' },
+      from: { type: 'integer', description: 'first bar' },
+      bars: { type: 'integer' },
+      n: { type: 'integer', description: 'how many alternatives (default 4)' },
+      role: { type: 'string', enum: ['bass', 'lead', 'pad', 'arp'] },
+      lo: { type: 'integer' }, hi: { type: 'integer' },
+      src: { type: 'string', enum: ['pat', 'song'] },
+      seed: { type: 'integer' },
+      apply: { type: 'integer', description: 'the seed of the candidate to write' } } } },
+
   { name: 'jbh_key', description:
       'DECLARE THE KEY, or read it back. Until this existed the app stored no key anywhere and '
       + 'the harmony lived only in whatever the writer held in their head, which is why the '
@@ -754,6 +782,10 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_loudness':    return ok(await jbh('loudness', [{ src: a.src, loops: a.loops }]));
       case 'jbh_translate':   return ok(await jbh('translate', [{ src: a.src }]));
       case 'jbh_pulse':       return ok(await jbh('pulse', [{ src: a.src }]));
+      case 'jbh_infill':      return ok(await jbh('infill', [a.instrument, {
+                                from: a.from, bars: a.bars, n: a.n, role: a.role,
+                                lo: a.lo, hi: a.hi, src: a.src, seed: a.seed,
+                                apply: a.apply }]));
       case 'jbh_key':         return ok(await jbh('key', a.tonic===undefined?[]:[a.tonic, a.mode]));
       case 'jbh_chords':      return ok(await jbh('chords',
                                 a.pattern===undefined?[]:[a.pattern, a.chords]));

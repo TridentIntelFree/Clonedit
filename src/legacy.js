@@ -10450,6 +10450,260 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      they are reachable here, under the field names the app itself uses.
      Called with no props each one READS; called with props it writes and
      returns what it ended up as. */
+  /* WRITE ONE VOICE INTO ONE SPAN, AND OFFER ALTERNATIVES.
+
+     Not a generator. The research on co-creative music tools converges
+     on the same finding, and it is the opposite of "make me a track":
+     a model that hands over a finished piece overwhelms the person
+     with content and frustrates them with randomness, and what helps
+     is constraining generation to a particular VOICE over a particular
+     SPAN and offering several options to choose between. Cococo found
+     users reported more control, more trust and more ownership that
+     way. Composer's Assistant does multi-track infilling with the same
+     shape. It is also the shape mutate() already has here — make
+     variations, score them, keep the best — and the shape balance()
+     has: it suggests, it does not apply.
+
+     So this writes nothing by default. It returns candidates, each
+     with the numbers it scores on and the seed that reproduces it, and
+     applying one is a second call naming that seed. A human picks by
+     listening; an agent picks by reading the scores. Neither is handed
+     a fait accompli.
+
+     THE RHYTHM IS NOT AN AFTERTHOUGHT, and that is the whole lesson of
+     HOLLOWAY. A previous session generated pitches with magenta, got
+     back a pitch per step with step numbers that were not a rhythm,
+     and dealt them onto four invented arrays of offsets —
+     [0,4,6,10,12,14] and friends — which bore no relation to the notes
+     landing on them. Where a bar held more pitches than the array had
+     slots the overflow clamped to step 15, so one phrase fired at 12,
+     14, 15 and then the downbeat, three times a cycle, and the
+     listener's first word was "timing". Here the rhythm comes first:
+     a cell is chosen per bar from a small library of musical figures,
+     and the pitches are then written INTO its slots, so every note has
+     a real position and a real length by construction.
+
+     Everything it writes is checked against the declared progression
+     before it is offered. That progression now exists, which is what
+     makes this possible at all. */
+  async infill(inst, opt){
+    const o=opt||{};
+    if(typeof inst!=='string' || !inst)
+      throw new Error('infill needs an instrument tag: infill("bass", {from:0, bars:4})');
+    const pads=window.MVX.instPads(inst);
+    if(!pads.length) throw new Error('no instrument "'+inst+'" — instrument() tags '
+      +'the pads it makes; sound() does not, so tag them with pad(i,{inst:"'+inst+'"}) '
+      +'and give each a srcNote, or nothing can read what they play.');
+
+    const from=Math.max(0, o.from|0);
+    const bars=clamp(o.bars==null?4:o.bars|0, 1, 64);
+    const want=clamp(o.n==null?4:o.n|0, 1, 12);
+    const role=o.role||'lead';
+    if(['bass','lead','pad','arp'].indexOf(role)<0)
+      throw new Error("role must be 'bass', 'lead', 'pad' or 'arp'");
+
+    /* THE HARMONY IT WRITES AGAINST. Declared, never inferred — the
+       whole reason the musical layer exists. */
+    const pr=window.MVX.progression({src:o.src||'pat'});
+    const prog=[];
+    for(let b=0;b<bars;b++) prog.push(pr.chords[(from+b) % Math.max(1,pr.chords.length)]);
+    if(prog.some(x=>x==null))
+      throw new Error('bars '+from+'–'+(from+bars-1)+' have no chord declared. '
+        +'chords(pattern,[…]) writes them. Without a progression this would be '
+        +'guessing at the harmony, and a part written against a guess is how a '
+        +'wrong note comes to look correct.');
+    const info=prog.map(sym=>{
+      const i=(typeof chordInfo==='function')?chordInfo(sym):null;
+      if(!i) throw new Error('cannot read the chord "'+sym+'"');
+      return i;
+    });
+
+    /* RANGE. From the instrument's own sampled span unless told, so a
+       bass part is not written above what the pads can play. */
+    const roots=pads.map(p=>p.note).filter(n=>n!=null).sort((a,b)=>a-b);
+    let lo=o.lo!=null?o.lo|0:roots[0], hi=o.hi!=null?o.hi|0:roots[roots.length-1];
+    if(!(hi>lo)){ lo=48; hi=72; }
+
+    /* ---- RHYTHMIC CELLS -------------------------------------------
+       Figures, not offsets. Each is [step, beats] within a 16-step
+       bar, and each is something a player would actually do: a bass
+       walking under the bar, a line that breathes in the middle, a
+       figure that pushes into the next bar. The pitches are written
+       into these slots afterwards, which is the part HOLLOWAY got
+       backwards. */
+    const CELLS={
+      bass:[ [[0,2],[6,1],[10,1.5],[14,0.5]],
+             [[0,2.5],[8,1],[12,1]],
+             [[0,1],[4,1],[8,1],[12,1]],
+             [[0,3],[12,1]],
+             [[0,1.5],[3,0.5],[8,1.5],[11,0.5],[14,0.5]] ],
+      lead:[ [[0,1.5],[6,0.75],[10,1]],
+             [[0,1],[4,1],[8,2]],
+             [[2,1],[6,1],[10,1.5]],
+             [[0,2],[8,0.75],[11,0.75],[14,0.5]],
+             [[0,0.75],[3,0.75],[6,0.75],[10,1.5]],
+             [[4,2],[12,1]] ],
+      pad:[  [[0,4]], [[0,3]], [[0,2],[8,2]] ],
+      arp:[  [[0,0.5],[2,0.5],[4,0.5],[6,0.5],[8,0.5],[10,0.5],[12,0.5],[14,0.5]],
+             [[0,0.5],[3,0.5],[6,0.5],[9,0.5],[12,0.5]],
+             [[0,0.75],[4,0.75],[8,0.75],[12,0.75]] ],
+    };
+
+    const nearest=(pc, around)=>{
+      let best=null, bd=1e9;
+      for(let m=lo;m<=hi;m++){
+        if(((m%12)+12)%12 !== pc) continue;
+        const d=Math.abs(m-around);
+        if(d<bd){ bd=d; best=m; }
+      }
+      return best;
+    };
+
+    /* ---- ONE CANDIDATE --------------------------------------------- */
+    const build=(seed)=>{
+      let rs=seed>>>0 || 1;
+      const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+      const pick=a=>a[Math.floor(rnd()*a.length)%a.length];
+      const cells=CELLS[role];
+      const out=[];
+      let prev=Math.round((lo+hi)/2);
+      for(let b=0;b<bars;b++){
+        const ch=info[b], next=info[(b+1)%bars];
+        /* no two consecutive bars on the same cell, so the part does
+           not lock to one figure the way a drum machine would */
+        let cell=pick(cells), guard=0;
+        while(bars>1 && out.length && cell===out[out.length-1]._cell && guard++<6) cell=pick(cells);
+        const want3 = role!=='pad';      /* state the third: 94.6% of Bach's sonorities do */
+        let stated3=false;
+        const slots=cell.slice();
+        for(let si=0; si<slots.length; si++){
+          const [st, beats]=slots[si];
+          const strong = st===0 || st===8;
+          const last = si===slots.length-1;
+          let pcChoices;
+          if(strong){
+            /* root or third on a strong beat — roots and fifths alone
+               state no quality, and whatever chromatic is passing then
+               becomes the note that defines the chord */
+            pcChoices=[ch.root, ch.third!=null?ch.third:ch.root];
+          } else if(last && b<bars-1){
+            /* the approach into the next bar, chosen against BOTH
+               chords. Taken as a blind chromatic below the next root it
+               lands a semitone above a tone of the chord it is still
+               in, which is the rarest case in Bach's corpus and most of
+               what soured HOLLOWAY. */
+            const nr=next.root;
+            const cands=[(nr+11)%12,(nr+1)%12,(nr+10)%12,(nr+2)%12];
+            const good=cands.filter(pc=>next.pcs.includes(pc)
+              && !ch.pcs.some(t=>((pc-t)%12+12)%12===1));
+            pcChoices=good.length?good:ch.pcs.slice();
+          } else {
+            pcChoices=ch.pcs.slice();
+            if(want3 && !stated3 && ch.third!=null) pcChoices=[ch.third].concat(pcChoices);
+          }
+          /* never a semitone above a chord tone — the interval that
+             actually beats, and the one rule harmony() is built on */
+          pcChoices=pcChoices.filter(pc=>!ch.pcs.some(t=>((pc-t)%12+12)%12===1));
+          if(!pcChoices.length) pcChoices=[ch.root];
+          const pc=pick(pcChoices);
+          /* contour: stay near the previous note. A line that leaps
+             everywhere scores badly on melody() and sounds like a
+             random walk, which passes every other check here. */
+          let m=nearest(pc, role==='bass' ? lo+((prev-lo)%12) : prev);
+          if(m==null) m=nearest(pc, (lo+hi)/2);
+          if(m==null) continue;
+          if(pc===ch.third) stated3=true;
+          const vel=+(0.42+0.30*(strong?1:rnd()*0.6)).toFixed(2);
+          out.push({ midi:m, step:(from+b)*16+st, vel, beats, _cell:cell });
+          prev=m;
+        }
+      }
+      return out;
+    };
+
+    /* ---- SCORE IT, AGAINST THE NORMS THIS REPO MEASURED ------------ */
+    const score=(notes)=>{
+      const seq=notes.slice().sort((a,b)=>a.step-b.step).map(n=>n.midi);
+      let rep=0, step=0, third=0, leap=0;
+      for(let i=1;i<seq.length;i++){
+        const d=Math.abs(seq[i]-seq[i-1]);
+        if(d===0) rep++; else if(d<=2) step++; else if(d<=4) third++; else leap++;
+      }
+      const n=Math.max(1,seq.length-1);
+      const pct=x=>+(100*x/n).toFixed(1);
+      /* how far from the Essen norms, as one number to rank on */
+      const got={repeat:pct(rep), step:pct(step), third:pct(third), leap:pct(leap)};
+      const miss=['repeat','step','third','leap']
+        .reduce((s,k)=>s+Math.abs(got[k]-MELODY_NORMS[k]),0)/4;
+      /* thirds stated, which is the thing a bass most often fails */
+      let barsNo3=0;
+      for(let b=0;b<bars;b++){
+        const ch=info[b]; if(ch.third==null) continue;
+        const inBar=notes.filter(x=>Math.floor(x.step/16)===from+b);
+        if(!inBar.some(x=>((x.midi%12)+12)%12===ch.third)) barsNo3++;
+      }
+      /* and the one rule that must be zero */
+      let m9=0;
+      for(const x of notes){
+        const ch=info[Math.floor(x.step/16)-from]; if(!ch) continue;
+        if(ch.pcs.some(t=>((((x.midi%12)+12)%12)-t+12)%12===1)) m9++;
+      }
+      return { notes:notes.length, got, norm:MELODY_NORMS,
+        meanErrorPct:+miss.toFixed(1), barsWithNoThird:barsNo3, minorNinths:m9,
+        range:seq.length?Math.max.apply(null,seq)-Math.min.apply(null,seq):0 };
+    };
+
+    const base=(o.seed|0)||0x5EED;
+    const cands=[];
+    for(let i=0;i<want;i++){
+      const seed=(base+i*2654435761)>>>0;
+      const notes=build(seed);
+      if(!notes.length) continue;
+      cands.push({ seed, score:score(notes),
+        notes:notes.map(n=>[n.midi, n.step, n.vel, n.beats]) });
+    }
+    if(!cands.length) throw new Error('nothing could be written into that span');
+    /* rank by: no minor ninths first, then thirds stated, then nearest
+       the melodic norms. Ranked, not chosen — the point is that the
+       choosing is not done here. */
+    cands.sort((a,b)=> a.score.minorNinths-b.score.minorNinths
+      || a.score.barsWithNoThird-b.score.barsWithNoThird
+      || a.score.meanErrorPct-b.score.meanErrorPct);
+    cands.forEach((c,i)=>{ c.rank=i; });
+
+    /* ---- APPLY, only when asked and only by seed -------------------
+       Stateless: the seed reproduces the candidate exactly, so nothing
+       has to be held between the two calls and the same seed always
+       writes the same part. */
+    if(o.apply!=null){
+      const seed=o.apply>>>0;
+      const chosen=cands.find(c=>c.seed===seed);
+      const notes=chosen?chosen.notes:build(seed).map(n=>[n.midi,n.step,n.vel,n.beats]);
+      if(!notes.length) throw new Error('seed '+seed+' writes nothing');
+      const ev=notes.map(([m,st,v,beats])=>['note', inst, m, st, v, {beats}]);
+      const r=await window.MVX.batch(ev);
+      return { applied:true, inst, seed, from, bars, wrote:notes.length,
+        failed:r.failed||0, chords:prog.slice(),
+        score:chosen?chosen.score:score(notes.map(
+          ([midi,step,vel,beats])=>({midi,step,vel,beats}))),
+        says:'wrote '+notes.length+' notes for '+inst+' into bars '+from+'–'
+          +(from+bars-1)+' over '+prog.join(' ')+'.' };
+    }
+
+    const best=cands[0];
+    return { inst, from, bars, role, chords:prog.slice(),
+      key:S.key?Object.assign({},S.key):null,
+      candidates:cands, applied:false,
+      says:cands.length+' way'+(cands.length===1?'':'s')+' to play '+inst+' over '
+        +prog.join(' ')+'. Nothing is written. The best on the numbers is seed '
+        +best.seed+' ('+best.score.notes+' notes, '+best.score.minorNinths
+        +' minor ninths, '+best.score.barsWithNoThird+' bars without a third, '
+        +best.score.meanErrorPct+'% mean distance from the folk norms) — but these '
+        +'are ranked by fault, not by worth, and nothing here can hear them. '
+        +'Play them. infill("'+inst+'",{apply:'+best.seed+',from:'+from+',bars:'+bars+'}) '
+        +'writes one.' };
+  },
+
   /* ---- THE MUSICAL LAYER ---------------------------------------------
      Three calls, because until now the app held no key and no
      progression and both the person and the agent had to carry them
