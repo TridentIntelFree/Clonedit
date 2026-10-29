@@ -2231,6 +2231,51 @@ link renders as text, never as markup.</p>
     <button id="btnToolMutate" class="grow" title="Vary this pad's sound, measure each variation, keep the best">MUTATE PAD</button>
     <button id="btnToolResynth" class="grow" title="Rebuild this pad using the pieces of every other pad">REBUILD PAD</button>
   </div>
+  <!-- REBUILD's controls. The button alone ran resynth() on its
+       defaults, so every one of Samplebrain's parameters was reachable
+       from the API and from nowhere a person could press. That is the
+       same gap the buttons above were added to close, reopened one
+       level down: the tool was exposed and its controls were not.
+
+       Collapsed, because their own manual says of this parameter set
+       "we gradually added more and more tweakable parameters until it
+       became slightly out of control", and because one button that
+       does something sensible is the right default. Open it and the
+       whole thing is here. -->
+  <details class="ex" id="resynthOpts"><summary>Rebuild controls</summary><div class="ex-body">
+    <div class="row" style="gap:6px;align-items:center">
+      <span class="lbl">SEARCH</span>
+      <select id="rsAlgo" class="grow" aria-label="Rebuild search algorithm">
+        <option value="basic" selected>BASIC &mdash; search every block</option>
+        <option value="synaptic">SYNAPTIC &mdash; wander a similarity network</option>
+        <option value="slide">SLIDE &mdash; synaptic, and warp the timing</option>
+        <option value="reversed">REVERSED &mdash; take the least similar block</option>
+      </select>
+    </div>
+    <div class="pslider"><span class="lbl">BINS</span><input type="range" id="rsBins" min="4" max="100" step="1" value="32"><span class="val" id="rsBinsV">32</span></div>
+    <div class="pslider"><span class="lbl">MFCC</span><input type="range" id="rsMfcc" min="0" max="1" step="0.05" value="0.35"><span class="val" id="rsMfccV">35%</span></div>
+    <div class="pslider"><span class="lbl">BLOCK</span><input type="range" id="rsBlock" min="10" max="400" step="5" value="60"><span class="val" id="rsBlockV">60ms</span></div>
+    <div class="pslider"><span class="lbl">BRAIN</span><input type="range" id="rsBrainBlock" min="10" max="400" step="5" value="60"><span class="val" id="rsBrainBlockV">60ms</span></div>
+    <div class="pslider"><span class="lbl">NOVELTY</span><input type="range" id="rsNovelty" min="0" max="1" step="0.05" value="0.3"><span class="val" id="rsNoveltyV">30%</span></div>
+    <div class="pslider"><span class="lbl">BOREDOM</span><input type="range" id="rsBoredom" min="0" max="1" step="0.05" value="0.25"><span class="val" id="rsBoredomV">25%</span></div>
+    <div class="pslider"><span class="lbl">STICKY</span><input type="range" id="rsSticky" min="0" max="1" step="0.05" value="0.25"><span class="val" id="rsStickyV">25%</span></div>
+    <div class="pslider"><span class="lbl">STRETCH</span><input type="range" id="rsStretch" min="1" max="8" step="1" value="1"><span class="val" id="rsStretchV">1&times;</span></div>
+    <div class="pslider" id="rsSlideRow"><span class="lbl">SLIP</span><input type="range" id="rsSlideErr" min="0.5" max="40" step="0.5" value="6"><span class="val" id="rsSlideErrV">6dB</span></div>
+    <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:4px">
+      <label style="font-size:11px"><input type="checkbox" id="rsAutotune"> AUTOTUNE</label>
+      <label style="font-size:11px"><input type="checkbox" id="rsStereo"> STEREO</label>
+      <span class="grow"></span>
+      <button id="rsReset" title="Back to the defaults">RESET</button>
+    </div>
+    <p style="margin:8px 0 0;font-size:10px;color:var(--txt-dim);line-height:1.5">
+      <b>BINS</b> and <b>MFCC</b> set how finely two blocks are told apart.
+      The original matcher here used 8 bins and no MFCC, which cannot
+      separate sounds a finer one can &mdash; that is the difference
+      between a rebuild and a mush. <b>BRAIN</b> block size is deliberately
+      separate from the target's. <b>SLIP</b> only applies to SLIDE: it is
+      how far off a block may be before the target is held and stretched
+      to wait for a better one, which is what warps the timing.</p>
+  </div></details>
   <div class="row" style="flex-wrap:wrap;gap:4px">
     <button id="btnToolFreeze" class="grow" title="Hold one instant of this pad's spectrum as a sustained pad">FREEZE PAD</button>
     <button id="btnToolTape" class="grow" title="Run this pad to tape — wow, flutter, drift and saturation">RUN TO TAPE</button>

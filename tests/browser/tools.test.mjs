@@ -117,6 +117,96 @@ export default async function ({ browser, base }) {
     t.ok('an angle bracket stays an angle bracket', safe.html && safe.fired,
       'set as text, never parsed as markup');
 
+
+    /* ---- REBUILD'S CONTROLS ACTUALLY REACH resynth() ------------------
+       The button ran resynth() on its bare defaults, so every parameter
+       the function has was reachable from the API and from nowhere a
+       person could press. That is the gap these buttons were added to
+       close, reopened one level down: the tool exposed, its controls
+       not.
+
+       A panel that exists and is not wired reads exactly like a panel
+       that works, so this does not check that the controls RENDER. It
+       sets them to values nothing else would produce and reads them
+       back out of what resynth() reports it was given. */
+    t.head('THE REBUILD PANEL IS WIRED, NOT JUST PRESENT');
+    const ctrls = await page.evaluate(() =>
+      ['rsAlgo', 'rsBins', 'rsMfcc', 'rsBlock', 'rsBrainBlock', 'rsNovelty',
+        'rsBoredom', 'rsSticky', 'rsStretch', 'rsSlideErr', 'rsAutotune',
+        'rsStereo', 'rsReset'].map(id => ({ id, found: !!document.getElementById(id) })));
+    for (const c of ctrls)
+      t.ok('there is a ' + c.id, c.found, c.found ? 'present' : 'MISSING');
+
+    const drive = await page.evaluate(async () => {
+      await window.JBH.clear();
+      const P = (hz, level) => ({ hz, level });
+      await window.JBH.paint({ pad: 0, seconds: 0.8, partials: [P(220, 1), P(440, .5)] });
+      await window.JBH.paint({ pad: 1, seconds: 0.8, partials: [P(330, 1), P(660, .5)] });
+      await window.JBH.paint({ pad: 2, seconds: 0.8, partials: [P(277, 1), P(554, .6)] });
+      /* edit pad 2 is the target; 0 and 1 are the brain */
+      window.JBH.set({ editPad: 2 });
+      const set = (id, v) => { const el = document.getElementById(id);
+        if (el.type === 'checkbox') el.checked = v; else el.value = String(v);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true })); };
+      /* values nothing defaults to */
+      set('rsAlgo', 'synaptic'); set('rsBins', 16); set('rsMfcc', 0);
+      set('rsBlock', 90); set('rsBrainBlock', 30); set('rsNovelty', 0.8);
+      set('rsBoredom', 0.1); set('rsSticky', 0.65); set('rsStretch', 2);
+      set('rsAutotune', true);
+      const readouts = {
+        bins: document.getElementById('rsBinsV').textContent,
+        mfcc: document.getElementById('rsMfccV').textContent,
+        block: document.getElementById('rsBlockV').textContent,
+        stretch: document.getElementById('rsStretchV').textContent,
+        slipDisabled: document.getElementById('rsSlideErr').disabled };
+      document.getElementById('btnToolResynth').click();
+      for (let i = 0; i < 200; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (!document.getElementById('btnToolResynth').disabled) break;
+      }
+      return { readouts, log: (document.getElementById('toolLog') || {}).textContent || '' };
+    });
+
+    t.ok('the readouts track the sliders without a render',
+      drive.readouts.bins === '16' && drive.readouts.mfcc === '0%'
+      && drive.readouts.block === '90ms' && drive.readouts.stretch === '2\u00d7',
+      JSON.stringify(drive.readouts));
+    t.ok('SLIP is live in synaptic mode only for slide — it is enabled here only if slide',
+      drive.readouts.slipDisabled === true,
+      'slide-only control disabled outside slide: ' + drive.readouts.slipDisabled);
+    t.ok('the rebuild ran and reported back',
+      /REBUILD/.test(drive.log) && /blocks of/.test(drive.log),
+      drive.log.split('\n').slice(0, 2).join(' | ').slice(0, 110));
+    t.ok('BINS 16 with MFCC off really reached the matcher — 16 dimensions, not 45',
+      /matched on 16 dimensions/.test(drive.log),
+      (/matched on \d+ dimensions/.exec(drive.log) || ['no dimension line'])[0]);
+    t.ok('BLOCK 90ms reached it too, rather than the default 60',
+      /blocks of 90ms/.test(drive.log),
+      (/blocks of \d+ms/.exec(drive.log) || ['no block line'])[0]);
+    t.ok('SYNAPTIC was used — the network was actually walked',
+      /synapse network/.test(drive.log),
+      (/\d+ nodes of the synapse network/.exec(drive.log) || ['no synapse line'])[0]);
+    t.ok('AUTOTUNE reached it',
+      /pitch-bent toward the target/.test(drive.log),
+      (/\d+ blocks were pitch-bent/.exec(drive.log) || ['no autotune line'])[0]);
+    t.ok('STRETCH 2 made the rebuild longer than the target',
+      /The rebuild is [\d.]+s against the target/.test(drive.log),
+      (/The rebuild is .*/.exec(drive.log) || ['no stretch line'])[0]);
+
+    const reset = await page.evaluate(async () => {
+      document.getElementById('rsReset').click();
+      return { bins: document.getElementById('rsBins').value,
+        binsV: document.getElementById('rsBinsV').textContent,
+        mfcc: document.getElementById('rsMfcc').value,
+        autotune: document.getElementById('rsAutotune').checked,
+        algo: document.getElementById('rsAlgo').value };
+    });
+    t.ok('RESET puts every control back, readouts included',
+      reset.bins === '32' && reset.binsV === '32' && reset.mfcc === '0.35'
+      && reset.autotune === false && reset.algo === 'basic',
+      JSON.stringify(reset));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

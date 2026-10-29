@@ -14809,17 +14809,71 @@ $('btnToolMutate').addEventListener('click',()=>toolRun('btnToolMutate','MUTATE'
   return out;
 }));
 
+/* REBUILD'S CONTROLS. The button used to call resynth() on its bare
+   defaults, so every parameter the function has was reachable from the
+   API and from nowhere a person could press — the same gap these
+   buttons were added to close, reopened one level down.
+
+   The readouts update live whether or not anything is rebuilt, because
+   a slider whose number only appears after a twenty-second render is a
+   slider nobody can aim. */
+const RS_DEFAULTS={ rsAlgo:'basic', rsBins:32, rsMfcc:0.35, rsBlock:60,
+  rsBrainBlock:60, rsNovelty:0.3, rsBoredom:0.25, rsSticky:0.25,
+  rsStretch:1, rsSlideErr:6, rsAutotune:false, rsStereo:false };
+const rsFmt={ rsBins:v=>String(v|0), rsMfcc:v=>Math.round(v*100)+'%',
+  rsBlock:v=>(v|0)+'ms', rsBrainBlock:v=>(v|0)+'ms',
+  rsNovelty:v=>Math.round(v*100)+'%', rsBoredom:v=>Math.round(v*100)+'%',
+  rsSticky:v=>Math.round(v*100)+'%', rsStretch:v=>(v|0)+'×',
+  rsSlideErr:v=>(+v).toFixed(1)+'dB' };
+function rsSync(){
+  for(const id in rsFmt){ const el=$(id), out=$(id+'V');
+    if(el && out) out.textContent=rsFmt[id](+el.value); }
+  /* SLIP is slide's own threshold and means nothing in the other three
+     modes. Dimmed rather than hidden, so the control does not jump
+     about as the mode changes. */
+  const slide=$('rsAlgo') && $('rsAlgo').value==='slide', row=$('rsSlideRow');
+  if(row){ row.style.opacity=slide?'1':'0.4'; }
+  if($('rsSlideErr')) $('rsSlideErr').disabled=!slide;
+}
+for(const id in RS_DEFAULTS){ const el=$(id); if(!el) continue;
+  el.addEventListener('input',rsSync); el.addEventListener('change',rsSync); }
+if($('rsReset')) $('rsReset').addEventListener('click',()=>{
+  for(const id in RS_DEFAULTS){ const el=$(id); if(!el) continue;
+    if(el.type==='checkbox') el.checked=RS_DEFAULTS[id]; else el.value=RS_DEFAULTS[id]; }
+  rsSync();
+});
+rsSync();
+
 $('btnToolResynth').addEventListener('click',()=>toolRun('btnToolResynth','REBUILD',async()=>{
   const i=S.editPad|0;
   if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample to rebuild.';
   let free=-1;
   for(let k=NPADS-1;k>=0;k--) if(S.pads[k] && S.pads[k].bufId<0){ free=k; break; }
   if(free<0) return 'every pad is full — clear one for the result.';
-  const r=await window.MVX.resynth({target:i, pad:free});
+  const num=(id,d)=>{ const el=$(id); const v=el?+el.value:d; return isFinite(v)?v:d; };
+  const on=(id)=>{ const el=$(id); return !!(el && el.checked); };
+  const algo=($('rsAlgo') && $('rsAlgo').value) || 'basic';
+  const r=await window.MVX.resynth({target:i, pad:free,
+    algorithm:algo,
+    bins:num('rsBins',32), mfcc:num('rsMfcc',0.35),
+    blockMs:num('rsBlock',60), brainBlockMs:num('rsBrainBlock',60),
+    novelty:num('rsNovelty',0.3), boredom:num('rsBoredom',0.25),
+    stickiness:num('rsSticky',0.25), stretch:num('rsStretch',1)|0,
+    slideError:num('rsSlideErr',6),
+    autotune:on('rsAutotune'), stereo:on('rsStereo')});
   drawPads();
-  return ['REBUILD '+padLabel(i)+' → '+padLabel(r.pad), r.says, '',
+  const out=['REBUILD '+padLabel(i)+' → '+padLabel(r.pad), r.says, '',
     'built from: '+r.padsUsed.join(', '),
-    r.blocks+' blocks of '+r.blockMs+'ms, chosen from '+r.brainBlocks+' candidates.'];
+    r.blocks+' blocks of '+r.blockMs+'ms, chosen from '+r.brainBlocks
+      +' candidates, matched on '+r.features.dims+' dimensions.'];
+  /* say what the chosen mode actually did, or the controls are knobs
+     with no feedback — which is how `jumble` survived for months */
+  if(r.synapsesBuilt) out.push(r.synapsesBuilt+' nodes of the synapse network were walked.');
+  if(r.slidRepeats) out.push(r.slidRepeats+' target blocks were held and stretched — that is the timing warp.');
+  if(r.autotuned) out.push(r.autotuned+' blocks were pitch-bent toward the target.');
+  if(r.continuedRuns) out.push(r.continuedPct+'% of blocks carried straight on from the one before.');
+  if(r.seconds!==r.targetSeconds) out.push('The rebuild is '+r.seconds+'s against the target\'s '+r.targetSeconds+'s.');
+  return out;
 }));
 
 /* Both of these write to a FREE pad rather than over the one in hand.
