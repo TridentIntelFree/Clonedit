@@ -1,0 +1,715 @@
+{
+ "UNSOUND_units_all": {
+  "UNSOUND_repeat_units": {
+   "unit_repeats": 5286
+  },
+  "commonest_bars": 1,
+  "commonest_pct": 89.1,
+  "distinct_lengths": 12,
+  "four_or_eight_pct": 4.2,
+  "top": [
+   [
+    1,
+    89.1
+   ],
+   [
+    2,
+    5.3
+   ],
+   [
+    4,
+    3.9
+   ],
+   [
+    6,
+    0.4
+   ],
+   [
+    3,
+    0.4
+   ],
+   [
+    8,
+    0.3
+   ],
+   [
+    5,
+    0.3
+   ],
+   [
+    16,
+    0.1
+   ],
+   [
+    10,
+    0.0
+   ],
+   [
+    7,
+    0.0
+   ]
+  ]
+ },
+ "_UNSOUND_WARNING": "Every field named UNSOUND_* is kept as evidence and must NOT be used as a norm. The repeating-unit measure uses a bar signature of pitch CLASSES plus onsets on a 16th grid, which is right for the MIDI it was built for and too coarse for homophonic vocal writing, where every voice moves on the same beats and two adjacent bars in one key routinely share both. It returns 1-bar units at 89% across the whole corpus \u2014 Palestrina 97%, trecento 99%, Monteverdi 96% \u2014 which is a property of the signature and not of the music. Excluding runs of empty bars moved it from 88.4% to 84.6%, the shape of a fix that is not the fix. The sound measure in this file is the fermata phrase length, and only where composers wrote fermatas.",
+ "_all": {
+  "commonest_bars": 2.0,
+  "commonest_pct": 67.8,
+  "distinct_lengths": 18,
+  "four_or_eight_pct": 6.7,
+  "phrases": 2538,
+  "top": [
+   [
+    2.0,
+    67.8
+   ],
+   [
+    3.0,
+    8.6
+   ],
+   [
+    4.0,
+    6.5
+   ],
+   [
+    2.5,
+    5.7
+   ],
+   [
+    1.0,
+    4.9
+   ],
+   [
+    1.5,
+    2.6
+   ],
+   [
+    3.5,
+    1.5
+   ],
+   [
+    5.0,
+    0.9
+   ],
+   [
+    4.5,
+    0.6
+   ],
+   [
+    6.0,
+    0.3
+   ]
+  ]
+ },
+ "_note": "Two measures, and only one of them is comparable across genres. REPEAT UNITS: how many bars pass before the material comes back, found by the same algorithm midi-structure.mjs runs on a MIDI file, so the two can be read against each other. Needs no phrase detection and works on any texture. PHRASES: only where the composer wrote the ends down, which in practice means fermatas in chorales. Rest-based phrase inference was tried and DROPPED: it gave Beethoven a commonest phrase of half a bar at 32.9% and Handel one bar at 60%, because a one-beat threshold catches every small gap and in polyphony one voice rests while the others carry on. Shipping that as a norm would have been worse than shipping nothing. Read the Bach figures with the caveat AGENTS.md already gives: some of the variety in a texted genre belongs to the text rather than to a free choice.",
+ "_scores_per_collection_cap": 450,
+ "bach": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 56.9,
+   "distinct_unit_lengths": 10,
+   "repeat_units": 102,
+   "unit_four_or_eight_pct": 23.0,
+   "unit_repeats": 209,
+   "unit_top": [
+    [
+     1,
+     56.9
+    ],
+    [
+     4,
+     19.1
+    ],
+    [
+     5,
+     6.7
+    ],
+    [
+     6,
+     5.7
+    ],
+    [
+     2,
+     3.8
+    ],
+    [
+     8,
+     3.8
+    ],
+    [
+     10,
+     1.0
+    ],
+    [
+     7,
+     1.0
+    ]
+   ]
+  },
+  "bars": 6875,
+  "phrase_commonest_bars": 2.0,
+  "phrase_commonest_pct": 67.8,
+  "phrase_distinct_lengths": 18,
+  "phrase_method": "fermata",
+  "phrase_top": [
+   [
+    2.0,
+    67.8
+   ],
+   [
+    3.0,
+    8.6
+   ],
+   [
+    4.0,
+    6.5
+   ],
+   [
+    2.5,
+    5.7
+   ],
+   [
+    1.0,
+    4.9
+   ],
+   [
+    1.5,
+    2.6
+   ],
+   [
+    3.5,
+    1.5
+   ],
+   [
+    5.0,
+    0.9
+   ]
+  ],
+  "phrases": 2538,
+  "scores_read": 433,
+  "unreadable": 0
+ },
+ "beach": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 71.4,
+   "distinct_unit_lengths": 2,
+   "repeat_units": 3,
+   "unit_four_or_eight_pct": 0.0,
+   "unit_repeats": 7,
+   "unit_top": [
+    [
+     1,
+     71.4
+    ],
+    [
+     2,
+     28.6
+    ]
+   ]
+  },
+  "bars": 32,
+  "scores_read": 1,
+  "unreadable": 0
+ },
+ "beethoven": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 89.3,
+   "distinct_unit_lengths": 5,
+   "repeat_units": 377,
+   "unit_four_or_eight_pct": 1.6,
+   "unit_repeats": 881,
+   "unit_top": [
+    [
+     1,
+     89.3
+    ],
+    [
+     2,
+     8.9
+    ],
+    [
+     4,
+     1.1
+    ],
+    [
+     8,
+     0.5
+    ],
+    [
+     3,
+     0.2
+    ]
+   ]
+  },
+  "bars": 5307,
+  "scores_read": 26,
+  "unreadable": 0
+ },
+ "chopin": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 60.0,
+   "distinct_unit_lengths": 2,
+   "repeat_units": 4,
+   "unit_four_or_eight_pct": 0.0,
+   "unit_repeats": 10,
+   "unit_top": [
+    [
+     1,
+     60.0
+    ],
+    [
+     2,
+     40.0
+    ]
+   ]
+  },
+  "bars": 73,
+  "scores_read": 1,
+  "unreadable": 0
+ },
+ "demos": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 100.0,
+   "distinct_unit_lengths": 1,
+   "repeat_units": 6,
+   "unit_four_or_eight_pct": 0.0,
+   "unit_repeats": 27,
+   "unit_top": [
+    [
+     1,
+     100.0
+    ]
+   ]
+  },
+  "bars": 135,
+  "scores_read": 13,
+  "unreadable": 0
+ },
+ "essenFolksong": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 4,
+   "commonest_unit_pct": 37.5,
+   "distinct_unit_lengths": 7,
+   "repeat_units": 31,
+   "unit_four_or_eight_pct": 43.8,
+   "unit_repeats": 64,
+   "unit_top": [
+    [
+     4,
+     37.5
+    ],
+    [
+     1,
+     34.4
+    ],
+    [
+     2,
+     12.5
+    ],
+    [
+     8,
+     6.2
+    ],
+    [
+     16,
+     3.1
+    ],
+    [
+     3,
+     3.1
+    ],
+    [
+     14,
+     3.1
+    ]
+   ]
+  },
+  "bars": 1322,
+  "scores_read": 31,
+  "unreadable": 0
+ },
+ "haydn": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 81.5,
+   "distinct_unit_lengths": 2,
+   "repeat_units": 31,
+   "unit_four_or_eight_pct": 0.0,
+   "unit_repeats": 65,
+   "unit_top": [
+    [
+     1,
+     81.5
+    ],
+    [
+     2,
+     18.5
+    ]
+   ]
+  },
+  "bars": 1008,
+  "scores_read": 9,
+  "unreadable": 0
+ },
+ "joplin": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 2,
+   "commonest_unit_pct": 50.0,
+   "distinct_unit_lengths": 2,
+   "repeat_units": 4,
+   "unit_four_or_eight_pct": 0.0,
+   "unit_repeats": 8,
+   "unit_top": [
+    [
+     2,
+     50.0
+    ],
+    [
+     1,
+     50.0
+    ]
+   ]
+  },
+  "bars": 85,
+  "scores_read": 1,
+  "unreadable": 0
+ },
+ "josquin": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 81.8,
+   "distinct_unit_lengths": 5,
+   "repeat_units": 69,
+   "unit_four_or_eight_pct": 1.4,
+   "unit_repeats": 143,
+   "unit_top": [
+    [
+     1,
+     81.8
+    ],
+    [
+     3,
+     7.0
+    ],
+    [
+     2,
+     5.6
+    ],
+    [
+     6,
+     4.2
+    ],
+    [
+     4,
+     1.4
+    ]
+   ]
+  },
+  "bars": 1981,
+  "scores_read": 8,
+  "unreadable": 0
+ },
+ "luca": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 100.0,
+   "distinct_unit_lengths": 1,
+   "repeat_units": 7,
+   "unit_four_or_eight_pct": 0.0,
+   "unit_repeats": 16,
+   "unit_top": [
+    [
+     1,
+     100.0
+    ]
+   ]
+  },
+  "bars": 109,
+  "scores_read": 1,
+  "unreadable": 0
+ },
+ "monteverdi": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 95.9,
+   "distinct_unit_lengths": 4,
+   "repeat_units": 362,
+   "unit_four_or_eight_pct": 0.5,
+   "unit_repeats": 874,
+   "unit_top": [
+    [
+     1,
+     95.9
+    ],
+    [
+     2,
+     3.2
+    ],
+    [
+     3,
+     0.5
+    ],
+    [
+     4,
+     0.5
+    ]
+   ]
+  },
+  "bars": 8066,
+  "scores_read": 97,
+  "unreadable": 0
+ },
+ "mozart": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 77.3,
+   "distinct_unit_lengths": 5,
+   "repeat_units": 94,
+   "unit_four_or_eight_pct": 3.9,
+   "unit_repeats": 203,
+   "unit_top": [
+    [
+     1,
+     77.3
+    ],
+    [
+     2,
+     17.7
+    ],
+    [
+     4,
+     3.0
+    ],
+    [
+     8,
+     1.0
+    ],
+    [
+     6,
+     1.0
+    ]
+   ]
+  },
+  "bars": 1592,
+  "scores_read": 16,
+  "unreadable": 0
+ },
+ "oneills1850": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 88.6,
+   "distinct_unit_lengths": 3,
+   "repeat_units": 72,
+   "unit_four_or_eight_pct": 1.3,
+   "unit_repeats": 149,
+   "unit_top": [
+    [
+     1,
+     88.6
+    ],
+    [
+     2,
+     10.1
+    ],
+    [
+     4,
+     1.3
+    ]
+   ]
+  },
+  "bars": 5211,
+  "scores_read": 39,
+  "unreadable": 0
+ },
+ "palestrina": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 96.9,
+   "distinct_unit_lengths": 3,
+   "repeat_units": 312,
+   "unit_four_or_eight_pct": 0.0,
+   "unit_repeats": 643,
+   "unit_top": [
+    [
+     1,
+     96.9
+    ],
+    [
+     2,
+     2.8
+    ],
+    [
+     6,
+     0.3
+    ]
+   ]
+  },
+  "bars": 18471,
+  "scores_read": 450,
+  "unreadable": 0
+ },
+ "ryansMammoth": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 62.6,
+   "distinct_unit_lengths": 3,
+   "repeat_units": 168,
+   "unit_four_or_eight_pct": 33.6,
+   "unit_repeats": 345,
+   "unit_top": [
+    [
+     1,
+     62.6
+    ],
+    [
+     4,
+     33.6
+    ],
+    [
+     2,
+     3.8
+    ]
+   ]
+  },
+  "bars": 7709,
+  "scores_read": 450,
+  "unreadable": 0
+ },
+ "schubert": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 4,
+   "commonest_unit_pct": 50.0,
+   "distinct_unit_lengths": 2,
+   "repeat_units": 2,
+   "unit_four_or_eight_pct": 50.0,
+   "unit_repeats": 4,
+   "unit_top": [
+    [
+     4,
+     50.0
+    ],
+    [
+     1,
+     50.0
+    ]
+   ]
+  },
+  "bars": 83,
+  "scores_read": 1,
+  "unreadable": 0
+ },
+ "schumann_clara": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 100.0,
+   "distinct_unit_lengths": 1,
+   "repeat_units": 6,
+   "unit_four_or_eight_pct": 0.0,
+   "unit_repeats": 12,
+   "unit_top": [
+    [
+     1,
+     100.0
+    ]
+   ]
+  },
+  "bars": 241,
+  "scores_read": 5,
+  "unreadable": 0
+ },
+ "schumann_robert": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 57.1,
+   "distinct_unit_lengths": 2,
+   "repeat_units": 39,
+   "unit_four_or_eight_pct": 0.0,
+   "unit_repeats": 84,
+   "unit_top": [
+    [
+     1,
+     57.1
+    ],
+    [
+     2,
+     42.9
+    ]
+   ]
+  },
+  "bars": 1146,
+  "scores_read": 7,
+  "unreadable": 0
+ },
+ "trecento": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 99.0,
+   "distinct_unit_lengths": 4,
+   "repeat_units": 733,
+   "unit_four_or_eight_pct": 0.0,
+   "unit_repeats": 1538,
+   "unit_top": [
+    [
+     1,
+     99.0
+    ],
+    [
+     2,
+     0.8
+    ],
+    [
+     3,
+     0.1
+    ],
+    [
+     5,
+     0.1
+    ]
+   ]
+  },
+  "bars": 12361,
+  "scores_read": 103,
+  "unreadable": 0
+ },
+ "verdi": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 100.0,
+   "distinct_unit_lengths": 1,
+   "repeat_units": 1,
+   "unit_four_or_eight_pct": 0.0,
+   "unit_repeats": 2,
+   "unit_top": [
+    [
+     1,
+     100.0
+    ]
+   ]
+  },
+  "bars": 35,
+  "scores_read": 1,
+  "unreadable": 0
+ },
+ "weber": {
+  "UNSOUND_repeat_units": {
+   "commonest_unit_bars": 1,
+   "commonest_unit_pct": 100.0,
+   "distinct_unit_lengths": 1,
+   "repeat_units": 1,
+   "unit_four_or_eight_pct": 0.0,
+   "unit_repeats": 2,
+   "unit_top": [
+    [
+     1,
+     100.0
+    ]
+   ]
+  },
+  "bars": 281,
+  "scores_read": 1,
+  "unreadable": 0
+ }
+}
