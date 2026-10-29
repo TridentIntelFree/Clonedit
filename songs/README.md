@@ -65,3 +65,22 @@ the two glockenspiels, which are pitched *and* bright at 19 and 21dB
 down. The air in `anneal.mjs` comes from those; the mallets underneath
 are allowed to be warm.
 | `alberto.mjs` | 150bpm, 1:30, drums only. The first break here written as a CHOP rather than as a pattern: one bar of source material, sixteen slices, eight orders over them, plus stutter / pitch / drop. Every bar re-uses the same slices and no two bars are the same. Written toward an Aphex Twin-shaped track; the melodic half is not in it yet. |
+
+## scripts/midi-structure.mjs — the form hole, closed
+
+AGENTS.md says "no analyser in this app asks how long a phrase is or
+whether they are all the same length". This reads a MIDI file — notes
+and timing, no audio — and reports phrase lengths, repeating units,
+harmonic rhythm and a letter-per-bar form map.
+
+Two things it got wrong first, both worth knowing:
+
+Its phrase detector looked for SILENCE, which is how a chorale marks a
+phrase and is not how continuous music marks one. On a dense track it
+reported "1 phrase, 120 bars" — a detector looking for the wrong thing,
+not a piece with one phrase in it. The repeat-unit pass reads
+periodicity in the bar sequence instead, and finds the real grid.
+
+It printed `NaN%` when a set contained no repeating units at all. That
+looked like a rounding bug and was the most informative result in the
+run: the control set had zero. It says so in words now.
