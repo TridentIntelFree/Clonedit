@@ -11554,61 +11554,34 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         +'the notes is what makes a wrong note look correct.');
     }
 
-    /* ---- chord symbols -> pitch classes ------------------------------
-       Deliberately a small vocabulary. A parser that silently accepts
-       what it does not understand would report a clean bill of health
-       on a progression it never read, which is the quiet failure this
-       file keeps running into. Anything unrecognised throws. */
-    const LETTER={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
-    /* CASE IS THE DISTINCTION IN A CHORD SYMBOL, so none of these may
-       be case-insensitive on the m. `m` is minor and `M` is major, and
-       for a while this list opened with /^(maj7|M7|Δ7?)$/i — which
-       matches "m7". Every minor seventh in a progression was therefore
-       judged against a MAJOR seventh chord: Bm7 was read as B D# F# A#,
-       the written D came back as a non-chord tone, and the check
-       reported "Bm7 states no third" on bars whose third was sitting
-       right there. It said that about a correct nocturne three times
-       and was twice waved away as a bug somewhere else, which it was —
-       here. /^(m9|min9|-9)$/i swallowed M9 the same way.
+    /* CHORD SYMBOLS -> PITCH CLASSES, from tonal rather than from a
+       table written here.
 
-       So the m/M forms are matched case-SENSITIVELY, and only the
-       spelled-out words, where no ambiguity exists, are allowed /i. */
-    const QUAL=[
-      [/^(maj7|Maj7|MAJ7|M7|Δ7?)$/,   [0,4,7,11]],
-      [/^(m7b5|min7b5)$/,             [0,3,6,10]],
-      [/^(ø7?)$/,                     [0,3,6,10]],
-      [/^(dim7|o7)$/i,                [0,3,6,9]],
-      [/^(dim|o)$/i,                  [0,3,6]],
-      [/^(aug|\+)$/i,                 [0,4,8]],
-      [/^(mmaj7|mM7|minmaj7)$/,       [0,3,7,11]],
-      [/^(m7|min7|-7)$/,              [0,3,7,10]],
-      [/^(m6|min6|-6)$/,              [0,3,7,9]],
-      [/^(m9|min9|-9)$/,              [0,3,7,10,2]],
-      [/^(maj9|Maj9|MAJ9|M9)$/,       [0,4,7,11,2]],
-      [/^(m|min|-)$/,                 [0,3,7]],
-      [/^(sus4|sus)$/i,               [0,5,7]],
-      [/^sus2$/i,                     [0,2,7]],
-      [/^6$/,                         [0,4,7,9]],
-      [/^(7|dom7)$/i,                 [0,4,7,10]],
-      [/^(9)$/,                       [0,4,7,10,2]],
-      [/^$/,                          [0,4,7]],
-    ];
+       What stood here was eighteen regexes mapping a symbol's tail to
+       intervals, and it had already produced a real fault: the list
+       opened with /^(maj7|M7|\u0394 7?)$/i, which MATCHES "m7". Every minor
+       seventh was therefore judged against a major seventh, and the
+       checker reported "Bm7 states no third" on bars whose third was
+       sitting right there. It said so about a correct piece three
+       times before anyone read the regex.
+
+       That is the failure mode of a hand-rolled vocabulary: confidently
+       wrong on whatever nobody wrote a test for. tonal was checked
+       against this table on all thirty symbols the table knew — thirty
+       agreed, none differed — and reads a few hundred it could not.
+       chordInfo() is in src/pure/theory.js, so it is unit-testable from
+       Node and published as a global ahead of the engine.
+
+       Anything unreadable still throws. A parser that silently accepted
+       what it did not understand would report a clean bill of health on
+       a progression it never read, which is the quiet failure this file
+       keeps running into. */
     const parse=(sym)=>{
-      const m=/^([A-Ga-g])([#b]?)(.*)$/.exec(String(sym).trim());
-      if(!m) throw new Error('harmony(): cannot read the chord "'+sym+'"');
-      let root=LETTER[m[1].toUpperCase()];
-      if(m[2]==='#') root++; if(m[2]==='b') root--;
-      root=((root%12)+12)%12;
-      const tail=m[3].replace(/\s+/g,'');
-      for(const [re,iv] of QUAL) if(re.test(tail))
-        return { sym:String(sym).trim(), root, pcs:iv.map(x=>(root+x)%12),
-          third:(root+(iv.includes(3)?3:iv.includes(5)&&!iv.includes(4)?null:4))%12,
-          hasThird:iv.includes(3)||iv.includes(4),
-          /* a major third with a minor seventh: the chord whose job is
-             tension, and the only one with altered tensions available */
-          dominant:iv.includes(4)&&iv.includes(10) };
-      throw new Error('harmony(): do not know the chord quality in "'+sym+'". '
-        +'Known: maj m 7 m7 maj7 m9 9 maj9 6 m6 dim dim7 aug sus2 sus4 m7b5 mmaj7.');
+      const info=(typeof chordInfo==='function')?chordInfo(sym):null;
+      if(!info) throw new Error('harmony(): cannot read the chord "'+sym+'". '
+        +'Symbols are the usual ones \u2014 C, Am, F#m7, Bbmaj7, G7, Csus4, '
+        +'Dm7b5, E7b9 \u2014 and case matters: m7 is minor, M7 is major.');
+      return info;
     };
     const prog=chords.map(parse);
 

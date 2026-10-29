@@ -114,12 +114,21 @@ export default async function ({ browser, base }) {
       catch (e) { out.bogus = e.message; }
       return out;
     });
-    t.ok('without a progression it says why it cannot infer one',
-      /needs the progression/.test(refused.noChords)
-        && /inferring it from the notes/.test(refused.noChords),
+    /* These assertions used to match the exact sentences the errors
+       happened to use, and both broke when the wording changed while
+       the behaviour did not — which is a test measuring the prose
+       rather than the thing. They now check what has to be true: it
+       refuses, and the refusal explains why guessing is not an
+       option. */
+    t.ok('without a progression it refuses rather than inferring one',
+      /no progression|needs the progression/.test(refused.noChords)
+        && /wrong note look correct/.test(refused.noChords),
       refused.noChords.slice(0, 120));
+    t.ok('and it points at how to declare one',
+      /key\(|chords\(/.test(refused.noChords), refused.noChords.slice(0, 90));
     t.ok('a chord symbol it cannot read throws instead of being skipped',
-      /do not know the chord quality/.test(refused.bogus), refused.bogus.slice(0, 100));
+      /cannot read the chord|do not know the chord quality/.test(refused.bogus),
+      refused.bogus.slice(0, 100));
 
     /* ---- the bug that made this check lie about a correct piece ---- */
     t.head('CASE IS THE DISTINCTION IN A CHORD SYMBOL');
