@@ -16,3 +16,7 @@ export * from './poly.js';
 export * from './ir.js';
 export * from './install.js';
 export * from './sfz.js';
+/* tonal is bundled in through here: pure, testable from Node, and
+   published as globals ahead of the engine like everything else in
+   this folder. */
+export * from './theory.js';

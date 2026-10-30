@@ -244,3 +244,27 @@ test('a #define written mid-region is still a define', () => {
   assert.equal(r.samples[0].rr, 3);
   assert.equal(r.samples[0].file, 'a.flac', 'the sample name survived the define beside it');
 });
+
+test('a redefinition applies only AFTER it, which is the whole game', () => {
+  /* Naked Drums has 144 fragments that each redefine the same few names for
+     the regions that follow. A global map gives every region the LAST
+     fragment's values: the kit parses cleanly, reports a full count, and
+     points nearly all of it at filenames that do not exist. */
+  const src = [
+    '#define $MIC Close', '#define $TAKE one',
+    '<region> sample=$MIC_$TAKE.flac key=36',
+    '#define $TAKE two',
+    '<region> sample=$MIC_$TAKE.flac key=38',
+    '#define $MIC Far',
+    '<region> sample=$MIC_$TAKE.flac key=40',
+  ].join('\n');
+  const r = parseSfz(sfzMacros(src).text);
+  assert.deepEqual(r.samples.map(s => s.file),
+    ['Close_one.flac', 'Close_two.flac', 'Far_two.flac']);
+});
+
+test('a macro defined from another resolves at the point of definition', () => {
+  const src = '#define $a X\n#define $b $a/deep\n#define $a Y\n<region> sample=$b.wav key=36';
+  assert.equal(parseSfz(sfzMacros(src).text).samples[0].file, 'X/deep.wav',
+    '$b was fixed when it was written, not re-evaluated later');
+});

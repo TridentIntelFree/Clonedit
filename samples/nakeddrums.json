@@ -1,0 +1,413 @@
+{
+ "name": "Naked Drums — Close Room (Wilkinson Audio, CC BY 4.0)",
+ "rr": 3,
+ "samples": [
+  {
+   "id": "nd:-Bottom_Black_D2_10_one-TEQT",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_10_one-TEQT.flac",
+   "note": 36,
+   "vel": 0.11023622047244094,
+   "rr": 1
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_10_two-K29K",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_10_two-K29K.flac",
+   "note": 36,
+   "vel": 0.11023622047244094,
+   "rr": 2
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_10_three-S3I0",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_10_three-S3I0.flac",
+   "note": 36,
+   "vel": 0.11023622047244094,
+   "rr": 3
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_20_one-II9X",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_20_one-II9X.flac",
+   "note": 36,
+   "vel": 0.31496062992125984,
+   "rr": 1
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_20_two-N3VW",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_20_two-N3VW.flac",
+   "note": 36,
+   "vel": 0.31496062992125984,
+   "rr": 2
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_20_three-VFGS",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_20_three-VFGS.flac",
+   "note": 36,
+   "vel": 0.31496062992125984,
+   "rr": 3
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_30_one-NLNF",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_30_one-NLNF.flac",
+   "note": 36,
+   "vel": 0.5118110236220472,
+   "rr": 1
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_30_two-VYTH",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_30_two-VYTH.flac",
+   "note": 36,
+   "vel": 0.5118110236220472,
+   "rr": 2
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_30_three-JE4P",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_30_three-JE4P.flac",
+   "note": 36,
+   "vel": 0.5118110236220472,
+   "rr": 3
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_40_one-HLYB",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_40_one-HLYB.flac",
+   "note": 36,
+   "vel": 0.7086614173228346,
+   "rr": 1
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_40_two-G626",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_40_two-G626.flac",
+   "note": 36,
+   "vel": 0.7086614173228346,
+   "rr": 2
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_40_three-04C0",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_40_three-04C0.flac",
+   "note": 36,
+   "vel": 0.7086614173228346,
+   "rr": 3
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_50_one-V4WI",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_50_one-V4WI.flac",
+   "note": 36,
+   "vel": 0.905511811023622,
+   "rr": 1
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_50_two-LN2C",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_50_two-LN2C.flac",
+   "note": 36,
+   "vel": 0.905511811023622,
+   "rr": 2
+  },
+  {
+   "id": "nd:-Bottom_Black_D2_50_three-FHVM",
+   "name": "Kick In",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-Bottom_Black_D2_50_three-FHVM.flac",
+   "note": 36,
+   "vel": 0.905511811023622,
+   "rr": 3
+  },
+  {
+   "id": "nd:TopOne_Black_D2_50_one-94P3",
+   "name": "Snare Tops",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/TopOne_Black_D2_50_one-94P3.flac",
+   "note": 37,
+   "vel": 0.5039370078740157,
+   "rr": 1
+  },
+  {
+   "id": "nd:TopOne_Black_D2_50_two-UWYS",
+   "name": "Snare Tops",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/TopOne_Black_D2_50_two-UWYS.flac",
+   "note": 37,
+   "vel": 0.5039370078740157,
+   "rr": 2
+  },
+  {
+   "id": "nd:TopOne_Black_D2_50_three-KG4R",
+   "name": "Snare Tops",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/TopOne_Black_D2_50_three-KG4R.flac",
+   "note": 37,
+   "vel": 0.5039370078740157,
+   "rr": 3
+  },
+  {
+   "id": "nd:HatMic_D2_10_one-2LZ3",
+   "name": "Hats",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/HatMic_D2_10_one-2LZ3.flac",
+   "note": 39,
+   "vel": 0.1732283464566929,
+   "rr": 1
+  },
+  {
+   "id": "nd:HatMic_D2_10_two-UTVY",
+   "name": "Hats",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/HatMic_D2_10_two-UTVY.flac",
+   "note": 39,
+   "vel": 0.1732283464566929,
+   "rr": 2
+  },
+  {
+   "id": "nd:HatMic_D2_10_three-4NAE",
+   "name": "Hats",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/HatMic_D2_10_three-4NAE.flac",
+   "note": 39,
+   "vel": 0.1732283464566929,
+   "rr": 3
+  },
+  {
+   "id": "nd:HatMic_D2_20_one-BMQY",
+   "name": "Hats",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/HatMic_D2_20_one-BMQY.flac",
+   "note": 39,
+   "vel": 0.5078740157480315,
+   "rr": 1
+  },
+  {
+   "id": "nd:HatMic_D2_20_two-AHJA",
+   "name": "Hats",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/HatMic_D2_20_two-AHJA.flac",
+   "note": 39,
+   "vel": 0.5078740157480315,
+   "rr": 2
+  },
+  {
+   "id": "nd:HatMic_D2_20_three-JNC3",
+   "name": "Hats",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/HatMic_D2_20_three-JNC3.flac",
+   "note": 39,
+   "vel": 0.5078740157480315,
+   "rr": 3
+  },
+  {
+   "id": "nd:HatMic_D2_30_one-QZ60",
+   "name": "Hats",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/HatMic_D2_30_one-QZ60.flac",
+   "note": 39,
+   "vel": 0.8385826771653543,
+   "rr": 1
+  },
+  {
+   "id": "nd:HatMic_D2_30_two-NI2D",
+   "name": "Hats",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/HatMic_D2_30_two-NI2D.flac",
+   "note": 39,
+   "vel": 0.8385826771653543,
+   "rr": 2
+  },
+  {
+   "id": "nd:HatMic_D2_30_three-9Q2O",
+   "name": "Hats",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/HatMic_D2_30_three-9Q2O.flac",
+   "note": 39,
+   "vel": 0.8385826771653543,
+   "rr": 3
+  },
+  {
+   "id": "nd:RideMic_D3_10_one-ZAHP",
+   "name": "Ride",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/RideMic_D3_10_one-ZAHP.flac",
+   "note": 51,
+   "vel": 0.1732283464566929,
+   "rr": 1
+  },
+  {
+   "id": "nd:RideMic_D3_10_two-PM2V",
+   "name": "Ride",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/RideMic_D3_10_two-PM2V.flac",
+   "note": 51,
+   "vel": 0.1732283464566929,
+   "rr": 2
+  },
+  {
+   "id": "nd:RideMic_D3_10_three-CUS8",
+   "name": "Ride",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/RideMic_D3_10_three-CUS8.flac",
+   "note": 51,
+   "vel": 0.1732283464566929,
+   "rr": 3
+  },
+  {
+   "id": "nd:RideMic_D3_20_one-WPGL",
+   "name": "Ride",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/RideMic_D3_20_one-WPGL.flac",
+   "note": 51,
+   "vel": 0.5078740157480315,
+   "rr": 1
+  },
+  {
+   "id": "nd:RideMic_D3_20_two-F47L",
+   "name": "Ride",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/RideMic_D3_20_two-F47L.flac",
+   "note": 51,
+   "vel": 0.5078740157480315,
+   "rr": 2
+  },
+  {
+   "id": "nd:RideMic_D3_20_three-R9BX",
+   "name": "Ride",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/RideMic_D3_20_three-R9BX.flac",
+   "note": 51,
+   "vel": 0.5078740157480315,
+   "rr": 3
+  },
+  {
+   "id": "nd:RideMic_D3_30_one-KDE4",
+   "name": "Ride",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/RideMic_D3_30_one-KDE4.flac",
+   "note": 51,
+   "vel": 0.8385826771653543,
+   "rr": 1
+  },
+  {
+   "id": "nd:RideMic_D3_30_two-JK2D",
+   "name": "Ride",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/RideMic_D3_30_two-JK2D.flac",
+   "note": 51,
+   "vel": 0.8385826771653543,
+   "rr": 2
+  },
+  {
+   "id": "nd:RideMic_D3_30_three-CBH2",
+   "name": "Ride",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/RideMic_D3_30_three-CBH2.flac",
+   "note": 51,
+   "vel": 0.8385826771653543,
+   "rr": 3
+  },
+  {
+   "id": "nd:-TopOne_D3_10_one-NU9V",
+   "name": "Tom 1",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-TopOne_D3_10_one-NU9V.flac",
+   "note": 48,
+   "vel": 0.1732283464566929,
+   "rr": 1
+  },
+  {
+   "id": "nd:-TopOne_D3_10_two-9BTS",
+   "name": "Tom 1",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-TopOne_D3_10_two-9BTS.flac",
+   "note": 48,
+   "vel": 0.1732283464566929,
+   "rr": 2
+  },
+  {
+   "id": "nd:-TopOne_D3_10_three-7KMZ",
+   "name": "Tom 1",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-TopOne_D3_10_three-7KMZ.flac",
+   "note": 48,
+   "vel": 0.1732283464566929,
+   "rr": 3
+  },
+  {
+   "id": "nd:-TopOne_D3_20_one-SPLR",
+   "name": "Tom 1",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-TopOne_D3_20_one-SPLR.flac",
+   "note": 48,
+   "vel": 0.5078740157480315,
+   "rr": 1
+  },
+  {
+   "id": "nd:-TopOne_D3_20_two-IHZS",
+   "name": "Tom 1",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-TopOne_D3_20_two-IHZS.flac",
+   "note": 48,
+   "vel": 0.5078740157480315,
+   "rr": 2
+  },
+  {
+   "id": "nd:-TopOne_D3_20_three-5J0Z",
+   "name": "Tom 1",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-TopOne_D3_20_three-5J0Z.flac",
+   "note": 48,
+   "vel": 0.5078740157480315,
+   "rr": 3
+  },
+  {
+   "id": "nd:-TopOne_D3_30_one-XPRP",
+   "name": "Tom 1",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-TopOne_D3_30_one-XPRP.flac",
+   "note": 48,
+   "vel": 0.8385826771653543,
+   "rr": 1
+  },
+  {
+   "id": "nd:-TopOne_D3_30_two-NJUD",
+   "name": "Tom 1",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-TopOne_D3_30_two-NJUD.flac",
+   "note": 48,
+   "vel": 0.8385826771653543,
+   "rr": 2
+  },
+  {
+   "id": "nd:-TopOne_D3_30_three-HB75",
+   "name": "Tom 1",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/sfzinstruments/WilkinsonAudio.NakedDrums/master/Wilkinson%20Audio/Naked%20Drums/Samples/-TopOne_D3_30_three-HB75.flac",
+   "note": 48,
+   "vel": 0.8385826771653543,
+   "rr": 3
+  }
+ ],
+ "note": "Downloaded from the upstream repository on demand; nothing is redistributed here. 5 pieces, velocity layers, 3 takes of every hit.",
+ "credit": "Wilkinson Audio · SFZ conversion by kinwie · CC BY 4.0"
+}

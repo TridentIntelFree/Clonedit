@@ -1,0 +1,128 @@
+{
+ "name": "Found Kit \u2014 ESC-50 field recordings (CC0 clips only)",
+ "license": "Every clip here is individually CC0 in the ESC-50 LICENSE file. The dataset as a whole is CC BY-NC, so the CC0 subset was selected deliberately.",
+ "source": "https://github.com/karolpiczak/ESC-50",
+ "note": "Chosen by measurement, not by category name: crest factor for the percussive roles (water drop 38.6dB, footstep 36.8dB), low crest for the sustained ones (washing machine 11.1dB). \"onset\" is where the sound actually starts in its five seconds, so a pad can be trimmed to it.",
+ "samples": [
+  {
+   "id": "fk:kick",
+   "name": "Door knock",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-103995-A-30.wav",
+   "note": 36,
+   "vel": 0.8,
+   "onset": 0.048,
+   "src": "door_wood_knock"
+  },
+  {
+   "id": "fk:snare",
+   "name": "Glass",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/2-173559-A-39.wav",
+   "note": 38,
+   "vel": 0.8,
+   "onset": 0.028,
+   "src": "glass_breaking"
+  },
+  {
+   "id": "fk:hat",
+   "name": "Water drop",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-50623-A-15.wav",
+   "note": 42,
+   "vel": 0.8,
+   "onset": 0.258,
+   "src": "water_drops"
+  },
+  {
+   "id": "fk:click",
+   "name": "Mouse click",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-95563-A-31.wav",
+   "note": 39,
+   "vel": 0.8,
+   "onset": 0.908,
+   "src": "mouse_click"
+  },
+  {
+   "id": "fk:tom",
+   "name": "Footstep",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-155858-C-25.wav",
+   "note": 45,
+   "vel": 0.8,
+   "onset": 0.906,
+   "src": "footsteps"
+  },
+  {
+   "id": "fk:bell",
+   "name": "Church bell",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/2-56926-A-46.wav",
+   "note": 51,
+   "vel": 0.8,
+   "onset": 0.662,
+   "src": "church_bells"
+  },
+  {
+   "id": "fk:knock2",
+   "name": "Door knock 2",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-103999-A-30.wav",
+   "note": 37,
+   "vel": 0.8,
+   "onset": 0.14,
+   "src": "door_wood_knock"
+  },
+  {
+   "id": "fk:type",
+   "name": "Keys",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-79711-A-32.wav",
+   "note": 40,
+   "vel": 0.8,
+   "onset": 0.2,
+   "src": "keyboard_typing"
+  },
+  {
+   "id": "fk:drone",
+   "name": "Washing machine",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-32373-B-35.wav",
+   "note": 60,
+   "vel": 0.8,
+   "onset": 0.108,
+   "src": "washing_machine"
+  },
+  {
+   "id": "fk:fire",
+   "name": "Fire",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-17808-B-12.wav",
+   "note": 61,
+   "vel": 0.8,
+   "onset": 0.222,
+   "src": "crackling_fire"
+  },
+  {
+   "id": "fk:rain",
+   "name": "Rain",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-21189-A-10.wav",
+   "note": 62,
+   "vel": 0.8,
+   "onset": 0.422,
+   "src": "rain"
+  },
+  {
+   "id": "fk:can",
+   "name": "Can",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/2-144031-A-34.wav",
+   "note": 43,
+   "vel": 0.8,
+   "onset": 0.1,
+   "src": "can_opening"
+  }
+ ]
+}

@@ -1,0 +1,98 @@
+{
+ "name": "Dark Kit \u2014 ESC-50 industrial and low-end sources (CC0 clips only)",
+ "license": "Every clip is individually CC0 in the ESC-50 LICENSE file; the dataset as a whole is CC BY-NC, so the CC0 subset was selected deliberately.",
+ "source": "https://github.com/karolpiczak/ESC-50",
+ "note": "Selected on energy below 160Hz relative to total, not on category: the engine reads -3.4dB and the deep bell -2.0dB, where the door creaks read -26 and are carried for the opposite reason. \"onset\" is where the sound starts.",
+ "samples": [
+  {
+   "id": "dk:thud",
+   "name": "Thunder",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/3-144891-A-19.wav",
+   "note": 36,
+   "vel": 0.8,
+   "onset": 0.94,
+   "src": "thunderstorm"
+  },
+  {
+   "id": "dk:glass",
+   "name": "Glass",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/2-141563-A-39.wav",
+   "note": 38,
+   "vel": 0.8,
+   "onset": 0.128,
+   "src": "glass_breaking"
+  },
+  {
+   "id": "dk:creak",
+   "name": "Creak",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-51805-C-33.wav",
+   "note": 39,
+   "vel": 0.8,
+   "onset": 0.02,
+   "src": "door_wood_creaks"
+  },
+  {
+   "id": "dk:train",
+   "name": "Train",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-88409-A-45.wav",
+   "note": 41,
+   "vel": 0.8,
+   "onset": 0.208,
+   "src": "train"
+  },
+  {
+   "id": "dk:heli",
+   "name": "Rotor",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-172649-B-40.wav",
+   "note": 43,
+   "vel": 0.8,
+   "onset": 0.932,
+   "src": "helicopter"
+  },
+  {
+   "id": "dk:bell",
+   "name": "Deep bell",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-48298-A-46.wav",
+   "note": 51,
+   "vel": 0.8,
+   "onset": 0.684,
+   "src": "church_bells"
+  },
+  {
+   "id": "dk:engine",
+   "name": "Engine",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/3-119455-A-44.wav",
+   "note": 60,
+   "vel": 0.8,
+   "onset": 0.124,
+   "src": "engine"
+  },
+  {
+   "id": "dk:sea",
+   "name": "Sea",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/2-125966-A-11.wav",
+   "note": 61,
+   "vel": 0.8,
+   "onset": 0.62,
+   "src": "sea_waves"
+  },
+  {
+   "id": "dk:saw",
+   "name": "Saw",
+   "cat": "DRUMS",
+   "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-116765-A-41.wav",
+   "note": 62,
+   "vel": 0.8,
+   "onset": 0.556,
+   "src": "chainsaw"
+  }
+ ]
+}

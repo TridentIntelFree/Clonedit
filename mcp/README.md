@@ -8,6 +8,19 @@ That last part is the point. An agent composing blind cannot tell that the hats
 came out inaudible. One that can call `jbh_render` and see `peak: 0.004` can fix
 it before you ever hear it.
 
+**Start with `jbh_howto`, then `jbh_review`.** The first returns the order to
+work in and the traps that are not guessable from the API — a pack that names
+its samples an octave off, gain being a multiplier on whatever a pad holds, a
+beat that is on the grid and still inaudible. The second runs every analyser,
+sorts the findings by severity, and says which checks it could not reach.
+
+For a while this server exposed thirty-four tools and not one of them was an
+analyser, which made the paragraph above false: an agent could write and render
+and had no way to listen. A track was bounced that way using six of the
+seventeen checks the app has, and the three that would have caught what the
+listener complained about were among the eleven skipped. `AGENTS.md` at the
+repo root has the rest of that story and the traps in full.
+
 ## Setting it up
 
 ```json

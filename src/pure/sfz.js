@@ -286,32 +286,48 @@ export function sfzAssemble(entry, files, maxDepth) {
    write locc$VOL_DI=1 and amplitude_oncc$VOL_DI=$RANGE_VOL. Longest names
    first, or $VOL would eat the front of $VOL_DI. */
 export function sfzMacros(text) {
+  /* SEQUENTIAL, NOT GLOBAL — and this is the whole game.
+
+     A #define applies to the text AFTER it, and a later one of the same
+     name replaces it from that point on. Collecting every define into one
+     map and substituting everywhere looks equivalent and is not: these
+     libraries redefine the same handful of names over and over, once per
+     fragment. Naked Drums has 144 files in Data/file/ that each redefine
+     $MIC, $ART and the take name for the regions that follow, so a global
+     map gave every region in the kit the LAST file's values. It parsed
+     cleanly, reported 118 playable regions, and pointed almost all of them
+     at filenames that do not exist.
+
+     Substituting a define's own value as it is stored, rather than on use,
+     keeps the same rule for a macro written in terms of another. */
   const defs = new Map();
-  /* NOT ANCHORED TO A LINE. Real libraries write a define in the middle of
-     a region, between two opcodes:
-
-       <region> lovel=1   #define $V51H 27   hivel=$V51H sample=k.flac
-
-     Matching only whole lines left both halves broken: the macro never
-     resolved, so every hivel fell back to 127 and a five-layer kit read as
-     one band — and the opcode scanner then swallowed "#define $V51H 27" as
-     the VALUE of lovel, so every region claimed velocity 1 as well. The
-     value is a single token, which is how every define in the wild is
-     written. */
-  const body = String(text || '').replace(
-    /#define[ \t]+(\$[A-Za-z0-9_]+)[ \t]+(\S+)/gi,
-    (_, k, v) => { defs.set(k, v); return ' '; });
-  if (!defs.size) return { text: body, defs };
-  const keys = [...defs.keys()].sort((a, b) => b.length - a.length);
-  const re = new RegExp(keys.map(k => k.replace(/\$/g, '\\$')).join('|'), 'g');
-  /* Applied repeatedly because a define may itself be written in terms of
-     another; bounded, because a pair that refer to each other must not
-     spin forever. */
-  let out = body;
-  for (let i = 0; i < 6; i++) {
-    const next = out.replace(re, k => defs.get(k));
-    if (next === out) break;
-    out = next;
+  const re = /#define[ \t]+(\$[A-Za-z0-9_]+)[ \t]+(\S+)/gi;
+  let rx = null, rxFor = -1;
+  const subst = chunk => {
+    if (!defs.size || !chunk) return chunk;
+    if (rxFor !== defs.size) {
+      const keys = [...defs.keys()].sort((a, b) => b.length - a.length);
+      rx = new RegExp(keys.map(k => k.replace(/\$/g, '\\$')).join('|'), 'g');
+      rxFor = defs.size;
+    }
+    let s2 = chunk;
+    for (let i = 0; i < 6; i++) {
+      const n = s2.replace(rx, k => defs.get(k));
+      if (n === s2) break;
+      s2 = n;
+    }
+    return s2;
+  };
+  let out = '', last = 0, m;
+  while ((m = re.exec(text))) {
+    out += subst(String(text).slice(last, m.index));
+    const had = defs.has(m[1]);
+    defs.set(m[1], subst(m[2]));
+    if (had) rxFor = -1;                 // same count, different value
+    else rxFor = -1;
+    last = m.index + m[0].length;
   }
+  out += subst(String(text).slice(last));
   return { text: out, defs };
 }
+

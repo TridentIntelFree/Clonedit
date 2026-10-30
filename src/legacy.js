@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R207 · 2026-10-20 · downloadable sounds reach the agent at last';
+const BUILD = 'JBH-88 · R228 · 2026-10-22 · two voices, not one voice and chords';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -2896,10 +2896,12 @@ function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
   gain:0.9, pitch:0, fine:0, speed:1, keepPitch:false, keepTime:true, pan:0, rev:0, dly:0,
   att:0.002, dec:0.12, sus:1, rel:0.06,
   grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grPos:0, grBurst:0.45,
-  choke:0, note:36+i, reverse:false, mode:'one',
+  choke:0, note:36+i, reverse:false, mode:'one', bowSlur:0.045, bowMaxSt:7, bowIn:0.30,
+  bowLen:2.1, bowBite:0.035,
   ftype:'off', fcut:1, fres:0.9, drv:0, crush:16,
   fegAmt:0, fegA:0.004, fegD:0.18, fegS:0, fegR:0.12, velFlt:0, velEnv:0,
   layers:[], layMode:'rr', layRR:0, layXf:0, relBufs:[], relGain:0.5, vary:0,
+  atkBufs:[], atkGain:0.5, atkLen:0.085,
   eqLo:0, eqMid:0, eqHi:0,
   lfoOn:false, lfoTgt:'cutoff', lfoShape:'sine', lfoSync:'free', lfoRate:2, lfoDepth:0.5,
   warpBeats:4, warpBpm:0, mute:false, solo:false }; }
@@ -2910,7 +2912,7 @@ const S = {
   buffers: [],            // AudioBuffers, referenced by pads via bufId
   patterns: Array.from({length:NPAT},()=>newPattern()),
   pattern: 0, bank: 0, editPad: 0, seqPad: 0,
-  bpm: 100, swing: 0, human: 0, autoWarp: false, silFade: 0.06, masterVol: 0.9, delayFb: 0.35,
+  bpm: 100, swing: 0, human: 0, humanDrift: 0, autoWarp: false, silFade: 0.06, masterVol: 0.9, delayFb: 0.35,
   punchOn:false, punchIn:0, punchOut:0,   // auto-punch window, in seconds after bar 1
   revLvl: 0.9, revSize: 3.0, revType: 'hall', delayDiv: 0.375, dlyTone: 5200, dlyMode: 'digital', compAmt: 0.4,
   chain: [], chainOn: false, chainPos: 0,
@@ -2923,6 +2925,29 @@ const S = {
   scOn:false, scTrig:0, scDepth:0.6, scRel:0.25,
   autoTarget:'mfilt',
   song:[], songOn:false, songLoop:true,
+  /* THE MUSICAL LAYER. Until this existed the app stored no key and no
+     progression anywhere: pads held samples, patterns held steps, and
+     the harmony lived only in whatever the writer was holding in their
+     head. The cost was concrete and recurring — harmony() had to be
+     HANDED a progression as an argument, every song script kept a
+     second copy of it that could drift from the first, form could only
+     be measured from exported MIDI outside the app, and anything
+     generating notes had nothing to generate them against.
+
+     `key` is the tonic and mode. `chords` maps a pattern index to one
+     chord symbol per BAR of that pattern, so a pattern stays
+     harmonically closed and can be dropped anywhere in the song and
+     still make sense — which is how the progression ends up following
+     the arrangement instead of fighting it. The song's full
+     progression is then whatever its pattern order spells out, which
+     progression() expands.
+
+     Empty by default. An undeclared key is an honest "not decided",
+     and must not be guessed at: inferring the harmony from the notes
+     is exactly what makes a wrong note look correct. */
+  key:null,               // {tonic:'D', mode:'major'} once declared
+  chords:{},              // patternIndex -> ['Bm7','Gmaj7',…], one per bar
+  sections:{},            // songIndex -> a name for that block
   morph:{ on:false, from:0, to:1, bars:8, curve:'weight', mode:'once', vel:true, amt:0, pos:0 },
   /* master chain (OUT tab). Neutral by default: flat EQ, natural width, and a
      ceiling just under 0 so nothing changes until it is asked to. */
@@ -3711,8 +3736,346 @@ function layerBlend(p,v,li){
   if(frac>=1-xf && li<n-1) return {idx:li+1, mix:0.5-(1-frac)/(2*xf)};
   return null;
 }
-function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLayer, lk){
+/* ---- TIMING THAT DRIFTS INSTEAD OF TWITCHING --------------------------
+
+   HUMANIZE has always been white noise: every note gets an independent
+   random offset, so a part at 30% jitters around the grid and each note's
+   error says nothing about its neighbour's. No player does that. What a
+   player does is drift — run a little ahead through a phrase and settle
+   back at the cadence — and the difference between drift and jitter is
+   the difference between rubato and a loose clock.
+
+   The correlation is the whole point, so the offset is a function of WHEN
+   the note falls rather than a fresh draw per note: two notes a sixteenth
+   apart get nearly the same displacement and the beat bends, where two
+   independent draws would have pulled them in opposite directions and
+   merely smeared it. Two slow sines of incommensurate period, about 3.7s
+   and 11.3s, so the pattern never lands back on the bar.
+
+   Stateless and therefore repeatable: an offline bounce and the live
+   playback of the same bar agree, which a running random walk would not
+   have managed across the two code paths.
+
+   Separate from HUMANIZE and zero by default, because this changes the
+   feel of every existing project and none of them asked for it. */
+/* The named contours phrase() understands. Deliberately few, and named
+   for what a player would call them rather than for their arithmetic.
+   'free' is the odd one: a small irregular push and pull that belongs to
+   no beat, which is what keeps a slow line from sounding metronomic even
+   when its dynamics are already shaped. */
+/* Measured from the Essen Folksong Collection — 8,514 melodies, 441,316
+   intervals — by scripts/study-melody.py, not recalled from anywhere. */
+/* Measured from 70 Palestrina scores by scripts/study-counterpoint.py —
+   115,530 vertical intervals and 73,966 moves between pairs of voices. */
+const CP_NORMS={ oblique:68.0, contrary:17.6, similar:10.7, parallel:3.6,
+  par5:0.235, par8:0.111, consonantPct:69.8,
+  source:'Palestrina, 70 scores' };
+const MELODY_NORMS={ repeat:21.1, step:46.9, third:19.0, leap:13.1,
+  leapRecovery:56.1, dirChange:51.8, range:12,
+  source:'Essen Folksong Collection, 8514 melodies' };
+/* HOW MUCH OF A LINE IS MADE OF MATERIAL THAT COMES BACK.
+
+   A piece came back described as "the timing comes off as random", and
+   it was: every pitch, every rest and every note length in it had been
+   drawn from a random number generator. Three voices moved on 3, 5 and
+   8 step cycles so they would stay independent, and they did, but
+   nothing in any of them ever happened twice. Independence had been
+   bought at the price of there being nothing to recognise.
+
+   None of the existing checks could see it. melody() looks at the mix of
+   steps and leaps, counterpoint() at how voices move against each other,
+   and a random walk passes both: its intervals are the right sizes and
+   its voices are gloriously independent. What neither asks is whether
+   any figure ever returns, which is most of what makes music followable
+   rather than merely well-formed.
+
+   Measuring it needs a null, because a line using few intervals repeats
+   by accident — a random walk on seven scale degrees scores 13.6% on raw
+   4-interval recurrence and looks motivic. The null is the same line's
+   own intervals in a different order: that holds length and vocabulary
+   fixed and leaves only arrangement. Against it the random walk scores
+   +6.8 and real melody +27.9.
+
+   Recurrence grows with length, so the norms are bucketed. From 8196
+   Essen melodies, median and 15th percentile of excess over shuffle:
+
+       notes      pitch            rhythm
+       24-47      +10.7 / +0.0     +17.3 / +3.0
+       48-95      +42.6 / +13.3    +20.0 / +5.5
+       96+        +51.1 / +31.3    +18.3 / +7.0
+
+   A long line that restates nothing is the failure this catches. */
+const MOTIF_NORMS={
+  buckets:[
+    {max:47,  pitch:10.7, pitchFloor:0.0,  rhythm:17.3, rhythmFloor:3.0},
+    {max:95,  pitch:42.6, pitchFloor:13.3, rhythm:20.0, rhythmFloor:5.5},
+    {max:1e9, pitch:51.1, pitchFloor:31.3, rhythm:18.3, rhythmFloor:7.0},
+  ],
+  source:'Essen Folksong Collection, 8196 melodies of 24 notes or more' };
+const PHRASE_V={
+  cresc:[[0,0.55],[1,1.30]],
+  dim:  [[0,1.30],[1,0.55]],
+  arch: [[0,0.60],[0.5,1.25],[1,0.60]],
+  dip:  [[0,1.20],[0.5,0.70],[1,1.20]],
+  swellend:[[0,0.70],[0.75,0.85],[1,1.35]],
+  flat: [[0,1],[1,1]]
+};
+const PHRASE_T={
+  rit:  [[0,0],[1,0.45]],
+  accel:[[0,0],[1,-0.30]],
+  push: [[0,-0.05],[1,-0.05]],
+  drag: [[0,0.05],[1,0.05]],
+  free: [[0,-0.04],[0.33,0.05],[0.66,-0.05],[1,0.03]]
+};
+function curveAt(pts,x){
+  if(!pts || !pts.length) return 0;
+  if(x<=pts[0][0]) return pts[0][1];
+  for(let i=1;i<pts.length;i++){
+    if(x<=pts[i][0]){
+      const x0=pts[i-1][0], y0=pts[i-1][1], x1=pts[i][0], y1=pts[i][1];
+      return x1===x0 ? y1 : y0+(y1-y0)*((x-x0)/(x1-x0));
+    }
+  }
+  return pts[pts.length-1][1];
+}
+function humanDriftAt(t){
+  return Math.sin(t*1.698+1.7)*0.6 + Math.sin(t*0.556+4.1)*0.4;
+}
+function humanTimeOffset(t, rnd){
+  let d=0;
+  if(S.human>0) d+=(rnd()*2-1)*S.human*0.012;
+  const hd=+S.humanDrift||0;
+  if(hd>0) d+=humanDriftAt(t)*hd*0.03;
+  return d;
+}
+/* ---- A BOW THAT KEEPS MOVING ------------------------------------------
+
+   Every string part written here was rejected, and the reason was never
+   the samples. It was that each note re-attacked. A sampler triggers a
+   fresh voice per note, so a melodic line is a row of separate bow
+   strokes — and a real slurred line is ONE stroke whose pitch changes
+   while the bow stays on the string. That difference survives any
+   envelope, any reverb and any amount of EQ, and the ear catches it
+   immediately: it is the single loudest thing announcing a sampled
+   string section.
+
+   So a pad in 'bow' mode does not start a voice per note. It keeps one
+   source sounding and BENDS it — playbackRate ramped over about forty
+   milliseconds — for as long as the notes keep overlapping. A fresh bow
+   stroke happens only where a player would take one: after a gap, or
+   when the line jumps further than a hand can reach without shifting.
+
+   THE VOICE BELONGS TO THE INSTRUMENT, NOT THE PAD. instrument() puts
+   every pitch on its own pad, so a melody moves from pad to pad and a
+   per-pad voice could never continue across two notes of the same
+   phrase. Keyed by the instrument tag, the sample that is already
+   sounding carries on and is bent to the new pitch, which is also
+   physically what happens: a violinist does not change instrument to
+   play the next note.
+
+   AND IT NEEDS NO LOOKAHEAD, which is why it is done this way rather
+   than by grouping notes into phrases before rendering. Continuing a
+   voice depends only on what is already sounding, so the offline bounce
+   and the live pass run the same code and cannot drift apart — the
+   divergence that has caused more wrong notes in this file than any
+   other single cause. */
+function bowKey(p, idx){ return p.inst ? ('i:'+p.inst) : ('p:'+idx); }
+/* THE MOMENT THE HAIR CATCHES THE STRING.
+
+   Measured on this library's cello sustains, the first 90ms of a note is
+   1.8dB DARKER and as much as 22dB quieter than its own steady bowing:
+   they were recorded with the bow eased in. So there is no attack in the
+   sustains to uncover, and every line built from them starts each note
+   with a soft swell — which is why a legato part made of them sounds
+   like an organ and was described as having no character.
+
+   The bite does exist in the library, in the spiccato takes, 8dB brighter
+   in the upper mids at the attack. So a short stroke is layered UNDER the
+   sustain at the instant a bow lands: at a fresh stroke, and at every bow
+   change. It is real recorded rosin from the same section, not a
+   synthesised transient, and it is gone in a tenth of a second — long
+   enough to be the attack, too short to be a note. */
+function bowAttackHit(ctx, g, idx, p, when, rate, vel){
+  const ab=p.atkBufs;
+  if(!ab || !ab.length) return;
+  const buf=S.buffers[ab[Math.floor(takeRnd()*ab.length)%ab.length]];
+  if(!buf) return;
+  const src=ctx.createBufferSource(); src.buffer=buf;
+  src.playbackRate.value=rate;
+  const gn=ctx.createGain();
+  const lv=clamp(p.atkGain==null?0.5:+p.atkGain,0,2)*(0.4+0.6*clamp(vel,0,1));
+  const hold=clamp(p.atkLen==null?0.085:+p.atkLen,0.01,0.5);
+  gn.gain.setValueAtTime(0.0001,when);
+  gn.gain.linearRampToValueAtTime(Math.max(0.0001,lv),when+0.004);
+  gn.gain.setValueAtTime(Math.max(0.0001,lv),when+hold*0.45);
+  gn.gain.linearRampToValueAtTime(0.0001,when+hold);
+  src.connect(gn); gn.connect(g.pads[idx].in);
+  src.start(when);
+  src.stop(when+hold+0.05);
+}
+function rateOf(p, lay, pitchOff, cents){
+  return Math.pow(2,(p.pitch+(pitchOff||0)+(p.fine+(cents||0))/100+lay.pitch)/12);
+}
+function triggerBow(ctx, g, idx, vel, when, pitchOff, lk){
+  const p=S.pads[idx];
+  const lay=padLayer(p, pickLayerIdx(g,p,idx,clamp(vel,0,1))) || padLayer(p,0);
+  if(!lay || lay.bufId<0) return null;
+  const buf=S.buffers[lay.bufId]; if(!buf) return null;
+  const reg=g.bowReg||(g.bowReg={});
+  const key=bowKey(p,idx);
+  const cur=reg[key];
+  const slur=clamp(p.bowSlur==null?0.045:+p.bowSlur, 0.005, 0.5);
+  const maxSt=clamp(p.bowMaxSt==null?7:+p.bowMaxSt, 1, 24);
+  const relT=(lk&&lk.rel!=null)?clamp(lk.rel,0.005,1):Math.max(0.03,p.rel||0.2);
+  const dur=(lk&&lk.len>0)?+lk.len:Math.max(0.12,(60/Math.max(1,Math.abs(S.bpm)))*0.5);
+  const myMidi=(p.srcNote!=null?p.srcNote:60)+(pitchOff||0);
+  const lvl=clamp(vel,0,1)*clamp(lay.gain,0,2);
+
+  /* CONTINUE the stroke.
+
+     NOT by bending the old sample to the new pitch, which was the first
+     version of this and quietly reintroduced the fault the whole sample
+     library was rebuilt to remove: bend seven semitones and the entire
+     rest of the note plays seven semitones off its recording, formants
+     and all, which is the chipmunk sound that made the old five-sample
+     violin unusable. The bend was only ever meant to last the length of
+     a slur.
+
+     So the bow stays on the string and the RECORDING underneath it is
+     changed. The new note's own sample fades in over the slur while the
+     old one fades out, and the new one is entered part-way through —
+     past its bow attack, where the tone is steady — so nothing
+     re-articulates. Meanwhile the outgoing sample bends towards the new
+     pitch as it leaves, which is the finger arriving ahead of the bow
+     and is what makes two notes sound joined rather than butted.
+
+     Equal power across the pair: they are two takes of the same section
+     playing the same line, correlated enough that a linear crossfade
+     dips audibly in the middle of every slur. */
+  if(cur && when < cur.until-0.004){
+    /* A BOW IS ABOUT SEVENTY CENTIMETRES LONG.
+
+       The version before this one had no bow length at all: it
+       crossfaded onward for as long as the notes kept overlapping, which
+       is a player drawing one stroke in one direction for ever. Described
+       exactly that way by the first person to hear it, which is the kind
+       of fault no spectrum reveals — the sound is continuous and smooth
+       and nothing is physically possible about it.
+
+       A real player reverses every couple of seconds, and the reversal is
+       audible: the hair momentarily stops driving the string, so there is
+       a small dip, and then it catches again with a bite. That bite is
+       the character. It is also recorded — it is the first few tens of
+       milliseconds of every sample in the library — and the smooth
+       version threw all of it away by entering each note 300ms in, well
+       past the attack, on purpose.
+
+       So at a bow change the incoming sample is entered NEAR ITS ATTACK
+       instead, the pair cross with a gap rather than equal power so the
+       sum dips, and the direction flips. Down-bow carries fractionally
+       more weight than up, which is true of the instrument and is the
+       difference between alternating and merely repeating. */
+    const bowIn=clamp(p.bowIn==null?0.30:+p.bowIn, 0, Math.max(0,buf.duration-0.3));
+    const bowLen=clamp(p.bowLen==null?2.1:+p.bowLen, 0.25, 30);
+    const bite=clamp(p.bowBite==null?0.035:+p.bowBite, 0, 0.4);
+    const change=(when-(cur.strokeStart==null?when:cur.strokeStart))>=bowLen;
+    const dir=change ? -(cur.dir||1) : (cur.dir||1);
+    /* down-bow is the stronger one; about a decibel, not a gesture */
+    const dirGain=change ? (dir>0?1.06:0.95) : 1;
+    const entry=change ? bite : bowIn;
+    const lvl2=lvl*dirGain;
+    const nsrc=ctx.createBufferSource(); nsrc.buffer=buf;
+    nsrc.playbackRate.value=rateOf(p,lay,pitchOff||0,0);
+    const nenv=ctx.createGain();
+    const N=17, up=new Float32Array(N), dn=new Float32Array(N);
+    if(change){
+      /* crossed with a gap: the sum falls through the middle, which is
+         the moment the bow is not driving anything */
+      for(let i=0;i<N;i++){ const t=i/(N-1);
+        up[i]=Math.max(0.0001, lvl2*Math.pow(Math.max(0,(t-0.42)/0.58),1.4));
+        dn[i]=Math.max(0.0001, cur.lastLvl*Math.pow(Math.max(0,1-t/0.55),1.2)); }
+    } else {
+      for(let i=0;i<N;i++){ const t=i/(N-1);
+        up[i]=Math.max(0.0001, lvl2*Math.sin(t*Math.PI/2));
+        dn[i]=Math.max(0.0001, cur.lastLvl*Math.cos(t*Math.PI/2)); }
+    }
+    const xf=change?Math.max(slur,0.055):slur;
+    try{ nenv.gain.setValueCurveAtTime(up, when, xf); }
+    catch(e){ try{ nenv.gain.setValueAtTime(0.0001,when);
+      nenv.gain.linearRampToValueAtTime(Math.max(0.0001,lvl2),when+xf); }catch(e2){} }
+    nenv.gain.setValueAtTime(Math.max(0.0001,lvl2), when+dur);
+    nenv.gain.linearRampToValueAtTime(0.0001, when+dur+relT);
+    nsrc.connect(nenv); nenv.connect(g.pads[idx].in);
+    if(change) bowAttackHit(ctx,g,idx,p,when+xf*0.42,nsrc.playbackRate.value,vel);
+    nsrc.start(when, entry);
+    nsrc.stop(when+Math.max(0.2,(buf.duration-entry)/Math.max(0.05,nsrc.playbackRate.value))+0.1);
+    /* the outgoing take leaves, sliding towards where the line has gone */
+    try{
+      cur.env.gain.cancelScheduledValues(when);
+      cur.env.gain.setValueCurveAtTime(dn, when, xf);
+    }catch(e){ try{ cur.env.gain.cancelScheduledValues(when);
+      cur.env.gain.setValueAtTime(cur.lastLvl,when);
+      cur.env.gain.linearRampToValueAtTime(0.0001,when+xf); }catch(e2){} }
+    const glide=clamp(myMidi-cur.rootMidi,-maxSt,maxSt);
+    try{
+      cur.src.playbackRate.cancelScheduledValues(when);
+      cur.src.playbackRate.setValueAtTime(cur.lastRate, when);
+      cur.src.playbackRate.linearRampToValueAtTime(
+        cur.baseRate*Math.pow(2,glide/12), when+slur);
+    }catch(e){}
+    try{ cur.src.stop(when+xf+0.08); }catch(e){}
+    const voice={src:nsrc, env:nenv, baseRate:rateOf(p,lay,0,0),
+      rootMidi:(p.srcNote!=null?p.srcNote:60),
+      lastRate:nsrc.playbackRate.value, lastLvl:Math.max(0.0001,lvl2),
+      until:when+dur, notes:cur.notes+1, pad:idx, dir,
+      strokeStart: change ? when : (cur.strokeStart==null?when:cur.strokeStart),
+      bowChanges:(cur.bowChanges||0)+(change?1:0)};
+    reg[key]=voice;
+    const act0=g.pads[idx].act||(g.pads[idx].act=[]);
+    act0.push({env:nenv, src:nsrc});
+    if(act0.length>8){ const old=act0.shift();
+      try{ old.env.gain.cancelScheduledValues(when);
+        old.env.gain.setTargetAtTime(0,when,0.02); }catch(e){} }
+    return nenv;
+  }
+
+  /* FRESH STROKE — the one place a bow attack belongs. */
+  const varyCents=(p.vary>0)?(takeRnd()*2-1)*p.vary*18:0;
+  const baseRate=rateOf(p,lay,0,varyCents);
+  const rate=rateOf(p,lay,pitchOff||0,varyCents);
+  const src=ctx.createBufferSource(); src.buffer=buf;
+  src.playbackRate.value=rate;
+  const env=ctx.createGain();
+  const att=Math.max(0.004, p.att==null?0.03:+p.att);
+  env.gain.setValueAtTime(0.0001, when);
+  env.gain.linearRampToValueAtTime(Math.max(0.0001,lvl), when+att);
+  env.gain.setValueAtTime(Math.max(0.0001,lvl), when+dur);
+  env.gain.linearRampToValueAtTime(0.0001, when+dur+relT);
+  src.connect(env); env.connect(g.pads[idx].in);
+  const s0=lay.start*buf.duration;
+  /* The source runs to the end of the recording and the gain is the only
+     gate. Rescheduling stop() on every continued note is the obvious
+     alternative and it is a trap: once a stop time has passed the voice
+     is gone and no later call brings it back, so a phrase longer than
+     its first note would cut off mid-slur. */
+  bowAttackHit(ctx,g,idx,p,when,rate,vel);
+  src.start(when, s0);
+  src.stop(when+Math.max(0.2,(buf.duration-lay.start*buf.duration)/Math.max(0.05,rate))+0.1);
+  const voice={src, env, baseRate, rootMidi:(p.srcNote!=null?p.srcNote:60),
+    lastRate:rate, lastLvl:Math.max(0.0001,lvl), until:when+dur, notes:1, pad:idx,
+    dir:1, strokeStart:when, bowChanges:0};
+  reg[key]=voice;
+  const act=g.pads[idx].act||(g.pads[idx].act=[]);
+  act.push({env,src});
+  if(act.length>8){ const old=act.shift();
+    try{ old.env.gain.cancelScheduledValues(when);
+      old.env.gain.setTargetAtTime(0,when,0.02); }catch(e){} }
+  return env;
+}
+
+function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLayer, lk, swShape){
   const p=S.pads[idx]; if(p.bufId<0) return null;
+  if(p.mode==='bow' && forceLayer==null) return triggerBow(ctx,g,idx,vel,when,pitchOff||0,lk);
   if(p.mode==='grain'){   // GRAIN pads spray a cloud instead of playing the sample
     scheduleGrains(ctx,g,idx,clamp(vel,0,1),when,clamp(p.grBurst||0.45,0.05,4),pitchOff||0);
     return null;
@@ -3726,10 +4089,59 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
       triggerPad(ctx,g,idx,vel,when,null,pitchOff,liveTap,li,lk);
   }
   const li = forceLayer!=null ? forceLayer : pickLayerIdx(g,p,idx,clamp(vel,0,1));
+
+  /* A NOTE THAT CHANGES DYNAMIC WHILE IT IS STILL SOUNDING.
+
+     A held string or wind note at one fixed velocity is the single most
+     recognisable sample-library tell there is. Real players shape every
+     long note; a violin that holds two seconds at exactly one dynamic
+     announces itself as a recording within about half of them.
+
+     AND IT IS NOT A VOLUME RAMP. Turning a quiet recording up does not
+     make it a loud one — the loud one has more bow noise, more rosin,
+     more upper partials, because those were played and recorded. So when
+     the start and end dynamics fall in different velocity layers the
+     quiet take fades out while the loud take fades in, and the timbre
+     crescendos along with the level. When they land in the same layer
+     there is nothing to cross to and it is simply a level move, which is
+     said plainly rather than pretended otherwise.
+
+     Equal power on the pair, not linear: two dynamic layers of the same
+     note at the same pitch are partly coherent, and a linear pair leaves
+     a dip in the middle of the crescendo exactly where the ear is
+     following it.
+
+     Only in 'vel' mode. pickLayerIdx advances the round-robin counter for
+     the modes that have one, so asking it a second question per note would
+     consume two alternates for one hit and quietly break the repeatable
+     bounce.
+
+     AND IT BELONGS TO INSTRUMENTS THAT ARE STILL BEING PLAYED. A bowed or
+     blown note is driven the whole time it sounds, so it can grow; a
+     struck one cannot, and no amount of crossfading will make it. Measured
+     on a piano the effect is real but wrong-sounding, because both takes
+     start together and the loud one is already two seconds into its own
+     decay by the time it arrives — louder, and no brighter. On the violin
+     the same instruction reads twelve times the level at 2.4s and keeps
+     the upper partials that go with it. Nothing here refuses a swell on a
+     piano; it simply is not what a piano does. */
+  if(!swShape && lk && lk.swell!=null && forceLayer==null){
+    const v0=clamp(vel,0,1), v1=clamp(+lk.swell,0.01,1);
+    if(Math.abs(v1-v0)>0.02){
+      const liB=(p.layMode==='vel') ? pickLayerIdx(g,p,idx,v1) : li;
+      if(liB!==li){
+        triggerPad(ctx,g,idx,v1,when,null,pitchOff,liveTap,liB,lk,{role:'in'});
+        swShape={role:'out'};
+      } else {
+        swShape={role:'level', ratio:v1/Math.max(0.01,v0)};
+      }
+    }
+  }
   /* At a band edge both recordings sound, their gains summing to one, so
      the timbre slides between them instead of stepping. Only ever one extra
-     voice, and only for notes actually near a boundary. */
-  if(forceLayer==null){
+     voice, and only for notes actually near a boundary. A swell is already
+     crossfading this note between two takes, so the two are never stacked. */
+  if(forceLayer==null && !swShape){
     const bl=layerBlend(p,clamp(vel,0,1),li);
     if(bl && bl.mix>0.01){
       const keep=Math.sqrt(1-bl.mix), add=Math.sqrt(bl.mix);
@@ -3829,8 +4241,39 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
   const relT=(lk&&lk.rel!=null)?clamp(lk.rel,0.005,1):p.rel;
   const relStart=when+Math.max(att+0.002,outDur-relT);
   env.gain.setValueAtTime(0,when);
-  env.gain.linearRampToValueAtTime(v,attEnd);
+  /* A SWELL REPLACES THE DECAY RATHER THAN FIGHTING IT.
+
+     Decay and swell are two instructions about the same span of time, and
+     running both means a note that falls to its sustain and then climbs
+     out of it again — which is not what either control was asked for. A
+     note told to change dynamic is given attack, the move, and release.
+     The 'in' voice of a crossfade pair starts effectively silent, since
+     its whole job is to arrive. */
+  const swOn = !!swShape && (outDur-att)>0.12;
   let holdLvl=v;
+  if(swOn){
+    const startLvl = swShape.role==='in' ? Math.max(0.0001, v*0.02) : v;
+    const endLvl   = swShape.role==='in' ? v
+                   : swShape.role==='out' ? Math.max(0.0001, v*0.02)
+                   : Math.max(0.0001, v*clamp(swShape.ratio,0.05,8));
+    env.gain.linearRampToValueAtTime(startLvl, attEnd);
+    holdLvl=startLvl;
+    const span=Math.max(0.02, relStart-attEnd), n=33, arr=new Float32Array(n);
+    for(let i=0;i<n;i++){
+      const t=i/(n-1);
+      const frac = swShape.role==='out' ? (1-Math.cos(t*Math.PI/2))
+                 : swShape.role==='in'  ? Math.sin(t*Math.PI/2) : t;
+      arr[i]=Math.max(0.0001, startLvl+(endLvl-startLvl)*frac);
+    }
+    /* setValueCurveAtTime throws across browsers if it so much as touches
+       another scheduled event, and a thrown note is a silent one, so the
+       shape degrades to a straight line rather than taking the voice out. */
+    try{ env.gain.setValueCurveAtTime(arr, attEnd, span); holdLvl=arr[n-1]; }
+    catch(e){
+      try{ env.gain.linearRampToValueAtTime(endLvl, attEnd+span); holdLvl=endLvl; }catch(e2){}
+    }
+  } else {
+  env.gain.linearRampToValueAtTime(v,attEnd);
   if(sus<1){
     const decEnd=attEnd+decT;
     if(decEnd<=relStart){
@@ -3845,6 +4288,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
       holdLvl=v*(1-(1-sus)*((relStart-attEnd)/decT));
       env.gain.linearRampToValueAtTime(holdLvl,relStart);
     }
+  }
   }
   env.gain.setValueAtTime(holdLvl,relStart);
   env.gain.linearRampToValueAtTime(0.0001,relStart+relT);
@@ -9316,6 +9760,7 @@ async function loadSongDoc(doc){
         if(src.prob!=null) lk.prob=clamp(src.prob,0,1);
         if(src.rat!=null&&src.rat>1) lk.rat=clamp(src.rat|0,2,4);
         if(src.nudge!=null) lk.nudge=clamp(src.nudge,-0.5,0.5);
+        if(src.swell!=null) lk.swell=clamp(+src.swell,0.01,1);
         if(src.plain) lk.plain=1;
         /* Clamped rather than dropped, because a song doc is hand-writable and
            a cutoff of 2 is a typo with an obvious intent — but only once it is
@@ -9647,6 +10092,69 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     return {pad:i, released:bufs.length, gain:p.relGain};
   },
 
+  /* GIVE A SUSTAINED INSTRUMENT ITS OWN ATTACK.
+
+     bowAttack('vc','vcSpic') walks every pad of the first instrument and
+     hands it the nearest-pitched recording from the second, to be played
+     under the note at the instant the bow lands. Both are built with
+     instrument() in the normal way, so the attacks are real takes of the
+     same section at the same pitch rather than anything invented.
+
+     Why it is needed at all is in bowAttackHit: this library's sustains
+     were recorded with the bow eased in, so they have no onset of their
+     own to uncover — 1.8dB darker and up to 22dB quieter across their
+     first 90ms than their own steady bowing. The spiccato takes carry the
+     bite the sustains lack. */
+  bowAttack(name, fromName, opt){
+    const o=opt||{};
+    const mine=window.MVX.instPads(name), src=window.MVX.instPads(fromName);
+    if(!mine.length) throw new Error('no instrument "'+name+'"');
+    if(!src.length) throw new Error('no instrument "'+fromName+'" to take attacks from');
+    let wired=0, worst=0;
+    for(const q of mine){
+      const best=src.reduce((a,b)=>Math.abs(b.note-q.note)<Math.abs(a.note-q.note)?b:a);
+      const sp=S.pads[best.pad];
+      if(!sp || sp.bufId<0) continue;
+      const p=S.pads[q.pad];
+      /* every layer of the spiccato pad, so repeated strokes are not
+         the identical click twice running */
+      const ids=[];
+      for(let L=0;L<padLayerCount(sp);L++){
+        const lay=padLayer(sp,L); if(lay && lay.bufId>=0) ids.push(lay.bufId);
+      }
+      p.atkBufs=ids.length?ids:[sp.bufId];
+      p.atkGain=(o.gain==null)?0.5:clamp(+o.gain,0,2);
+      if(o.len!=null) p.atkLen=clamp(+o.len,0.01,0.5);
+      worst=Math.max(worst,Math.abs(best.note-q.note));
+      wired++;
+    }
+    dirty();
+    return {instrument:name, from:fromName, pads:wired,
+      gain:(o.gain==null)?0.5:+o.gain, worstBendSemitones:worst};
+  },
+
+  /* The same thing for one pad, by sample id, mirroring release(). */
+  async attack(padIdx, ids, gain){
+    const i=clamp(padIdx|0,0,NPADS-1), p=S.pads[i];
+    const list=Array.isArray(ids)?ids:(ids==null?[]:[ids]);
+    if(!list.length){ p.atkBufs=[]; dirty(); return {pad:i, attacks:0}; }
+    ensureAudio();
+    const bufs=[];
+    for(const id of list){
+      const sm=(packManifest&&packManifest.samples||[]).find(x=>x.id===id);
+      if(!sm) throw new Error('no sound "'+id+'" in the loaded pack');
+      if(!packHaveKeys.has(LIBKEY(id))) await libFetchStore(sm);
+      const rec=await idbGetS(IDB_LIB,LIBKEY(id));
+      if(!rec||!rec.bytes) throw new Error('"'+id+'" is not on the device');
+      S.buffers.push(await decode(rec.bytes.slice(0)));
+      bufs.push(S.buffers.length-1);
+    }
+    p.atkBufs=bufs;
+    if(gain!=null) p.atkGain=clamp(+gain,0,2);
+    dirty();
+    return {pad:i, attacks:bufs.length, gain:p.atkGain};
+  },
+
   /* ---- INSTRUMENTS: WRITE NOTES, NOT PADS -----------------------------
 
      Everything above is pad-shaped, and music is not. Writing a piano part
@@ -9689,8 +10197,22 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const notes=[...new Set(cand.map(x=>x.n))].sort((a,b)=>a-b);
     const maxNotes=Math.min(o.max||notes.length, NPADS);
     if(notes.length>maxNotes){
-      const keep=new Set(), stride=(notes.length-1)/(maxNotes-1);
-      for(let i=0;i<maxNotes;i++) keep.add(notes[Math.round(i*stride)]);
+      const keep=new Set();
+      /* ONE NOTE IS A LEGITIMATE ASK AND IT USED TO RETURN NOTHING.
+         The stride is (notes.length-1)/(maxNotes-1), which at maxNotes
+         of 1 divides by zero: the index came out NaN, notes[NaN] is
+         undefined, and the instrument was built from an empty set and
+         handed back with pads:[] and no error. Every caller in the repo
+         asked for four or more so it was never hit — but asking for a
+         single sound is the most ordinary request there is once you are
+         building one sound at a time, which is how it finally turned
+         up. Take the middle note: of one recording from a range, the
+         middle is the one that represents it. */
+      if(maxNotes<=1) keep.add(notes[Math.floor((notes.length-1)/2)]);
+      else {
+        const stride=(notes.length-1)/(maxNotes-1);
+        for(let i=0;i<maxNotes;i++) keep.add(notes[Math.round(i*stride)]);
+      }
       cand=cand.filter(x=>keep.has(x.n));
     }
     /* SEVERAL RECORDINGS OF ONE NOTE GO ON ONE PAD, NOT SEVERAL.
@@ -9785,6 +10307,85 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     bumpLocks(); try{ drawSeq(); drawPads(); }catch(e){} dirty();
     return {wrote:out, bend:worst};
   },
+
+  /* SHAPE, APPLIED TO A RUN OF NOTES RATHER THAN TYPED INTO EACH ONE.
+
+     Every part written through this API so far had its velocities typed in
+     one at a time, which is why they all came out flat: a human writing
+     eighty numbers by hand writes eighty numbers that are nearly the same,
+     and the result is a part with no direction. The shape is the music.
+     A crescendo across four bars is one instruction, not forty.
+
+     It operates on notes that are already there — it never adds or removes
+     one — so the sequencer still shows exactly what it will play.
+
+       phrase('vn', 0, 63, {vel:'cresc'})
+       phrase('pf', 32, 63, {vel:'arch', time:'rit'})
+       phrase('pf', 0, 15, {vel:[[0,0.7],[0.25,1.2],[1,0.5]]})
+       phrase('vn', 0, 63, {vel:'cresc', swell:1.4})
+
+     vel   multiplies the written velocity, so accents survive the contour.
+     time  displaces each note in step fractions, which is how a rit works:
+           progressively later against a grid that does not itself move.
+     swell multiplies each note's velocity to give it a target to travel to
+           while it sounds — see the swell note in triggerPad; on an
+           instrument with velocity layers it changes timbre, not just level.
+
+     A shape is a name or a list of [position, value] points, position
+     running 0 to 1 across the span, straight lines between them. */
+  phrase(name, from, to, opt){
+    const o=opt||{};
+    const pat=S.patterns[S.pattern], L=patLen(pat);
+    let pads;
+    if(typeof name==='number') pads=[clamp(name|0,0,NPADS-1)];
+    else{
+      const ip=window.MVX.instPads(name);
+      if(!ip.length) throw new Error('no instrument "'+name+'" — call instrument() first, '
+        +'or pass a pad number');
+      pads=ip.map(x=>x.pad);
+    }
+    if(Array.isArray(o.only)) pads=pads.filter(p=>o.only.indexOf(p)>=0);
+    const a=clamp(from==null?0:from|0,0,L-1), b=clamp(to==null?L-1:to|0,0,L-1);
+    const lo=Math.min(a,b), hi=Math.max(a,b), span=Math.max(1,hi-lo);
+    const pick=(src,table,what)=>{
+      if(src==null) return null;
+      if(typeof src==='string'){
+        if(!table[src]) throw new Error('no '+what+' shape "'+src+'". Known: '
+          +Object.keys(table).join(', ')+' — or give [[position,value],…].');
+        return table[src];
+      }
+      if(Array.isArray(src) && src.length) return src;
+      throw new Error(what+' wants a shape name or [[position,value],…]');
+    };
+    const vS=pick(o.vel, PHRASE_V, 'velocity'), tS=pick(o.time, PHRASE_T, 'timing');
+    const swl=(o.swell!=null && isFinite(+o.swell)) ? +o.swell : null;
+    if(!vS && !tS && swl==null)
+      throw new Error('phrase() needs at least one of vel, time or swell');
+    let touched=0; const hit=new Set();
+    for(const pad of pads){
+      const row=pat.steps[pad]; if(!row) continue;
+      for(let st=lo; st<=hi; st++){
+        const v=row[st]; if(!(v>0)) continue;
+        const x=(st-lo)/span;
+        if(vS) row[st]=clamp(v*curveAt(vS,x),0.02,1);
+        if(tS || swl!=null){
+          const k=LK(pad,st,false), lk=Object.assign({}, pat.locks[k]||{});
+          if(tS){
+            const nd=clamp(curveAt(tS,x),-0.5,0.5);
+            if(Math.abs(nd)<0.001) delete lk.nudge; else lk.nudge=+nd.toFixed(4);
+          }
+          if(swl!=null) lk.swell=clamp(row[st]*swl,0.01,1);
+          if(Object.keys(lk).length) pat.locks[k]=lk; else delete pat.locks[k];
+        }
+        touched++; hit.add(pad);
+      }
+    }
+    bumpLocks(); try{ drawSeq(); drawPads(); }catch(e){} dirty();
+    return {touched, pads:[...hit].sort((x,y)=>x-y), from:lo, to:hi,
+      vel:o.vel==null?null:(typeof o.vel==='string'?o.vel:'custom'),
+      time:o.time==null?null:(typeof o.time==='string'?o.time:'custom'),
+      swell:swl};
+  },
   /* A POLY FIGURE IN NOTES.
 
      Cells are grouped by register and each group gets a pad whose sample is
@@ -9849,12 +10450,383 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      they are reachable here, under the field names the app itself uses.
      Called with no props each one READS; called with props it writes and
      returns what it ended up as. */
+  /* WRITE ONE VOICE INTO ONE SPAN, AND OFFER ALTERNATIVES.
+
+     Not a generator. The research on co-creative music tools converges
+     on the same finding, and it is the opposite of "make me a track":
+     a model that hands over a finished piece overwhelms the person
+     with content and frustrates them with randomness, and what helps
+     is constraining generation to a particular VOICE over a particular
+     SPAN and offering several options to choose between. Cococo found
+     users reported more control, more trust and more ownership that
+     way. Composer's Assistant does multi-track infilling with the same
+     shape. It is also the shape mutate() already has here — make
+     variations, score them, keep the best — and the shape balance()
+     has: it suggests, it does not apply.
+
+     So this writes nothing by default. It returns candidates, each
+     with the numbers it scores on and the seed that reproduces it, and
+     applying one is a second call naming that seed. A human picks by
+     listening; an agent picks by reading the scores. Neither is handed
+     a fait accompli.
+
+     THE RHYTHM IS NOT AN AFTERTHOUGHT, and that is the whole lesson of
+     HOLLOWAY. A previous session generated pitches with magenta, got
+     back a pitch per step with step numbers that were not a rhythm,
+     and dealt them onto four invented arrays of offsets —
+     [0,4,6,10,12,14] and friends — which bore no relation to the notes
+     landing on them. Where a bar held more pitches than the array had
+     slots the overflow clamped to step 15, so one phrase fired at 12,
+     14, 15 and then the downbeat, three times a cycle, and the
+     listener's first word was "timing". Here the rhythm comes first:
+     a cell is chosen per bar from a small library of musical figures,
+     and the pitches are then written INTO its slots, so every note has
+     a real position and a real length by construction.
+
+     Everything it writes is checked against the declared progression
+     before it is offered. That progression now exists, which is what
+     makes this possible at all. */
+  async infill(inst, opt){
+    const o=opt||{};
+    if(typeof inst!=='string' || !inst)
+      throw new Error('infill needs an instrument tag: infill("bass", {from:0, bars:4})');
+    const pads=window.MVX.instPads(inst);
+    if(!pads.length) throw new Error('no instrument "'+inst+'" — instrument() tags '
+      +'the pads it makes; sound() does not, so tag them with pad(i,{inst:"'+inst+'"}) '
+      +'and give each a srcNote, or nothing can read what they play.');
+
+    const from=Math.max(0, o.from|0);
+    const bars=clamp(o.bars==null?4:o.bars|0, 1, 64);
+    const want=clamp(o.n==null?4:o.n|0, 1, 12);
+    const role=o.role||'lead';
+    if(['bass','lead','pad','arp'].indexOf(role)<0)
+      throw new Error("role must be 'bass', 'lead', 'pad' or 'arp'");
+
+    /* THE HARMONY IT WRITES AGAINST. Declared, never inferred — the
+       whole reason the musical layer exists. */
+    const pr=window.MVX.progression({src:o.src||'pat'});
+    const prog=[];
+    for(let b=0;b<bars;b++) prog.push(pr.chords[(from+b) % Math.max(1,pr.chords.length)]);
+    if(prog.some(x=>x==null))
+      throw new Error('bars '+from+'–'+(from+bars-1)+' have no chord declared. '
+        +'chords(pattern,[…]) writes them. Without a progression this would be '
+        +'guessing at the harmony, and a part written against a guess is how a '
+        +'wrong note comes to look correct.');
+    const info=prog.map(sym=>{
+      const i=(typeof chordInfo==='function')?chordInfo(sym):null;
+      if(!i) throw new Error('cannot read the chord "'+sym+'"');
+      return i;
+    });
+
+    /* RANGE. From the instrument's own sampled span unless told, so a
+       bass part is not written above what the pads can play. */
+    const roots=pads.map(p=>p.note).filter(n=>n!=null).sort((a,b)=>a-b);
+    let lo=o.lo!=null?o.lo|0:roots[0], hi=o.hi!=null?o.hi|0:roots[roots.length-1];
+    if(!(hi>lo)){ lo=48; hi=72; }
+
+    /* ---- RHYTHMIC CELLS -------------------------------------------
+       Figures, not offsets. Each is [step, beats] within a 16-step
+       bar, and each is something a player would actually do: a bass
+       walking under the bar, a line that breathes in the middle, a
+       figure that pushes into the next bar. The pitches are written
+       into these slots afterwards, which is the part HOLLOWAY got
+       backwards. */
+    const CELLS={
+      bass:[ [[0,2],[6,1],[10,1.5],[14,0.5]],
+             [[0,2.5],[8,1],[12,1]],
+             [[0,1],[4,1],[8,1],[12,1]],
+             [[0,3],[12,1]],
+             [[0,1.5],[3,0.5],[8,1.5],[11,0.5],[14,0.5]] ],
+      lead:[ [[0,1.5],[6,0.75],[10,1]],
+             [[0,1],[4,1],[8,2]],
+             [[2,1],[6,1],[10,1.5]],
+             [[0,2],[8,0.75],[11,0.75],[14,0.5]],
+             [[0,0.75],[3,0.75],[6,0.75],[10,1.5]],
+             [[4,2],[12,1]] ],
+      pad:[  [[0,4]], [[0,3]], [[0,2],[8,2]] ],
+      arp:[  [[0,0.5],[2,0.5],[4,0.5],[6,0.5],[8,0.5],[10,0.5],[12,0.5],[14,0.5]],
+             [[0,0.5],[3,0.5],[6,0.5],[9,0.5],[12,0.5]],
+             [[0,0.75],[4,0.75],[8,0.75],[12,0.75]] ],
+    };
+
+    const nearest=(pc, around)=>{
+      let best=null, bd=1e9;
+      for(let m=lo;m<=hi;m++){
+        if(((m%12)+12)%12 !== pc) continue;
+        const d=Math.abs(m-around);
+        if(d<bd){ bd=d; best=m; }
+      }
+      return best;
+    };
+
+    /* ---- ONE CANDIDATE --------------------------------------------- */
+    const build=(seed)=>{
+      let rs=seed>>>0 || 1;
+      const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+      const pick=a=>a[Math.floor(rnd()*a.length)%a.length];
+      const cells=CELLS[role];
+      const out=[];
+      let prev=Math.round((lo+hi)/2);
+      for(let b=0;b<bars;b++){
+        const ch=info[b], next=info[(b+1)%bars];
+        /* no two consecutive bars on the same cell, so the part does
+           not lock to one figure the way a drum machine would */
+        let cell=pick(cells), guard=0;
+        while(bars>1 && out.length && cell===out[out.length-1]._cell && guard++<6) cell=pick(cells);
+        const want3 = role!=='pad';      /* state the third: 94.6% of Bach's sonorities do */
+        let stated3=false;
+        const slots=cell.slice();
+        for(let si=0; si<slots.length; si++){
+          const [st, beats]=slots[si];
+          const strong = st===0 || st===8;
+          const last = si===slots.length-1;
+          let pcChoices;
+          if(strong){
+            /* root or third on a strong beat — roots and fifths alone
+               state no quality, and whatever chromatic is passing then
+               becomes the note that defines the chord */
+            pcChoices=[ch.root, ch.third!=null?ch.third:ch.root];
+          } else if(last && b<bars-1){
+            /* the approach into the next bar, chosen against BOTH
+               chords. Taken as a blind chromatic below the next root it
+               lands a semitone above a tone of the chord it is still
+               in, which is the rarest case in Bach's corpus and most of
+               what soured HOLLOWAY. */
+            const nr=next.root;
+            const cands=[(nr+11)%12,(nr+1)%12,(nr+10)%12,(nr+2)%12];
+            const good=cands.filter(pc=>next.pcs.includes(pc)
+              && !ch.pcs.some(t=>((pc-t)%12+12)%12===1));
+            pcChoices=good.length?good:ch.pcs.slice();
+          } else {
+            pcChoices=ch.pcs.slice();
+            if(want3 && !stated3 && ch.third!=null) pcChoices=[ch.third].concat(pcChoices);
+          }
+          /* never a semitone above a chord tone — the interval that
+             actually beats, and the one rule harmony() is built on */
+          pcChoices=pcChoices.filter(pc=>!ch.pcs.some(t=>((pc-t)%12+12)%12===1));
+          if(!pcChoices.length) pcChoices=[ch.root];
+          const pc=pick(pcChoices);
+          /* contour: stay near the previous note. A line that leaps
+             everywhere scores badly on melody() and sounds like a
+             random walk, which passes every other check here. */
+          let m=nearest(pc, role==='bass' ? lo+((prev-lo)%12) : prev);
+          if(m==null) m=nearest(pc, (lo+hi)/2);
+          if(m==null) continue;
+          if(pc===ch.third) stated3=true;
+          const vel=+(0.42+0.30*(strong?1:rnd()*0.6)).toFixed(2);
+          out.push({ midi:m, step:(from+b)*16+st, vel, beats, _cell:cell });
+          prev=m;
+        }
+      }
+      return out;
+    };
+
+    /* ---- SCORE IT, AGAINST THE NORMS THIS REPO MEASURED ------------ */
+    const score=(notes)=>{
+      const seq=notes.slice().sort((a,b)=>a.step-b.step).map(n=>n.midi);
+      let rep=0, step=0, third=0, leap=0;
+      for(let i=1;i<seq.length;i++){
+        const d=Math.abs(seq[i]-seq[i-1]);
+        if(d===0) rep++; else if(d<=2) step++; else if(d<=4) third++; else leap++;
+      }
+      const n=Math.max(1,seq.length-1);
+      const pct=x=>+(100*x/n).toFixed(1);
+      /* how far from the Essen norms, as one number to rank on */
+      const got={repeat:pct(rep), step:pct(step), third:pct(third), leap:pct(leap)};
+      const miss=['repeat','step','third','leap']
+        .reduce((s,k)=>s+Math.abs(got[k]-MELODY_NORMS[k]),0)/4;
+      /* thirds stated, which is the thing a bass most often fails */
+      let barsNo3=0;
+      for(let b=0;b<bars;b++){
+        const ch=info[b]; if(ch.third==null) continue;
+        const inBar=notes.filter(x=>Math.floor(x.step/16)===from+b);
+        if(!inBar.some(x=>((x.midi%12)+12)%12===ch.third)) barsNo3++;
+      }
+      /* and the one rule that must be zero */
+      let m9=0;
+      for(const x of notes){
+        const ch=info[Math.floor(x.step/16)-from]; if(!ch) continue;
+        if(ch.pcs.some(t=>((((x.midi%12)+12)%12)-t+12)%12===1)) m9++;
+      }
+      return { notes:notes.length, got, norm:MELODY_NORMS,
+        meanErrorPct:+miss.toFixed(1), barsWithNoThird:barsNo3, minorNinths:m9,
+        range:seq.length?Math.max.apply(null,seq)-Math.min.apply(null,seq):0 };
+    };
+
+    const base=(o.seed|0)||0x5EED;
+    const cands=[];
+    for(let i=0;i<want;i++){
+      const seed=(base+i*2654435761)>>>0;
+      const notes=build(seed);
+      if(!notes.length) continue;
+      cands.push({ seed, score:score(notes),
+        notes:notes.map(n=>[n.midi, n.step, n.vel, n.beats]) });
+    }
+    if(!cands.length) throw new Error('nothing could be written into that span');
+    /* rank by: no minor ninths first, then thirds stated, then nearest
+       the melodic norms. Ranked, not chosen — the point is that the
+       choosing is not done here. */
+    cands.sort((a,b)=> a.score.minorNinths-b.score.minorNinths
+      || a.score.barsWithNoThird-b.score.barsWithNoThird
+      || a.score.meanErrorPct-b.score.meanErrorPct);
+    cands.forEach((c,i)=>{ c.rank=i; });
+
+    /* ---- APPLY, only when asked and only by seed -------------------
+       Stateless: the seed reproduces the candidate exactly, so nothing
+       has to be held between the two calls and the same seed always
+       writes the same part. */
+    if(o.apply!=null){
+      const seed=o.apply>>>0;
+      const chosen=cands.find(c=>c.seed===seed);
+      const notes=chosen?chosen.notes:build(seed).map(n=>[n.midi,n.step,n.vel,n.beats]);
+      if(!notes.length) throw new Error('seed '+seed+' writes nothing');
+      const ev=notes.map(([m,st,v,beats])=>['note', inst, m, st, v, {beats}]);
+      const r=await window.MVX.batch(ev);
+      return { applied:true, inst, seed, from, bars, wrote:notes.length,
+        failed:r.failed||0, chords:prog.slice(),
+        score:chosen?chosen.score:score(notes.map(
+          ([midi,step,vel,beats])=>({midi,step,vel,beats}))),
+        says:'wrote '+notes.length+' notes for '+inst+' into bars '+from+'–'
+          +(from+bars-1)+' over '+prog.join(' ')+'.' };
+    }
+
+    const best=cands[0];
+    return { inst, from, bars, role, chords:prog.slice(),
+      key:S.key?Object.assign({},S.key):null,
+      candidates:cands, applied:false,
+      says:cands.length+' way'+(cands.length===1?'':'s')+' to play '+inst+' over '
+        +prog.join(' ')+'. Nothing is written. The best on the numbers is seed '
+        +best.seed+' ('+best.score.notes+' notes, '+best.score.minorNinths
+        +' minor ninths, '+best.score.barsWithNoThird+' bars without a third, '
+        +best.score.meanErrorPct+'% mean distance from the folk norms) — but these '
+        +'are ranked by fault, not by worth, and nothing here can hear them. '
+        +'Play them. infill("'+inst+'",{apply:'+best.seed+',from:'+from+',bars:'+bars+'}) '
+        +'writes one.' };
+  },
+
+  /* ---- THE MUSICAL LAYER ---------------------------------------------
+     Three calls, because until now the app held no key and no
+     progression and both the person and the agent had to carry them
+     in their head. Everything that cost: harmony() took the chords as
+     an ARGUMENT, so a song script kept a second copy that could drift
+     from the first; form could only be measured from exported MIDI
+     outside the app; and nothing writing notes had anything to write
+     them against. */
+
+  /* key() — declare it, or read it back. Declaring is half the value:
+     a key you cannot write down is one you have not decided. */
+  key(tonic, mode){
+    if(tonic===undefined) return S.key ? Object.assign({}, S.key) : null;
+    if(tonic===null){ S.key=null; dirty(); return null; }
+    const t=String(tonic).trim();
+    if(!/^[A-Ga-g][#b]?$/.test(t))
+      throw new Error('key needs a tonic like "D", "F#" or "Bb" — got "'+tonic+'"');
+    S.key={ tonic:t[0].toUpperCase()+t.slice(1), mode:String(mode||'major').toLowerCase() };
+    dirty();
+    return Object.assign({}, S.key);
+  },
+
+  /* chords(pat, [..]) — one symbol per BAR of that pattern.
+
+     Per pattern rather than per song position, because a pattern is
+     the reusable block here. Carrying its own bars keeps it
+     harmonically closed, so it can be dropped anywhere in the song
+     and still make sense, and the song's progression is then whatever
+     its pattern order spells out. Writing chords against absolute
+     song bars instead would break the moment the arrangement changed. */
+  chords(pat, list){
+    if(pat===undefined){
+      const out={}; for(const k of Object.keys(S.chords)) out[k]=S.chords[k].slice();
+      return out;
+    }
+    const i=clamp(pat|0,0,NPAT-1);
+    if(list===undefined) return S.chords[i]? S.chords[i].slice() : null;
+    if(list===null){ delete S.chords[i]; dirty(); return null; }
+    if(!Array.isArray(list) || !list.length || !list.every(x=>typeof x==='string'))
+      throw new Error('chords needs an array of symbols, one per bar — '
+        +'e.g. chords(0, ["Bm7","Gmaj7","Dmaj7","A"])');
+    const bars=Math.max(1, Math.round(patLen(S.patterns[i])/16));
+    S.chords[i]=list.map(x=>String(x).trim());
+    dirty();
+    const r={ pattern:i, chords:S.chords[i].slice(), bars };
+    /* A warning rather than a throw: the pattern length may legitimately
+       be changed afterwards, and refusing the write would make the
+       order of two edits matter. But silence here would let a four-bar
+       pattern carry three chords and leave the fourth bar reading the
+       first one again, which is the sort of thing you hear and cannot
+       find. */
+    if(S.chords[i].length!==bars)
+      r.warning='pattern '+i+' is '+bars+' bar'+(bars===1?'':'s')+' and you gave '
+        +S.chords[i].length+' chord'+(S.chords[i].length===1?'':'s')
+        +'. progression() repeats the list to fill the pattern.';
+    return r;
+  },
+
+  /* progression({src}) — the declared harmony expanded bar by bar.
+
+     This is what harmony() reads when it is not handed a list, and it
+     is the thing that did not exist: the song's actual chord sequence,
+     derived from the arrangement rather than written out a second
+     time beside it. */
+  progression(opt){
+    const o=opt||{}, src=o.src||'song';
+    const out=[], gaps=[];
+    const push=(pi, bars)=>{
+      const list=S.chords[pi];
+      for(let b=0;b<bars;b++){
+        if(list && list.length) out.push(list[b % list.length]);
+        else { out.push(null); if(gaps.indexOf(pi)<0) gaps.push(pi); }
+      }
+    };
+    if(src==='song' && S.song && S.song.length){
+      for(const sq of S.song){
+        const bars=Math.max(1, Math.round(patLen(S.patterns[sq.pat])/16));
+        for(let r=0;r<Math.max(1,sq.reps|0);r++) push(sq.pat, bars);
+      }
+    } else {
+      const pi=S.pattern;
+      push(pi, Math.max(1, Math.round(patLen(S.patterns[pi])/16)));
+    }
+    const declared=out.filter(x=>x!=null).length;
+    return { src, bars:out.length, chords:out, declared,
+      undeclaredPatterns:gaps,
+      key:S.key?Object.assign({},S.key):null,
+      says: !out.length ? 'nothing is arranged to play.'
+        : declared===0 ? 'no chords are declared. chords(pattern,[…]) writes them, '
+            +'and until then harmony() has nothing to check against — it must not '
+            +'infer them from the notes, because that is what makes a wrong note '
+            +'look correct.'
+        : declared<out.length ? declared+' of '+out.length+' bars have a chord; pattern'
+            +(gaps.length>1?'s ':' ')+gaps.join(', ')+' '+(gaps.length>1?'have':'has')
+            +' none.'
+        : out.length+' bars, '+new Set(out).size+' distinct chords'
+            +(S.key?(' in '+S.key.tonic+' '+S.key.mode):', no key declared') };
+  },
+
   pad(i, props){
     const p=S.pads[clamp(i|0,0,NPADS-1)];
     if(!props) return JSON.parse(JSON.stringify(p));
     Object.keys(props).forEach(k=>{ if(k!=='bufId') p[k]=props[k]; });
     reapplyLivePads(); drawPads(); drawEdit(); dirty();
-    return JSON.parse(JSON.stringify(p));
+    const out=JSON.parse(JSON.stringify(p));
+    /* set() has reported out-of-range values since the mMud business and
+       pad() never did, which is the half of the surface where it matters
+       most: a pad gain of 2.5 is applied now and clamped to 2 on reload,
+       so a mix balanced today comes back 2dB different tomorrow with
+       nothing said. Found while balancing a bass that would not come up. */
+    const w=[];
+    for(const k in PADRANGE){
+      if(!(k in props)) continue;
+      const r=PADRANGE[k], v=+p[k];
+      if(typeof p[k]!=='number' || !isFinite(v)) continue;
+      if(v<r[0]-1e-9 || v>r[1]+1e-9)
+        w.push({field:k, value:v, severity:'out-of-range',
+          says:'pad '+(i|0)+' '+k+' is '+v+', outside '+r[0]+'..'+r[1]
+            +'. It applies now and a save/reload clamps it to '+clamp(v,r[0],r[1])
+            +', so the mix will not come back the same.'});
+    }
+    if(w.length) out.warnings=w;
+    return out;
   },
   lane(i, props){
     const tr=S.trax[clamp(i|0,0,S.trax.length-1)];
@@ -9977,6 +10949,3511 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     }
     out.sort((a,b)=>b.rms-a.rms);
     return { mix, pads:out, buried:out.filter(x=>x.dbRms<-26).map(x=>x.pad) };
+  },
+
+  /* HOW LOUD IT SOUNDS, WHICH IS NOT HOW MUCH ENERGY IT HAS.
+
+     levels() reports RMS, and RMS is energy. The ear is not flat: it is
+     ten to fifteen decibels more sensitive around 3kHz than at 100Hz, so
+     a bright element can sit at a perfectly reasonable RMS and still be
+     the loudest thing in the room. Reported as "they seem balanced in
+     number but humans sense them as loud", which is exactly the symptom
+     of comparing raw energy across different parts of the spectrum.
+
+     The fix is the weighting the loudness standard already uses and this
+     file already implements for the master: a high shelf and a high pass
+     that together approximate the ear's response. Applying it per stem
+     gives a number that can be compared BETWEEN sounds, which RMS cannot.
+
+     Integrated rather than averaged, so a sound that plays twice in a bar
+     is measured by how loud it is when it sounds rather than diluted by
+     the silence around it. */
+  async loudness(opt){
+    const o=opt||{}, src=o.src||'pat', loops=o.loops||1;
+    const sch=await window.MVX.schedule({src, loops, full:false});
+    if(!sch) return null;
+    let pads=Object.keys(sch.byPad).map(Number)
+      .filter(p=>S.pads[p] && S.pads[p].bufId>=0);
+    /* A CAP, BECAUSE THIS IS ONE RENDER PER PAD. On a forty-nine pad
+       arrangement that is forty-nine renders, and with critique() doing
+       the same thing alongside it a single review() took twenty-five
+       minutes and was abandoned. A check nobody can afford to run is a
+       check nobody runs. The busiest pads are kept, since a pad with
+       three hits in two minutes is not what anyone means by "too loud",
+       and the ones left out are named in the result rather than
+       silently dropped. */
+    let notMeasured=[];
+    if(o.max && pads.length>o.max){
+      const byHits=[...pads].sort((a,b)=>(sch.byPad[b].n||0)-(sch.byPad[a].n||0));
+      notMeasured=byHits.slice(o.max).map(p=>({pad:p, name:(S.pads[p]&&S.pads[p].name)||'',
+        hits:sch.byPad[p].n}));
+      pads=byHits.slice(0,o.max);
+    }
+    const full=await renderMix(null,null,{loops,src,noTail:true});
+    const mixL=full?lufsIntegrated(full):null;
+    const rows=[];
+    for(const p of pads){
+      const one=await renderMix(new Set([p]),new Set(),{loops,src,noTail:true});
+      if(!one) continue;
+      const li=lufsIntegrated(one);
+      if(li.lufs===-Infinity) continue;
+      /* and the raw energy beside it, because the GAP between the two is
+         the thing worth seeing: a sound whose perceived loudness sits far
+         above its energy is one that will jump out of the mix */
+      const d=one.getChannelData(0); let s=0;
+      for(let i=0;i<d.length;i++) s+=d[i]*d[i];
+      const rms=10*Math.log10(Math.max(s/Math.max(1,d.length),1e-12));
+      rows.push({pad:p, name:S.pads[p].name||'', hits:sch.byPad[p].n,
+        lufs:+li.lufs.toFixed(1), rmsDb:+rms.toFixed(1),
+        brightness:+(li.lufs-rms).toFixed(1)});
+    }
+    rows.sort((a,b)=>b.lufs-a.lufs);
+    const loud=rows.length?rows[0].lufs:null;
+    const shouty=rows.filter(r=>r.brightness>=(rows.reduce((a,c)=>a+c.brightness,0)/Math.max(1,rows.length))+4);
+    return { src, mixLufs:mixL&&mixL.lufs!==-Infinity?+mixL.lufs.toFixed(1):null,
+      pads:rows, loudest:loud, notMeasured,
+      /* the ones the ear will pick out regardless of what the meter says */
+      forward:shouty.map(r=>({pad:r.pad, name:r.name, brightness:r.brightness})),
+      says: shouty.length
+        ? shouty.map(r=>r.name||('pad '+r.pad)).join(', ')+' sit'+(shouty.length>1?'':'s')
+          +' well above the others in perceived loudness for the energy they carry — '
+          +'they will read as loud even when the meter says they are balanced.'
+        : 'no element is unusually forward for its energy.' };
+  },
+
+  /* ---- EARS -----------------------------------------------------------
+
+     levels() answers "is anything buried", and loudness answers "is it
+     too quiet". Neither answers the question that actually decided every
+     rejected mix here, which is "does it sound right" — and the attempts
+     to answer that by eye were wrong often enough to be worse than
+     nothing. These three are the measured version.
+
+     spectrum()  — the mix's own tonal balance, nine octave bands.
+     reference() — the same measurement taken from somebody else's finished
+                   recording, held for the session as the target.
+     compare()   — the difference, band by band, with the level taken out.
+
+     The point of the reference is to stop inventing target curves from
+     memory. A curve recalled from memory put the fault in the bass when
+     the measurement put it at 2-4kHz; a real recording of the same
+     instrumentation does not have opinions. */
+
+  async spectrum(opt){
+    const o=opt||{};
+    /* THIS MEASURES THE WHOLE MIX AND HAS NEVER DONE ANYTHING ELSE.
+       It was called as spectrum({pads:[0]}) to isolate one pad; the
+       option does not exist, was dropped without a word, and three
+       calls meant to compare a pad, another pad and their sum all
+       returned the same full-mix numbers. They looked plausible — the
+       arithmetic on them even produced a tidy, entirely fictional
+       "-3.0dB in every band". An option that is ignored silently is
+       worse than one that is missing, so it is refused by name. */
+    if(o.pads!=null || o.only!=null || o.pad!=null)
+      throw new Error('spectrum() measures the whole mix and takes no pad filter. '
+        +'For one pad against the rest use place(pad); for a pad on its own use '
+        +'render({only:[pad]}).');
+    const buf=await renderMix(null,null,
+      {loops:o.loops||1, src:o.src||'pat', noTail:o.noTail!==false});
+    if(!buf) return null;
+    return await specReport(sliceBuf(buf, o.from||0, o.seconds||120));
+  },
+
+  /* LOAD A TARGET.
+
+     reference(url)              fetch and measure
+     reference({base64, name})   bytes handed straight in
+     reference({pad:n})          a sample already on a pad
+     reference()                 what is loaded now
+     reference(null)             forget it
+
+     A URL is fetched by the page, so it is subject to CORS like anything
+     else: raw.githubusercontent.com allows it, most hosts do not, and a
+     file served beside the app always will. When the fetch is blocked the
+     error says so rather than reporting an empty reference.
+
+     Only the measurement is kept — nine band numbers, a loudness and a
+     width. The decoded audio is dropped on the way out, so a reference
+     cannot be played, bounced, or saved into a project. */
+  async reference(src, opt){
+    if(src===null){ const had=refSpec; refSpec=null;
+      return had?{cleared:had.name}:{cleared:null}; }
+    if(src===undefined) return refSpec;
+    const o=opt||{};
+    let buf=null, name='';
+    if(typeof src==='string'){
+      name=src.replace(/^.*\//,'') || src;
+      let r;
+      try{ r=await fetch(src); }
+      catch(e){ throw new Error('could not fetch the reference ('+String(e&&e.message||e)
+        +'). A cross-origin host must send Access-Control-Allow-Origin; pass '
+        +'reference({base64}) instead if it does not.'); }
+      if(!r.ok) throw new Error('reference fetch failed: HTTP '+r.status+' for '+src);
+      buf=await decode(await r.arrayBuffer());
+    } else if(src && typeof src.base64==='string'){
+      name=src.name||'(bytes)';
+      const bin=atob(src.base64), by=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++) by[i]=bin.charCodeAt(i);
+      buf=await decode(by.buffer);
+    } else if(src && Array.isArray(src.shape)){
+      /* A REFERENCE IS A CURVE, NOT A RECORDING. Everything that reads
+         refSpec — compare(), balance(), critique()'s tonal check — wants
+         nine relative band levels and a couple of scalars. The audio is
+         only ever the means of getting them, so a measured profile can
+         be handed over directly: measure a track once, anywhere, keep
+         the numbers. Those numbers are a description of a spectrum, not
+         the music, so they can live in a repository and be shared and
+         re-used in a way audio cannot.
+
+         scripts/reference-profile.mjs produces one from any local file. */
+      const want=SPEC_NAMES.length;
+      const shape=src.shape.map(b=>({band:b.band, lo:b.lo, hi:b.hi, rel:+b.rel}))
+        .filter(b=>b.band && isFinite(b.rel));
+      if(shape.length<want-1) throw new Error('a reference profile needs '+want
+        +' bands ('+SPEC_NAMES.join(' ')+'); got '+shape.length);
+      refSpec={ shape, bands:shape.map(b=>({band:b.band, lo:b.lo, hi:b.hi, db:b.rel})),
+        lufs:src.lufs==null?null:+src.lufs, crestDb:src.crestDb==null?null:+src.crestDb,
+        width:src.width==null?0:+src.width, peak:src.peak==null?null:+src.peak,
+        seconds:src.seconds==null?null:+src.seconds,
+        name:src.name||'(profile)', fromProfile:true };
+      return refSpec;
+    } else if(src && src.pad!=null){
+      const p=S.pads[src.pad|0];
+      if(!p || p.bufId<0) throw new Error('pad '+(src.pad|0)+' has no sample on it');
+      buf=S.buffers[p.bufId]; name=p.name||('pad '+(src.pad|0));
+    } else throw new Error('reference(url) | reference({base64,name}) | reference({pad}) '
+      +'| reference({shape,lufs,crestDb,name}) | reference(null)');
+    if(!buf || !buf.length) throw new Error('the reference decoded to nothing');
+    const full=+buf.duration.toFixed(1);
+    const cut=sliceBuf(buf, o.from||0, o.seconds||120);
+    refSpec=await specReport(cut);
+    refSpec.name=name;
+    refSpec.ofSeconds=full;
+    if(cut!==buf) refSpec.measuredFrom=(o.from||0)+'s for '+refSpec.seconds+'s of '+full+'s';
+    return refSpec;
+  },
+
+  async compare(opt){
+    const o=opt||{};
+    if(!refSpec) throw new Error('no reference loaded — call reference(url) first');
+    const buf=await renderMix(null,null,
+      {loops:o.loops||1, src:o.src||'song', noTail:o.noTail!==false});
+    if(!buf) return null;
+    const mine=await specReport(sliceBuf(buf, o.from||0, o.seconds||120));
+    return diffSpec(mine, refSpec);
+  },
+
+  /* WHAT THE PAD'S OWN CHAIN DID TO IT.
+
+     This answers the question that went wrong here over and over: a real
+     piano went in and an electric keyboard came out, and for several
+     versions the samples got the blame. The cause the one time it was
+     finally tracked down was a lowpass that took everything above 8kHz
+     from -70dB to -90dB — a setting, not a sample.
+
+     NOT AGAINST THE RAW FILE, and the first version of this was and was
+     useless. A Salamander note is fifteen seconds of mostly decay, while a
+     stem is repeated attacks cut off at a beat and a half, so the honest
+     chain colouring came back buried under +33dB at 2-4kHz that was
+     nothing but the difference between an attack and a tail. Two different
+     signals cannot be compared by measuring both.
+
+     So it renders the pad TWICE over the same bars with the same seed, once
+     as it is and once with the filter, drive, crusher, EQ and sends
+     bypassed. Same notes, same velocity layers, same transposition, same
+     envelope: the only difference left is the processing, and whatever the
+     answer shows is therefore the processing. */
+  async vsDry(padIdx, opt){
+    const o=opt||{}, i=padIdx|0, p=S.pads[i];
+    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    const ro={loops:o.loops||1, src:o.src||'pat', noTail:false};
+    const wetBuf=await renderMix(new Set([i]), new Set(), ro);
+    /* renderMix answers null for an empty event list, so a pad that simply
+       is not played in this pattern used to come back as a bare null with
+       nothing to read. Say which pad and which source. */
+    if(!wetBuf) throw new Error('pad '+i+(p.name?' ('+p.name+')':'')+' plays nothing in '
+      +(o.src==='song'?'the song':'pattern '+(S.pattern+1))
+      +' — there is nothing to compare. levels() lists the pads that sound.');
+    const FX={ftype:'off', drv:0, crush:16, eqLo:0, eqMid:0, eqHi:0, rev:0, dly:0};
+    const save={}; for(const k in FX) save[k]=p[k];
+    let dryBuf=null;
+    try{
+      for(const k in FX) p[k]=FX[k];
+      dryBuf=await renderMix(new Set([i]), new Set(), ro);
+    } finally {
+      for(const k in save) p[k]=save[k];
+      try{ reapplyLivePads(); }catch(e){}
+    }
+    if(!dryBuf) throw new Error('the bypassed render came back empty');
+    const wet=await specReport(wetBuf), dryR=await specReport(dryBuf);
+    if(wet.peak<0.004) throw new Error('pad '+i+' is silent over this '
+      +(o.src||'pat')+' — it has no hits, or it is muted');
+    const d=diffSpec(wet, Object.assign({name:(p.name||('pad '+i))+' with its chain bypassed'}, dryR));
+    d.pad=i;
+    d.bypassed=Object.keys(FX).filter(k=>String(save[k])!==String(FX[k]));
+    d.levelDb=(wet.lufs!=null&&dryR.lufs!=null)?+(wet.lufs-dryR.lufs).toFixed(1):null;
+    if(!d.bypassed.length) d.notes=['this pad has no processing on it — nothing was bypassed, so the two renders are the same audio'];
+    return d;
+  },
+
+  /* WHERE TO CUT A RECORDING, DECIDED BY LISTENING TO IT.
+
+     Slice points were being guessed — eleven evenly spaced fractions
+     across a five second clip — and twice that produced a pad reading
+     sixty decibels under the mix, because a recording of a fire is
+     mostly the gaps between crackles and most of the guesses landed in
+     them. Guessing where a sound is, inside a sound, does not work.
+
+     The method here is lifted from Samplebrain, the sample-mashing tool
+     Richard D. James designed and Dave Griffiths wrote, which is open
+     source. Its block::compare scores a candidate by summed squared
+     difference against a spectral descriptor, and then — the part worth
+     stealing — ADDS THE BLOCK'S OWN USAGE COUNT to the score, weighted
+     by usage_importance. A fragment that has already been picked gets
+     worse the more it is used. That single term is what stops the output
+     repeating itself, and it is called boredom in the interface.
+
+     So: the recording is walked in windows, each one described by the
+     nine-band filterbank already used for mixing, and points are taken
+     greedily by loudness MINUS similarity to everything taken so far.
+     The result is n slice points that are each audible and each
+     different from the others, which is what chopping a break is for. */
+  async chop(padIdx, n, opt){
+    const o=opt||{}, i=clamp(padIdx|0,0,NPADS-1), p=S.pads[i];
+    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    const buf=S.buffers[p.bufId];
+    if(!buf) throw new Error('pad '+i+' points at a sample that is not loaded');
+    const want=clamp(n==null?8:n|0,1,64);
+    const win=clamp(+o.window||0.06,0.01,0.5);
+    const sr=buf.sampleRate, W=Math.floor(win*sr);
+    const d=buf.getChannelData(0);
+    const hop=Math.max(1,Math.floor(W*0.5));
+    /* one descriptor per window: level plus the nine-band shape, which
+       is the cheap stand-in for Samplebrain's fft/mfcc pair */
+    const frames=[];
+    for(let s=0;s+W<d.length;s+=hop){
+      const seg=buf.length? sliceBuf(buf, s/sr, win) : null;
+      if(!seg) continue;
+      frames.push({at:s/sr, seg});
+    }
+    if(!frames.length) return {pad:i, points:[], says:'the sample is shorter than one window.'};
+    const desc=[];
+    for(const f of frames){
+      const b=await bandEnergy(f.seg);
+      if(!b) continue;
+      const lin=b.map(x=>Math.pow(10,x.db/10));
+      const tot=lin.reduce((a,c)=>a+c,0);
+      desc.push({at:f.at, lvl:10*Math.log10(Math.max(tot,1e-12)),
+        shape:lin.map(v=>v/Math.max(tot,1e-12))});
+    }
+    const loudest=Math.max.apply(null,desc.map(x=>x.lvl));
+    const floorDb=loudest-(o.floorDb==null?26:+o.floorDb);
+    const cand=desc.filter(x=>x.lvl>=floorDb);
+    if(!cand.length) return {pad:i, points:[], says:'nothing in this recording is loud enough to cut to.'};
+    const dist=(a,b)=>{ let s=0; for(let k=0;k<a.shape.length;k++){
+      const q=a.shape[k]-b.shape[k]; s+=q*q; } return Math.sqrt(s); };
+    const bored=clamp(o.boredom==null?1:+o.boredom,0,4);
+    const taken=[];
+    while(taken.length<want && taken.length<cand.length){
+      let best=null;
+      for(const c of cand){
+        if(taken.some(t=>Math.abs(t.at-c.at)<win*0.9)) continue;
+        /* loud, and unlike what has already been taken */
+        let near=1; for(const t of taken) near=Math.min(near,dist(c,t));
+        const score=(c.lvl-floorDb)/Math.max(1,loudest-floorDb) + bored*near;
+        if(!best || score>best.score) best={c,score};
+      }
+      if(!best) break;
+      taken.push(best.c);
+    }
+    taken.sort((a,b)=>a.at-b.at);
+    const dur=buf.duration;
+    return { pad:i, seconds:+dur.toFixed(2), window:win,
+      points:taken.map(t=>+(t.at/dur).toFixed(4)),
+      atSeconds:taken.map(t=>+t.at.toFixed(3)),
+      levelsDb:taken.map(t=>+(t.lvl-loudest).toFixed(1)),
+      says:taken.length+' points, each at least '+(o.floorDb==null?26:o.floorDb)
+        +'dB above nothing and chosen to differ from the others. Use them as '
+        +'start locks.' };
+  },
+
+  /* WHAT IS LEFT OF THIS ON A SPEAKER THAT CANNOT DO BASS.
+
+     A track was sent out with a bass built from near-pure sine sub,
+     lowpassed at 147Hz, and the note that came back was that the bass
+     did not carry. It is the one fault in this whole file that is pure
+     physics: a 37Hz fundamental is not reproduced by a phone, a laptop
+     or most earbuds, and a sine has nothing else to be heard by. Bass
+     carries on small speakers through the MISSING FUNDAMENTAL — give the
+     ear harmonics at 2f, 3f, 4f and it reconstructs a pitch the speaker
+     never produced. No harmonics, no bass, however much energy is down
+     there on the meter.
+
+     Measured on that track: 12.4dB of the whole mix disappeared above
+     200Hz, against 5.4dB for the one before it, which is the difference
+     between a mix that survives a phone and one that collapses into it.
+
+     The same fault had already shown up as a hole at 640-1280Hz, and it
+     was mistaken for a missing percussion part — an attempt was made to
+     fill it with a train sample. That hole was where the bass's own
+     harmonics should have been.
+
+     So: the mix is re-rendered through each playback system that matters
+     and the loss is reported per instrument, because knowing the mix
+     loses 12dB is useless without knowing which voice went silent. */
+  async translate(opt){
+    const o=opt||{}, src=o.src||'pat';
+    const SYS=[
+      {name:'phone',   hp:450, lp:7000,  says:'a phone speaker'},
+      {name:'laptop',  hp:180, lp:14000, says:'laptop speakers'},
+      {name:'earbuds', hp:90,  lp:16000, says:'cheap earbuds'},
+      {name:'system',  hp:32,  lp:18000, says:'a full-range system'}];
+    const full=await renderMix(null,null,{loops:o.loops||1, src, noTail:true});
+    if(!full) return null;
+    const lvl=async(buf,hp,lp)=>{
+      const sr=buf.sampleRate;
+      const oc=new OfflineAudioContext(1, buf.length, sr);
+      const s=oc.createBufferSource(); s.buffer=buf;
+      let node=s;
+      const Q=[0.54119610,1.30656296].map(q=>20*Math.log10(q));
+      for(const q of Q){ const f=oc.createBiquadFilter(); f.type='highpass';
+        f.frequency.value=hp; f.Q.value=q; node.connect(f); node=f; }
+      for(const q of Q){ const f=oc.createBiquadFilter(); f.type='lowpass';
+        f.frequency.value=Math.min(lp,sr*0.48); f.Q.value=q; node.connect(f); node=f; }
+      node.connect(oc.destination); s.start();
+      const r=await oc.startRendering(), d=r.getChannelData(0);
+      let a=0; for(let i=0;i<d.length;i++) a+=d[i]*d[i];
+      return 10*Math.log10(Math.max(a/Math.max(1,d.length),1e-12));
+    };
+    const ref=await lvl(full,20,20000);
+    const systems=[];
+    for(const sy of SYS){
+      const v=await lvl(full,sy.hp,sy.lp);
+      systems.push({system:sy.name, lostDb:+(ref-v).toFixed(1), says:sy.says});
+    }
+    /* per instrument, through the worst case, because the number that
+       matters is which voice stops existing rather than the total */
+    const insts={};
+    for(let i=0;i<NPADS;i++){ const p=S.pads[i];
+      if(p && p.bufId>=0 && p.inst) (insts[p.inst]=insts[p.inst]||[]).push(i); }
+    const voices=[];
+    for(const name in insts){
+      const stem=await renderMix(new Set(insts[name]), new Set(),
+        {loops:o.loops||1, src, noTail:true});
+      if(!stem) continue;
+      const a=await lvl(stem,20,20000);
+      if(a<-90) continue;
+      const b=await lvl(stem,SYS[0].hp,SYS[0].lp);
+      voices.push({instrument:name, lostDb:+(a-b).toFixed(1)});
+    }
+    voices.sort((x,y)=>y.lostDb-x.lostDb);
+    const phone=systems[0].lostDb;
+    const gone=voices.filter(v=>v.lostDb>=14);
+    const says = phone>=10
+      ? 'the mix loses '+phone+'dB on a phone speaker. Anything below about '
+        +'400Hz is simply not reproduced there, so energy that lives only in '
+        +'the sub is energy most listeners never hear.'
+        +(gone.length?' Worst: '+gone.map(v=>v.instrument+' ('+v.lostDb+'dB)').join(', ')
+          +'. A bass carries on a small speaker through its HARMONICS, not its '
+          +'fundamental — saturate a parallel copy into the 150-800Hz range and '
+          +'the ear reconstructs the note the speaker cannot make.':'')
+      : phone>=6 ? 'the mix loses '+phone+'dB on a phone, which is normal for '
+        +'music with real low end in it.'
+      : 'this translates: only '+phone+'dB goes missing on a phone speaker.';
+    return {src, systems, voices, phoneLossDb:phone, carries:phone<10, says};
+  },
+
+  /* ARE THESE TWO VOICES, OR ONE VOICE AND SOME CHORDS?
+
+     Everything written through this API has been a tune with
+     accompaniment under it, which is arranging rather than composing.
+     Measured on seventy Palestrina scores — 115,530 vertical intervals,
+     73,966 moves between pairs of voices:
+
+       oblique (one holds, one moves)   68.0%
+       contrary                         17.6%
+       similar                          10.7%
+       parallel                          3.6%
+       parallel fifths                   0.235%
+       parallel octaves                  0.111%
+
+     The 68% is the whole thing. Voices sound independent because they do
+     NOT move together — most of the time one sustains while the other
+     goes somewhere. Writing every part onto the same grid positions,
+     which is what a step sequencer invites, produces chords with a
+     melody on top however many notes are in it.
+
+     And parallel fifths and octaves really are absent in the practice
+     the rule was derived from, at two tenths of one percent. Worth
+     checking for rather than assuming, since nothing here ever has. */
+  async counterpoint(names, opt){
+    const o=opt||{}, src=o.src||'pat';
+    const list=Array.isArray(names)?names:(names?[names]:null);
+    const sch=await window.MVX.schedule({src, full:true});
+    if(!sch || !sch.events) return null;
+    /* one voice per instrument, reduced to its top note at each onset */
+    const byInst={};
+    for(const e of sch.events){
+      const p=S.pads[e.pad]; if(!p || e.midi==null) continue;
+      const tag=p.inst||('pad'+e.pad);
+      if(list && list.indexOf(tag)<0) continue;
+      (byInst[tag]=byInst[tag]||[]).push(e);
+    }
+    const voices={};
+    for(const tag in byInst){
+      const m=new Map();
+      for(const e of byInst[tag]){ const k=+e.t.toFixed(3);
+        const held=(e.len!=null?e.len:0.25);
+        if(!m.has(k) || e.midi>m.get(k).midi) m.set(k,{t:k, midi:e.midi, until:k+held}); }
+      const seq=[...m.values()].sort((a,b)=>a.t-b.t);
+      if(seq.length>=3) voices[tag]=seq;
+    }
+    const tags=Object.keys(voices);
+    if(tags.length<2) return {voices:tags, says:'fewer than two voices to compare — '
+      +'counterpoint needs at least two independent lines.'};
+    /* what each voice is sounding at a given instant */
+    const at=(seq,t)=>{ let cur=null;
+      for(const n of seq){ if(n.t<=t+1e-4 && t<n.until-1e-4) cur=n; if(n.t>t) break; }
+      return cur?cur.midi:null; };
+    const times=[...new Set([].concat.apply([],tags.map(g=>voices[g].map(n=>n.t))))]
+      .sort((a,b)=>a-b);
+    const motion={oblique:0,contrary:0,similar:0,parallel:0};
+    const vert={}; let par5=0, par8=0, moves=0, verts=0;
+    for(let i=1;i<times.length;i++){
+      for(let a=0;a<tags.length;a++) for(let b=a+1;b<tags.length;b++){
+        const p0=at(voices[tags[a]],times[i-1]), q0=at(voices[tags[b]],times[i-1]);
+        const p1=at(voices[tags[a]],times[i]),   q1=at(voices[tags[b]],times[i]);
+        if(p1!=null&&q1!=null){ const iv=Math.abs(p1-q1)%12; vert[iv]=(vert[iv]||0)+1; verts++; }
+        if(p0==null||q0==null||p1==null||q1==null) continue;
+        const da=p1-p0, db=q1-q0;
+        if(da===0&&db===0) continue;
+        moves++;
+        if(da===0||db===0) motion.oblique++;
+        else if((da>0)!==(db>0)) motion.contrary++;
+        else if(da===db){ motion.parallel++;
+          const iv0=Math.abs(p0-q0)%12, iv1=Math.abs(p1-q1)%12;
+          if(iv0===7&&iv1===7) par5++;
+          if(iv0===0&&iv1===0&&Math.abs(p0-q0)>0) par8++;
+        } else motion.similar++;
+      }
+    }
+    if(!moves) return {voices:tags, says:'the voices never move against each other.'};
+    const pc=x=>+(100*x/moves).toFixed(1);
+    const got={oblique:pc(motion.oblique), contrary:pc(motion.contrary),
+      similar:pc(motion.similar), parallel:pc(motion.parallel),
+      par5:+(100*par5/moves).toFixed(2), par8:+(100*par8/moves).toFixed(2)};
+    const notes=[];
+    if(got.oblique < CP_NORMS.oblique-25)
+      notes.push('oblique motion is '+got.oblique+'% against '+CP_NORMS.oblique
+        +'% in Palestrina. The voices are moving together: that is chords with a '
+        +'tune on top, not counterpoint. Hold one line while the other moves.');
+    if(got.parallel > CP_NORMS.parallel+8)
+      notes.push('parallel motion is '+got.parallel+'% against '+CP_NORMS.parallel
+        +'%. The lines are shadowing each other rather than being separate.');
+    if(got.par5 > 1.5) notes.push('parallel fifths on '+got.par5+'% of moves, against '
+      +CP_NORMS.par5+'% in the practice the rule came from.');
+    if(got.par8 > 1.5) notes.push('parallel octaves on '+got.par8+'% of moves, against '
+      +CP_NORMS.par8+'%. Two voices in octaves are one voice.');
+    const sorted=Object.keys(vert).map(k=>({iv:+k, pct:+(100*vert[k]/Math.max(1,verts)).toFixed(1)}))
+      .sort((a,b)=>b.pct-a.pct);
+    return { voices:tags, moves, motion:got, norm:CP_NORMS,
+      vertical:sorted.slice(0,6), findings:notes,
+      says:notes.length?notes[0]:'the voices move independently of each other.' };
+  },
+
+  /* IS THIS A TUNE, OR IS IT SCALE MOVEMENT?
+
+     Everything written through this API was described as unmusical, and
+     the measurement says exactly why. Against 8,514 melodies of the Essen
+     Folksong Collection:
+
+                        real melodies     what was written here
+       repeated notes       21.1%                  0%
+       steps                46.9%                 76%
+       thirds               19.0%                 24%
+       leaps of a 4th+      13.1%                  0%
+
+     A fifth of the notes in a real melody repeat the pitch before them,
+     and an eighth of its moves are leaps. Neither appeared once. What
+     was written instead was continuous stepwise motion, which is not a
+     tune — it is a scale with a rhythm, and it wanders because nothing
+     in it is fixed enough to be remembered or wide enough to be a shape.
+
+     The norms below are measured, not recalled, and the script that
+     produced them is in the commit. They are folk melody: the most
+     neutral baseline there is, sung rather than composed, and the common
+     ancestor of most tunes anyone would call singable. A Bach fugue
+     subject will not match them and should not.
+
+     It reduces to the top note at each onset, because that is the line a
+     listener follows when an instrument plays more than one note. */
+  async melody(name, opt){
+    const o=opt||{}, src=o.src||'pat';
+    let pads;
+    if(typeof name==='number') pads=[clamp(name|0,0,NPADS-1)];
+    else { pads=[]; for(let i=0;i<NPADS;i++) if(S.pads[i]&&S.pads[i].inst===name) pads.push(i);
+      if(!pads.length) throw new Error('no instrument "'+name+'" — call instrument() first, '
+        +'or pass a pad number'); }
+    const sch=await window.MVX.schedule({src, full:true});
+    if(!sch || !sch.events) return null;
+    const mine=sch.events.filter(e=>pads.indexOf(e.pad)>=0 && e.midi!=null);
+    if(mine.length<4) return {instrument:name, notes:mine.length,
+      says:'too few notes to say anything about.'};
+    /* top note per onset — the line an ear actually follows */
+    const byT=new Map();
+    for(const e of mine){ const k=e.t.toFixed(3);
+      if(!byT.has(k) || e.midi>byT.get(k)) byT.set(k, e.midi); }
+    const seq=[...byT.entries()].sort((a,b)=>parseFloat(a[0])-parseFloat(b[0])).map(x=>x[1]);
+    if(seq.length<4) return {instrument:name, notes:seq.length,
+      says:'too few notes to say anything about.'};
+    let rep=0, step=0, third=0, leap=0, dirChg=0, dirTot=0, rec=0, same=0, prev=0;
+    for(let i=1;i<seq.length;i++){
+      const d=seq[i]-seq[i-1], a=Math.abs(d);
+      if(a===0) rep++; else if(a<=2) step++; else if(a<=4) third++; else leap++;
+      if(d!==0){ if(prev!==0){ dirTot++; if((prev>0)!==(d>0)) dirChg++; } prev=d; }
+    }
+    for(let i=2;i<seq.length;i++){
+      const d1=seq[i-1]-seq[i-2], d2=seq[i]-seq[i-1];
+      if(Math.abs(d1)>=5 && d2!==0){ if((d1>0)!==(d2>0) && Math.abs(d2)<=2) rec++; else same++; }
+    }
+    const n=seq.length-1, pc=x=>+(100*x/n).toFixed(1);
+    const got={repeat:pc(rep), step:pc(step), third:pc(third), leap:pc(leap),
+      dirChange:dirTot?+(100*dirChg/dirTot).toFixed(1):0,
+      leapRecovery:(rec+same)?+(100*rec/(rec+same)).toFixed(1):null,
+      range:Math.max.apply(null,seq)-Math.min.apply(null,seq)};
+    const notes=[];
+    const cmp=(k,label,tol)=>{
+      const d=got[k]-MELODY_NORMS[k];
+      if(Math.abs(d)>tol) notes.push(label+': '+got[k]+'% against '+MELODY_NORMS[k]
+        +'% in real melody — '+(d>0?'far more':'far fewer')+' than a tune usually has.');
+    };
+    cmp('repeat','repeated notes',10);
+    cmp('step','steps',14);
+    cmp('third','thirds',12);
+    cmp('leap','leaps of a 4th or more',9);
+    if(got.range<7) notes.push('the whole line sits inside '+got.range+' semitones; '
+      +'a melody usually covers about '+MELODY_NORMS.range+'.');
+    if(got.range>26) notes.push('the line covers '+got.range+' semitones, which is very wide '
+      +'for one voice — real melodies average about '+MELODY_NORMS.range+'.');
+    if(got.leapRecovery!=null && got.leapRecovery<35 && got.leap>4)
+      notes.push('leaps are not turned back from: '+got.leapRecovery+'% against '
+        +MELODY_NORMS.leapRecovery+'%. A leap that keeps going the same way reads as a scramble.');
+    return {instrument:(typeof name==='number'?('pad '+name):name), notes:seq.length,
+      got, norm:MELODY_NORMS, findings:notes,
+      says:notes.length?notes[0]:'the shape of this line is within the range real melodies occupy.'};
+  },
+
+  /* DOES ANYTHING IN THIS LINE EVER HAPPEN TWICE?
+
+     See MOTIF_NORMS for why this exists. In short: a line can have the
+     interval mix of a real tune and the voice independence of real
+     counterpoint and still be unlistenable, because nothing in it
+     returns. That is what a random walk is, and it is what "the timing
+     comes off as random" was describing.
+
+     Both halves are measured, because a line can restate its pitches
+     over shifting rhythms or drum out one rhythm over wandering
+     pitches, and the second is the commoner failure in sequenced music.
+
+     The shuffle null is seeded, so the same pattern always scores the
+     same. It has to be: a check that returns a slightly different
+     verdict each time cannot be used to tell whether an edit helped. */
+  async motif(name, opt){
+    const o=opt||{}, src=o.src||'pat', N=o.n||4, TRIALS=o.trials||40;
+    let pads;
+    if(typeof name==='number') pads=[clamp(name|0,0,NPADS-1)];
+    else { pads=[]; for(let i=0;i<NPADS;i++) if(S.pads[i]&&S.pads[i].inst===name) pads.push(i);
+      if(!pads.length) throw new Error('no instrument "'+name+'" — call instrument() first, '
+        +'or pass a pad number'); }
+    const sch=await window.MVX.schedule({src, full:true});
+    if(!sch || !sch.events) return null;
+    const mine=sch.events.filter(e=>pads.indexOf(e.pad)>=0);
+    /* EVERY PATH RETURNS THE SAME SHAPE. The early exits used to omit
+       `norm`, so a caller reading result.norm.pitch — the obvious thing
+       to read — crashed on exactly the sparse patterns where it most
+       wanted an answer. A result that is sometimes a different object is
+       worse than no result. */
+    const thin=(k,why)=>({instrument:(typeof name==='number'?('pad '+name):name), notes:k,
+      pitchRecurrence:null, rhythmRecurrence:null,
+      norm:{pitch:null, pitchFloor:null, rhythm:null, rhythmFloor:null, source:MOTIF_NORMS.source},
+      pitchFigure:null, rhythmFigure:null, findings:[], says:why});
+    if(mine.length<N+4) return thin(mine.length, 'too few notes to say anything about.');
+    /* one entry per onset: the top note, and the gap to the next onset.
+       Top note because that is the line an ear follows; the gap rather
+       than the written length because what a listener hears as rhythm
+       is when things start, not how long they are held. */
+    const byT=new Map();
+    for(const e of mine){ const k=+e.t.toFixed(4);
+      if(!byT.has(k) || (e.midi!=null && e.midi>byT.get(k))) byT.set(k, e.midi==null?0:e.midi); }
+    const times=[...byT.keys()].sort((a,b)=>a-b);
+    if(times.length<N+4) return thin(times.length, 'too few onsets to say anything about.');
+    const seq=times.map(t=>byT.get(t));
+    const gaps=[];
+    for(let i=1;i<times.length;i++) gaps.push(Math.round((times[i]-times[i-1])*48)/48);
+    const ivs=[];
+    for(let i=1;i<seq.length;i++) ivs.push(seq[i]-seq[i-1]);
+
+    /* a seeded shuffle, so the verdict is repeatable */
+    let rs=0x2F6E2B1;
+    const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+    const recur=(arr)=>{
+      if(arr.length<N) return null;
+      const c=new Map(); let tot=0;
+      for(let i=0;i+N<=arr.length;i++){
+        const k=arr.slice(i,i+N).join(',');
+        c.set(k,(c.get(k)||0)+1); tot++;
+      }
+      let rep=0; for(const v of c.values()) if(v>1) rep+=v;
+      return tot?100*rep/tot:null;
+    };
+    const excess=(arr)=>{
+      const a=recur(arr);
+      if(a==null) return null;
+      const nulls=[];
+      for(let t=0;t<TRIALS;t++){
+        const s=arr.slice();
+        for(let i=s.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const x=s[i]; s[i]=s[j]; s[j]=x; }
+        const r=recur(s); if(r!=null) nulls.push(r);
+      }
+      if(!nulls.length) return null;
+      nulls.sort((x,y)=>x-y);
+      return +(a-nulls[nulls.length>>1]).toFixed(1);
+    };
+    /* the figure that comes back most, so there is something to look at
+       rather than only a number to argue with */
+    const commonest=(arr)=>{
+      const c=new Map();
+      for(let i=0;i+N<=arr.length;i++){ const k=arr.slice(i,i+N).join(','); c.set(k,(c.get(k)||0)+1); }
+      let bk=null,bv=1;
+      for(const [k,v] of c) if(v>bv){ bv=v; bk=k; }
+      return bk?{figure:bk.split(',').map(Number), times:bv}:null;
+    };
+
+    const pitch=excess(ivs), rhythm=excess(gaps);
+    const bucket=MOTIF_NORMS.buckets.find(b=>seq.length<=b.max);
+    const findings=[];
+    if(pitch!=null && pitch<bucket.pitchFloor)
+      findings.push('the pitches barely restate anything: '+pitch+' points above chance against '
+        +bucket.pitch+' typical for a line of '+seq.length+' notes, and '+bucket.pitchFloor
+        +' at the bottom of the range. Nothing here comes back, so there is nothing to follow.');
+    /* A PERFECTLY REGULAR RHYTHM SCORES ZERO, and that is not a fault
+       in the part. The measure is recurrence above the same values
+       reshuffled, and every shuffle of a run of identical gaps is that
+       same run — so an ostinato of four evenly spaced notes comes out at
+       0, indistinguishable from a part with no rhythmic shape at all.
+       It showed up on a marimba figure that is as regular as a part can
+       be. So the finding is withheld when the gaps barely vary: there is
+       nothing for this statistic to see, which is different from having
+       looked and found nothing. */
+    /* The test is whether ONE gap dominates, not how many distinct gaps
+       exist. A first attempt suppressed the finding only when there were
+       two or fewer, and the marimba figure it was written for still
+       tripped it: that part is four evenly spaced notes repeated every
+       other bar, so its gaps are mostly a single value with a couple of
+       long jumps between statements. Plenty of distinct values, and
+       still nothing for a shuffle to rearrange. */
+    const gc=new Map(); for(const g of gaps) gc.set(g,(gc.get(g)||0)+1);
+    const dominant=gaps.length?Math.max(...gc.values())/gaps.length:0;
+    const uniq=gc.size;
+    if(rhythm!=null && rhythm<bucket.rhythmFloor && dominant<0.6)
+      findings.push('the rhythm barely restates anything: '+rhythm+' points above chance against '
+        +bucket.rhythm+' typical. Onsets land in a different pattern every time, which is what '
+        +'random timing sounds like.');
+    else if(rhythm!=null && dominant>=0.6)
+      findings.push('the rhythm is too regular to measure this way: '+Math.round(100*dominant)
+        +'% of the gaps in this part are the same length ('+uniq+' distinct in all), so '
+        +'reshuffling them barely changes anything and the score of '+rhythm+' means "no '
+        +'information", not "no shape".');
+    if(pitch!=null && rhythm!=null && pitch>bucket.pitch*2.4 && rhythm>bucket.rhythm*2.4)
+      findings.push('both are far above the norm ('+pitch+' and '+rhythm+'), which is a loop '
+        +'rather than a theme. Real lines restate and then vary.');
+    return {instrument:(typeof name==='number'?('pad '+name):name), notes:seq.length,
+      pitchRecurrence:pitch, rhythmRecurrence:rhythm,
+      norm:{pitch:bucket.pitch, pitchFloor:bucket.pitchFloor,
+        rhythm:bucket.rhythm, rhythmFloor:bucket.rhythmFloor, source:MOTIF_NORMS.source},
+      pitchFigure:commonest(ivs), rhythmFigure:commonest(gaps), findings,
+      says:findings.length?findings[0]
+        :'this line restates its own material about as often as a real melody does.'};
+  },
+
+  /* IS THERE A BEAT A LISTENER CAN FIND?
+
+     "The timing comes off as random." The piece that drew that had a
+     downbeat in it — a thump on step 0 of every bar — so the first guess,
+     that nothing ever repeated, was wrong, and motif() said so: its
+     figures recurred well above the folk norm.
+
+     What it did not have was a downbeat anyone could HEAR. The thump sat
+     at gain 0.42 while the elements scattered across the bar with random
+     nudges sat at 0.70 and 1.05. The pulse was present and underneath.
+     The loudest events in the piece were the random ones, so random is
+     what it sounded like, and every check that counted events rather
+     than weighing them called it even.
+
+     So this weighs them. Onsets become an envelope scaled by how loud
+     each one actually is, the envelope is autocorrelated, and the
+     strongest lag is the pulse the music is really projecting — not the
+     one the grid implies. Then the same question is asked per pad, which
+     is what makes it useful: it names which pads are holding the beat up
+     and which are smearing it. */
+
+  /* DO THE NOTES FIT THE CHORDS — the check this app did not have.
+     ====================================================================
+
+     The listener's words on HOLLOWAY were "real structure but
+     distasteful chordage", and every analyser here agreed the track was
+     fine. They would: `melody()` and `motif()` measure a line against
+     itself, `counterpoint()` measures two lines against each other, and
+     NOT ONE OF THEM KNOWS WHAT THE CHORD IS. A line can score at the
+     folk norm for contour and recurrence while sitting a semitone off
+     the harmony in every bar, which is exactly what happened.
+
+     The reason it was never checkable is that nothing in the app holds
+     a progression. Pads hold samples; patterns hold steps; there is no
+     key, no chord, nowhere the harmony is written down. So this takes
+     it as a DECLARATION — `harmony({chords:['Am','F','C','G']})` — and
+     the act of stating it is half the value, because a progression you
+     cannot write down is one you have not decided.
+
+     WHAT MAKES A NOTE WRONG, and why it is not "not in the chord".
+     Most good music is mostly non-chord tones. The rule that actually
+     predicts a sour note is the minor ninth: a pitch sounding a
+     SEMITONE ABOVE a chord tone beats against it. That is the standard
+     account of why the 4th is the avoid note over a major chord — it is
+     a semitone above the 3rd — and it is why the 11th is fine over a
+     minor chord, where the 3rd is a whole tone below it.
+
+     Run against HOLLOWAY's walking bass it named four notes and let two
+     pass, which is the calibration worth having:
+
+       C# over Am   semitone above the b3        flagged
+       A# over Am   semitone above the root      flagged
+       G# over C    semitone above the 5th       flagged
+       G# over G    semitone above the root      flagged
+       F# over Am   the Dorian 13th              allowed
+       B  over F    the Lydian #11               allowed
+
+     AND IT HAS TO KNOW ABOUT SUSTAIN, which is the part a theory book
+     will not tell you, because a theory book assumes a note stops when
+     it is written to stop. A chromatic approach note on beat 4 is
+     correct practice — it is how walking bass works — and the textbook
+     reason it works is that it is SHORT. On a sampled piano with a
+     1.9-second decay in a 2.6-second bar it is not short. It is still
+     sounding when the next chord arrives.
+
+     THE ANSWER IS NOT TO SHORTEN IT. That ring is where the continuity
+     in a piano trio comes from: the bar lines stop being seams because
+     something is always still sounding across them. Damping everything
+     to fit its own bar buys clean harmony and spends the legato, which
+     is a bad trade and the obvious wrong fix.
+
+     What a held note owes is to land somewhere in the chord it rings
+     into. There are exactly two ways to do that and both are old:
+
+       a COMMON TONE — it belongs to both chords, and the overlap is
+       pure glue, the standard way of joining two harmonies;
+
+       a SUSPENSION — it does not belong to the new chord, is heard as
+       a dissonance on the new downbeat, and RESOLVES BY STEP onto a
+       chord tone just after. That is not a flaw, it is one of the
+       oldest expressive devices there is; what makes it work is the
+       resolution, and a suspension that never resolves is just a
+       wrong note held for a long time.
+
+     So: every note gets its ring time from the pad's own envelope and
+     is judged against every chord it is still sounding in, and a
+     carried dissonance that steps onto a chord tone within a beat is
+     counted as a suspension and not reported. HOLLOWAY's F# rang into
+     an F major, made a minor ninth against the root, and then leapt
+     away — neither common tone nor suspension, so it is just the
+     clash. The count of notes that DO ring across a bar line into a
+     chord they belong to comes back as `carriedConsonant`, because
+     that number wants to be high.
+
+     THE THIRD. A texture of roots, fifths and octaves does not state
+     major or minor at all, and then one stray chromatic is the most
+     harmonically defining event in the bar. The third and seventh are
+     the guide tones; the fifth is the one you can drop. So it reports
+     bars whose third nothing plays.
+
+     What it says on material where nothing is wrong: nothing. */
+  async harmony(opt){
+    const o=opt||{}, src=o.src||'song';
+    /* THE PROGRESSION IS STORED NOW, so this reads it rather than
+       demanding it. It used to throw unless handed a list, because
+       nothing in the app recorded what the harmony was meant to be —
+       which forced every song script to keep its own copy beside the
+       checker's, two sources of truth that could drift apart without
+       either one looking wrong.
+
+       An explicit {chords:[…]} still wins, for checking a part
+       against a progression you have not committed to. What has not
+       changed is the refusal to GUESS: with nothing declared and
+       nothing passed it still says so, because inferring the harmony
+       from the notes is what makes a wrong note look correct. */
+    let chords=o.chords, chordSource='passed in';
+    if(!Array.isArray(chords) || !chords.length){
+      const pr=window.MVX.progression({src});
+      if(pr.declared>0 && pr.declared===pr.bars){ chords=pr.chords; chordSource='declared on the patterns'; }
+      else if(pr.declared>0) throw new Error('only '+pr.declared+' of '+pr.bars
+        +' bars have a chord declared — pattern'+(pr.undeclaredPatterns.length>1?'s ':' ')
+        +pr.undeclaredPatterns.join(', ')+' '+(pr.undeclaredPatterns.length>1?'have':'has')
+        +' none. Fill them with chords(pattern,[…]) or pass the whole progression '
+        +'explicitly; a half-declared harmony would be checked against itself in '
+        +'the bars that have one and silently skipped in the bars that do not.');
+      else throw new Error('no progression. Declare it once with '
+        +'key("D","major") and chords(0,["Bm7","Gmaj7","Dmaj7","A"]) — one symbol '
+        +'per bar of that pattern — or pass harmony({chords:[…]}) for a one-off. '
+        +'It is not inferred from the notes, because inferring the harmony from '
+        +'the notes is what makes a wrong note look correct.');
+    }
+
+    /* CHORD SYMBOLS -> PITCH CLASSES, from tonal rather than from a
+       table written here.
+
+       What stood here was eighteen regexes mapping a symbol's tail to
+       intervals, and it had already produced a real fault: the list
+       opened with /^(maj7|M7|\u0394 7?)$/i, which MATCHES "m7". Every minor
+       seventh was therefore judged against a major seventh, and the
+       checker reported "Bm7 states no third" on bars whose third was
+       sitting right there. It said so about a correct piece three
+       times before anyone read the regex.
+
+       That is the failure mode of a hand-rolled vocabulary: confidently
+       wrong on whatever nobody wrote a test for. tonal was checked
+       against this table on all thirty symbols the table knew — thirty
+       agreed, none differed — and reads a few hundred it could not.
+       chordInfo() is in src/pure/theory.js, so it is unit-testable from
+       Node and published as a global ahead of the engine.
+
+       Anything unreadable still throws. A parser that silently accepted
+       what it did not understand would report a clean bill of health on
+       a progression it never read, which is the quiet failure this file
+       keeps running into. */
+    const parse=(sym)=>{
+      const info=(typeof chordInfo==='function')?chordInfo(sym):null;
+      if(!info) throw new Error('harmony(): cannot read the chord "'+sym+'". '
+        +'Symbols are the usual ones \u2014 C, Am, F#m7, Bbmaj7, G7, Csus4, '
+        +'Dm7b5, E7b9 \u2014 and case matters: m7 is minor, M7 is major.');
+      return info;
+    };
+    const prog=chords.map(parse);
+
+    /* schedule() returns `notes` as a COUNT and the events themselves as
+       `events`, and only when full is not false. Reading sch.notes as the
+       array gives a number, whose .filter is undefined — which is how
+       this returned "nothing pitched is playing" on a pattern with
+       sixteen notes in it the first time it ran. */
+    const sch=await window.MVX.schedule({src, full:true});
+    if(!sch || !Array.isArray(sch.events) || !sch.events.length)
+      return { ran:false, says:'nothing is scheduled to play.' };
+
+    /* bar length. 4/4 is assumed and said so, rather than guessed at
+       silently from a pattern length that may be 32 or 64 steps. */
+    const beats=o.beatsPerBar||4;
+    const barSec=beats*60/(S.bpm||120);
+    const chordAt=(t)=>prog[Math.floor(t/barSec+1e-9)%prog.length];
+    const barAt=(t)=>Math.floor(t/barSec+1e-9);
+
+    /* HOW LONG A NOTE IS ACTUALLY SOUNDING. A step `len` lock says so
+       outright. Otherwise it is the pad's own envelope, and for the
+       sus:0 shape every sampled instrument here uses, that is the decay
+       plus the release — which on a piano is most of a bar and is the
+       whole reason an approach note stopped being an approach note. */
+    const ring=(n)=>{
+      if(n.len>0) return n.len;
+      const p=S.pads[n.pad]; if(!p) return 0.1;
+      const a=+p.att||0, d=+p.dec||0, r=+p.rel||0, s=+p.sus||0;
+      return s>0 ? Math.max(0.1, a+d+r+barSec*0.5) : Math.max(0.05, a+d+r);
+    };
+
+    /* DRUMS ARE NOT A VOICE. instrument() lays a kit out by MIDI note
+       like anything else, so a ride cymbal arrives here as "note 51"
+       with a srcNote behind it and nothing about the data says it is
+       not a pitch. Run across HOLLOWAY without this, the first finding
+       was `kit 51 against lh 52` and the count was 314 false relations
+       and 359 minor ninths, almost all of them a cymbal against the
+       piano. That is the same disease review() had to have cured twice
+       — melodic checks run on shakers — and a check drowning four real
+       findings in three hundred spurious ones may as well not exist.
+       The excluded pads are named in the result rather than dropped
+       quietly, because a check that silently did not look at something
+       reads exactly like a check that passed. */
+    const PERC=/^(DRUMS|PERC|FX)$/i;
+    const isPerc=(pad)=>{ const p=S.pads[pad]; return !!(p && PERC.test(p.srcCat||'')); };
+    const skippedPerc=[...new Set(sch.events.filter(n=>n.midi!=null && isPerc(n.pad))
+      .map(n=>(S.pads[n.pad]&&S.pads[n.pad].inst)||('pad'+n.pad)))];
+    const pitched=sch.events.filter(n=>n.midi!=null && !isPerc(n.pad));
+    if(!pitched.length)
+      return { ran:false, percussionIgnored:skippedPerc,
+        says:'nothing pitched is playing — harmony() has nothing to judge'
+          +(skippedPerc.length?'. '+skippedPerc.join(', ')+' '
+            +(skippedPerc.length>1?'are':'is')+' percussion, and a drum laid out '
+            +'by MIDI note is not a voice':'. Pitched parts come from note(), '
+            +'not step()')+'.' };
+
+    const ev=pitched.map(n=>({ ...n, pc:((n.midi%12)+12)%12,
+      end:n.t+ring(n), inst:(S.pads[n.pad]&&S.pads[n.pad].inst)||('pad'+n.pad) }));
+
+    /* ---- 1. the minor ninth, against every chord a note sounds in ----
+       A note is checked in every bar it is still sounding in, not only
+       the one it started in, because the ring is the point. */
+    const byInstTime={};
+    for(const e of ev) (byInstTime[e.inst]=byInstTime[e.inst]||[]).push(e);
+    for(const k in byInstTime) byInstTime[k].sort((a,b)=>a.t-b.t);
+    /* Does this voice step onto a chord tone of the new chord shortly
+       after the bar line? Then the dissonance was a suspension and
+       resolved, which is a device rather than a mistake.
+
+       AND HAS THE DISSONANCE ACTUALLY STOPPED BY THEN. This is the
+       condition the first version left out, and leaving it out made
+       the check useless on exactly the material it was written for.
+       HOLLOWAY's F#2 approach steps down a semitone onto F2 at the
+       bar line — a textbook resolution, so it was counted as a
+       suspension and not reported. But the F# is still ringing: the
+       pad decays for 2.5 seconds and the F arrives 50 milliseconds
+       later, so the two sound TOGETHER for two more beats. That is
+       not a suspension resolving, it is a semitone cluster in the
+       bass, and it was two of the four notes the listener heard as
+       wrong. A suspension releases the dissonance as the resolution
+       speaks; if the dissonance is still sounding a beat later,
+       nothing has resolved. */
+    const resolves=(e, bar)=>{
+      const line=byInstTime[e.inst]||[], edge=bar*barSec, ch=prog[bar%prog.length];
+      for(const n of line){
+        if(n.t<=edge+1e-6) continue;
+        if(n.t>edge+barSec/beats*1.01) break;     // within a beat of the change
+        const step=Math.abs(n.midi-e.midi);
+        if(!(step===1||step===2) || !ch.pcs.includes(n.pc)) return false;
+        return e.end <= n.t + barSec/beats;       // and it has let go
+      }
+      return false;
+    };
+    const clashes=[], suspensions=[];
+    let carriedConsonant=0;
+    for(const e of ev){
+      const first=barAt(e.t), last=barAt(Math.max(e.t, e.end-1e-6));
+      for(let b=first; b<=last; b++){
+        const ch=prog[b%prog.length], carried=b>first;
+        if(ch.pcs.includes(e.pc)){ if(carried) carriedConsonant++; continue; }
+        /* ON A DOMINANT SEVENTH THE SEMITONE RULE OVER-FIRES, and it did
+           here on real music: a b9 is a semitone above the root, so
+           E7b9 resolving to Am — the most ordinary cadence in a minor
+           key — came back as a fault. The altered tensions b9, #9 and
+           b13 are what a dominant is FOR; the one note that genuinely
+           clashes on it is the natural 11, a semitone above the major
+           third, and that stays flagged. */
+        if(ch.dominant && [1,3,8].includes((e.pc-ch.root+12)%12)){
+          if(carried) carriedConsonant++; continue; }
+        const under=ch.pcs.find(pc=>(e.pc-pc+12)%12===1);
+        if(under==null){ if(carried) carriedConsonant++; continue; }  // a tension
+        const held=Math.min(e.end,(b+1)*barSec)-Math.max(e.t,b*barSec);
+        const row={ inst:e.inst, pad:e.pad, midi:e.midi, pc:e.pc,
+          t:+e.t.toFixed(2), bar:b, chord:ch.sym, over:under,
+          heldBeats:+(held/(barSec/beats)).toFixed(2), carried };
+        if(carried && resolves(e,b)) suspensions.push(row); else clashes.push(row);
+      }
+    }
+    /* A SHORT NOTE PASSING THROUGH IS NOT A FAULT and must not be
+       reported as one, or the check cries wolf on every grace note in
+       the repo. The line is half a beat: under that it is ornament,
+       over it the ear hears it as harmony. */
+    const real=clashes.filter(c=>c.heldBeats>=0.5);
+
+    /* ---- 2. two voices a semitone apart at the same moment ---------- */
+    const sorted=[...ev].sort((a,b)=>a.t-b.t);
+    const rubs=[];
+    for(let i=0;i<sorted.length;i++){
+      for(let j=i+1;j<sorted.length && sorted[j].t<sorted[i].end;j++){
+        const a=sorted[i], b2=sorted[j];
+        if(a.inst===b2.inst) continue;            // one hand's own cluster
+        const d=Math.abs(a.midi-b2.midi);
+        if(d!==1 && d!==13) continue;             // semitone, or minor 9th
+        const ovl=Math.min(a.end,b2.end)-b2.t;
+        if(ovl < barSec/beats*0.5) continue;
+        rubs.push({ t:+b2.t.toFixed(2), bar:barAt(b2.t), chord:chordAt(b2.t).sym,
+          a:a.inst+' '+a.midi, b:b2.inst+' '+b2.midi, apart:d===1?'semitone':'minor 9th' });
+      }
+    }
+
+    /* ---- 3. bars whose third nothing plays -------------------------- */
+    const lastBar=barAt(Math.max(...ev.map(e=>e.t)));
+    const noThird=[];
+    for(let b=0;b<=lastBar;b++){
+      const ch=prog[b%prog.length];
+      if(!ch.hasThird) continue;
+      const sounding=ev.filter(e=>barAt(e.t)===b);
+      if(!sounding.length) continue;
+      if(!sounding.some(e=>e.pc===ch.third)) noThird.push({bar:b, chord:ch.sym});
+    }
+
+    /* ---- what to say ------------------------------------------------- */
+    const NM=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const byInst={};
+    for(const c of real) (byInst[c.inst]=byInst[c.inst]||[]).push(c);
+    const findings=[];
+    for(const inst of Object.keys(byInst)){
+      const list=byInst[inst], worst=list.slice().sort((a,b)=>b.heldBeats-a.heldBeats)[0];
+      const carried=list.filter(c=>c.carried).length;
+      findings.push({ kind:'minor-ninth', inst, count:list.length, carried,
+        says:inst+': '+list.length+' note'+(list.length>1?'s':'')+' sounding a semitone '
+          +'above a chord tone for half a beat or more — worst is '+NM[worst.pc]
+          +' over '+worst.chord+' in bar '+worst.bar+', held '+worst.heldBeats
+          +' beats'+(worst.carried?' after ringing in from the bar before':'')
+          +'. That is the interval that beats; it is why the 4th is the avoid '
+          +'note over a major chord.'
+          +(carried?' '+carried+' of them rang in from the previous bar. Do not '
+            +'fix that by shortening the note — the ring across the bar line is '
+            +'what joins the bars. Change the PITCH so it lands in the new chord '
+            +'(a common tone), or make it step onto a chord tone just after the '
+            +'change (a suspension), which this counts as resolved and does not '
+            +'report.':'') });
+    }
+    if(suspensions.length) findings.push({ kind:'suspensions-found', count:suspensions.length,
+      severity:'note', says:suspensions.length+' carried dissonance'
+        +(suspensions.length>1?'s resolve':' resolves')+' by step onto a chord tone '
+        +'and '+(suspensions.length>1?'were':'was')+' not counted against the piece. '
+        +'Those are suspensions, which are the point rather than the problem.' });
+    if(rubs.length) findings.push({ kind:'false-relation', count:rubs.length,
+      says:rubs.length+' moment'+(rubs.length>1?'s':'')+' where two voices sound a '
+        +'semitone apart — first at bar '+rubs[0].bar+' over '+rubs[0].chord+', '
+        +rubs[0].a+' against '+rubs[0].b+'. Between different voices that is a '
+        +'false relation, and it reads as a wrong note rather than as colour.' });
+    if(noThird.length) findings.push({ kind:'no-third', count:noThird.length,
+      says:noThird.length+' bar'+(noThird.length>1?'s':'')+' state no third at all '
+        +'('+noThird.slice(0,4).map(x=>x.chord+' in bar '+x.bar).join(', ')
+        +(noThird.length>4?', …':'')+'). Roots, fifths and octaves do not say major '
+        +'or minor, so whatever chromatic note is in the bar becomes the one '
+        +'defining it. The third and seventh are the guide tones; the fifth is '
+        +'the one to drop.' });
+
+    const bad=findings.filter(f=>f.severity!=='note');
+    return { ran:true, src, chords:chords.slice(), chordSource,
+      key:S.key?Object.assign({},S.key):null, bars:lastBar+1,
+      percussionIgnored:skippedPerc,
+      notes:pitched.length, barSeconds:+barSec.toFixed(3),
+      minorNinths:real, passingOnly:clashes.length-real.length,
+      suspensions, carriedConsonant,
+      falseRelations:rubs.slice(0,20), barsWithNoThird:noThird, findings,
+      says: bad.length
+        ? bad.length+' thing'+(bad.length>1?'s':'')+' the harmony is '
+          +'doing that will read as wrong notes — '+bad[0].says
+        : 'every note sits in or beside its chord, no two voices rub at a '
+          +'semitone, and every chord states its third. '+carriedConsonant
+          +' notes ring across a bar line into a chord they belong to.' };
+  },
+
+  async pulse(opt){
+    const o=opt||{}, src=o.src||'song';
+    const sch=await window.MVX.schedule({src, full:true});
+    if(!sch || !sch.events || sch.events.length<8)
+      return {says:'too few events to look for a pulse.'};
+    const ev=sch.events.filter(e=>e.t!=null);
+    const dur=Math.max.apply(null, ev.map(e=>e.t))+0.5;
+    /* HOW LOUD IS THIS ONSET, ROUGHLY — AND IT HAS TO INCLUDE THE SOURCE.
+       Velocity times the pad's gain was the first version, and it is
+       wrong in the one case that matters most. Gain is a multiplier on
+       whatever the pad is holding, and the things a pad holds differ by
+       tens of dB: in the track this was written for, a cabasa sample
+       peaking at -33dBFS at gain 2.0 and a full-scale synth kick at gain
+       0.42 came out as weight 302 against 51, when the kick is in fact
+       some 20dB the louder of the two. Every per-pad number in the table
+       was backwards, and the buried-by figure computed from them with it.
+
+       So the source level goes in. S.buffers holds what each pad plays,
+       so its RMS is a measurement rather than an assumption, and it
+       costs one pass over each buffer rather than the per-pad renders
+       loudness() does. It still takes no account of filtering, of where
+       a sound sits in the spectrum, or of masking — for that, use
+       loudness(), which renders each pad and weights for the ear. */
+    const srcCache=new Map();
+    const srcLevel=(padIdx)=>{
+      const p=S.pads[padIdx];
+      if(!p || p.bufId==null || p.bufId<0) return 0.25;
+      if(srcCache.has(p.bufId)) return srcCache.get(p.bufId);
+      let lvl=0.25;
+      try{
+        const b=S.buffers[p.bufId];
+        if(b && b.length){
+          const d=b.getChannelData(0);
+          /* subsampled: a buffer can be seconds long and the answer only
+             needs to be right to a decibel or two */
+          const step=Math.max(1, Math.floor(d.length/8000));
+          let s2=0, n2=0;
+          for(let i=0;i<d.length;i+=step){ s2+=d[i]*d[i]; n2++; }
+          if(n2) lvl=Math.sqrt(s2/n2);
+        }
+      }catch(e){ /* a pad whose buffer has gone keeps the default */ }
+      srcCache.set(p.bufId, lvl);
+      return lvl;
+    };
+    const wOf=(e)=>{ const p=S.pads[e.pad]; const g=p&&p.gain!=null?p.gain:1;
+      return Math.max(0, (e.vel==null?0.8:e.vel)) * g * srcLevel(e.pad); };
+    const SRH=100;                                   // envelope samples per second
+    const n=Math.max(16, Math.ceil(dur*SRH));
+    const build=(list)=>{
+      const env=new Float64Array(n);
+      for(const e of list){
+        const i=Math.round(e.t*SRH);
+        if(i>=0 && i<n) env[i]+=wOf(e);
+      }
+      return env;
+    };
+    /* autocorrelation over musically plausible lags, normalised so the
+       answer is "how much of itself does it find there", 0 to 1 */
+    const ac=(env, loS, hiS)=>{
+      let z=0; for(let i=0;i<n;i++) z+=env[i]*env[i];
+      if(z<=0) return {best:0, lag:null, curve:[]};
+      let best=0, bestLag=null; const curve=[];
+      for(let L=loS; L<=hiS && L<n/2; L++){
+        let s=0; for(let i=0;i+L<n;i++) s+=env[i]*env[i+L];
+        const v=s/z;
+        curve.push([L/SRH, v]);
+        if(v>best){ best=v; bestLag=L; }
+      }
+      return {best:+best.toFixed(3), lag:bestLag?bestLag/SRH:null, curve};
+    };
+    const all=build(ev);
+    /* the tempo-free question first: is there ANY periodicity in what can
+       be heard? The search is kept to lags a listener could take as a
+       beat — below about 0.25s the ear hears rate rather than pulse, and
+       above 1.2s it hears separate events. */
+    const r=ac(all, Math.round(0.25*SRH), Math.round(1.2*SRH));
+
+    /* then the question the app can answer exactly, because it knows the
+       tempo: how much of the audible weight lands on each level of the
+       metre? Reporting it per level is what makes it actionable — a
+       piece can be perfectly on the sixteenth grid and still have
+       nothing on the beat, which is precisely the failure here. */
+    const bpm=+S.bpm||120;
+    const beat=60/bpm, bar=beat*4, eighth=beat/2, sixteenth=beat/4;
+    const tol=Math.max(0.012, sixteenth*0.30);
+    let total=0; for(const e of ev) total+=wOf(e);
+    /* THE PHASE IS SEARCHED, NOT ASSUMED. The schedule carries a small
+       lead-in — every event in a 140bpm piece came back offset by 0.05s —
+       so measuring against a grid anchored at t=0 scored a piece written
+       entirely on sixteenths as 4.6% on-grid. The question worth asking
+       is whether the weight concentrates on SOME regular grid of this
+       period, which is also the question a listener's ear answers. */
+    const shareAt=(period, list)=>{
+      if(!(period>0)) return null;
+      const src2=list||ev;
+      let tot=0; for(const e of src2) tot+=wOf(e);
+      if(tot<=0) return null;
+      let best=0;
+      for(let k=0;k<32;k++){
+        const ph=(k/32)*period; let w=0;
+        for(const e of src2){ const d=(((e.t-ph)%period)+period)%period;
+          if(Math.min(d, period-d)<=tol) w+=wOf(e); }
+        if(w>best) best=w;
+      }
+      return +(100*best/tot).toFixed(1);
+    };
+    const grid={ bar:shareAt(bar), beat:shareAt(beat),
+      eighth:shareAt(eighth), sixteenth:shareAt(sixteenth) };
+    /* THE SAME SHARE WITH EVERY ONSET COUNTED EQUALLY. The gap between
+       the two is the whole diagnosis: if weighting by loudness LOWERS
+       the share that lands on the beat, then the quiet events are the
+       ones marking it and the loud ones are the ones ignoring it. That
+       is audible as random timing however tidy the grid looks, and it
+       is invisible to anything that counts events instead of weighing
+       them. Stated this way it needs no minimum number of pads. */
+    const flatShare=(period)=>{
+      if(!(period>0)) return null;
+      const tot=ev.length; if(!tot) return null;
+      let best=0;
+      for(let k=0;k<32;k++){
+        const ph=(k/32)*period; let c=0;
+        for(const e of ev){ const d=(((e.t-ph)%period)+period)%period;
+          if(Math.min(d, period-d)<=tol) c++; }
+        if(c>best) best=c;
+      }
+      return +(100*best/tot).toFixed(1);
+    };
+    const flatBeat=flatShare(beat);
+    const buriedBy=(flatBeat!=null && grid.beat!=null)?+(flatBeat-grid.beat).toFixed(1):null;
+
+    /* PER PAD, against the beat, so the table says who is holding the
+       pulse up and who is smearing it. */
+    const pads=[...new Set(ev.map(e=>e.pad))];
+    const perPad=[];
+    for(const pd of pads){
+      const mine=ev.filter(e=>e.pad===pd);
+      if(mine.length<3) continue;
+      let w=0; for(const e of mine) w+=wOf(e);
+      perPad.push({pad:pd, name:(S.pads[pd]&&S.pads[pd].name)||('pad '+pd),
+        events:mine.length, weight:+w.toFixed(2),
+        onBeat:shareAt(beat, mine), onSixteenth:shareAt(sixteenth, mine)});
+    }
+    perPad.sort((a,b)=>b.weight-a.weight);
+
+    const findings=[];
+    if(r.best<0.18) findings.push('there is no pulse to find: the loudness-weighted onsets '
+      +'autocorrelate at only '+r.best+' across every lag a listener could hear as a beat, '
+      +'so nothing recurs strongly enough in time to lock onto.');
+    if(grid.beat!=null && grid.beat<35) findings.push('only '+grid.beat+'% of the audible onset '
+      +'weight lands on a beat ('+grid.sixteenth+'% is at least on the sixteenth grid). The music '
+      +'is placed, but almost none of what can be heard marks the metre.');
+    /* the specific trap this was written for: a pulse exists in the
+       arrangement and the loud pads ignore it */
+    if(buriedBy!=null && buriedBy>10)
+      findings.push('the beat is being marked by the quiet events and ignored by the loud ones: '
+        +flatBeat+'% of onsets land on a beat, but only '+grid.beat+'% of the audible WEIGHT does, '
+        +'a gap of '+buriedBy+' points. The pulse is in the arrangement and buried under what is '
+        +'actually loud — either lift what marks it or move what buries it.');
+    const worst=perPad.filter(p=>p.onBeat!=null).slice(0,3)
+      .filter(p=>p.onBeat<(grid.beat||0)-10);
+    if(worst.length && buriedBy!=null && buriedBy>10)
+      findings.push('the loudest offenders are '+worst.map(p=>p.name+' ('+p.onBeat+'% on the beat, '
+        +'weight '+p.weight+')').join(', ')+'.');
+
+    return {pulseStrength:r.best, periodSec:r.lag,
+      bpmImplied:r.lag?+(60/r.lag).toFixed(1):null, bpm,
+      onGrid:grid, onGridUnweighted:{beat:flatBeat}, beatBuriedBy:buriedBy,
+      pads:perPad, findings,
+      says:findings.length?findings[0]
+        :'the pulse is clear and the audible onsets agree with it.'};
+  },
+
+  /* EVERY CHECK, IN ONE CALL, WITH ITS OWN COVERAGE REPORTED.
+
+     This exists because of how a finished track actually went wrong. The
+     app had seventeen analysers; the piece that was bounced used six.
+     The three that would have caught what the listener then complained
+     about — loudness(), translate() and spectrum() — were all sitting
+     there unused. The verdict came back as "the bass isn't clear, the
+     bells are louder than you expect", and loudness() had the bells at
+     +14 to +22dB above their own energy while translate() named the
+     bass problem AND its fix in one sentence.
+
+     So the failure was not missing knowledge. It was that choosing
+     which tools to run was left to whoever was driving, and that choice
+     is where results stop being repeatable. Anything that has to be
+     remembered will eventually not be.
+
+     review() therefore runs the lot, keeps going when one of them
+     throws, and says at the end which ones it managed and which it did
+     not. A check that silently did not run is worse than one that
+     failed loudly, because its silence reads as a pass.
+
+     It is deliberately not clever. It does not decide what matters; it
+     collects what every tool said, sorts by severity and hands it over. */
+  async review(opt){
+    const o=opt||{}, src=o.src||'song';
+    /* QUICK MODE, FOR CHECKING WHILE YOU BUILD.
+
+       Everything here was being run once, at the end, on a finished
+       arrangement — which is the wrong time to learn that two parts
+       shadow each other or that the beat cannot be found, because by
+       then the thing is written. A person building this would check
+       after every element, and against what is already there.
+
+       The reason that was not happening is that review() is expensive,
+       and the reason it is expensive is the renders. But five of the
+       checks do not render at all: pulse(), motif(), melody(),
+       counterpoint() and harmony() all read the schedule, which the
+       app already knows exactly. "Is there a beat", "does anything
+       come back", "is this line a tune", "are these two voices one
+       voice" and "do the notes fit the chords" are free, and they are
+       most of what matters while writing.
+
+       harmony() is the one that cannot be run for you, because it
+       needs a progression and nothing in this app stores one. Pass
+       {chords:[…]} and quick:true will run it; leave it out and it is
+       listed under what could not run, rather than quietly omitted —
+       the harmony is the thing the other four are blindest to.
+
+       So quick:true runs those and nothing else. It is instant, it can
+       be called after every pattern, and the expensive half — levels,
+       loudness, tonal balance against a reference, what a phone keeps —
+       belongs at the end where it was always going to live anyway. */
+    if(o.quick){
+      const findings=[], ran=[], skipped=[];
+      const run=async(name, fn)=>{ try{ const r=await fn(); ran.push(name); return r; }
+        catch(e){ skipped.push(name+' — '+String((e&&e.message)||e).slice(0,80)); return null; } };
+      const insts=[...new Set((S.pads||[]).filter(p=>p&&p.inst).map(p=>p.inst))];
+      const names=o.instruments||insts;
+      const sch=await run('schedule',()=>window.MVX.schedule({src, full:true}));
+      if(!sch || !sch.notes) return {src, quick:true, findings:[], ran, skipped,
+        says:'nothing plays yet.'};
+      for(const s2 of (sch.stretched||[]))
+        findings.push({tool:'schedule', severity:'stretched',
+          says:'pad '+s2.pad+(s2.name?' ('+s2.name+')':'')+' is played '+s2.semitones
+            +' semitones from its sample', fix:'write on notes the pack has, or paint one'});
+      const pu=await run('pulse',()=>window.MVX.pulse({src}));
+      for(const f of ((pu&&pu.findings)||[])) findings.push({tool:'pulse', severity:'metre', says:f, fix:''});
+      /* only lines, not percussion — the same filter the full pass uses */
+      const ev=new Map();
+      for(const e of (sch.events||[])){ const pd=S.pads[e.pad], k=pd&&pd.inst;
+        if(!k) continue; const r=ev.get(k)||{n:0,p:0}; r.n++; if(e.midi!=null) r.p++; ev.set(k,r); }
+      const lines=names.filter(n=>{ const r=ev.get(n); return r && r.n>=4 && r.p/r.n>=0.6; });
+      for(const n of lines){
+        const mo=await run('motif:'+n,()=>window.MVX.motif(n,{src}));
+        for(const f of ((mo&&mo.findings)||[]))
+          findings.push({tool:'motif', severity:'material', says:n+': '+f, fix:''});
+      }
+      if(lines.length>1){
+        const cp=await run('counterpoint',()=>window.MVX.counterpoint(lines.slice(0,4),{src}));
+        for(const f of ((cp&&cp.findings)||[]))
+          findings.push({tool:'counterpoint', severity:'voices', says:f, fix:''});
+      }
+      /* A CHECK THAT COULD NOT APPLY MUST NOT READ AS A CHECK THAT
+         PASSED. motif and counterpoint only look at pads belonging to
+         an instrument, so on a track built from found sounds — every
+         pad loaded with sound(), none of them registered — `lines` is
+         empty and both are filtered out before `run` is ever called.
+         They therefore never reach `skipped` either, and the whole
+         thing reported "nothing flagged — 2 free checks" over a track
+         whose material had not been examined at all. Say it. */
+      /* harmony() is free like the rest and is the one none of the
+         others can stand in for — they measure lines against
+         themselves and against each other, and not one of them knows
+         what the chord is. It cannot be run without being told the
+         progression, because nothing in this app stores one, so the
+         only honest thing is to run it when given chords and to say
+         out loud when it was not. */
+      if(Array.isArray(o.chords) && o.chords.length){
+        const hm=await run('harmony',()=>window.MVX.harmony({src, chords:o.chords,
+          beatsPerBar:o.beatsPerBar}));
+        for(const f of ((hm&&hm.findings)||[]))
+          if(f.severity!=='note') findings.push({tool:'harmony', severity:'harmony',
+            says:f.says, fix:''});
+      }
+      const notApplicable=[];
+      if(!(Array.isArray(o.chords) && o.chords.length))
+        notApplicable.push('harmony — no progression was given, so nothing checked whether '
+          +'the notes fit the chords. Nothing in this app stores a key or a progression, and '
+          +'it must not be guessed from the notes, because guessing it from the notes is what '
+          +'makes a wrong note look correct. Pass {chords:["Am","F",…]}, one per bar.');
+      if(!lines.length) notApplicable.push('motif and counterpoint — no pad belongs to an '
+        +'instrument, so there is no line to examine. Pads loaded with sound() are bare; '
+        +'melodic material written on them is invisible to both.');
+      else if(lines.length<2) notApplicable.push('counterpoint — it compares voices and there '
+        +'is only one line ('+lines[0]+').');
+      return {src, quick:true, lines, findings, ran, skipped, notApplicable,
+        pulse:pu?{strength:pu.pulseStrength, onBeat:pu.onGrid&&pu.onGrid.beat}:null,
+        says:(findings.length?findings.length+' thing'+(findings.length>1?'s':'')+' to look at'
+          :'nothing flagged')+' — '+ran.length+' free check'+(ran.length===1?'':'s')
+          +' ran, no audio rendered'
+          +(notApplicable.length?('. COULD NOT APPLY: '+notApplicable.join(' ')):'')
+          +' Run review() without quick before bouncing.'};
+    }
+    const findings=[], ran=[], skipped=[];
+    const run=async(name, fn)=>{
+      try{ const r=await fn(); ran.push(name); return r; }
+      catch(e){ skipped.push(name+' — '+String((e&&e.message)||e).slice(0,90)); return null; }
+    };
+    const add=(tool, severity, says, fix)=>findings.push({tool, severity, says, fix:fix||''});
+
+    /* which instruments are on the board, so the per-line checks can run
+       without being told */
+    const insts=[...new Set((S.pads||[]).filter(p=>p&&p.inst).map(p=>p.inst))];
+    const names=o.instruments||insts;
+
+    /* 1. what is actually there */
+    const sch=await run('schedule',()=>window.MVX.schedule({src, full:true}));
+    if(!sch || !sch.notes){
+      add('schedule','empty','nothing plays in '+(src==='song'?'the song':'this pattern')+'.');
+      return {src, findings, ran, skipped, instruments:names, passed:false,
+        says:'nothing to review.'};
+    }
+
+    /* 2. the existing aggregate: settings, stretched samples, buried
+          pads, band ownership, and the reference if one is loaded */
+    /* THE PER-PAD CHECKS RUN ON ONE PATTERN, NOT THE WHOLE SONG.
+       critique() and loudness() each render every pad on its own, so on
+       a song with forty-nine pads review() was doing about ninety-eight
+       renders and taking twenty-five minutes. Nobody waits for that, so
+       nobody runs it, so the checks may as well not exist. A pad's level
+       relative to the mix barely moves between patterns, which is why
+       this is affordable rather than merely cheaper: it is the same
+       question asked of a representative four bars. Whole-mix checks —
+       pulse, translate, compare, motif, melody — still see the song. */
+    const padSrc=o.padSrc||(src==='song'?'pat':src);
+    const cr=await run('critique',()=>window.MVX.critique({src:padSrc}));
+    for(const f of ((cr&&cr.found)||[])){
+      /* TONAL BALANCE IS A WHOLE-MIX QUESTION AND MUST NOT BE ASKED OF
+         FOUR BARS. Moving the per-pad work onto one pattern made
+         critique compare that pattern against the reference, and the
+         pattern it landed on was a sparse intro with no kick and almost
+         no percussion — which duly reported the top octave 34dB under
+         the reference and five serious findings that were nothing but
+         the intro being an intro. The per-pad checks survive the
+         narrower source; this one does not, so it is dropped here and
+         asked again below against the whole song. */
+      if(f.severity==='off-reference' && padSrc!==src) continue;
+      add('critique', f.severity, f.says,
+        f.severity==='stretched' ? 'write the line on notes the pack actually has, or load a closer sample'
+        : f.severity==='buried' ? 'raise it, thin what masks it, or accept it as an accent'
+        : f.severity==='off-reference' ? 'move the named band toward the reference'
+        : '');
+    }
+
+    /* 2b. the reference, against the whole song rather than a fragment */
+    if(padSrc!==src){
+      const cmp=await run('compare',()=>window.MVX.compare({src}));
+      for(const b of ((cmp&&cmp.bands)||[])) if(Math.abs(b.delta)>=3)
+        add('compare','off-reference', b.band+'Hz sits '+(b.delta>0?'+':'')+b.delta
+          +'dB against the reference, over the whole song.',
+          'move that band toward the reference');
+      for(const n of ((cmp&&cmp.notes)||[])) if(/level|crest|stereo/.test(n))
+        add('compare','off-reference', n, '');
+    }
+
+    /* 2c. AN AUTOMATION LANE ONLY EXISTS IN ITS OWN PATTERN, and the
+       parameter keeps whatever that lane left it at for every pattern
+       afterwards that has no lane of its own. This is invisible in the
+       arrangement and silent in every other check: a master lowpass
+       automated down to 6.6kHz in a four-bar intro stayed at 6.6kHz for
+       the rest of a two-minute track, which measured as the top octave
+       sitting 25dB under the reference while the one pattern the levels
+       had been solved on measured almost exactly right. Two renders
+       went into chasing that before the lane was found. */
+    if(src==='song' && S.song && S.song.length){
+      const inSong=[...new Set(S.song.map(e=>e.pat))].filter(i=>S.patterns[i]);
+      const lanes=new Map();
+      for(const i of inSong) for(const k of Object.keys((S.patterns[i].autom)||{}))
+        lanes.set(k,(lanes.get(k)||[]).concat(i));
+      for(const [target, pats] of lanes){
+        const missing=inSong.filter(i=>!pats.includes(i));
+        if(!missing.length) continue;
+        const t=autoTargets[target];
+        add('automation','lingering', target+' ('+((t&&t.name)||target)+') is automated in '
+          +'pattern'+(pats.length>1?'s':'')+' '+pats.join(', ')+' but not in '
+          +missing.join(', ')+'. Those patterns do not reset it — they inherit whatever the '
+          +'last lane left, for as long as they play.',
+          'give every pattern in the song its own lane for this target, even if the value is flat');
+      }
+    }
+
+    /* 3. PERCEIVED loudness, which is not energy. This is the check that
+          was missing when the bells came back too loud. */
+    const ld=await run('loudness',()=>window.MVX.loudness(
+      {src:o.loudnessSrc||padSrc, max:o.maxPads||16}));
+    for(const f of ((ld&&ld.forward)||[]))
+      add('loudness','forward', (f.name||('pad '+f.pad))+' reads '+f.brightness
+        +'dB louder than its energy — the ear will pick it out of the mix.',
+        'pull its gain or velocity down, or darken it; matching it by RMS will not work');
+
+    /* 4. does any of it survive a small speaker */
+    const tr=await run('translate',()=>window.MVX.translate({src}));
+    if(tr && tr.lostDb!=null && tr.lostDb>8)
+      add('translate','small-speaker','the mix loses '+tr.lostDb+'dB on a phone'
+        +(tr.worst?' (worst: '+tr.worst+')':'')+'.',
+        'a bass carries through its harmonics — saturate a parallel copy into 150-800Hz');
+
+    /* 5. is there a beat to find */
+    const pu=await run('pulse',()=>window.MVX.pulse({src}));
+    for(const f of ((pu&&pu.findings)||[]))
+      add('pulse','metre', f, 'put the loudest things on the beat and stop nudging them');
+
+    /* 6-8. THE LINES — BUT ONLY THE ONES THAT ARE LINES.
+       The first version ran every melodic check on every instrument
+       group and produced thirty-six findings, most of them meaningless:
+       it solemnly reported that a group of shakers and triangles had 0%
+       repeated notes against melody's 21.1%, and that the kick and sub
+       had too many leaps. Percussion has no melody to measure. It also
+       marked the marimba down for 78.7% leaps when that library only
+       contains C, F, G and B — the instrument's own note set, being
+       reported as a fault in the writing.
+
+       Burying four real findings under thirty-two spurious ones is the
+       failure this call was built to prevent, so both are filtered out
+       here: an instrument is only asked about melody if most of its
+       events carry a pitch, and only if it has enough distinct notes
+       available for the answer to be about the part rather than the
+       sampler. */
+    const evByInst=new Map();
+    for(const e of (sch.events||[])){
+      const pd=S.pads[e.pad]; const key=pd&&pd.inst;
+      if(!key) continue;
+      if(!evByInst.has(key)) evByInst.set(key,{n:0,pitched:0});
+      const r=evByInst.get(key); r.n++; if(e.midi!=null) r.pitched++;
+    }
+    const pitchedInsts=[], percussive=[], tooSparse=[];
+    for(const n of names){
+      const r=evByInst.get(n);
+      if(!r || r.n<4) continue;
+      if(r.pitched/r.n < 0.6){ percussive.push(n); continue; }
+      let avail=0;
+      try{ avail=new Set((window.MVX.instPads(n)||[])
+        .map(x=>S.pads[x.pad]&&S.pads[x.pad].srcNote).filter(v=>v!=null)).size; }catch(e){}
+      if(avail && avail<7){ tooSparse.push(n+' ('+avail+' notes in the pack)'); continue; }
+      pitchedInsts.push(n);
+    }
+
+    for(const n of pitchedInsts){
+      const mo=await run('motif:'+n,()=>window.MVX.motif(n,{src}));
+      for(const f of ((mo&&mo.findings)||[])) add('motif','material', n+': '+f,
+        'state a figure and bring it back — transposed, inverted, augmented');
+      /* ONE LINE PER INSTRUMENT, NOT FOUR. melody() scores against sung
+         folk melody and says itself that a Bach subject will not match
+         and should not. An instrumental subject built on an arpeggio is
+         leap-heavy by construction, so four separate findings per part
+         saying so is fourteen lines of noise around the two findings
+         that were real. Kept, because a line meant to sing and failing
+         to is worth knowing, but collapsed and marked for what it is. */
+      const me=await run('melody:'+n,()=>window.MVX.melody(n,{src}));
+      if(me && me.findings && me.findings.length){
+        const g=me.got||{};
+        add('melody','shape', n+': shape differs from sung melody in '
+          +me.findings.length+' respect'+(me.findings.length>1?'s':'')
+          +' (leaps '+(g.leap==null?'?':g.leap)+'% against 13.1, steps '
+          +(g.step==null?'?':g.step)+'% against 46.9, repeats '
+          +(g.repeat==null?'?':g.repeat)+'% against 21.1).',
+          'expected for an instrumental subject — act on it only if this line is meant to sing');
+      }
+    }
+    /* continuity is about holes in a held part, which applies to anything */
+    for(const n of names){
+      const co=await run('continuity:'+n,()=>window.MVX.continuity(n,{src}));
+      for(const f of (((co&&co.findings)||[]))) add('continuity','holes', n+': '+f, '');
+    }
+    /* 9. and how the real lines sit against each other */
+    if(pitchedInsts.length>1){
+      const cp=await run('counterpoint',()=>window.MVX.counterpoint(pitchedInsts.slice(0,4),{src}));
+      for(const f of ((cp&&cp.findings)||[])) add('counterpoint','voices', f,
+        'give them separate rhythms, or let one hold while the other moves');
+    }
+    /* 10. dynamics is per instrument — it asks whether that pad has more
+       than one recording, so velocity can change tone and not only
+       volume. Called with no argument it simply threw, and the only
+       reason anyone knew is that review() reports what it could not
+       run. */
+    for(const n of pitchedInsts){
+      const dy=await run('dynamics:'+n,()=>window.MVX.dynamics(n));
+      if(dy && dy.layers===1) add('dynamics','range', n+': '+dy.says,
+        'load a pack with velocity layers, or vary the writing instead');
+      for(const f of ((dy&&dy.findings)||[])) add('dynamics','range', n+': '+f, '');
+    }
+
+    /* 11. and whether any of it fits the chords, which every check
+       above is blind to: they measure lines against themselves and
+       against each other and none of them knows what the harmony is.
+       It needs the progression because nothing here stores one, so
+       without it this says so under no-progression rather than
+       passing in silence — the same rule as compare() without a
+       reference, and for the same reason. */
+    if(Array.isArray(o.chords) && o.chords.length){
+      const hm=await run('harmony',()=>window.MVX.harmony({src, chords:o.chords,
+        beatsPerBar:o.beatsPerBar}));
+      for(const f of ((hm&&hm.findings)||[])) if(f.severity!=='note')
+        add('harmony','harmony', f.says,
+          'change the pitch so it lands in the chord it rings into, not the length');
+    } else add('harmony','no-progression','the notes were not checked against any '
+      +'harmony: no progression was given. melody(), motif() and counterpoint() all '
+      +'passed and none of them knows what the chord is, so this is not covered by '
+      +'them. Pass {chords:["Am","F",…]}, one per bar.',
+      'review({src, chords:[…]}) with the progression you wrote to');
+
+    const ORDER={ 'out-of-range':0, stretched:1, empty:1, lingering:1, forward:2, 'small-speaker':2,
+      metre:3, 'off-reference':3, harmony:3, buried:4, squashed:4, range:5, material:5,
+      shape:6, voices:6, holes:6, narrow:7, 'no-reference':8, 'no-progression':8 };
+    findings.sort((a,b)=>(ORDER[a.severity]==null?9:ORDER[a.severity])
+      -(ORDER[b.severity]==null?9:ORDER[b.severity]));
+    const hard=findings.filter(f=>(ORDER[f.severity]==null?9:ORDER[f.severity])<=3).length;
+    return { src, perPadSrc:padSrc, instruments:names, melodic:pitchedInsts,
+      padsNotMeasured:((ld&&ld.notMeasured)||[]).map(x=>x.name||('pad '+x.pad)),
+      notAskedAboutMelody:{percussion:percussive, sparsePack:tooSparse},
+      findings, ran, skipped,
+      counts:{total:findings.length, serious:hard, toolsRun:ran.length, toolsSkipped:skipped.length},
+      passed:hard===0,
+      says:(hard?hard+' thing'+(hard>1?'s':'')+' worth fixing before this is bounced'
+        :'nothing serious')+' — '+findings.length+' finding'+(findings.length===1?'':'s')
+        +' from '+ran.length+' checks'
+        +(skipped.length?', and '+skipped.length+' check'+(skipped.length>1?'s':'')
+          +' could not run (see skipped)':'')+'.' };
+  },
+
+  /* DOES THIS ONE SOUND HAVE A PLACE, AGAINST WHAT IS ALREADY HERE?
+
+     This exists because of how a mix actually gets built, which is one
+     sound at a time: you need a bass, so you make the bass — tweak the
+     sample until it IS the bass — and only then do you move on to the
+     next thing. Each sound is finished, in context, before the next
+     one starts, so the relationships between them are right by
+     construction.
+
+     Everything else in this file assumes the opposite: that a whole
+     palette is loaded, every part is written, and then the levels are
+     sorted out at the end. That is why balance() had to be written —
+     nine bands against seven groups, solved simultaneously, because by
+     then there was no other way to do it. The puzzle was self-inflicted.
+
+     So this answers the question the one-at-a-time method actually
+     asks, about one pad, cheaply: what does it own that nothing else
+     does, what is covering it, and what is it covering. Two renders —
+     the mix with it and the mix without — rather than one per pad.
+
+     `masks` and `maskedBy` are the useful half. A sound that owns no
+     band and is 20dB under everywhere is not quiet, it is absent, and
+     no amount of turning it up will give it somewhere to sit.
+
+     A SOUND IS NOT ALWAYS ONE PAD, and taking only a pad index made
+     this call useless on the instruments it was written to serve.
+     instrument() lays a sampled piano across eleven pads — one per
+     sampled note — and they are not eleven sounds, they are one. Asked
+     for the middle pad, this rendered a single note of the piano and
+     set it against the OTHER TEN NOTES OF THE SAME PIANO, which it had
+     dutifully counted among "everything else". The melody of a piano
+     trio came back owning nothing, by -6.1dB, in a mix where the piano
+     is the loudest thing in the room.
+
+     Picking a representative pad does not rescue it either: the first
+     attempt took the middle of each group and landed on a hi-hat the
+     part never plays, so the call threw instead.
+
+     So it takes an instrument name, or a list of pads, or one pad.
+     Whatever it is handed is the sound, and everything not in it is
+     what the sound has to fit into. */
+  async place(padIdx, opt){
+    const o=opt||{};
+    const mineSet=new Set();
+    if(typeof padIdx==='string'){
+      for(let k=0;k<NPADS;k++) if(S.pads[k] && S.pads[k].bufId>=0 && S.pads[k].inst===padIdx)
+        mineSet.add(k);
+      if(!mineSet.size) throw new Error('no pads carry the instrument "'+padIdx+'" — '
+        +'instrument() tags them, sound() does not');
+    } else if(Array.isArray(padIdx)){
+      for(const k of padIdx){ const j=k|0;
+        if(S.pads[j] && S.pads[j].bufId>=0) mineSet.add(j); }
+      if(!mineSet.size) throw new Error('none of those pads has a sample on it');
+    } else {
+      const j=padIdx|0;
+      if(!S.pads[j] || S.pads[j].bufId<0) throw new Error('pad '+j+' has no sample on it');
+      mineSet.add(j);
+    }
+    const i=[...mineSet][0], p=S.pads[i];
+    const label=(typeof padIdx==='string') ? padIdx
+      : mineSet.size>1 ? mineSet.size+' pads' : (p.name||('pad '+i));
+    const src=o.src||'pat', ro={loops:o.loops||1, src, noTail:true};
+
+    const mine=await renderMix(new Set(mineSet), new Set(), ro);
+    if(!mine) throw new Error(label+' plays nothing in '
+      +(src==='song'?'the song':'this pattern')+' — write a step for it first');
+    /* everything else that sounds, which is the thing it has to fit into */
+    const others=new Set();
+    for(let k=0;k<NPADS;k++) if(!mineSet.has(k) && S.pads[k] && S.pads[k].bufId>=0) others.add(k);
+    const rest=others.size?await renderMix(others, new Set(), ro):null;
+
+    const mb=await bandEnergy(mine);
+    const rb=rest?await bandEnergy(rest):null;
+    if(!mb) throw new Error('could not measure that pad');
+
+    const rows=[];
+    for(let b=0;b<mb.length;b++){
+      const me=mb[b].db, them=rb?rb[b].db:-120;
+      rows.push({band:mb[b].band, pad:+me.toFixed(1), rest:+them.toFixed(1),
+        over:+(me-them).toFixed(1)});
+    }
+    /* WHERE IT STANDS OUT, AMONG THE PLACES IT ACTUALLY IS.
+       Taking the largest `over` outright was wrong and the first run of
+       this call proved it: a bandpassed bass read as owning 2-4kHz by
+       27dB, not because it had anything there but because the only
+       other sound loaded was a lowpassed sub that had nothing there at
+       all. Against silence, a band a sound barely occupies wins — and
+       then the one number you are meant to read points at the part of
+       the sound that matters least. So a band only counts as somewhere
+       this sound lives if it is within 12dB of the sound's own best
+       band; `owns` is where it stands out among those. */
+    let peak=-999;
+    for(const r of rows) if(r.pad>peak) peak=r.pad;
+    const lives=rows.filter(r=>r.pad>-70 && r.pad>=peak-12);
+    let owns=null, worst=null;
+    for(const r of lives){
+      if(!owns || r.over>owns.over) owns=r;
+      if(!worst || r.over<worst.over) worst=r;
+    }
+    const lufsMine=lufsIntegrated(mine), lufsRest=rest?lufsIntegrated(rest):null;
+    const rel=(lufsMine && lufsMine.lufs>-Infinity && lufsRest && lufsRest.lufs>-Infinity)
+      ? +(lufsMine.lufs-lufsRest.lufs).toFixed(1) : null;
+
+    const findings=[];
+    /* NO BAND AT ALL IS NOT GOOD NEWS. This used to fall through to the
+       reassuring default and report "it has a place and is not in
+       anything else's way" directly underneath the words "owns
+       nothing", which is both wrong and self-contradicting. A pad with
+       nothing above -70dB in any band is not sitting politely out of
+       the way; it is not audible. */
+    if(!owns) findings.push('this pad is below -70dB in every band — it is not audible at all, '
+      +'whatever its gain says. Check that the sample is not near-silent on disk, that the '
+      +'envelope is not closing before the sound starts, and that a filter is not sitting on '
+      +'top of the only region it has.');
+    else if(!others.size) findings.push('nothing else is loaded, so there is nothing to fit into yet.');
+    else if(owns && owns.over<-6)
+      findings.push('this sound owns nothing: its best band, '+owns.band+'Hz, is still '
+        +Math.abs(owns.over)+'dB under everything else there. That is not quiet, it is '
+        +'absent — turning it up will make the mix louder rather than making room for it. '
+        +'Move it somewhere the others are not, or thin what is already in its way.');
+    else if(owns)
+      findings.push('it sits in '+owns.band+'Hz, where it is '
+        +(owns.over>=0?('+'+owns.over+'dB above'):(Math.abs(owns.over)+'dB under'))
+        +' everything else. That is its place.');
+    /* what it is covering: bands where it is well above, and loud */
+    const covering=rows.filter(r=>r.over>6 && r.pad>-50).map(r=>r.band);
+    if(covering.length>2) findings.push('it is the loudest thing across '+covering.length
+      +' bands ('+covering.slice(0,4).join(', ')+'). Check what used to live there.');
+    if(rel!=null && rel>3) findings.push('it is '+rel+'dB louder than everything else put '
+      +'together. Almost certainly too much for one sound.');
+
+    return { pad:i, pads:[...mineSet], name:label, src, against:others.size,
+      bands:rows, owns:owns?owns.band:null, ownsBy:owns?owns.over:null,
+      weakest:worst?worst.band:null, relLufs:rel, findings,
+      peakBand:peak>-999?+peak.toFixed(1):null,
+      says:findings.length?findings[0]
+        :'it has a place and is not in anything else\'s way.' };
+  },
+
+  /* DID THE SOUND COME OUT THE WAY YOU MEANT IT TO?
+
+     place() asks whether a sound has somewhere to sit among the
+     others. This asks a different and earlier question: is the sound
+     itself the colour you were trying to make. Nothing here asked it,
+     and the cost was two full iterations of a track.
+
+     A bass was painted with its 55Hz fundamental cut nine decibels to
+     empty the sub. paint() did exactly as it was told — the partials
+     were faithfully what the spec said — and the mix did not move,
+     because paint() normalises and every other partial had been
+     scaled down in the same edit. The SOUND matched the spec. The
+     spec did not achieve the goal, and the gap between those two
+     things was invisible until a whole-track render twenty minutes
+     later said the band had not shifted by a single decibel.
+
+     So: render this pad alone, take its nine-band shape normalised
+     against its own total, and set it beside the shape you wanted.
+     One render of one pattern, cheap enough to run on every sound as
+     it is made, which is the only moment the answer is still cheap to
+     act on.
+
+     `want` is a profile — anything with a `shape` of {band, rel} —
+     so a reference loaded with reference() works, as does a bare
+     array, as does the profile of another pad you are matching. */
+  /* Takes the same three forms place() does — an instrument name, a
+     list of pads, or one pad — and for the same reason: the colour of a
+     sampled piano is the colour of the eleven pads together, and one
+     note of it is not that. */
+  async audit(padIdx, opt){
+    const o=opt||{};
+    const mineSet=new Set();
+    if(typeof padIdx==='string'){
+      for(let k=0;k<NPADS;k++) if(S.pads[k] && S.pads[k].bufId>=0 && S.pads[k].inst===padIdx)
+        mineSet.add(k);
+      if(!mineSet.size) throw new Error('no pads carry the instrument "'+padIdx+'" — '
+        +'instrument() tags them, sound() does not');
+    } else if(Array.isArray(padIdx)){
+      for(const k of padIdx){ const j=k|0;
+        if(S.pads[j] && S.pads[j].bufId>=0) mineSet.add(j); }
+      if(!mineSet.size) throw new Error('none of those pads has a sample on it');
+    } else {
+      const j=padIdx|0;
+      if(!S.pads[j] || S.pads[j].bufId<0) throw new Error('pad '+j+' has no sample on it');
+      mineSet.add(j);
+    }
+    const i=[...mineSet][0], p=S.pads[i];
+    const label=(typeof padIdx==='string') ? padIdx
+      : mineSet.size>1 ? mineSet.size+' pads' : (p.name||('pad '+i));
+    const src=o.src||'pat';
+    const buf=await renderMix(new Set(mineSet), new Set(), {loops:o.loops||1, src, noTail:true});
+    if(!buf) throw new Error(label+' plays nothing in '
+      +(src==='song'?'the song':'this pattern')+' — write a step for it first');
+    const be=await bandEnergy(buf);
+    if(!be) throw new Error('could not measure '+label);
+    const got=specShape(be);
+
+    /* what we were aiming at */
+    let want=o.want;
+    if(want && want.shape) want=want.shape;
+    if(!want && refSpec && refSpec.shape) want=refSpec.shape;
+    if(!Array.isArray(want) || !want.length)
+      throw new Error('audit(pad, {want}) needs a target shape — a profile '
+        +'({shape:[{band,rel}…]}), an array of those, or a reference() already loaded');
+    const wantOf=(band)=>{ const w=want.find(x=>x.band===band); return w?+w.rel:null; };
+
+    /* ONLY THE BANDS THIS SOUND ACTUALLY OCCUPIES. The first version
+       compared every band, and so judged a bass against a whole-mix
+       reference at 8-16kHz, where a bass has nothing and the
+       reference has cymbals. It called that its worst band, -53dB,
+       and advised eqHi +43 — advice that would ruin the sound. The
+       mean error was 21.78dB and almost all of it was bands the sound
+       is not in.
+       This is the identical mistake place() already had to have fixed
+       out of its `owns`, made again in a new call. A single sound is
+       not supposed to look like a mix; it is supposed to have the
+       right colour WHERE IT LIVES. So the comparison runs over bands
+       within 20dB of this sound's own loudest, and the rest are
+       reported as unoccupied rather than counted as error. */
+    let peak=-999; for(const g of got) if(g.rel>peak) peak=g.rel;
+    const rows=[], outside=[];
+    for(const g of got){
+      const w=wantOf(g.band);
+      if(w==null) continue;
+      const row={band:g.band, lo:g.lo, got:g.rel, want:+w.toFixed(1),
+        delta:+(g.rel-w).toFixed(1)};
+      (g.rel>=peak-20) ? rows.push(row) : outside.push(g.band);
+    }
+    if(!rows.length) throw new Error('this sound has no band within 20dB of its own '
+      +'loudest that the target also covers — there is nothing meaningful to compare');
+    let worst=rows[0], sum=0;
+    for(const r of rows){ sum+=Math.abs(r.delta);
+      if(Math.abs(r.delta)>Math.abs(worst.delta)) worst=r; }
+    const mean=+(sum/rows.length).toFixed(2);
+
+    /* HOW TO IMPROVE IT, not merely how wrong it is. The three shelves
+       are the controls actually on a pad, so the errors are collapsed
+       onto them; a painted sound gets told about its partials instead,
+       since a shelf cannot fix a spectrum you authored. */
+    const avg=(f)=>{ const xs=rows.filter(r=>f(r.lo)); return xs.length
+      ? +(xs.reduce((a,c)=>a+c.delta,0)/xs.length).toFixed(1) : null; };
+    const suggest={ eqLo:avg(lo=>lo<250), eqMid:avg(lo=>lo>=250&&lo<2000),
+                    eqHi:avg(lo=>lo>=2000) };
+    for(const k in suggest) if(suggest[k]!=null) suggest[k]=+(-suggest[k]).toFixed(1);
+
+    const findings=[];
+    if(mean<1.5) findings.push('this sound is the colour you asked for — mean error '
+      +mean+'dB across the '+rows.length+' band'+(rows.length===1?'':'s')+' it occupies'
+      +(outside.length?(', ignoring '+outside.length+' it is not in'):'')+'.');
+    else {
+      /* a shelf over bands the sound does not occupy is not a
+         suggestion, it is noise — say nothing rather than "+null" */
+      const shelf=Object.keys(suggest).filter(k=>suggest[k]!=null)
+        .map(k=>k+' '+(suggest[k]>=0?'+':'')+suggest[k]).join(', ');
+      findings.push('worst band is '+worst.band+'Hz at '
+        +(worst.delta>0?'+':'')+worst.delta+'dB, mean error '+mean+'dB over the '
+        +rows.length+' band'+(rows.length===1?'':'s')+' it occupies.'
+        +(shelf?(' On a sampled pad, try '+shelf+'.'):''));
+    }
+    if(Math.abs(worst.delta)>=6)
+      findings.push('a '+Math.abs(worst.delta)+'dB miss in one band is usually the sound '
+        +'rather than its tone controls. If it was painted, move the partials that live in '
+        +worst.band+'Hz against the partial whose band already measures right — and note '
+        +'that paint() normalises, so scaling them ALL is the same as scaling none.');
+
+    return { pad:i, pads:[...mineSet], name:label, src, bands:rows,
+      /* named, so that a sound judged over three bands is not mistaken
+         for one judged over nine */
+      judgedOver:rows.length, notOccupied:outside,
+      meanErrorDb:mean, worst:worst.band, worstDb:worst.delta, suggest, findings,
+      says:findings[0] };
+  },
+
+
+  /* HOLD ONE MOMENT OF A SOUND FOR AS LONG AS YOU LIKE.
+
+     paint() can make anything, provided you already know the partials
+     you want. Most of the time you do not — but you have a sound whose
+     colour is right for a fifth of a second, and no way to keep it.
+     Every one-shot in a project is a pad waiting to happen: a door
+     knock, a can, a creak, the moment a bell has stopped clanging and
+     is only ringing.
+
+     So this reads the spectrum at one instant, keeps the strongest
+     partials it finds, and sustains them. What comes back is not a
+     loop of the source — there is no repetition in it at all, because
+     nothing is being replayed. It is what that instant was made of,
+     held still.
+
+     `shimmer` is what stops it sounding synthetic. Partials held at
+     exactly constant frequency and level read as an organ; given a few
+     cents of independent drift each they beat against one another and
+     stay alive. That is the same reason the drone in `weathering` is
+     built from partials that glide in different directions. */
+  async freeze(padIdx, opt){
+    const o=opt||{};
+    ensureAudio();
+    const i=padIdx|0, p=S.pads[i];
+    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    const src=S.buffers[p.bufId];
+    if(!src || !src.length) throw new Error('that pad\'s buffer is empty');
+    const sr=src.sampleRate, d=src.getChannelData(0);
+    const at=clamp(o.at==null?0.25:+o.at, 0, 0.98);
+    const secs=clamp(o.seconds==null?4:+o.seconds, 0.2, 12);
+    const KEEP=Math.max(4, Math.min(96, o.partials==null?40:o.partials|0));
+    const SHIM=clamp(o.shimmer==null?0.35:+o.shimmer, 0, 1);
+
+    /* one windowed frame from the moment asked for */
+    const N=8192, start=Math.min(Math.max(0, Math.floor(d.length*at)), Math.max(0, d.length-N));
+    const re=new Float64Array(N), im=new Float64Array(N);
+    let any=0;
+    for(let k=0;k<N;k++){
+      const v=(start+k<d.length)?d[start+k]:0;
+      if(v) any=1;
+      re[k]=v*(0.5-0.5*Math.cos(2*Math.PI*k/(N-1)));
+    }
+    if(!any) throw new Error('there is only silence at '+(at*100).toFixed(0)
+      +'% through that sample — try a different `at`');
+    fftInPlace(re,im);
+    const binHz=sr/N, half=N>>1;
+    const mag=new Float64Array(half);
+    let peak=0;
+    for(let k=1;k<half;k++){ mag[k]=Math.hypot(re[k],im[k]); if(mag[k]>peak) peak=mag[k]; }
+    if(peak<=0) throw new Error('that frame has no energy in it');
+
+    /* local maxima, strongest first, with parabolic interpolation so a
+       partial between bins keeps its real frequency */
+    const peaks=[];
+    for(let k=2;k<half-2;k++){
+      if(mag[k]<=mag[k-1] || mag[k]<mag[k+1]) continue;
+      if(mag[k]<peak*0.004) continue;
+      const a=mag[k-1], b=mag[k], c=mag[k+1];
+      const den=(a-2*b+c);
+      const off=den!==0 ? Math.max(-1,Math.min(1,(a-c)/(2*den))) : 0;
+      const hz=(k+off)*binHz;
+      if(hz<18 || hz>sr*0.47) continue;
+      peaks.push({hz, a:b/peak});
+    }
+    if(!peaks.length) throw new Error('no partials stood out at that moment');
+    peaks.sort((x,y)=>y.a-x.a);
+    const use=peaks.slice(0,KEEP);
+
+    const n=Math.floor(sr*secs);
+    const out=new Float32Array(n);
+    const TAB=4096, tab=new Float32Array(TAB+1);
+    for(let k=0;k<=TAB;k++) tab[k]=Math.sin(2*Math.PI*k/TAB);
+    let rs=(o.seed|0)||0xF00D;
+    const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+
+    for(const q of use){
+      /* each partial drifts on its own slow cycle: held perfectly still
+         they sum to an organ, and the beating between them is the
+         whole difference between frozen and dead */
+      const rate=0.04+rnd()*0.22, depth=SHIM*(2+rnd()*9), ph0=rnd();
+      const amp=q.a*(0.55+0.45*rnd());
+      let ph=rnd();
+      for(let k=0;k<n;k++){
+        const t=k/sr;
+        const cents=depth*Math.sin(2*Math.PI*rate*t+ph0*6.283);
+        ph+=(q.hz*Math.pow(2,cents/1200))/sr;
+        if(ph>=1) ph-=(ph|0);
+        out[k]+=amp*tab[(ph*TAB)|0];
+      }
+    }
+    let pk=0; for(let k=0;k<n;k++){ const v=out[k]<0?-out[k]:out[k]; if(v>pk) pk=v; }
+    if(pk<=0) throw new Error('the frozen frame came out silent');
+    const g=0.9/pk, fade=Math.min(Math.floor(sr*0.05), n>>3);
+    for(let k=0;k<n;k++){
+      let v=out[k]*g;
+      if(k<fade) v*=k/fade;
+      if(k>=n-fade) v*=(n-1-k)/fade;
+      out[k]=v;
+    }
+    const buf=AC.createBuffer(1, n, sr);
+    buf.getChannelData(0).set(out);
+    const name=o.name||((p.name||('pad '+i))+' frozen');
+    const target=(o.pad==null)?pickTargetPad():clamp(o.pad|0,0,NPADS-1);
+    S.editPad=target;
+    if(loadIntoTarget(buf, name, {keepTarget:true, noAsk:true})===false)
+      throw new Error('could not put the frozen sound on '+padName(target));
+    S.pads[target].srcCat='FREEZE';
+    if(o.midi!=null) S.pads[target].srcNote=+o.midi;
+    dirty();
+    try{ drawPads(); }catch(e){}
+    const rep=await specReport(buf);
+    return { pad:target, name, from:i, atPct:+(at*100).toFixed(0),
+      partials:use.length, found:peaks.length,
+      lowest:Math.round(use.reduce((m,q)=>Math.min(m,q.hz), 1e9)),
+      highest:Math.round(use.reduce((m,q)=>Math.max(m,q.hz), 0)),
+      seconds:+(n/sr).toFixed(2), shape:rep.shape,
+      says:'held '+use.length+' partials from '+(at*100).toFixed(0)+'% through '
+        +(p.name||('pad '+i))+' for '+secs+'s. Nothing is looping — there is no '
+        +'repetition in it, only what that instant was made of.' };
+  },
+
+  /* PITCH THAT WILL NOT HOLD STILL.
+
+     Everything this app makes is perfectly in tune for the whole
+     length of a note, which is the one thing that never happened to
+     any recording made on tape. There is a humanDrift for timing and
+     nothing at all for pitch, and that absence is a decent part of
+     what people mean when they call digital sound cold.
+
+     Three things are going on in a tape machine and they are separate:
+     WOW is slow, under a couple of hertz, from an eccentric capstan or
+     a reel pulling unevenly — it is heard as the pitch sagging and
+     recovering. FLUTTER is fast, five to fifteen hertz, from the tape
+     stuttering across the heads, and is heard as a roughness rather
+     than as pitch movement. DRIFT is neither periodic nor fast: it is
+     the whole thing slowly going out and never quite coming back.
+
+     Doing all three with one oscillator gives a seasick vibrato and
+     nothing like tape, so they are separate controls here, in cents,
+     and the defaults are small on purpose — real machines are subtle
+     and the effect is supposed to be felt rather than noticed.
+
+     Saturation and the loss of the top octave come with it because
+     they came with it on the machine: tape compresses as it is driven
+     and cannot hold high frequencies at the same level as the middle.
+
+     PROVENANCE, HONESTLY. Wow and flutter are properties of tape, not
+     of any one musician, and nothing here is a recovered secret. The
+     sources that connect tape specifically to a particular catalogue's
+     sound are speculating, and this is built as what it plainly is. */
+  async tape(padIdx, opt){
+    const o=opt||{};
+    ensureAudio();
+    const i=padIdx|0, p=S.pads[i];
+    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    const src=S.buffers[p.bufId];
+    if(!src || !src.length) throw new Error('that pad\'s buffer is empty');
+
+    const wowHz=clamp(o.wowHz==null?0.7:+o.wowHz, 0.05, 4);
+    const wowCents=clamp(o.wow==null?9:+o.wow, 0, 100);
+    const flutHz=clamp(o.flutterHz==null?7.5:+o.flutterHz, 3, 30);
+    const flutCents=clamp(o.flutter==null?2.5:+o.flutter, 0, 60);
+    const driftCents=clamp(o.drift==null?6:+o.drift, 0, 200);
+    const SAT=clamp(o.sat==null?0.25:+o.sat, 0, 1);
+    const HILOSS=clamp(o.hiLossHz==null?11000:+o.hiLossHz, 1500, 20000);
+    const HISS=clamp(o.hiss==null?0:+o.hiss, 0, 0.05);
+
+    const sr=src.sampleRate, n=src.length;
+    const ch=Math.min(2, src.numberOfChannels);
+    let rs=(o.seed|0)||0x7A9E;
+    const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+
+    /* the drift is a random walk smoothed hard, so it wanders instead
+       of wobbling — a slow sine would just be a second, slower wow */
+    const DN=Math.max(4, Math.ceil(n/sr*4));
+    const walk=new Float64Array(DN);
+    let v=0;
+    for(let k=0;k<DN;k++){ v+=(rnd()*2-1)*0.5; v*=0.86; walk[k]=v; }
+    const driftAt=(t)=>{
+      const x=t*4, k=Math.min(DN-2, Math.max(0, Math.floor(x))), f=x-k;
+      return (walk[k]*(1-f)+walk[k+1]*f);
+    };
+
+    const out=[];
+    for(let c=0;c<ch;c++) out.push(new Float32Array(n));
+    const wowPh=rnd()*Math.PI*2, flutPh=rnd()*Math.PI*2;
+
+    for(let c=0;c<ch;c++){
+      const d=src.getChannelData(Math.min(c, src.numberOfChannels-1));
+      const o2=out[c];
+      let pos=0;
+      /* one-pole state for the top-end loss */
+      const a=Math.exp(-2*Math.PI*HILOSS/sr);
+      let lp=0;
+      for(let k=0;k<n;k++){
+        const t=k/sr;
+        /* cents -> playback-rate multiplier */
+        const cents=wowCents*Math.sin(2*Math.PI*wowHz*t+wowPh)
+                  + flutCents*Math.sin(2*Math.PI*flutHz*t+flutPh)
+                  + driftCents*driftAt(t);
+        const rate=Math.pow(2, cents/1200);
+        /* read the source at a moving position, interpolated */
+        const idx=Math.floor(pos);
+        let x=0;
+        if(idx>=0 && idx+1<n){ const fr=pos-idx; x=d[idx]*(1-fr)+d[idx+1]*fr; }
+        else if(idx>=0 && idx<n) x=d[idx];
+        pos+=rate;
+        if(pos>=n-1) pos=n-1;
+        /* soft saturation: tape compresses as it is driven */
+        if(SAT>0){ const g=1+SAT*3; x=Math.tanh(x*g)/Math.tanh(g); }
+        /* and loses the top */
+        lp=lp*a+x*(1-a);
+        o2[k]=lp+(HISS?(rnd()*2-1)*HISS:0);
+      }
+    }
+    let pk=0;
+    for(const o2 of out) for(let k=0;k<n;k++){ const q=o2[k]<0?-o2[k]:o2[k]; if(q>pk) pk=q; }
+    if(pk<1e-6) throw new Error('the tape pass came out silent');
+    const g=Math.min(4, 0.95/pk);
+    for(const o2 of out) for(let k=0;k<n;k++) o2[k]*=g;
+
+    const buf=AC.createBuffer(ch, n, sr);
+    for(let c=0;c<ch;c++) buf.getChannelData(c).set(out[c]);
+    const name=o.name||((p.name||('pad '+i))+' (tape)');
+    const target=(o.pad==null)?i:clamp(o.pad|0,0,NPADS-1);
+    S.editPad=target;
+    if(loadIntoTarget(buf, name, {keepTarget:true, noAsk:true})===false)
+      throw new Error('could not put the tape pass on '+padName(target));
+    if(p.srcNote!=null) S.pads[target].srcNote=p.srcNote;
+    S.pads[target].srcCat='TAPE';
+    dirty();
+    try{ drawPads(); }catch(e){}
+
+    const rep=await specReport(buf);
+    return { pad:target, name, from:i,
+      wow:{cents:wowCents, hz:wowHz}, flutter:{cents:flutCents, hz:flutHz},
+      drift:driftCents, sat:SAT, hiLossHz:HILOSS,
+      seconds:+(n/sr).toFixed(2), shape:rep.shape, peak:rep.peak,
+      says:'ran '+(p.name||('pad '+i))+' to tape: '+wowCents+' cents of wow at '
+        +wowHz+'Hz, '+flutCents+' of flutter at '+flutHz+'Hz, '+driftCents
+        +' of drift, and the top rolled off from '+HILOSS+'Hz. '
+        +(target===i?'Replaced in place.':'Left on '+padName(target)+'.') };
+  },
+
+  /* PLAY ONE SOUND USING THE PIECES OF ANOTHER.
+
+     The idea is Samplebrain's, designed by Richard James and written by
+     Dave Griffiths. This is an independent implementation of a published
+     technique, not a port of their GPL code.
+
+     WHAT THIS USED TO BE, AND WHY IT WAS NOT THE SAME THING. The first
+     version described itself as an implementation of the technique and
+     had about a third of it.
+
+     The comment that stood here claimed the opposite, under the heading
+     WHAT READING THEIR MANUAL CHANGED, and listed four fixes taken from
+     it: match on frequency AND dynamics rather than shape alone, add
+     stickiness, replace random tie-breaking with novelty and boredom,
+     and add the reversed mode with its silence caveat. Those four are
+     real and they are all still here. But the same comment left the
+     reader — and the next agent — believing the implementation had
+     caught up with the thing it names, and it had not. Reading a manual
+     and acting on the first four things in it is not the same as
+     implementing what it describes, and the write-up should not have
+     been in the past tense.
+
+     Checked properly against docs/manual.md, these were missing:
+
+       - it compared blocks on EIGHT log-spaced bands. Samplebrain uses
+         ONE HUNDRED frequency bins, or MFCCs, or a blend of the two.
+         Eight numbers cannot tell apart blocks that a hundred separate
+         easily, so everything matched "near enough" and the output was
+         mush. This was by far the biggest of the gaps.
+       - no `synaptic` or `slide` search. Those are not optimisations:
+         the manual is explicit that synaptic makes the output change
+         with each repetition of the target, and that slide "warps the
+         timing of the target sound". Sound-defining behaviour, absent.
+       - no autotune, no separate brain and target block sizes, no
+         adjustable overlap or window shape, no frequency subrange, no
+         search stretch, no brain/target mix, mono only.
+
+     All of those are here now. The defaults have MOVED: `bins` is 32 and
+     `mfcc` is 0.35 where the old code was effectively bins:8, mfcc:0.
+     That is a deliberate change and it will alter what the four songs
+     using resynth() render. Pass {bins:8, mfcc:0} for the old matcher. */
+  async resynth(opt){
+    const o=opt||{};
+    ensureAudio();
+    if(o.target==null) throw new Error('resynth needs {target: padIndex} — the sound to rebuild');
+    const tp=S.pads[o.target|0];
+    if(!tp || tp.bufId<0) throw new Error('pad '+(o.target|0)+' has no sample to rebuild');
+    const tBuf=S.buffers[tp.bufId];
+    if(!tBuf || !tBuf.length) throw new Error('the target pad\'s buffer is empty');
+
+    /* the brain: every other pad that holds a sample, unless told */
+    let brainPads=o.brain;
+    if(!Array.isArray(brainPads) || !brainPads.length){
+      brainPads=[];
+      for(let i=0;i<NPADS;i++) if(i!==(o.target|0) && S.pads[i] && S.pads[i].bufId>=0) brainPads.push(i);
+    }
+    brainPads=brainPads.map(x=>x|0).filter(i=>S.pads[i] && S.pads[i].bufId>=0 && i!==(o.target|0));
+    if(!brainPads.length) throw new Error('nothing in the brain — load some other pads first, '
+      +'or pass {brain:[padIndexes]}');
+
+    const sr=tBuf.sampleRate;
+    /* BRAIN AND TARGET BLOCK SIZES ARE SEPARATE. Their manual says so
+       twice, once under each heading: "This does not need to match the
+       brain block size." Rebuilding a long target out of short brain
+       blocks is a different instrument from matching them. */
+    const blockMs=clamp(o.blockMs==null?60:+o.blockMs, 10, 400);
+    const brainMs=clamp(o.brainBlockMs==null?blockMs:+o.brainBlockMs, 10, 400);
+    const B=Math.max(256, Math.round(sr*blockMs/1000));
+    const BB=Math.max(256, Math.round(sr*brainMs/1000));
+    const OVERLAP=clamp(o.overlap==null?0.5:+o.overlap, 0, 0.9);
+    const HOP=Math.max(64, Math.round(B*(1-OVERLAP)));
+    const BHOP=Math.max(64, Math.round(BB*(1-OVERLAP)));
+    const FOLLOW=o.follow!==false;          /* scale each block to the target's level */
+    const MATCH=o.match||'shape+level';
+    if(['shape','shape+level'].indexOf(MATCH)<0)
+      throw new Error("match must be 'shape' or 'shape+level'");
+    const NOVELTY=clamp(o.novelty==null?0.3:+o.novelty, 0, 1);
+    const BOREDOM=clamp(o.boredom==null?0.25:+o.boredom, 0, 1);
+    const STICKY=clamp(o.stickiness==null?0.25:+o.stickiness, 0, 1);
+
+    /* algorithm. `reversed:true` still works and means algorithm
+       'reversed', because four songs in this repo pass it. */
+    const ALGO=o.algorithm || (o.reversed ? 'reversed' : 'basic');
+    if(['basic','reversed','synaptic','slide'].indexOf(ALGO)<0)
+      throw new Error("algorithm must be 'basic', 'reversed', 'synaptic' or 'slide'");
+    const REVERSED=ALGO==='reversed';
+    const SYNAPSES=clamp(o.synapses==null?100:o.synapses|0, 1, 1000);
+    const SLIDE_DB=clamp(o.slideError==null?6:+o.slideError, 0.5, 40);
+    const STRETCH=clamp(o.stretch==null?1:o.stretch|0, 1, 8);
+    const AUTOTUNE=!!o.autotune;
+    const TARGETMIX=clamp(o.targetMix==null?0:+o.targetMix, 0, 1);
+    const STEREO=!!o.stereo && tBuf.numberOfChannels>1;
+
+    /* ---- FEATURES ----------------------------------------------------
+       `bins` log-spaced spectral bands and/or `mfcc` cepstral
+       coefficients, blended. Samplebrain's own note applies: at 0 or 1
+       the other half is not computed at all, which is the cheap case.
+
+       Either way the spectral part is CENTRED, so only its shape is
+       compared. Level is kept apart and used to rescale rather than to
+       match, so a corpus of quiet field recordings can stand in for a
+       loud kick. */
+    const BINS=clamp(o.bins==null?32:o.bins|0, 4, 100);
+    const MFCCMIX=clamp(o.mfcc==null?0.35:+o.mfcc, 0, 1);
+    const NMFCC=13;
+    const NFFT=1<<Math.ceil(Math.log2(Math.min(4096, Math.max(512, Math.max(B,BB)))));
+    const NYQ=sr/2, FLO=40, FHI=Math.min(16000, NYQ*0.98);
+
+    /* log-spaced band edges, BINS of them */
+    const EDGES=new Float64Array(BINS+1);
+    for(let i=0;i<=BINS;i++) EDGES[i]=FLO*Math.pow(FHI/FLO, i/BINS);
+    /* fft subsection: a subrange of those bins, as their manual has it */
+    let BLO=0, BHI=BINS;
+    if(Array.isArray(o.binRange) && o.binRange.length===2){
+      BLO=clamp(o.binRange[0]|0, 0, BINS-1);
+      BHI=clamp(o.binRange[1]|0, BLO+1, BINS);
+    }
+
+    /* mel filterbank + DCT-II, built once */
+    const mel=f=>2595*Math.log10(1+f/700), unmel=m=>700*(Math.pow(10,m/2595)-1);
+    const NMEL=26, melPts=new Float64Array(NMEL+2);
+    for(let i=0;i<NMEL+2;i++) melPts[i]=unmel(mel(FLO)+(mel(FHI)-mel(FLO))*i/(NMEL+1));
+
+    const WINSHAPE=o.window||'hann';
+    if(['hann','rect','dodgy'].indexOf(WINSHAPE)<0)
+      throw new Error("window must be 'hann', 'rect' or 'dodgy'");
+    const mkWin=(n)=>{ const w=new Float64Array(n);
+      for(let i=0;i<n;i++){
+        if(WINSHAPE==='rect') w[i]=1;
+        /* "a kind of linear fade in and out, left in for legacy
+           compatibility with prototype versions" — their words */
+        else if(WINSHAPE==='dodgy') w[i]=Math.min(1, Math.min(i,n-1-i)/(n*0.25));
+        else w[i]=0.5-0.5*Math.cos(2*Math.PI*i/(n-1));
+      } return w; };
+    /* The window is the length of the BLOCK and the FFT is zero-padded
+       after it. Windowing across the whole NFFT instead would taper the
+       target's 60ms and the brain's 20ms by different fractions of their
+       own length, so the two would stop being comparable the moment the
+       separate block sizes were used — which is the feature this was
+       added alongside. */
+    const winT=mkWin(B), winB=mkWin(BB);
+
+    const re=new Float64Array(NFFT), im=new Float64Array(NFFT);
+    const pw=new Float64Array(NFFT>>1);
+    const featOf=(data, at, len, w)=>{
+      let rms=0;
+      for(let i=0;i<NFFT;i++){
+        const v=(i<len && at+i<data.length)?data[at+i]:0;
+        re[i]=v*(i<len?w[i]:0); im[i]=0;
+        if(i<len) rms+=v*v;
+      }
+      rms=Math.sqrt(rms/Math.max(1,len));
+      if(rms<1e-5) return null;                 /* silence is not a block */
+      fftInPlace(re,im);
+      const binHz=sr/NFFT, half=NFFT>>1;
+      for(let i=0;i<half;i++) pw[i]=re[i]*re[i]+im[i]*im[i];
+
+      const dim=(MFCCMIX<1?(BHI-BLO):0)+(MFCCMIX>0?NMFCC:0);
+      const f=new Float64Array(dim);
+      let k=0, f0=0;
+
+      if(MFCCMIX<1){
+        const band=new Float64Array(BINS);
+        for(let i=1;i<half;i++){
+          const hz=i*binHz;
+          if(hz<EDGES[0]||hz>=EDGES[BINS]) continue;
+          /* log spacing means a direct index, no scan */
+          let b=Math.floor(BINS*Math.log(hz/FLO)/Math.log(FHI/FLO));
+          if(b<0) b=0; else if(b>=BINS) b=BINS-1;
+          band[b]+=pw[i];
+        }
+        let mean=0;
+        for(let b=0;b<BINS;b++) band[b]=10*Math.log10(Math.max(band[b],1e-12));
+        for(let b=BLO;b<BHI;b++) mean+=band[b];
+        mean/=Math.max(1,BHI-BLO);
+        const w=1-MFCCMIX;
+        for(let b=BLO;b<BHI;b++) f[k++]=(band[b]-mean)*w;
+      }
+      if(MFCCMIX>0){
+        const fb=new Float64Array(NMEL);
+        for(let m=0;m<NMEL;m++){
+          const lo=melPts[m], mid=melPts[m+1], hi=melPts[m+2];
+          let s=0;
+          const i0=Math.max(1,Math.ceil(lo/binHz)), i1=Math.min(half-1,Math.floor(hi/binHz));
+          for(let i=i0;i<=i1;i++){
+            const hz=i*binHz;
+            const t = hz<=mid ? (hz-lo)/Math.max(1e-9,mid-lo) : (hi-hz)/Math.max(1e-9,hi-mid);
+            if(t>0) s+=pw[i]*t;
+          }
+          fb[m]=Math.log(Math.max(s,1e-12));
+        }
+        /* DCT-II, dropping coefficient 0 — that is overall level, which
+           is handled separately and must not creep into the shape */
+        const w=MFCCMIX*0.5;   /* mfcc coefficients run larger than dB */
+        for(let c=1;c<=NMFCC;c++){
+          let s=0;
+          for(let m=0;m<NMEL;m++) s+=fb[m]*Math.cos(Math.PI*c*(m+0.5)/NMEL);
+          f[k++]=s*w;
+        }
+      }
+      if(AUTOTUNE){
+        /* dominant partial, parabolically interpolated — enough to pitch
+           one block toward another, not a pitch tracker */
+        let bi=1, bv=0;
+        const iLo=Math.max(1,Math.floor(60/binHz)), iHi=Math.min(half-2,Math.floor(2000/binHz));
+        for(let i=iLo;i<=iHi;i++) if(pw[i]>bv){ bv=pw[i]; bi=i; }
+        const a=Math.log(Math.max(pw[bi-1],1e-20)), b2=Math.log(Math.max(pw[bi],1e-20)),
+              c2=Math.log(Math.max(pw[bi+1],1e-20));
+        const d=0.5*(a-c2)/Math.max(1e-9,(a-2*b2+c2));
+        f0=(bi+(isFinite(d)?clamp(d,-1,1):0))*binHz;
+      }
+      return {f, rms, f0};
+    };
+
+    /* ---- BUILD THE BRAIN ---------------------------------------------- */
+    const brain=[];
+    for(const pi of brainPads){
+      const b=S.buffers[S.pads[pi].bufId];
+      if(!b || !b.length) continue;
+      const d=b.getChannelData(0);
+      let prev=-1;
+      for(let at=0; at+BB<=d.length; at+=BHOP){
+        const ft=featOf(d, at, BB, winB);
+        if(!ft) { prev=-1; continue; }
+        /* `i` is stored on the block. The old code called
+           brain.indexOf(pick) once per target block — a linear scan of
+           up to twenty thousand entries, every time, to recover an index
+           it already had. */
+        const idx=brain.length;
+        brain.push({i:idx, pad:pi, at, f:ft.f, rms:ft.rms, f0:ft.f0,
+          data:d, len:BB, next:-1, used:0});
+        if(prev>=0) brain[prev].next=idx;
+        prev=idx;
+      }
+      if(brain.length>20000) break;             /* enough is enough */
+    }
+    if(!brain.length) throw new Error('every block in the brain was silence');
+    const DIM=brain[0].f.length;
+
+    /* ---- THE SYNAPSE NETWORK, BUILT LAZILY ----------------------------
+       Their description: the blocks are connected by similarity and only
+       the nearby ones are searched, which makes the search time constant
+       however big the brain is.
+
+       Precomputing every block's neighbours is O(n^2) and would be
+       twenty thousand squared here. Instead a block's neighbours are
+       found the first time the walk arrives at it, and cached — the walk
+       only ever visits as many nodes as the target has blocks, so the
+       cost is bounded by the target's length rather than the brain's. */
+    const synapse=new Map();
+    const featDist=(a,b)=>{ let s=0; for(let k=0;k<DIM;k++){ const e=a[k]-b[k]; s+=e*e; } return s; };
+    const neighboursOf=(i)=>{
+      let n=synapse.get(i);
+      if(n) return n;
+      const me=brain[i].f, scored=[];
+      for(let j=0;j<brain.length;j++){ if(j!==i) scored.push([featDist(brain[j].f,me), j]); }
+      scored.sort((a,b)=>a[0]-b[0]);
+      n=scored.slice(0,SYNAPSES).map(x=>x[1]);
+      synapse.set(i,n);
+      return n;
+    };
+
+    /* ---- REBUILD ------------------------------------------------------ */
+    const chans=STEREO?2:1;
+    const tLen=tBuf.length;
+    /* THE OUTPUT IS NOT ALWAYS THE TARGET'S LENGTH. Search stretch is
+       "like a simple timestretch", and slide "unpredictably warps the
+       timing" — both make the rebuild take longer than what it is
+       rebuilding. Written into a buffer fixed at the target's length,
+       stretch 3 did not stretch anything: it used each target block
+       three times and so only ever reached the first third of the
+       target, and the block count came out identical. The buffer is
+       allocated with room for the warp and trimmed to what was
+       actually written. At stretch 1 with no slide the multiplier is
+       exactly 1, so nothing moves for existing callers. */
+    const outN=Math.round(tLen*STRETCH*(ALGO==='slide'?1.5:1));
+    const outs=[], accs=[];
+    for(let c=0;c<chans;c++){ outs.push(new Float32Array(outN)); accs.push(new Float32Array(outN)); }
+    const fade=mkWin(B);
+
+    let rs=(o.seed|0)||0xC0FFEE;
+    const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+
+    const used=new Set();
+    let placed=0, ran=0, slid=0, tuned=0, reach=0;
+
+    for(let ch=0; ch<chans; ch++){
+      const td=tBuf.getChannelData(STEREO?ch:0);
+      const out=outs[ch], acc=accs[ch];
+      let lastIdx=-1, at=0, outAt=0, guard=0, rep=0;
+
+      /* the target pointer is bounded by the TARGET, the output pointer
+         by the output — they are different lengths now */
+      while(at+B<=tLen && outAt+B<=outN){
+        const ft=featOf(td, at, B, winT);
+        if(!ft){ at+=HOP; outAt+=HOP; continue; }
+
+        const distTo=(c)=>{
+          let d2=featDist(c.f, ft.f);
+          if(MATCH==='shape+level'){
+            const dl=20*Math.log10(Math.max(c.rms,1e-6)/Math.max(ft.rms,1e-6));
+            d2+=dl*dl*0.6;
+          }
+          return d2;
+        };
+
+        /* the candidate set: everything, or just this node's synapses */
+        let scan=null;
+        if((ALGO==='synaptic'||ALGO==='slide') && lastIdx>=0){
+          scan=neighboursOf(lastIdx);
+          if(brain[lastIdx].next>=0) scan=scan.concat([brain[lastIdx].next]);
+        }
+
+        let best=null, bestRaw=Infinity, bestScore=Infinity;
+        const consider=(c)=>{
+          /* REVERSED wants the least similar, and silence is least
+             similar to everything — their manual says so and it is true
+             here too, so quiet blocks are kept out of that race. */
+          if(REVERSED && c.rms<ft.rms*0.25) return;
+          const raw=distTo(c);
+          const sc=(REVERSED? -raw : raw) + NOVELTY*c.used*18;
+          if(sc<bestScore){ bestScore=sc; best=c; bestRaw=raw; }
+        };
+        if(scan){ for(const j of scan) consider(brain[j]); }
+        else { for(const c of brain) consider(c); }
+        if(!best){ at+=HOP; outAt+=HOP; continue; }
+
+        /* STICKINESS: if whatever followed the last block we took is
+           close enough, take that instead and keep the run intact.
+           Not in reversed mode, where bestRaw is the deliberately WORST
+           distance and every successor compares favourably against it. */
+        let pick=best;
+        if(STICKY>0 && !REVERSED && lastIdx>=0 && brain[lastIdx].next>=0){
+          const nxt=brain[brain[lastIdx].next];
+          if(distTo(nxt) <= bestRaw*(1+STICKY)) { pick=nxt; ran++; }
+        }
+        lastIdx=pick.i;
+        pick.used++;
+        if(BOREDOM>0) for(const c of brain) if(c.used>0) c.used*=(1-BOREDOM*0.5);
+
+        /* AUTOTUNE: bend the chosen block toward the target's pitch.
+           Capped at a fifth either way — past that it is not a tune, it
+           is a different sound played wrong. */
+        let rate=1;
+        if(AUTOTUNE && pick.f0>20 && ft.f0>20){
+          rate=clamp(pick.f0/ft.f0, Math.pow(2,-7/12), Math.pow(2,7/12));
+          if(Math.abs(rate-1)>0.001) tuned++;
+        }
+
+        const g=FOLLOW ? (ft.rms/Math.max(pick.rms,1e-6)) : 1;
+        const gg=Math.max(0, Math.min(8, g));
+        for(let i=0;i<B && outAt+i<outN; i++){
+          const sp=pick.at+i*rate;
+          const i0=Math.floor(sp), fr=sp-i0;
+          let v=0;
+          if(i0>=0 && i0+1<pick.data.length) v=pick.data[i0]*(1-fr)+pick.data[i0+1]*fr;
+          else if(i0>=0 && i0<pick.data.length) v=pick.data[i0];
+          let s=v*gg;
+          if(TARGETMIX>0) s=s*(1-TARGETMIX)+(at+i<outN?td[at+i]:0)*TARGETMIX;
+          out[outAt+i]+=s*fade[i];
+          acc[outAt+i]+=fade[i];
+        }
+        used.add(pick.pad); placed++;
+        if(outAt+B>reach) reach=outAt+B;
+
+        /* SLIDE: "if we can't find a close enough match we repeat the
+           target block again, stretching it until we land on a block
+           that is close enough. This mode unpredictably warps the timing
+           of the target sound." So the OUTPUT advances and the TARGET
+           does not — that is what the warp is. */
+        const errDb=Math.sqrt(bestRaw/Math.max(1,DIM));
+        outAt+=HOP;
+        if(ALGO==='slide' && errDb>SLIDE_DB && guard<8){
+          /* hold the target where it is and go round again: the output
+             advances, the target does not, and the difference is the
+             warp */
+          slid++; guard++;
+        } else {
+          guard=0;
+          /* SEARCH STRETCH repeats each target block a fixed number of
+             times — a simple timestretch, and in synaptic mode it gives
+             the walk more attempts at a closer match. */
+          if(++rep>=STRETCH){ at+=HOP; rep=0; }
+        }
+      }
+    }
+
+    /* trim to what was written rather than to what was allocated, or a
+       stretch of 3 on a target that ran out early leaves two thirds of
+       the buffer as digital silence.
+
+       Trimming to `reach` alone was wrong in the other direction: the
+       last partial block never gets placed, so a plain stretch-1 call
+       came out a block short of the target it was rebuilding — 0.99s
+       against 1.00s, a silent change to every existing caller. Only
+       the UNUSED EXTRA is trimmed; the target's own length is the
+       floor. */
+    const N=Math.max(1, Math.min(tLen, outN), Math.min(outN, reach||outN));
+    for(let c=0;c<chans;c++){
+      const out=outs[c], acc=accs[c];
+      for(let i=0;i<N;i++) if(acc[i]>1e-6) out[i]/=acc[i];
+    }
+    let pk=0;
+    for(const out of outs) for(let i=0;i<N;i++){ const a=out[i]<0?-out[i]:out[i]; if(a>pk) pk=a; }
+    if(pk<1e-5) throw new Error('the rebuild came out silent — try a longer blockMs, '
+      +'or a brain whose sounds are closer to the target');
+    const norm=0.9/pk;
+    for(const out of outs) for(let i=0;i<N;i++) out[i]*=norm;
+
+    const buf=AC.createBuffer(chans, N, sr);
+    for(let c=0;c<chans;c++) buf.getChannelData(c).set(outs[c].subarray(0,N));
+    const name=o.name||((tp.name||('pad '+(o.target|0)))+' rebuilt');
+    const target=(o.pad==null)?pickTargetPad():clamp(o.pad|0,0,NPADS-1);
+    S.editPad=target;
+    if(loadIntoTarget(buf, name, {keepTarget:true, noAsk:true})===false)
+      throw new Error('could not put the rebuild on '+padName(target));
+    S.pads[target].srcSample=''; S.pads[target].srcCat='RESYNTH';
+    if(tp.srcNote!=null) S.pads[target].srcNote=tp.srcNote;
+    dirty();
+    try{ drawPads(); }catch(e){}
+
+    return { pad:target, name, from:(o.target|0), brainPads,
+      match:MATCH, algorithm:ALGO, reversed:REVERSED, stereo:STEREO,
+      features:{bins:BINS, binRange:[BLO,BHI], mfcc:MFCCMIX, dims:DIM, window:WINSHAPE},
+      settings:{novelty:NOVELTY, boredom:BOREDOM, stickiness:STICKY,
+        overlap:OVERLAP, stretch:STRETCH, autotune:AUTOTUNE, targetMix:TARGETMIX,
+        synapses:(ALGO==='synaptic'||ALGO==='slide')?SYNAPSES:null,
+        slideError:(ALGO==='slide')?SLIDE_DB:null},
+      continuedRuns:ran, continuedPct:placed?+(100*ran/placed).toFixed(0):0,
+      slidRepeats:slid, autotuned:tuned,
+      synapsesBuilt:synapse.size,
+      blocks:placed, brainBlocks:brain.length,
+      blockMs:+blockMs.toFixed(0), brainBlockMs:+brainMs.toFixed(0),
+      padsUsed:[...used].map(i=>(S.pads[i]&&S.pads[i].name)||('pad '+i)),
+      seconds:+(N/sr).toFixed(2), targetSeconds:+(tLen/sr).toFixed(2),
+      says:'rebuilt '+(tp.name||('pad '+(o.target|0)))+' out of '+placed+' blocks taken from '
+        +used.size+' pad'+(used.size===1?'':'s')+' ('+brain.length+' candidates, '
+        +DIM+'-dimensional match). It has the shape of the target and the substance '
+        +'of the brain'
+        +(ran?(', and '+ran+' of those blocks carried straight on from the one before '
+          +'rather than being searched for — that is what keeps runs of the source intact'):'')
+        +(slid?('. '+slid+' target blocks were held and stretched because nothing in reach '
+          +'was within '+SLIDE_DB+'dB — that is the timing warp'):'')
+        +'.' };
+  },
+
+  /* PAINT A SOUND AS A SPECTRUM, THE WAY MetaSynth DOES.
+
+     The most picked-over thing in this man's catalogue is the face
+     hidden in the spectrogram of Equation, drawn in MetaSynth — a
+     program whose actual idea is that an image IS a spectrogram:
+     horizontal is time, vertical is frequency, brightness is level, and
+     it resynthesises whatever you paint. The face is the famous part
+     and the least interesting part. The tool underneath is an additive
+     synthesiser you draw rather than patch, and nothing here could do
+     that.
+
+     So: `rows` is a grid of levels, lowest frequency first, each row a
+     partial and each column a moment. 64 rows over 2 seconds gives a
+     texture that no oscillator-and-filter chain here can reach, because
+     the partials need not be harmonic, need not share an envelope, and
+     need not even overlap.
+
+     Frequency is mapped LOGARITHMICALLY by default, which is the detail
+     that took people years to work out about the face — it only reads
+     as a face on a log axis, and it only sounds like anything musical
+     on one either, since equal row spacing on a linear axis crowds
+     everything into the top octave.
+
+     `partials` is the same engine addressed one tone at a time, for
+     when a bell with specific inharmonic ratios is wanted rather than a
+     picture. */
+  async paint(opt){
+    const o=opt||{};
+    ensureAudio();
+    const sr=AC.sampleRate;
+    const secs=clamp(o.seconds==null?2:+o.seconds, 0.1, 8);
+    const n=Math.max(64, Math.floor(sr*secs));
+    const lo=clamp(+o.lo||60, 20, 17000);
+    const hi=clamp(+o.hi||12000, lo*1.05, 20000);
+    const useLog=o.log!==false;
+
+    /* one entry per partial: a frequency and a level-over-time */
+    const parts=[];
+    if(Array.isArray(o.rows) && o.rows.length){
+      const R=o.rows.length;
+      for(let r=0;r<R;r++){
+        const row=o.rows[r];
+        if(!Array.isArray(row) || !row.length) continue;
+        let mx=0; for(const v of row) if(+v>mx) mx=+v;
+        if(mx<=0.002) continue;            /* a dark row is silence, and costs nothing */
+        const frac=R===1?0:r/(R-1);
+        parts.push({hz: useLog ? lo*Math.pow(hi/lo, frac) : lo+(hi-lo)*frac,
+          env:row.map(v=>Math.max(0, Math.min(1, +v||0)))});
+      }
+    } else if(Array.isArray(o.partials) && o.partials.length){
+      for(const q of o.partials){
+        const hz=+q.hz || (q.midi!=null ? 440*Math.pow(2,(+q.midi-69)/12) : 0);
+        if(!(hz>0)) continue;
+        const at=clamp(q.at==null?0:+q.at, 0, 1);
+        const dur=clamp(q.dur==null?(1-at):+q.dur, 0.002, 1);
+        const lv=clamp(q.level==null?1:+q.level, 0, 1);
+        /* a short ramp at each end, because a partial that starts and
+           stops instantly is a click with a tone attached */
+        const E=96, env=new Array(E).fill(0), ramp=Math.max(1, Math.round(E*0.02));
+        for(let k=0;k<E;k++){
+          const t=k/(E-1);
+          if(t<at || t>at+dur) continue;
+          const into=(t-at)/dur;
+          const g=Math.min(1, into*(E*dur)/ramp, (1-into)*(E*dur)/ramp);
+          env[k]=lv*Math.max(0, Math.min(1, g));
+        }
+        parts.push({hz, env, toHz:+q.toHz>0?+q.toHz:0});
+      }
+    } else throw new Error('paint needs rows (a grid of levels, lowest frequency first) '
+      +'or partials ([{hz|midi, at, dur, level, toHz}])');
+
+    if(!parts.length) throw new Error('nothing to paint — every row was silent');
+    if(parts.length>192) throw new Error(parts.length+' partials is past the 192 cap: '
+      +'this is additive synthesis and every one of them costs a pass over the buffer');
+
+    /* a table rather than Math.sin per sample per partial: 64 partials
+       over two seconds is five and a half million of them */
+    const TAB=4096, tab=new Float32Array(TAB+1);
+    for(let i=0;i<=TAB;i++) tab[i]=Math.sin(2*Math.PI*i/TAB);
+
+    let rs=(o.seed|0)||0x5EED;
+    const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+
+    const out=new Float32Array(n);
+    for(const p of parts){
+      const env=p.env, E=env.length, glide=p.toHz>0;
+      /* a random starting phase per partial: start them all at zero and
+         the first sample is the sum of every amplitude at once, which
+         is a click no envelope can hide */
+      let phase=rnd();
+      const ratio=glide?Math.log(p.toHz/p.hz):0;
+      for(let i=0;i<n;i++){
+        const t=i/(n-1);
+        const x=t*(E-1), k=x|0, f=x-k;
+        const a=env[k]*(1-f)+(env[k+1]==null?env[k]:env[k+1])*f;
+        if(a>0.0004) out[i]+=a*tab[(phase*TAB)|0];
+        phase+=(glide?p.hz*Math.exp(ratio*t):p.hz)/sr;
+        if(phase>=1) phase-=(phase|0);
+      }
+    }
+    /* normalise, and fade the very ends so the sample can loop or be
+       retriggered without a click */
+    let pk=0; for(let i=0;i<n;i++){ const a=out[i]<0?-out[i]:out[i]; if(a>pk) pk=a; }
+    if(pk<=0) throw new Error('the painted buffer came out silent');
+    const g=0.9/pk, fade=Math.min(Math.floor(sr*0.004), n>>3);
+    for(let i=0;i<n;i++){
+      let v=out[i]*g;
+      if(i<fade) v*=i/fade;
+      if(i>=n-fade) v*=(n-1-i)/fade;
+      out[i]=v;
+    }
+
+    const buf=AC.createBuffer(1, n, sr);
+    buf.getChannelData(0).set(out);
+    const name=o.name||('painted '+parts.length+'p');
+    const target=(o.pad==null)?pickTargetPad():clamp(o.pad|0,0,NPADS-1);
+    S.editPad=target;
+    if(loadIntoTarget(buf, name, {keepTarget:true, noAsk:true})===false)
+      throw new Error('could not put the painted sound on '+padName(target));
+    S.pads[target].srcSample=''; S.pads[target].srcCat='PAINT';
+    if(o.midi!=null) S.pads[target].srcNote=+o.midi;
+    dirty();
+    try{ drawPads(); }catch(e){}
+
+    const rep=await specReport(buf);
+    return { pad:target, name, seconds:+(n/sr).toFixed(3), partials:parts.length,
+      lo:Math.round(lo), hi:Math.round(hi), log:useLog,
+      lowest:Math.round(parts[0].hz), highest:Math.round(parts[parts.length-1].hz),
+      shape:rep.shape, peak:rep.peak,
+      says:'painted '+parts.length+' partials from '+Math.round(parts[0].hz)+'Hz to '
+        +Math.round(parts[parts.length-1].hz)+'Hz onto '+padName(target)
+        +'. It is a sample now — pad() it, chop() it, mutate() it like any other.' };
+  },
+
+  /* MUTATE A SOUND: MAKE VARIATIONS, MEASURE THEM, KEEP THE BEST.
+
+     Richard James described commissioning software that "starts with a
+     sound, analyzes it, then makes variations, randomizing and
+     comparing them to the original before picking the best one". That
+     is a hill-climb with an ear for a fitness function, and it is worth
+     building here for a reason beyond provenance: this app has spent a
+     long time growing measurements, and a measurement you can score
+     with is a measurement you can search with. Everything needed to
+     judge a candidate already exists.
+
+     Randomising alone is not the idea and never was. Turning knobs at
+     random gives noise; what makes it a tool is that each variation is
+     compared against the sound it came from and kept only if it wins.
+     So `want` says what winning means — further from the original,
+     closer to it, brighter, darker, punchier — and the comparison is
+     always against the original rather than against an absolute.
+
+     It costs population x generations renders of ONE pad, so it is
+     minutes rather than seconds, and it restores the pad afterwards
+     unless asked to keep the result. Nothing is applied behind your
+     back. */
+  async mutate(padIdx, opt){
+    const o=opt||{}, i=padIdx|0, p=S.pads[i];
+    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    const POP=Math.max(2, Math.min(12, o.population||5));
+    const GEN=Math.max(1, Math.min(8, o.generations||3));
+    const WANT=o.want||'different';
+    const AMT=o.amount==null?0.35:Math.max(0.05, Math.min(1, o.amount));
+    const ro={loops:o.loops||1, src:o.src||'pat', noTail:false};
+
+    /* what may be touched, and how far. Envelope and filter first,
+       because those are what change a sound's character rather than its
+       identity; pitch and start are included but moved less, since they
+       are the two that stop it being the same instrument. */
+    const KNOBS=[
+      {k:'fcut', lo:0.04, hi:1,    scale:0.45},
+      {k:'fres', lo:0,    hi:8,    scale:0.35},
+      {k:'drv',  lo:0,    hi:0.9,  scale:0.40},
+      {k:'crush',lo:1,    hi:16,   scale:0.30},
+      {k:'att',  lo:0.001,hi:0.4,  scale:0.30},
+      {k:'dec',  lo:0.05, hi:6,    scale:0.40},
+      {k:'sus',  lo:0,    hi:1,    scale:0.35},
+      {k:'rel',  lo:0.01, hi:1,    scale:0.35},
+      {k:'eqLo', lo:-10,  hi:10,   scale:0.30},
+      {k:'eqMid',lo:-10,  hi:10,   scale:0.30},
+      {k:'eqHi', lo:-10,  hi:10,   scale:0.30},
+      {k:'start',lo:0,    hi:0.6,  scale:0.18},
+      {k:'pitch',lo:-12,  hi:12,   scale:0.15},
+      /* The three that were missing, and they are the ones that do most
+         to a real recording. `fine` is the detune that stops a doubled
+         sample sounding like one sample twice. `rev` and `dly` are the
+         sends — depth in the spatial sense, which nothing in this search
+         could previously reach, so every sound it produced was dry. They
+         are scoreable because `ro` renders with noTail:false, so the
+         tail a send creates is inside what gets measured; with the tail
+         cut they would be knobs the scorer could not hear, which is
+         worse than no knob at all. */
+      {k:'fine', lo:-50,  hi:50,   scale:0.25},
+      {k:'rev',  lo:0,    hi:0.6,  scale:0.30},
+      {k:'dly',  lo:0,    hi:0.5,  scale:0.25},
+    ];
+    const FTYPES=['off','lowpass','highpass','bandpass'];
+    /* HOW THE PITCH KNOB IS SPENT, which is a different sound each way.
+       Dropping a recording a fifth by varispeed slows it and thickens
+       every detail with it — the classic trick, and the reason a sample
+       pitched down reads as bigger rather than merely lower. Shifting it
+       with keepTime leaves the length alone and the artefacts show as
+       grain. Stretching it with keepPitch leaves the note alone and
+       smears the attack. Three genuinely different sounds from one
+       number, and until now the search only ever heard the first: it
+       moved `pitch` and nothing else, so two thirds of what pitch can do
+       to a sample were never tried. */
+    const PMODES=['varispeed','keepTime','keepPitch'];
+    const pmodeOf=(st)=>st.keepPitch?'keepPitch':(st.keepTime?'keepTime':'varispeed');
+    const setPmode=(st,m)=>{ st.keepPitch=(m==='keepPitch'); st.keepTime=(m==='keepTime'); };
+    const knobs=o.knobs?KNOBS.filter(x=>o.knobs.indexOf(x.k)>=0):KNOBS;
+    if(!knobs.length) throw new Error('no knobs left to turn — check the names in `knobs`');
+
+    let rs=(o.seed|0)||0x9E3779B9;
+    const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+
+    const FIELDS=knobs.map(x=>x.k).concat(['ftype','reverse','keepTime','keepPitch']);
+    const snap=()=>{ const o2={}; for(const k of FIELDS) o2[k]=p[k]; return o2; };
+    const put=(st)=>{ for(const k in st) p[k]=st[k]; };
+    const original=snap();
+
+    const measure=async()=>{
+      const buf=await renderMix(new Set([i]), new Set(), ro);
+      if(!buf) return null;
+      const r=await specReport(buf);
+      return r && r.peak>=0.002 ? r : null;
+    };
+    const base=await measure();
+    if(!base) throw new Error('pad '+i+(p.name?' ('+p.name+')':'')+' is silent over '
+      +(ro.src==='song'?'the song':'this pattern')+' — nothing to mutate. '
+      +'Write some steps for it first.');
+
+    /* HOW FAR APART ARE TWO SOUNDS. The spectral shape only: both are
+       normalised against their own total inside specShape, so this is
+       about colour rather than level, and a candidate cannot win by
+       simply being louder. */
+    const dist=(a,b)=>{
+      let n=0, s2=0;
+      for(const x of a.shape){ const y=b.shape.find(z=>z.band===x.band);
+        if(!y) continue; s2+=(x.rel-y.rel)*(x.rel-y.rel); n++; }
+      return n?Math.sqrt(s2/n):0;
+    };
+    /* `band` is a NAME, not a number — specShape labels each band
+       "20-60", "60-120" and so on, and `lo` is the numeric edge.
+       Filtering on band>=2000 compared a string to a number, which is
+       false for every band, so brightness was computed as exactly zero
+       every time and the brighter and darker goals could not move
+       anything at all. They ran twenty-four renders each and returned
+       the original, twice, identically. */
+    const tilt=(r)=>{ const hi=r.shape.filter(b=>b.lo>=2000).reduce((a,c)=>a+c.rel,0);
+      const lo=r.shape.filter(b=>b.lo<500).reduce((a,c)=>a+c.rel,0); return hi-lo; };
+    const score=(cand)=>{
+      const d=dist(base,cand);
+      switch(WANT){
+        /* a mutation that nobody recognises is a different sound, not a
+           variation of this one, so distance is rewarded up to a point
+           and then flat. Six decibels of shape change is a long way. */
+        case 'different': return Math.min(d,7)-Math.max(0,d-7)*0.6;
+        case 'similar':   return -d;
+        case 'brighter':  return tilt(cand)-tilt(base);
+        case 'darker':    return tilt(base)-tilt(cand);
+        case 'punchier':  return (cand.crestDb==null?0:cand.crestDb)-(base.crestDb==null?0:base.crestDb);
+        case 'fuller':    return -Math.abs(d-3);
+        default: throw new Error('want must be different, similar, brighter, darker, punchier or fuller');
+      }
+    };
+
+    /* THE ORIGINAL IS THE ONE TO BEAT, not negative infinity. Seeded
+       with -Infinity, the first candidate won whatever it did — and
+       since a candidate that changes nothing audible scores exactly
+       zero, a no-op took the lead and then blocked everything that
+       followed from being judged against the sound it came from. Both
+       "brighter" and "darker" returned the same inert result. */
+    let bestState=snap(), bestScore=score(base), bestRep=base, tried=0;
+    const history=[];
+    try{
+      for(let g=0; g<GEN; g++){
+        for(let c=0; c<POP; c++){
+          const st=Object.assign({}, bestState);
+          /* a handful of knobs per candidate, not all of them: changing
+             everything at once makes a different sound and tells you
+             nothing about which change did it */
+          /* A KNOB THAT DOES NOTHING IS NOT A MUTATION. With ftype off,
+             fcut and fres are wired to nothing, so a search that offers
+             them spends its budget turning a disconnected dial and
+             reports the result as the best it could do. Either the
+             filter gets switched on in the same candidate, or those two
+             are left alone. */
+          const live=knobs.filter(x=>!((x.k==='fcut'||x.k==='fres') && st.ftype==='off'));
+          const pool=live.length?live:knobs;
+          const howMany=1+Math.floor(rnd()*3);
+          for(let m=0;m<howMany;m++){
+            const kn=pool[Math.floor(rnd()*pool.length)];
+            const span=(kn.hi-kn.lo)*kn.scale*AMT;
+            let v=(+st[kn.k]||0)+(rnd()*2-1)*span;
+            st[kn.k]=+Math.max(kn.lo, Math.min(kn.hi, v)).toFixed(4);
+          }
+          const tonal=(WANT==='brighter'||WANT==='darker'||WANT==='different');
+          if(rnd()<(tonal?0.30:0.12)*AMT) st.ftype=FTYPES[Math.floor(rnd()*FTYPES.length)];
+          if(rnd()<0.08*AMT) st.reverse=!st.reverse;
+          /* only worth trying when the pitch knob is actually off its
+             rest, since all three modes are identical at a ratio of 1 */
+          if(Math.abs(+st.pitch||0)>0.2 && rnd()<0.22*AMT)
+            setPmode(st, PMODES[Math.floor(rnd()*PMODES.length)]);
+          put(st); tried++;
+          const rep=await measure();
+          if(!rep) continue;
+          const sc=score(rep);
+          if(sc>bestScore){ bestScore=sc; bestState=Object.assign({},st); bestRep=rep;
+            history.push({generation:g+1, score:+sc.toFixed(2),
+              shapeChangeDb:+dist(base,rep).toFixed(2)}); }
+        }
+      }
+    } finally {
+      put(o.keep?bestState:original);
+      try{ reapplyLivePads(); }catch(e){}
+      dirty();
+    }
+
+    const changed=[];
+    for(const k of FIELDS){
+      const a=original[k], b=bestState[k];
+      if(a===b) continue;
+      changed.push({field:k, from:(typeof a==='number'?+(+a).toFixed(3):a),
+        to:(typeof b==='number'?+(+b).toFixed(3):b)});
+    }
+    /* two booleans are a worse answer than one word */
+    const pmWas=pmodeOf(original), pmNow=pmodeOf(bestState);
+    if(pmWas!==pmNow){
+      for(let k=changed.length-1;k>=0;k--)
+        if(changed[k].field==='keepTime'||changed[k].field==='keepPitch') changed.splice(k,1);
+      changed.push({field:'pitchMode', from:pmWas, to:pmNow});
+    }
+    return { pad:i, name:p.name||('pad '+i), want:WANT, tried, kept:!!o.keep,
+      changed, settings:bestState, pitchMode:pmNow,
+      shapeChangeDb:+dist(base,bestRep).toFixed(2),
+      before:{shape:base.shape, crestDb:base.crestDb, lufs:base.lufs},
+      after:{shape:bestRep.shape, crestDb:bestRep.crestDb, lufs:bestRep.lufs},
+      history,
+      says: changed.length
+        ? ('moved '+changed.map(c=>c.field).join(', ')+' — '
+          +(+dist(base,bestRep).toFixed(1))+'dB of spectral shape change over '+tried+' tries'
+          +(o.keep?'. Applied.':'. NOT applied: pass {keep:true} to keep it, or set the '
+            +'fields in `changed` yourself.'))
+        : 'nothing beat the original over '+tried+' tries — try a larger amount, more '
+          +'generations, or a different want.' };
+  },
+
+  /* SOLVE THE LEVELS INSTEAD OF GUESSING THEM.
+
+     This exists because of five consecutive attempts to balance one
+     track by ear, each of which fixed one part of the spectrum and
+     broke another: too dark, then too bright, then a hollow middle,
+     then no top octave at all. Every round cost a full render. The
+     numbers moved in the right direction each time and never arrived,
+     because setting eight group levels so that nine bands land on a
+     target is not a thing ears do well — it is a small linear system,
+     and it was being solved by hand.
+
+     Mixing is linear, so it can simply be solved. Render each group on
+     its own ONCE to get its energy per band, and after that the mix for
+     any set of gains is arithmetic: no further renders, however many
+     combinations are tried. What comes back is a gain per group and the
+     band each one is actually carrying.
+
+     It reports what it cannot do, too. A group whose answer lands above
+     the maximum gain is named as capped rather than silently clipped to
+     it — that is the bell tree, a -44dBFS recording that cannot be
+     lifted into place by gain alone and needs a different sample or a
+     shelf. */
+  async balance(opt){
+    const o=opt||{}, src=o.src||'pat';
+    const groups=o.groups||[...new Set((S.pads||[]).filter(p=>p&&p.inst).map(p=>p.inst))];
+    const MOVE=o.maxMoveDb==null?9:Math.abs(o.maxMoveDb);
+    if(!groups.length) throw new Error('no instruments on the board — call instrument() first');
+    /* the target curve: the reference's own shape, or a plain tilt if
+       none is loaded, said out loud rather than assumed */
+    let target=null, from='';
+    if(o.target){ target=o.target.slice(); from='the target passed in'; }
+    else if(refSpec && refSpec.shape){ target=refSpec.shape.map(b=>b.rel); from='the loaded reference'; }
+    else throw new Error('no reference loaded and no target given — call reference(url) first, '
+      +'or pass {target:[relDbPerBand]} for the nine bands');
+
+    /* one render per group, and that is the whole cost */
+    /* PADS BY INSTRUMENT, NOT BY instPads(). That helper exists for note
+       mapping and so requires a pad to know its own pitch, which means
+       it returns nothing at all for unpitched percussion. Used here it
+       silently dropped the entire air group — the shaker, cabasa,
+       triangle and bell tree — from the solve, which left the
+       glockenspiel as the only thing the fit could see above 8kHz and
+       had it asking for +24dB it could never deliver. The one group
+       that owns the top octave was the one group excluded. */
+    const padsOf=(g)=>{ const out=[];
+      for(let i=0;i<NPADS;i++) if(S.pads[i] && S.pads[i].inst===g && S.pads[i].bufId>=0) out.push(i);
+      return out; };
+    const E=[], used=[], padLists=[];
+    for(const g of groups){
+      const list=padsOf(g);
+      if(!list.length) continue;
+      const pads=new Set(list);
+      const buf=await renderMix(pads, new Set(), {src, loops:1, noTail:true});
+      if(!buf) continue;
+      const bands=await bandEnergy(buf);
+      if(!bands || !bands.length) continue;
+      const lin=bands.map(b=>Math.pow(10, b.db/10));
+      if(lin.reduce((a,c)=>a+c,0)<=1e-12) continue;      // silent group
+      E.push(lin); used.push(g); padLists.push(list);
+    }
+    if(!E.length) return {says:'nothing audible to balance.'};
+    const NB=Math.min(target.length, E[0].length);
+
+    /* iterative fit: each group is nudged by the error in the bands it
+       actually occupies, weighted by how much of each it owns. Damped,
+       because a group that owns one band can otherwise chase it alone. */
+    const m=E.map(()=>1);
+    const relOf=()=>{
+      const P=new Array(NB).fill(0);
+      for(let g=0;g<E.length;g++) for(let b=0;b<NB;b++) P[b]+=m[g]*m[g]*E[g][b];
+      const tot=P.reduce((a,c)=>a+c,0)||1e-12;
+      return P.map(p=>10*Math.log10(Math.max(p,1e-12)/tot));
+    };
+    for(let iter=0; iter<120; iter++){
+      const rel=relOf();
+      const err=[]; for(let b=0;b<NB;b++) err.push(target[b]-rel[b]);
+      const P=new Array(NB).fill(0);
+      for(let g=0;g<E.length;g++) for(let b=0;b<NB;b++) P[b]+=m[g]*m[g]*E[g][b];
+      for(let g=0;g<E.length;g++){
+        let num=0, den=0;
+        for(let b=0;b<NB;b++){
+          const share=(m[g]*m[g]*E[g][b])/Math.max(P[b],1e-12);
+          num+=share*err[b]; den+=share;
+        }
+        if(den<=1e-9) continue;
+        const d=(num/den)*0.35;                           // damping
+        m[g]*=Math.pow(10, Math.max(-3,Math.min(3,d))/20);
+        /* KEPT INSIDE A MUSICAL RANGE, because an unconstrained fit does
+           not balance a mix, it deletes from one. Left alone this solver
+           found that the cleanest way to match the reference curve was
+           to take the hand chimes down 49dB — mathematically correct,
+           and it removes an instrument from the piece. A level solver is
+           being asked for balance, not for arrangement, so no group may
+           move further than maxMoveDb from where the writing put it. */
+        const lim=Math.pow(10, MOVE/20);
+        if(m[g]>lim) m[g]=lim; else if(m[g]<1/lim) m[g]=1/lim;
+      }
+    }
+    /* only the SHAPE is being fitted, so the overall scale is free:
+       pin it so the loudest group keeps roughly the level it had and
+       the answer reads as a set of adjustments rather than a rebuild */
+    let big=0, bigE=-1;
+    for(let g=0;g<E.length;g++){ const t=E[g].reduce((a,c)=>a+c,0); if(t>bigE){ bigE=t; big=g; } }
+    const scale=1/m[big];
+    for(let g=0;g<m.length;g++) m[g]*=scale;
+
+    const BANDN=SPEC_BANDS.map(b=>b[0]);
+    const rows=[], capped=[];
+    for(let g=0;g<used.length;g++){
+      const pads=padLists[g];
+      const cur=pads.length&&S.pads[pads[0]]&&S.pads[pads[0]].gain!=null?S.pads[pads[0]].gain:1;
+      const want=cur*m[g];
+      const lim=Math.min(2, Math.max(0, want));
+      /* which band is this group carrying */
+      let own=0, ownV=-1;
+      for(let b=0;b<NB;b++){ let tot=0;
+        for(let k=0;k<E.length;k++) tot+=m[k]*m[k]*E[k][b];
+        const share=(m[g]*m[g]*E[g][b])/Math.max(tot,1e-12);
+        if(share>ownV){ ownV=share; own=b; } }
+      if(want>2.01) capped.push(used[g]+' wants '+want.toFixed(2)+', and gain stops at 2');
+      if(Math.abs(20*Math.log10(Math.max(m[g],1e-6)))>=MOVE-0.1)
+        capped.push(used[g]+' is pinned at the '+MOVE+'dB move limit, so the fit is holding it '
+          +'back — if it genuinely belongs that far out, the part or the sound is wrong, '
+          +'not the level');
+      rows.push({instrument:used[g], pads:pads.length,
+        gain:+cur.toFixed(3), suggested:+lim.toFixed(3),
+        changeDb:+(20*Math.log10(Math.max(m[g],1e-6))).toFixed(1),
+        owns:BANDN[own]+'Hz', ownsShare:+(100*ownV).toFixed(0)});
+    }
+    rows.sort((a,b)=>Math.abs(b.changeDb)-Math.abs(a.changeDb));
+    const worst=rows[0];
+    return { src, target:from, bands:BANDN.slice(0,NB), pads:rows, capped,
+      fit:relOf().map((v,i)=>({band:BANDN[i], got:+v.toFixed(1), want:+target[i].toFixed(1)})),
+      says:(rows.length?('the biggest move is '+worst.instrument+' by '+worst.changeDb+'dB'
+        +(capped.length?('; '+capped.length+' group'+(capped.length>1?'s':'')
+          +' cannot get there by gain alone'):'')):'nothing to move')
+        +'. Apply with pad() on each group, then render.' };
+  },
+
+  /* THE ORDER TO DO THIS IN, FOR WHOEVER COMES NEXT.
+
+     Written because the knowledge that makes this app produce decent
+     results had been accumulating in one head and in commit messages,
+     and neither travels. An agent arriving cold can list the API and
+     still have no idea that a manifest can lie about pitch, or that
+     gain means nothing until you know what the pad is holding. */
+  howto(){ return {
+    /* WHAT MATTERS BEFORE ANY OF THE REST OF IT. Everything else this
+       call returns is about sound. A track bounced here passed every
+       one of those checks — no silence, -16.2 LUFS, four bands inside
+       half a decibel of the reference, every pad owning its own band
+       — and the listener's verdict was "drone machine noise". It was:
+       its bass held one pitch for two minutes and five of its six
+       sounds never changed note. Nothing here measures whether the
+       harmony moves. */
+    first: [
+      'WRITE MUSIC, NOT TEXTURE. Chords that change, a melody with contour. If every '
+        + 'pad plays one pitch you have made a drone however well it is mixed. magenta '
+        + 'is installed for this: require("@magenta/music/node/music_rnn") — not the '
+        + 'barrel, which pulls in Tone and fails — and MusicRNN on '
+        + 'storage.googleapis.com/magentadata/js/checkpoints/music_rnn/chord_pitches_improv '
+        + 'writes a melody against a chord progression. Generate several and choose; the '
+        + 'same seed and temperature gave 12% leaps on one draw and 40% on the next.',
+      'REAL INSTRUMENTS NEED REAL SAMPLES, AND WHAT MAKES THEM REAL IS VELOCITY LAYERS. '
+        + 'A ghost note and an accent should be different recordings, not one waveform at '
+        + 'two gains. samples/nakeddrums.json is a recorded kit with five layers on the '
+        + 'kick and three round robins; swapping it in for a synthesised one moved the '
+        + 'pulse autocorrelation from 0.53 to 0.65 and the crest from 14.4 to 18.3. Load '
+        + 'it with instrument() so the sampler picks layers by velocity — sound() on a '
+        + 'single pad throws that away.',
+      'A FOUND SOUND IS NOT A DRUM. A door knock pitched down four semitones with drive '
+        + 'on it is a loud distorted door knock, and was heard as "a strange percussive '
+        + 'noise". pulse() reported no findable beat and was disbelieved; it was right. '
+        + 'Processing changes a sound, it does not change what the sound is of.',
+      'A PACK NAMED "real" MAY NOT BE. real-cc0-full contains mvxkit, which is '
+        + 'synthesised: durations of exactly 0.450, 0.220, 0.060 and 0.400 seconds, mono, '
+        + 'no source URL. Real recordings do not land on round numbers. A manifest that '
+        + 'names a URL per sample is a real library; one that names bare filenames was '
+        + 'generated.',
+      'THESE CHECKS CANNOT TELL YOU WHETHER IT IS MUSIC. They detect brokenness — '
+        + 'silence, clipping, DC, a sound with nowhere to sit — and passing all of them '
+        + 'means only that it is not broken. Play it to someone.',
+    ],
+    order: [
+      'Build it ONE SOUND AT A TIME. Decide what the song needs next — a bass, a high, a '
+        + 'pulse — then make that one thing and finish it before starting the next. The '
+        + 'alternative, which everything in this file used to assume, is to load a whole '
+        + 'palette, write every part, and sort the levels out at the end; that is what '
+        + 'creates a nine-band seven-group puzzle that then needs balance() to solve. The '
+        + 'puzzle is avoidable. Each of these is one sound:',
+      '  a. read the atlas for the pack (scripts/timbre-atlas.mjs) and pick a source whose '
+        + 'measured band and brightness already suit the job. Do not pick by name.',
+      '  b. tweak it until it IS that sound, not a sample that will do: pad() for gain and '
+        + 'envelope, chop()/tape()/freeze()/mutate()/paint()/resynth() for the sound itself.',
+      '  c. write its part — note() for pitched lines, step() for everything else.',
+      '  d. place(pad) — does it own a band, is it covered, is it covering. Fix it NOW, while '
+        + 'it is the only thing you are thinking about and nothing else depends on it.',
+      '  e. review({quick:true}) every few sounds — free, no renders, catches drift early.',
+      'Then, once every sound is in and each one already fits:',
+      '  f. reference(url) with a finished mix you want to sound like. BEFORE judging tone.',
+      '  g. review({src:"song"}) — runs every analyser and reports what it could not run.',
+      '  h. fix what it names, in the order it names them, and run it again.',
+      '  i. render({loudness:true}) across a few mTrim values, pick by measurement, bounce.',
+    ],
+    traps: [
+      'A SAMPLE PACK CAN LIE ABOUT PITCH. VSCO-2 names its files an octave below what they '
+        + 'sound, and is not even consistent with itself — one solo violin folder uses one '
+        + 'convention and another folder of the same instrument uses the other. Run '
+        + 'scripts/audit-pitch.mjs against any pack before writing on it.',
+      'GAIN IS A MULTIPLIER ON WHAT THE PAD HOLDS. A full-scale synth at gain 0.4 is far '
+        + 'louder than a field recording at gain 2.0. Stage from each sample\'s measured peak '
+        + 'first and balance by ear only after that.',
+      'LOUD IS NOT ENERGETIC. loudness() reports perceived minus measured; anything reading '
+        + '+10dB or more will jump out however tidy the RMS looks. Bright metal and high '
+        + 'mallets are the usual offenders.',
+      'A SPECTRUM READ IN ABSOLUTE TERMS HIDES SHAPE. compare() normalises each mix against '
+        + 'its own total, which is the only way two tracks are comparable. An absolute reading '
+        + 'once showed a fixed top end while a 16dB hole sat at 500Hz.',
+      'BASS CARRIES BY ITS HARMONICS. Anything below about 400Hz does not exist on a phone. '
+        + 'translate() measures the loss; the fix is a saturated parallel copy at 150-800Hz.',
+      'A BEAT CAN BE PRESENT AND INAUDIBLE. Being on the grid is not the same as being heard '
+        + 'on the beat: pulse() weighs onsets by how loud they actually are.',
+      'A SOUND LEFT TO THE END IS A SOUND YOU CANNOT HEAR. Judging a mix after everything is '
+        + 'in it means judging seven things at once, which is why levels set by ear fix one '
+        + 'part of the spectrum and break another. Each sound has to earn its place against '
+        + 'what is already there, at the moment it goes in — place(pad) answers exactly that, '
+        + 'for one pad, in two renders.',
+      'INDEPENDENT IS NOT THE SAME AS UNRELATED. Voices need shared material as well as '
+        + 'separate motion — counterpoint() measures the second, motif() the first.',
+    ],
+    norms: { counterpoint:CP_NORMS, melody:MELODY_NORMS, motif:MOTIF_NORMS },
+    makes: [
+      'balance() solves group levels against a loaded reference instead of guessing them; '
+        + 'moves are capped because an unconstrained fit deletes instruments rather than '
+        + 'balancing them.',
+      'mutate(pad) makes variations of a sound, measures each against the original, and keeps '
+        + 'the winner. want: different, similar, brighter, darker, punchier, fuller.',
+      'paint() draws a sound as a spectrum — rows of levels, lowest frequency first, or '
+        + 'partials placed one at a time for genuinely inharmonic bells. The result is a '
+        + 'sample on a pad like any other.',
+      'place(pad) answers the question the one-at-a-time method asks: against everything '
+        + 'else loaded, what band does this sound own, what is covering it, what is it '
+        + 'covering. Two renders rather than one per pad, so it is cheap enough to run on '
+        + 'every sound as it goes in. Pass an instrument tag, not a pad index, for anything '
+        + 'instrument() built: a sampled piano is one sound spread over a pad per note, and '
+        + 'placing one of those pads measures a single note against the rest of the same '
+        + 'piano. audit() takes the same three forms.',
+    ],
+    /* THIS LINE IS THE WHOLE FILE FOR ANYONE WHO READS ONE LINE, and for
+       a long time it described only the mixing half. It said "make one
+       sound, place() it, make the next" — true, and the advice that
+       matters least. An agent that followed it exactly would write a
+       drone with nine bands inside half a decibel, which is what
+       happened: a track passed every check here and the listener's
+       verdict was "drone machine noise", because its bass held one
+       pitch for two minutes and nothing in this app measures whether
+       the harmony moves. `first` leads for that reason, and so does
+       this. */
+    says:'Write music first: chords that change, a line with contour. Nothing here measures '
+      + 'whether the harmony moves, so a mix that passes every check can still be a drone. '
+      + 'Then real samples with velocity layers for real instruments, then one sound at a '
+      + 'time — make it, place() it, make the next. review() at the end confirms; it is a '
+      + 'poor way to discover, and passing it is not evidence anyone would want to hear it.' };
+  },
+
+  /* HOLES IN A PART THAT IS SUPPOSED TO BE HELD.
+
+     A string bed was written as one long note a bar. Each note stopped
+     inside its own bar, so the section went play, cut, silence, play —
+     four times every four bars — and with a swell on each one it
+     crescendoed INTO the gap, surging to full a moment before dropping to
+     nothing. It lurched, and it was the first thing a listener noticed.
+
+     Every balance check passed. levels() reports RMS across the whole bar
+     and the average of a part that surges and gaps is a perfectly
+     reasonable number: the fault is in the shape, and an average is
+     exactly the statistic that destroys shape. 18% of that bed was
+     silence and nothing said so.
+
+     So this looks at the envelope rather than its mean. An instrument's
+     pads are rendered together, the result is walked in 50ms frames
+     between its first and last sound, and the frames that are effectively
+     silent are counted. A bed with 2% holes is continuous; the one above
+     read 18%.
+
+     Percussion is excluded, and so is anything whose notes are short:
+     gaps are what a staccato part IS, and a check that complains about
+     silence between plucks is a check nobody will read twice. */
+  async continuity(name, opt){
+    const o=opt||{}, src=o.src||'pat';
+    let pads, label;
+    if(typeof name==='number'){ pads=[clamp(name|0,0,NPADS-1)]; label='pad '+(name|0); }
+    else{
+      pads=[]; for(let i=0;i<NPADS;i++) if(S.pads[i] && S.pads[i].inst===name) pads.push(i);
+      label=name;
+      if(!pads.length) throw new Error('no instrument "'+name+'" — call instrument() first');
+    }
+    const sch=await window.MVX.schedule({src, full:true});
+    if(!sch || !sch.events) return null;
+    const mine=sch.events.filter(e=>pads.indexOf(e.pad)>=0);
+    if(!mine.length) return {instrument:label, pads, notes:0, holesPct:null,
+      says:'nothing from this instrument plays in '+(src==='song'?'the song':'this pattern')+'.'};
+    const held=mine.filter(e=>e.len!=null).map(e=>e.len);
+    const medLen=held.length ? held.sort((a,b)=>a-b)[held.length>>1] : 0;
+    const buf=await renderMix(new Set(pads), new Set(), {loops:o.loops||1, src, noTail:true});
+    if(!buf) return null;
+    const d=buf.getChannelData(0), sr=buf.sampleRate, w=Math.floor(sr*0.05);
+    const e=[]; for(let i=0;i+w<d.length;i+=w){ let s=0;
+      for(let j=i;j<i+w;j++) s+=d[j]*d[j]; e.push(Math.sqrt(s/w)); }
+    /* only the span the instrument is actually meant to be sounding over —
+       silence before the first entry and after the last is not a hole. */
+    let a=0, b=e.length-1;
+    const peak=Math.max.apply(null,e), floor=peak*0.02;
+    while(a<e.length && e[a]<floor) a++;
+    while(b>a && e[b]<floor) b--;
+    const seg=e.slice(a,b+1);
+    if(seg.length<4) return {instrument:label, pads, notes:mine.length, holesPct:null,
+      says:'too short to judge.'};
+    const mean=seg.reduce((x,y)=>x+y,0)/seg.length;
+    const quiet=seg.map(v=>v<mean*0.1);
+    const holes=quiet.filter(Boolean).length;
+    const holesPct=Math.round(100*holes/seg.length);
+    const sustained=medLen>=0.6;
+
+    /* SILENCE IS NOT THE FAULT. WHERE IT FALLS IS.
+
+       A Beethoven quartet voice rests a quarter of the time and sounds
+       like a quartet; a bed whose notes stop a beat short of every bar
+       line rests a tenth of the time and lurches. The difference is not
+       how much silence there is but whether it arrives on a schedule, so
+       the frames are folded over one bar and the gaps are looked at by
+       phase. Counting alone would scold real chamber writing and excuse
+       the thing that actually went wrong. */
+    const barSec=4*(60/Math.max(1,Math.abs(S.bpm)));
+    const perBar=Math.max(4, Math.round(barSec/0.05));
+    let late=0;
+    quiet.forEach((q,i)=>{ if(q && ((a+i)%perBar)/perBar>=0.72) late++; });
+    const latePct=holes? Math.round(100*late/holes) : 0;
+    const pulsing = sustained && holesPct>=6 && latePct>=55;
+
+    const says = pulsing
+      ? holesPct+'% of this part is silence and '+latePct+'% of it sits at the '
+        +'end of a bar. A held line that stops short of every bar line pulses. '
+        +'Give the notes enough length to overlap the next one.'
+      : !sustained ? 'short notes, so gaps are the part rather than a fault.'
+      : holesPct<=5 ? 'continuous — the bed holds.'
+      : holesPct<=25 ? holesPct+'% silence, spread through the part rather than '
+        +'landing on the barline — that is what rests in a line look like.'
+      : holesPct+'% of this part is silence. That is a lot for a held line, '
+        +'though it is not falling on the barline, so it reads as rests rather '
+        +'than as a part that keeps stopping.';
+    return {instrument:label, pads:pads.length, notes:mine.length,
+      medianNoteSec:+medLen.toFixed(2), sustained, holesPct,
+      gapsAtBarEndPct:latePct, pulsing, says};
+  },
+
+  /* HOW MUCH AN INSTRUMENT ACTUALLY ANSWERS TO VELOCITY.
+
+     Writing dynamics into a part is wasted on a library that does not
+     have any, and there is no way to tell by looking. Measured: the two
+     VSCO violin takes are 1.6dB apart in the upper bands, while the six
+     Salamander piano dynamics span 10.3dB. The same crescendo is a real
+     change of tone on one and almost nothing on the other, and knowing
+     which before writing forty notes is the difference between shaping a
+     part and typing numbers that do not matter.
+
+     Reports both axes, because they are different questions: LEVEL is how
+     much louder the hard take is, TONE is how much brighter. A library
+     can have plenty of the first and none of the second, and that is
+     exactly the one where a crescendo will sound like a volume knob. */
+  async dynamics(name){
+    const pads=(typeof name==='number')
+      ? [{pad:clamp(name|0,0,NPADS-1)}] : window.MVX.instPads(name);
+    if(!pads.length) throw new Error('no instrument "'+name+'" — call instrument() first, '
+      +'or pass a pad number');
+    const p=S.pads[pads[0].pad];
+    const n=padLayerCount(p);
+    if(n<2) return {instrument:name, pad:pads[0].pad, layers:n,
+      levelDb:0, toneDb:0,
+      says:'this pad has one recording, so velocity can only change its volume. '
+        +'Nothing written as a dynamic will change the tone.'};
+    const rows=[];
+    for(let i=0;i<n;i++){
+      const lay=padLayer(p,i), buf=lay && S.buffers[lay.bufId];
+      if(!buf) continue;
+      const b=await bandEnergy(buf);
+      const g=k=>Math.pow(10,b.find(x=>x.band===k).db/10);
+      let s=0; const d=buf.getChannelData(0);
+      for(let j=0;j<d.length;j++) s+=d[j]*d[j];
+      rows.push({layer:i,
+        level:+(10*Math.log10(Math.max(s/Math.max(1,d.length),1e-12))).toFixed(1),
+        tone:+(10*Math.log10((g('2k-4k')+g('1k-2k'))/Math.max(1e-12,g('250-500')))).toFixed(2)});
+    }
+    if(rows.length<2) return {instrument:name, pad:pads[0].pad, layers:rows.length,
+      levelDb:0, toneDb:0, says:'only one layer could be measured.'};
+    const lv=rows.map(r=>r.level), tn=rows.map(r=>r.tone);
+    const levelDb=+(Math.max.apply(null,lv)-Math.min.apply(null,lv)).toFixed(1);
+    const toneDb =+(Math.max.apply(null,tn)-Math.min.apply(null,tn)).toFixed(2);
+    const says = toneDb>=5 ? 'wide dynamics: a crescendo here changes the tone properly.'
+      : toneDb>=2 ? 'usable dynamics: a crescendo will be heard, though mostly as level.'
+      : 'narrow dynamics: these takes are '+toneDb+'dB apart in tone, so a swell will '
+        +'read as a volume change. Worth writing anyway, but do not expect a new timbre.';
+    return {instrument:(typeof name==='number'?('pad '+name):name), pad:pads[0].pad,
+      layers:rows.length, levelDb, toneDb, perLayer:rows, says};
+  },
+
+  /* EVERYTHING THAT IS WRONG WITH THIS MIX, IN ONE ANSWER.
+
+     Nearly every fault that shipped from here was already visible in a
+     call that existed. schedule() had been naming over-stretched samples
+     since the day a violin got played five semitones off its nearest
+     recording; levels() had been listing buried pads; render({loudness})
+     had the dynamics. The information was in five places and the person
+     who needed it read none of them, because finding out meant five calls
+     and remembering which field in each one carried the bad news.
+
+     So this runs them, keeps only what is actually wrong, and returns that.
+     An empty list is the good answer.
+
+     IT WILL NOT JUDGE TONE WITHOUT A REFERENCE. The temptation is to bake
+     in a target curve — a pink tilt, a "scooped mids" rule — and the one
+     time that was tried from memory it put the fault in the bass when the
+     measurement put it at 2-4kHz. A curve recalled from memory is a guess
+     wearing a number. Load a reference and the tone is judged against it;
+     load nothing and this says so rather than inventing one.
+
+     Balance and stems are one render per pad, so the default source is the
+     current pattern. Pass {src:'song'} when there is time for it. */
+  async critique(opt){
+    const o=opt||{}, src=o.src||'pat';
+    const found=[];
+    const add=(area,severity,says,extra)=>found.push(
+      Object.assign({area,severity,says},extra||{}));
+
+    for(const w of window.MVX.checkMix())
+      add('settings', w.severity, w.says, {field:w.field, value:w.value});
+
+    const sch=await window.MVX.schedule({src, full:false});
+    if(!sch || !sch.notes){
+      add('arrangement','empty','nothing plays in '
+        +(src==='song'?'the song':'this pattern')+'.');
+      return {src, ok:false, found, checked:['arrangement']};
+    }
+    for(const s of (sch.stretched||[]))
+      add('samples','stretched','pad '+s.pad+(s.name?' ('+s.name+')':'')
+        +' is played up to '+s.semitones+' semitones from '+s.sample
+        +', whose root is '+s.root+'. Past about four, pitch-shifting stops '
+        +'sounding like the instrument and starts sounding like a synthesiser. '
+        +'nearest() will name a closer sample.', {pad:s.pad, semitones:s.semitones});
+
+    if(o.balance!==false){
+      const lv=await window.MVX.levels({src});
+      /* BURIED BY RMS IS NOT BURIED BY EAR, and reporting it as though it
+         were is how a tool teaches people to ignore it. A hi-hat is sparse,
+         short and bright: against a dense sustained mix its broadband RMS
+         reads near thirty under while it is perfectly audible, because all
+         of its energy is in one octave that nothing else occupies. The
+         first run of this flagged the hats and the ride on a piece whose
+         spectrogram showed both of them plainly.
+
+         So a pad that RMS calls buried gets a second question: does it own
+         a band? Its stem is put through the same filterbank as the mix, and
+         if it is within 3dB of the mix's level anywhere then it is the
+         thing making that part of the sound and it is not buried. It is
+         narrow, which is what a cymbal is. */
+      if(lv && lv.buried.length){
+        const mixBuf=await renderMix(null,null,{loops:o.loops||1, src, noTail:true});
+        const mixB=mixBuf?await bandEnergy(mixBuf):null;
+        /* ONE RENDER PER BURIED PAD, SO THE LIST HAS TO BE CAPPED. Asking
+           whether a quiet pad nonetheless owns a band means rendering it
+           alone against the mix, and on an arrangement where most pads
+           are sparse by design — twelve painted bells, each sounding a
+           few times — nearly every pad qualifies as buried and the check
+           turns into thirty full renders of the whole song. review()
+           sat in here for fifteen minutes and was killed.
+
+           The quietest are investigated first because they are the ones
+           in question, and the rest are named rather than dropped: an
+           unanswered question is not the same as an answered one. */
+        const CAP=o.maxBuried==null?8:Math.max(1,o.maxBuried|0);
+        const order=[...lv.buried].sort((x,y)=>{
+          const a=lv.pads.find(q=>q.pad===x), b2=lv.pads.find(q=>q.pad===y);
+          return ((a&&a.dbRms)||-99)-((b2&&b2.dbRms)||-99); });
+        const look=order.slice(0,CAP), rest=order.slice(CAP);
+        if(rest.length) add('balance','not-checked', rest.length+' further pad'
+          +(rest.length>1?'s are':' is')+' quiet enough to ask about and '
+          +'were not investigated: asking costs a render each. Raise maxBuried, '
+          +'or run critique on one pattern instead of the song.', {pads:rest});
+        for(const b of look){
+          const row=lv.pads.find(x=>x.pad===b);
+          /* AND A SPARSE PAD IS NOT A QUIET ONE EITHER. levels() calls a pad
+             buried on its RMS across the whole bar, which a pad that plays
+             one note in four bars fails by arithmetic rather than by being
+             inaudible — a melody spread over eighteen one-note piano pads
+             reported most of itself as buried. If it gets within 18dB of
+             the mix at its loudest moment then it is heard when it sounds,
+             which is the actual question. */
+          if(row && row.dbPeak>-18) continue;
+          let owns=null;
+          if(mixB){
+            const st=await renderMix(new Set([b]),new Set(),{loops:o.loops||1, src, noTail:true});
+            const pb=st?await bandEnergy(st):null;
+            if(pb) pb.forEach((q,i)=>{ const gap=q.db-mixB[i].db;
+              if(gap>=-3 && (!owns || gap>owns.gap)) owns={band:q.band, gap:+gap.toFixed(1)}; });
+          }
+          if(owns) add('balance','narrow','pad '+b+(row&&row.name?' ('+row.name+')':'')
+            +' is '+(row?row.dbRms:'?')+'dB under the mix broadband, but it owns '
+            +owns.band+'Hz. That is what a cymbal looks like, not a fault — '
+            +'worth a glance, not a fix.', {pad:b, band:owns.band});
+          else add('balance','buried','pad '+b+(row&&row.name?' ('+row.name+')':'')
+            +' is '+(row?row.dbRms:'?')+'dB under the mix and is not the loudest '
+            +'thing in any band. It is playing and it cannot be heard.', {pad:b});
+        }
+      }
+    }
+
+    const sp=await window.MVX.spectrum({src, loops:o.loops||1});
+    if(sp){
+      if(sp.peak>0.999) add('master','clipping','the render clips at full scale.');
+      if(sp.lufs!=null){
+        if(sp.lufs<-24) add('master','quiet','integrated loudness is '+sp.lufs
+          +' LUFS, which is very quiet'+(src==='song'?'':' — though this is one pattern, not the song')+'.');
+        if(sp.crestDb!=null && sp.crestDb<6) add('master','squashed',
+          'crest is only '+sp.crestDb+'dB. Dynamics have been flattened.');
+      }
+      if(sp.width===0) add('master','mono','the render is mono — nothing is panned.');
+      if(refSpec && refSpec.seconds<10){
+        /* diffSpec says this in its notes and critique reads the bands, so
+           without this the short-reference warning was written and then
+           thrown away — and a 0.9s piano note produced five confident
+           findings about the tone of a four-bar mix. Caught by a test that
+           had passed for the wrong reason. */
+        add('tone','no-reference','the loaded reference ('+refSpec.name+') is only '
+          +refSpec.seconds+'s long. A single note or hit cannot be compared with a '
+          +'mix, so tone was not judged. Load a passage of music instead.');
+      } else if(refSpec){
+        const buf=await renderMix(null,null,{loops:o.loops||1, src, noTail:true});
+        if(buf){
+          const d=diffSpec(await specReport(sliceBuf(buf,0,120)), refSpec);
+          if(!d.matched) for(const b of d.bands) if(Math.abs(b.delta)>=3)
+            add('tone','off-reference',b.band+'Hz sits '+(b.delta>0?'+':'')+b.delta
+              +'dB against '+refSpec.name+'.', {band:b.band, delta:b.delta});
+        }
+      } else {
+        add('tone','no-reference','tonal balance was not judged: no reference is '
+          +'loaded. reference(url) takes a finished recording of comparable '
+          +'material and compare() then reports the difference band by band.');
+      }
+    }
+
+    const sev={clipping:0,'out-of-range':1,stretched:2,buried:3,squashed:4,
+      quiet:5,mono:6,'off-reference':7,inaudible:8,ignored:9,narrow:10,'no-reference':11};
+    found.sort((a,b)=>(sev[a.severity]==null?99:sev[a.severity])
+                     -(sev[b.severity]==null?99:sev[b.severity]));
+    /* 'narrow' and 'no-reference' are remarks, not faults: a run that turns
+       up nothing but those is a clean one, and saying otherwise would make
+       ok:false the normal state and therefore worth nothing. */
+    const FYI={narrow:1,'no-reference':1};
+    return { src, ok:!found.some(f=>!FYI[f.severity]),
+      notes:sch.notes, seconds:sch.seconds, found,
+      checked:['settings','samples','balance','master','tone'] };
+  },
+
+  /* EVERY MIX SETTING THAT IS NOT DOING WHAT IT LOOKS LIKE IT IS DOING.
+     Cheap, exact, and needs no render — see MIXRANGE for why it exists. */
+  checkMix(){
+    const out=mixWarnings(null);
+    for(let i=0;i<NPADS;i++){
+      const p=S.pads[i]; if(!p || p.bufId<0) continue;
+      for(const k of PADDB){
+        const v=p[k];
+        if(typeof v==='number' && v!==0 && Math.abs(v)<0.5)
+          out.push({field:'pad '+i+' '+k, value:v, severity:'inaudible',
+            says:'pad '+i+(p.name?' ('+p.name+')':'')+' has '+k+' at '+v
+              +'dB, which is not an audible move.'});
+      }
+    }
+    return out;
   },
 
   /* THE SAMPLE NEAREST A NOTE.
@@ -10110,6 +14587,27 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         poly:Object.keys(pat.poly||{}).map(k=>+k).filter(k=>pat.poly[k].on) };
     };
     if(!props) return readBack();
+    /* CONFIGURING A PATTERN DOES NOT SELECT IT, AND THAT COST A WHOLE
+       TRACK. step() and note() write to S.patterns[S.pattern] — the
+       SELECTED pattern — while this call only ever configured the one
+       named by `idx`. So the usual shape
+
+           pattern(1, {plen:32, clear:true});  step(pad, 0, 0.9); …
+
+       cleared pattern 1 and then wrote every step into pattern 0,
+       which was still selected. Three tracks were bounced that way.
+       MERIDIAN came out 62% digital silence where the empty patterns
+       played, with all four patterns' notes piled on top of each other
+       where pattern 0 did — "mostly silence with a big crash of random
+       in the middle", which is exactly what it was.
+
+       readBack() has always returned `selected`, and it was false every
+       time. Reporting a thing is not the same as the caller noticing
+       it, so: pass {select:true} to select as well as configure, and
+       clearing a pattern you have not selected now says so loudly,
+       because clearing is what you do in order to write. */
+    if(props.select) S.pattern=clamp(n,0,NPAT-1);
+    const wroteElsewhere = (props.clear||props.copyFrom!=null) && S.pattern!==n;
     /* copyFrom first, so the same call can duplicate a pattern and then
        adjust it — which is how a variation actually gets written. */
     if(props.copyFrom!=null){
@@ -10126,6 +14624,14 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       pat.steps.forEach(r=>r.fill(0)); pat.locks={};
       pat.sil=new Array(MAXSTEPS).fill(0); pat.poly={};
     }
+    /* A length that is not one of the four was dropped on the floor: the
+       call reported success, the pattern stayed as it was, and a line
+       written for 128 steps lost half of itself with nothing said. Same
+       silent no-op as a mix setting outside its range, and caught the
+       same way — by someone wondering where the notes went. */
+    if(props.plen!=null && PATLENS.indexOf(props.plen|0)<0)
+      throw new Error('pattern length must be one of '+PATLENS.join(', ')
+        +' — got '+props.plen+'. Longer music is a song of several patterns.');
     if(props.plen!=null && PATLENS.indexOf(props.plen|0)>=0){
       const nl=props.plen|0, old=patLen(pat);
       if(nl!==old){
@@ -10162,7 +14668,12 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     bumpLocks();
     try{ drawSeq(); drawPads(); drawSong(); }catch(e){}
     dirty();
-    return readBack();
+    const rb=readBack();
+    if(wroteElsewhere) rb.warning='pattern '+n+' was '
+      +(props.clear?'cleared':'copied into')+' but pattern '+S.pattern+' is still the '
+      +'SELECTED one, so step() and note() will write there, not here. Pass '
+      +'{select:true} to switch to it.';
+    return rb;
   },
   /* EUCLID, as a call rather than as three boxes and a button. Spreads hits
      as evenly as a number allows, which is what people everywhere do, and
@@ -10319,11 +14830,21 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      by the names S uses. */
   set(props){
     if(!props) return window.MVX.state();
+    /* A key that is not a setting was silently dropped, so set({masterVolume:1})
+       — the plural, the camelCase, the near miss — reported success and did
+       nothing at all. It is named now. */
+    const unknown=Object.keys(props).filter(k=>!(k in S));
     Object.keys(props).forEach(k=>{ if(k in S) S[k]=props[k]; });
     if('bpm' in props) try{ setBpm(S.bpm); }catch(e){}
     try{ applyMaster(); reapplyLivePads(); }catch(e){}
     dirty();
-    return window.MVX.state();
+    const st=window.MVX.state();
+    const w=mixWarnings(props);
+    if(unknown.length) w.push({field:unknown.join(', '), value:null, severity:'ignored',
+      says:'no such setting: '+unknown.join(', ')+'. Nothing was changed for '
+        +(unknown.length>1?'those keys':'that key')+'. params() lists the real names.'});
+    if(w.length) st.warnings=w;
+    return st;
   }
 };
 window.JBH=window.MVX;   // JBH-88 is the current name; window.MVX kept as a back-compat alias
@@ -10566,6 +15087,195 @@ async function copyBlock(id,label){
 }
 $('btnCopyMcp').addEventListener('click',()=>copyBlock('cmdMcpCfg','MCP CONFIG'));
 $('btnCopyTab').addEventListener('click',()=>copyBlock('cmdTab','SNIPPET'));
+/* ---- SOUND TOOLS PANEL -------------------------------------------------
+   The five calls below existed only on the API, which meant the person
+   using the app could not reach the parts of it that measure a mix or
+   make a sound out of nothing. Each button is the call with sensible
+   defaults; the API takes the arguments.
+
+   They render into a log rather than a status line because every one of
+   them answers with a list, and the whole point of these is the detail.
+   Everything written there is set as TEXT, never as markup. */
+function toolLog(lines){
+  const el=$('toolLog'); if(!el) return;
+  el.style.display='block';
+  el.textContent=(Array.isArray(lines)?lines.join('\n'):String(lines))+'\n';
+  el.scrollTop=0;
+}
+async function toolRun(btnId, label, fn){
+  const b=$(btnId); if(!b || b.disabled) return;
+  const was=b.textContent;
+  b.disabled=true; b.textContent='…';
+  toolLog(label+' — working. Renders take a moment.');
+  try{
+    const out=await fn();
+    toolLog(out);
+  }catch(e){
+    toolLog(label+' could not run:\n  '+String((e&&e.message)||e));
+  }finally{ b.disabled=false; b.textContent=was; }
+}
+const padLabel=(i)=>(S.pads[i]&&S.pads[i].name)?(S.pads[i].name+' (pad '+i+')'):('pad '+i);
+
+$('btnToolReview').addEventListener('click',()=>toolRun('btnToolReview','REVIEW',async()=>{
+  const src=(S.songOn && S.song && S.song.length)?'song':'pat';
+  const r=await window.MVX.review({src});
+  const out=['REVIEW of the '+(src==='song'?'song':'current pattern'), r.says, ''];
+  if(!r.findings.length) out.push('  nothing to report.');
+  for(const f of r.findings.slice(0,14)){
+    out.push('  ['+f.severity+'] '+f.says);
+    if(f.fix) out.push('       → '+f.fix);
+  }
+  if(r.findings.length>14) out.push('  …and '+(r.findings.length-14)+' more.');
+  if(r.skipped && r.skipped.length){
+    out.push('', 'could not run:');
+    for(const k of r.skipped) out.push('  '+k);
+  }
+  return out;
+}));
+
+$('btnToolBalance').addEventListener('click',()=>toolRun('btnToolBalance','BALANCE',async()=>{
+  const r=await window.MVX.balance({src:'pat'});
+  if(!r || !r.pads) return 'nothing to balance.';
+  const out=['BALANCE against '+r.target, r.says, '',
+    'group        gain  →  suggested   change   owns'];
+  for(const g of r.pads) out.push('  '+String(g.instrument).padEnd(10)
+    +String(g.gain).padStart(6)+'  → '+String(g.suggested).padStart(8)
+    +String((g.changeDb>=0?'+':'')+g.changeDb+'dB').padStart(9)+'   '+g.owns);
+  if(r.capped && r.capped.length){ out.push('', 'cannot get there by gain alone:');
+    for(const c of r.capped) out.push('  '+c); }
+  out.push('', 'Nothing was changed. Set these with the pad gain controls.');
+  return out;
+}));
+
+$('btnToolPaint').addEventListener('click',()=>toolRun('btnToolPaint','PAINT',async()=>{
+  const i=S.editPad|0;
+  /* a bell: partials at ratios a bar cannot be filtered into having */
+  const f=220;
+  const r=await window.MVX.paint({pad:i, seconds:2.4, name:'painted bell',
+    partials:[
+      {hz:f,       level:1.00, at:0, dur:1.00},
+      {hz:f*2,     level:0.55, at:0, dur:0.72},
+      {hz:f*2.73,  level:0.42, at:0, dur:0.46},
+      {hz:f*4.39,  level:0.30, at:0, dur:0.30},
+      {hz:f*7.12,  level:0.17, at:0, dur:0.16},
+      {hz:f*11.3,  level:0.09, at:0, dur:0.08}]});
+  drawPads();
+  return ['PAINT onto '+padLabel(r.pad), r.says, '',
+    'Inharmonic partials at 2.73x, 4.39x, 7.12x and 11.3x — bell ratios, not',
+    'harmonic ones. It is an ordinary sample now: chop it, mutate it, play it.'];
+}));
+
+$('btnToolMutate').addEventListener('click',()=>toolRun('btnToolMutate','MUTATE',async()=>{
+  const i=S.editPad|0;
+  if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample on it.';
+  const r=await window.MVX.mutate(i,{want:'different', population:5, generations:3});
+  const out=['MUTATE '+padLabel(i), r.says, ''];
+  if(r.changed.length){
+    out.push('what it moved:');
+    for(const c of r.changed) out.push('  '+c.field+': '+c.from+' → '+c.to);
+    out.push('', 'The pad is back as it was. To keep this, set those fields,',
+      'or call mutate(pad,{keep:true}) from the API.');
+  }
+  return out;
+}));
+
+/* REBUILD'S CONTROLS. The button used to call resynth() on its bare
+   defaults, so every parameter the function has was reachable from the
+   API and from nowhere a person could press — the same gap these
+   buttons were added to close, reopened one level down.
+
+   The readouts update live whether or not anything is rebuilt, because
+   a slider whose number only appears after a twenty-second render is a
+   slider nobody can aim. */
+const RS_DEFAULTS={ rsAlgo:'basic', rsBins:32, rsMfcc:0.35, rsBlock:60,
+  rsBrainBlock:60, rsNovelty:0.3, rsBoredom:0.25, rsSticky:0.25,
+  rsStretch:1, rsSlideErr:6, rsAutotune:false, rsStereo:false };
+const rsFmt={ rsBins:v=>String(v|0), rsMfcc:v=>Math.round(v*100)+'%',
+  rsBlock:v=>(v|0)+'ms', rsBrainBlock:v=>(v|0)+'ms',
+  rsNovelty:v=>Math.round(v*100)+'%', rsBoredom:v=>Math.round(v*100)+'%',
+  rsSticky:v=>Math.round(v*100)+'%', rsStretch:v=>(v|0)+'×',
+  rsSlideErr:v=>(+v).toFixed(1)+'dB' };
+function rsSync(){
+  for(const id in rsFmt){ const el=$(id), out=$(id+'V');
+    if(el && out) out.textContent=rsFmt[id](+el.value); }
+  /* SLIP is slide's own threshold and means nothing in the other three
+     modes. Dimmed rather than hidden, so the control does not jump
+     about as the mode changes. */
+  const slide=$('rsAlgo') && $('rsAlgo').value==='slide', row=$('rsSlideRow');
+  if(row){ row.style.opacity=slide?'1':'0.4'; }
+  if($('rsSlideErr')) $('rsSlideErr').disabled=!slide;
+}
+for(const id in RS_DEFAULTS){ const el=$(id); if(!el) continue;
+  el.addEventListener('input',rsSync); el.addEventListener('change',rsSync); }
+if($('rsReset')) $('rsReset').addEventListener('click',()=>{
+  for(const id in RS_DEFAULTS){ const el=$(id); if(!el) continue;
+    if(el.type==='checkbox') el.checked=RS_DEFAULTS[id]; else el.value=RS_DEFAULTS[id]; }
+  rsSync();
+});
+rsSync();
+
+$('btnToolResynth').addEventListener('click',()=>toolRun('btnToolResynth','REBUILD',async()=>{
+  const i=S.editPad|0;
+  if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample to rebuild.';
+  let free=-1;
+  for(let k=NPADS-1;k>=0;k--) if(S.pads[k] && S.pads[k].bufId<0){ free=k; break; }
+  if(free<0) return 'every pad is full — clear one for the result.';
+  const num=(id,d)=>{ const el=$(id); const v=el?+el.value:d; return isFinite(v)?v:d; };
+  const on=(id)=>{ const el=$(id); return !!(el && el.checked); };
+  const algo=($('rsAlgo') && $('rsAlgo').value) || 'basic';
+  const r=await window.MVX.resynth({target:i, pad:free,
+    algorithm:algo,
+    bins:num('rsBins',32), mfcc:num('rsMfcc',0.35),
+    blockMs:num('rsBlock',60), brainBlockMs:num('rsBrainBlock',60),
+    novelty:num('rsNovelty',0.3), boredom:num('rsBoredom',0.25),
+    stickiness:num('rsSticky',0.25), stretch:num('rsStretch',1)|0,
+    slideError:num('rsSlideErr',6),
+    autotune:on('rsAutotune'), stereo:on('rsStereo')});
+  drawPads();
+  const out=['REBUILD '+padLabel(i)+' → '+padLabel(r.pad), r.says, '',
+    'built from: '+r.padsUsed.join(', '),
+    r.blocks+' blocks of '+r.blockMs+'ms, chosen from '+r.brainBlocks
+      +' candidates, matched on '+r.features.dims+' dimensions.'];
+  /* say what the chosen mode actually did, or the controls are knobs
+     with no feedback — which is how `jumble` survived for months */
+  if(r.synapsesBuilt) out.push(r.synapsesBuilt+' nodes of the synapse network were walked.');
+  if(r.slidRepeats) out.push(r.slidRepeats+' target blocks were held and stretched — that is the timing warp.');
+  if(r.autotuned) out.push(r.autotuned+' blocks were pitch-bent toward the target.');
+  if(r.continuedRuns) out.push(r.continuedPct+'% of blocks carried straight on from the one before.');
+  if(r.seconds!==r.targetSeconds) out.push('The rebuild is '+r.seconds+'s against the target\'s '+r.targetSeconds+'s.');
+  return out;
+}));
+
+/* Both of these write to a FREE pad rather than over the one in hand.
+   A button that quietly replaces the sound you were working on is a
+   button people learn not to press. */
+function freePadFor(){
+  for(let k=NPADS-1;k>=0;k--) if(S.pads[k] && S.pads[k].bufId<0) return k;
+  return -1;
+}
+$('btnToolFreeze').addEventListener('click',()=>toolRun('btnToolFreeze','FREEZE',async()=>{
+  const i=S.editPad|0;
+  if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample to freeze.';
+  const free=freePadFor();
+  if(free<0) return 'every pad is full — clear one for the result.';
+  const r=await window.MVX.freeze(i,{pad:free, at:0.25, seconds:4});
+  drawPads();
+  return ['FREEZE '+padLabel(i)+' → '+padLabel(r.pad), r.says, '',
+    'held '+r.partials+' of '+r.found+' partials found, '+r.lowest+'Hz to '+r.highest+'Hz.',
+    'The original is untouched. Try a different moment with freeze(pad,{at:0.6}).'];
+}));
+$('btnToolTape').addEventListener('click',()=>toolRun('btnToolTape','TAPE',async()=>{
+  const i=S.editPad|0;
+  if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample on it.';
+  const free=freePadFor();
+  if(free<0) return 'every pad is full — clear one for the result.';
+  const r=await window.MVX.tape(i,{pad:free});
+  drawPads();
+  return ['RUN TO TAPE '+padLabel(i)+' → '+padLabel(r.pad), r.says, '',
+    'The original is untouched. For more or less of it, '
+    +'tape(pad,{wow:20, flutter:6, drift:15, sat:0.5}).'];
+}));
+
 $('btnAgentPing').addEventListener('click',()=>{
   if(!jbhBus){ lcd('AGENT LINK is closed.'); return; }
   jbhPing();
@@ -11387,8 +16097,8 @@ function polyFire(pat, p, idx, v, when, pd, fired){
   if(lk && lk.prob!=null && Math.random()>lk.prob) return;
   if(lk && lk.nudge) when+=lk.nudge*pd;
   let hv=v;
-  if(S.human>0){
-    when+=(Math.random()*2-1)*S.human*0.012;
+  if(S.human>0||S.humanDrift>0){
+    when+=humanTimeOffset(when,Math.random);
     hv=clamp(v*(1-Math.random()*S.human*0.22),0.05,1);
     if(when<AC.currentTime) when=AC.currentTime;
   }
@@ -11474,7 +16184,7 @@ function schedStep(barStep, absStep, t){
     let when=t+swing;
     if(lk && lk.nudge) when+=lk.nudge*sd;                        // micro-timing
     let hv=v;
-    if(S.human>0){ when+=(Math.random()*2-1)*S.human*0.012;      // humanize: ±12ms drift + velocity breathing
+    if(S.human>0||S.humanDrift>0){ when+=humanTimeOffset(when,Math.random);   // humanize: jitter, drift, velocity breathing
       hv=clamp(v*(1-Math.random()*S.human*0.22),0.05,1);
       if(when<AC.currentTime) when=AC.currentTime; }
     // NOTES-lane harmony: a column can hold several pitches — fire the pad
@@ -15253,6 +19963,10 @@ function drawSeq(){
 }
 let seqLockMode=false, seqSelStep=-1, seqSelPoly=false;
 function drawSteps(){
+  /* the key/chords panel follows the SELECTED pattern, since chords
+     belong to a pattern here — drawn from the same place the grid is
+     so the two can never show different patterns */
+  try{ drawMusicalLayer(); }catch(e){}
   const gr=$('stepgrid'); gr.innerHTML='';
   const pat=curPat(), row=pat.steps[S.seqPad];
   /* The pattern, at the project's tempo — nothing else. A pad with a poly lane
@@ -16147,6 +20861,154 @@ function snapToScale(semi){ return S.scaleLock ? snapSemitone(semi, S.scaleName)
 function scaleLabel(){
   return NOTE_NAMES[S.scaleRoot|0]+' '+($('scaleName').selectedOptions[0]?$('scaleName').selectedOptions[0].textContent:S.scaleName);
 }
+
+/* ---- KEY & CHORDS, AND INFILL, IN THE INTERFACE ---------------------
+   The musical layer went in with an API and no UI, which is the exact
+   gap the SOUND TOOLS buttons were added to close for the generators
+   and which reopened one level down for their controls. A capability
+   only an agent can reach is half a capability.
+
+   Everything here reads and writes the same S.key / S.chords the API
+   does, so the panel and a script cannot disagree about what the
+   harmony is — which was the original point of storing it at all. */
+function mlBars(){ return Math.max(1, Math.round(patLen(S.patterns[S.pattern])/16)); }
+
+function drawMusicalLayer(){
+  if(!$('mlTonic')) return;
+  const k=S.key, bars=mlBars();
+  $('mlTonic').value = k ? k.tonic : '';
+  /* Only overwrite the mode when there IS a key. Resetting it to major
+     whenever none is declared meant choosing the mode before the tonic
+     silently reverted it: the mode change clears the key (no tonic
+     yet), the redraw then reads major back out of the empty state, and
+     the next tonic change reads major off the select. Picking dorian
+     then F# gave F# major. The person's half-made choice is theirs
+     until they finish it. */
+  if(k) $('mlMode').value = k.mode;
+  $('mlBarsLbl').textContent = bars+(bars===1?' BAR':' BARS');
+  /* what fits the key, so "what could go here" is answerable without
+     the person having to know — suggestion, never a constraint */
+  if(k && typeof keyChords==='function'){
+    const c=keyChords(k.tonic,k.mode);
+    $('mlKeyChords').textContent = c.length? ('in key: '+c.join(' ')) : '';
+  } else $('mlKeyChords').textContent='';
+  const list=S.chords[S.pattern];
+  if(document.activeElement!==$('mlChords'))
+    $('mlChords').value = list ? list.join(', ') : '';
+  const info=$('mlInfo');
+  if(!list || !list.length){
+    info.textContent='No chords on pattern '+(S.pattern+1)
+      +'. Without them harmony() has nothing to check against, and it will not '
+      +'infer them from the notes — that is what makes a wrong note look correct.';
+  } else {
+    let t='Pattern '+(S.pattern+1)+': '+list.join(' ');
+    if(list.length!==bars) t+='  — '+list.length+' chord'+(list.length===1?'':'s')
+      +' over '+bars+' bar'+(bars===1?'':'s')+', so the list repeats to fill it.';
+    try{
+      const pr=window.MVX.progression({src:S.song&&S.song.length?'song':'pat'});
+      if(pr.bars) t+='   ·   '+pr.says;
+    }catch(e){}
+    info.textContent=t;
+  }
+  /* the instruments there are to write for */
+  const sel=$('mlInst'); if(sel){
+    const names=[...new Set(S.pads.filter(p=>p&&p.bufId>=0&&p.inst).map(p=>p.inst))];
+    const cur=sel.value;
+    /* textContent, not innerHTML. An instrument name comes from
+       instrument() or from a loaded project, so it is input; the rest
+       of this file builds <option>s the same way for the same reason. */
+    sel.textContent='';
+    if(names.length){
+      for(const n of names){ const o=document.createElement('option');
+        o.value=n; o.textContent=n; sel.appendChild(o); }
+    } else {
+      const o=document.createElement('option');
+      o.value=''; o.textContent='no tagged instruments'; sel.appendChild(o);
+    }
+    if(names.indexOf(cur)>=0) sel.value=cur;
+    sel.disabled=!names.length;
+    if($('mlOffer')) $('mlOffer').disabled=!names.length;
+  }
+}
+
+if($('mlTonic')){
+  const setKey=()=>{
+    const t=$('mlTonic').value;
+    try{ if(!t) window.MVX.key(null); else window.MVX.key(t, $('mlMode').value); }
+    catch(e){ lcd(e.message); }
+    drawMusicalLayer();
+    lcd(S.key? ('KEY '+S.key.tonic+' '+S.key.mode) : 'KEY CLEARED — undeclared');
+  };
+  $('mlTonic').addEventListener('change',setKey);
+  $('mlMode').addEventListener('change',setKey);
+
+  $('mlSet').addEventListener('click',()=>{
+    const raw=$('mlChords').value.trim();
+    if(!raw){ window.MVX.chords(S.pattern,null); drawMusicalLayer();
+      lcd('CHORDS CLEARED on pattern '+(S.pattern+1)); return; }
+    const list=raw.split(/[,\s]+/).filter(Boolean);
+    /* read every symbol before writing any of them, so a typo in the
+       fourth chord does not leave the first three applied */
+    if(typeof chordInfo==='function'){
+      const bad=list.filter(x=>!chordInfo(x));
+      if(bad.length){ lcd('CANNOT READ: '+bad.join(' ')+' — m7 is minor, M7 is major');
+        $('mlInfo').textContent='Not written. These are not chords I can read: '
+          +bad.join(', ')+'. Nothing was changed, so a typo in one symbol does not '
+          +'leave the others half-applied.'; return; }
+    }
+    try{
+      const r=window.MVX.chords(S.pattern,list);
+      drawMusicalLayer();
+      lcd('CHORDS SET on pattern '+(S.pattern+1)+(r.warning?' (see note)':''));
+    }catch(e){ lcd(e.message); $('mlInfo').textContent=e.message; }
+  });
+  $('mlChords').addEventListener('blur',drawMusicalLayer);
+
+  /* ---- OFFER / WRITE IT ------------------------------------------- */
+  let mlCands=null, mlOpts=null;
+  $('mlOffer').addEventListener('click',async()=>{
+    const inst=$('mlInst').value;
+    if(!inst) return;
+    const b=$('mlOffer'); b.disabled=true; const was=b.textContent; b.textContent='…';
+    try{
+      const opts={ from:0, bars:mlBars(), n:5, role:$('mlRole').value,
+        src:'pat', seed:(Date.now()&0x7fffffff) };
+      const r=await window.MVX.infill(inst,opts);
+      mlCands=r.candidates; mlOpts=opts;
+      const pick=$('mlPick');
+      pick.textContent='';
+      r.candidates.forEach((c,i)=>{
+        const o=document.createElement('option');
+        o.value=String(c.seed);
+        o.textContent=(i===0?'best on the numbers — ':'')
+          +c.score.notes+' notes, '+c.score.got.step+'% steps, '
+          +c.score.got.leap+'% leaps'
+          +(c.score.minorNinths?(', '+c.score.minorNinths+' clashes'):'')
+          +(c.score.barsWithNoThird?(', '+c.score.barsWithNoThird+' bars no third'):'');
+        pick.appendChild(o);
+      });
+      $('mlPickRow').hidden=false;
+      $('mlInfo').textContent=r.says;
+      lcd(r.candidates.length+' WAYS TO PLAY '+inst.toUpperCase()+' — nothing written yet');
+    }catch(e){ $('mlInfo').textContent=e.message; lcd('INFILL: '+String(e.message).slice(0,60)); }
+    finally{ b.disabled=false; b.textContent=was; }
+  });
+
+  $('mlApply').addEventListener('click',async()=>{
+    if(!mlCands||!mlOpts) return;
+    const seed=+$('mlPick').value;
+    const b=$('mlApply'); b.disabled=true;
+    try{
+      const r=await window.MVX.infill($('mlInst').value,
+        Object.assign({},mlOpts,{apply:seed}));
+      drawSteps(); drawNotes(); dirty();
+      $('mlInfo').textContent=r.says+' Press OFFER again for another set, or undo.';
+      lcd('WROTE '+r.wrote+' NOTES for '+r.inst);
+    }catch(e){ $('mlInfo').textContent=e.message; lcd(String(e.message).slice(0,60)); }
+    finally{ b.disabled=false; }
+  });
+}
+
 function drawScaleLock(){
   $('btnScaleLock').classList.toggle('on',!!S.scaleLock);
   $('scaleRoot').value=String(S.scaleRoot|0);
@@ -17005,7 +21867,7 @@ function sessionFileDoc(){
     return {sr:b.sampleRate,len:b.length,ch:chans,pk};
   });
   return { fmt:DOC_FMT, v:DOC_V, build:BUILD, name:$('projName').value,
-    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, humanDrift:S.humanDrift, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
@@ -17019,6 +21881,7 @@ function sessionFileDoc(){
     mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
+    key:S.key, chords:S.chords, sections:S.sections,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
 }
 window.MVX.sessionFile=function(name){
@@ -17082,7 +21945,7 @@ const DOC_FMT='mvx880-project';
 /* Every numeric field that ends up in an AudioParam or a clamp that assumes a
    number. docAccept refuses a document that carries any of these as something
    other than a finite number, so the apply path cannot throw half way. */
-const DOC_NUMS=['bpm','swing','human','masterVol','delayFb','silFade','revLvl','revSize',
+const DOC_NUMS=['bpm','swing','human','humanDrift','masterVol','delayFb','silFade','revLvl','revSize',
   'delayDiv','dlyTone','compAmt','midiCh','midiRoot','midiOutCh','scaleRoot',
   'mEqLo','mEqMid','mEqHi','mWidth','mMono','mCeil','mTrim',
   'mMud','mAir','mFocus','mDeess','scDepth','scRel','takeSeed'];
@@ -17256,7 +22119,7 @@ function docAccept(doc,where){
 }
 function applySessionDoc(doc, bufs){
   if(!docAccept(doc,'session load')) return false;
-  S.bpm=(doc.bpm!=null)?doc.bpm:120; S.swing=(doc.swing!=null)?doc.swing:0; S.human=doc.human||0;
+  S.bpm=(doc.bpm!=null)?doc.bpm:120; S.swing=(doc.swing!=null)?doc.swing:0; S.human=doc.human||0; S.humanDrift=clamp(+doc.humanDrift||0,0,1);
   // an older project has no seed: give it one now and keep it from here on, so
   // it at least becomes repeatable from this point rather than never
   S.takeSeed = (doc.takeSeed!=null) ? doc.takeSeed : newTakeSeed();
@@ -17340,6 +22203,33 @@ function applySessionDoc(doc, bufs){
   S.scDepth=(doc.scDepth!=null)?doc.scDepth:0.6; S.scRel=(doc.scRel!=null)?doc.scRel:0.25;
   S.song=Array.isArray(doc.song)?doc.song.map(x=>({pat:clamp(x.pat|0,0,NPAT-1),reps:clamp(x.reps|0,1,64)})):[];
   S.songOn=!!doc.songOn; S.songLoop=(doc.songLoop!=null)?!!doc.songLoop:true; songPos=0; songRep=0;
+  /* THE MUSICAL LAYER comes back validated rather than trusted. A
+     document is an input: a chord list of the wrong shape, or a key
+     with a tonic that is not a note, has to become "undeclared"
+     rather than reaching harmony() and being analysed as though it
+     meant something. An older project has none of this and gets the
+     honest empty answer, which is what "no progression declared"
+     is for. */
+  S.key = (doc.key && typeof doc.key.tonic==='string'
+    && /^[A-Ga-g][#b]?$/.test(doc.key.tonic))
+    ? { tonic:doc.key.tonic, mode:String(doc.key.mode||'major') } : null;
+  S.chords = {};
+  if(doc.chords && typeof doc.chords==='object'){
+    for(const k of Object.keys(doc.chords)){
+      const i=k|0; if(i<0 || i>=NPAT) continue;
+      const v=doc.chords[k];
+      if(Array.isArray(v) && v.every(x=>typeof x==='string'))
+        S.chords[i]=v.slice(0,64).map(x=>String(x).slice(0,16));
+    }
+  }
+  S.sections = {};
+  if(doc.sections && typeof doc.sections==='object'){
+    for(const k of Object.keys(doc.sections)){
+      const i=k|0; if(i<0 || i>256) continue;
+      if(typeof doc.sections[k]==='string')
+        S.sections[i]=String(doc.sections[k]).slice(0,32);
+    }
+  }
   if(LIVE && LIVE._inst){
     hardSet(LIVE._inst.g.gain,S.inst.vol); hardSet(LIVE._inst.rv.gain,S.inst.rev); hardSet(LIVE._inst.dl.gain,S.inst.dly);
   }
@@ -17386,7 +22276,8 @@ function applySessionDoc(doc, bufs){
      change how every pitched pad in it sounds — so an older document keeps what
      it was made with. */
   S.pads.forEach(p=>{ if(p.keepTime==null) p.keepTime=true;   // pre-v2 docs were stamped in migrateDoc
-    if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16;
+    if(p.fine==null)p.fine=0; if(p.reverse==null)p.reverse=false; if(p.mode==null)p.mode='one'; if(p.bowSlur==null)p.bowSlur=0.045; if(p.bowMaxSt==null)p.bowMaxSt=7; if(p.bowIn==null)p.bowIn=0.30; if(p.bowLen==null)p.bowLen=2.1; if(p.bowBite==null)p.bowBite=0.035;
+    if(!Array.isArray(p.atkBufs))p.atkBufs=[]; if(p.atkGain==null)p.atkGain=0.5; if(p.atkLen==null)p.atkLen=0.085; if(p.ftype==null)p.ftype='off'; if(p.fcut==null)p.fcut=1; if(p.fres==null)p.fres=0.9; if(p.drv==null)p.drv=0; if(p.crush==null)p.crush=16;
     if(p.mute==null)p.mute=false; if(p.solo==null)p.solo=false;   // pre-R43/R44 docs lack these
     if(p.lfoOn==null)p.lfoOn=false; if(p.lfoTgt==null)p.lfoTgt='cutoff'; if(p.lfoShape==null)p.lfoShape='sine';
     if(p.lfoSync==null)p.lfoSync='free'; if(p.lfoRate==null)p.lfoRate=2; if(p.lfoDepth==null)p.lfoDepth=0.5;
@@ -17649,7 +22540,7 @@ function snapshotSession(){
     return {sr:b.sampleRate,len:b.length,ch,pk};
   });
   return { fmt:DOC_FMT, v:DOC_V, build:BUILD, t:Date.now(), name:$('projName').value, projId:curProjId,
-    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, humanDrift:S.humanDrift, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
@@ -17663,6 +22554,7 @@ function snapshotSession(){
     mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
+    key:S.key, chords:S.chords, sections:S.sections,
     pads:S.pads, patterns:S.patterns, buffers:bufs };
 }
 let autosaving=false, saveBroken=false;
@@ -17767,7 +22659,7 @@ function dirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(autosave,1500); schedu
 let undoStack=[], redoStack=[], _committed=null, undoTimer=0;
 function undoSnap(){
   return { v:DOC_V, name:$('projName').value,
-    bpm:S.bpm, swing:S.swing, human:S.human, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
+    bpm:S.bpm, swing:S.swing, human:S.human, humanDrift:S.humanDrift, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
     revLvl:S.revLvl, revSize:S.revSize, revType:S.revType, delayDiv:S.delayDiv, dlyTone:S.dlyTone, dlyMode:S.dlyMode, compAmt:S.compAmt,
     vcurve:S.vcurve, midiCh:S.midiCh, pcPat:S.pcPat, ccMaps:S.ccMaps, ptnBpm:S.ptnBpm,
@@ -17781,6 +22673,7 @@ function undoSnap(){
     mMud:S.mMud, mAir:S.mAir, mFocus:S.mFocus, mDeess:S.mDeess,
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel, autoTarget:S.autoTarget,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
+    key:S.key, chords:S.chords, sections:S.sections,
     pads:S.pads, patterns:S.patterns };
 }
 function cloneSnap(x){ return JSON.parse(JSON.stringify(x)); }
@@ -17962,6 +22855,15 @@ function projNew(){
   S.patterns=Array.from({length:NPAT},()=>newPattern());
   S.buffers=[]; S.trax=Array.from({length:NTRAX},()=>newTrack());
   S.song=[]; S.songOn=false; S.chain=[]; S.chainOn=false; S.chainPos=0; S.morph.on=false; S.morph.amt=0; S.morph.pos=0; morphBuf=null;
+  /* The musical layer is project state, so NEW PROJECT must drop it.
+     Left in, the previous song's key and chords sit silently under the
+     empty patterns of the next one — and because harmony() now READS
+     the stored progression instead of being handed one, the next song
+     would be checked against the last song's harmony and report
+     findings about chords nobody had written. Caught by a test that
+     cleared between blocks and found pattern 1 still carrying four
+     chords from two blocks earlier. */
+  S.key=null; S.chords={}; S.sections={};
   S.pattern=0; S.bank=0; S.editPad=0; S.seqPad=0;
   S.scOn=false; workBuf=null; slices=[]; selSlice=-1;
   Object.keys(warpOrig).forEach(k=>delete warpOrig[k]);
@@ -18115,6 +23017,278 @@ function biquadRun(x,c,outArr){
   }
   return y;
 }
+/* ---- WHAT A MIX SOUNDS LIKE, IN NINE NUMBERS ---------------------------
+
+   Every tonal judgement made about a bounce here was made by looking at a
+   spectrogram and guessing, and the guesses were wrong in both directions.
+   A piece whose bottom two octaves looked like a solid wall measured, band
+   by band, as having LESS low end than a pink tilt would predict: the real
+   hole was at 2-4kHz, which is piano hammer and snare crack, and no amount
+   of staring at the picture found it. A colour map is a log inside a log
+   and the eye reads area, not energy.
+
+   So: nine octave bands, RMS in each, and the numbers do the arguing.
+
+   WHY THIS IS NOT AN FFT. Hand-rolled DSP has been the single largest
+   source of wrong answers in this file's history — a zero-crossing count
+   that was really counting dither at -42dBFS and declared a loud note the
+   darker one, a Goertzel that drifted over sixteen thousand samples, a
+   "difference" that compared base64 characters instead of decoded samples
+   and reported 0.45 where the truth was 0.07. The browser already ships
+   filters that are correct. So the band split is four cascaded
+   BiquadFilterNodes per band at Butterworth Q, run through an
+   OfflineAudioContext, and nothing here computes a filter coefficient.
+
+   ONE RENDER, NOT NINE. Each band's chain ends at its own input of a
+   ChannelMerger and the offline context is given as many output channels
+   as there are bands, so the whole filterbank runs in a single pass and
+   the bands come back as channels. A ChannelMerger input is mono by
+   definition, so a stereo mix is downmixed going in — which is what is
+   wanted here: this measures tone, not image. Width is measured apart.
+
+   AND THE Q IS IN DECIBELS. For 'lowpass' and 'highpass' the Web Audio
+   spec reads Q as dB — the formula is sin(w0)/(2*10^(Q/20)) — while for
+   every other filter type it is linear. Setting Q=0.7071 on a lowpass
+   therefore does NOT give Butterworth, it gives a mild resonance. The
+   conversion below is the whole difference, and the browser suite proves
+   it with sines rather than trusting this paragraph. */
+const SPEC_BANDS=[[20,60],[60,120],[120,250],[250,500],[500,1000],
+                  [1000,2000],[2000,4000],[4000,8000],[8000,16000]];
+const SPEC_NAMES=SPEC_BANDS.map(([a,b])=>{
+  const s=n=>n>=1000?(n/1000)+'k':''+n; return s(a)+'-'+s(b); });
+/* The two section Qs that make a cascaded pair a 4th-order Butterworth
+   rather than two Butterworths in a row, which would sag 6dB at the
+   corner instead of 3 — expressed in dB because that is what the two
+   filter types involved actually read. */
+const BUTTER4=[0.54119610, 1.30656296].map(q=>20*Math.log10(q));
+
+/* A PLAIN RADIX-2 FFT. The band analysis elsewhere uses real filters in
+   an OfflineAudioContext, which is accurate and costs a render; block
+   matching needs a few hundred cheap spectra instead, which is what
+   this is for. */
+function fftInPlace(re, im){
+  const n=re.length;
+  for(let i=1,j=0;i<n;i++){
+    let bit=n>>1;
+    for(;j&bit;bit>>=1) j^=bit;
+    j^=bit;
+    if(i<j){ const tr=re[i]; re[i]=re[j]; re[j]=tr; const ti=im[i]; im[i]=im[j]; im[j]=ti; }
+  }
+  for(let len=2;len<=n;len<<=1){
+    const ang=-2*Math.PI/len, hl=len>>1;
+    for(let i=0;i<n;i+=len) for(let k=0;k<hl;k++){
+      const w=ang*k, wr=Math.cos(w), wi=Math.sin(w);
+      const ur=re[i+k], ui=im[i+k];
+      const vr=re[i+k+hl]*wr-im[i+k+hl]*wi, vi=re[i+k+hl]*wi+im[i+k+hl]*wr;
+      re[i+k]=ur+vr; im[i+k]=ui+vi; re[i+k+hl]=ur-vr; im[i+k+hl]=ui-vi;
+    }
+  }
+}
+async function bandEnergy(buf){
+  if(!buf || !buf.length) return null;
+  const sr=buf.sampleRate, nyq=sr/2;
+  /* A band that reaches past Nyquist is dropped rather than quietly
+     reported as empty: a 32k reference has no 8-16k band to speak of and
+     should say so instead of reading -120dB and dragging a comparison. */
+  const use=[];
+  SPEC_BANDS.forEach(([lo,hi],i)=>{
+    if(lo<nyq*0.9) use.push({lo, hi:Math.min(hi,nyq*0.95), i}); });
+  if(!use.length) return [];
+  const oc=new OfflineAudioContext(use.length, buf.length, sr);
+  const mg=oc.createChannelMerger(use.length);
+  mg.connect(oc.destination);
+  const src=oc.createBufferSource(); src.buffer=buf;
+  use.forEach((b,ci)=>{
+    let node=src;
+    BUTTER4.forEach(q=>{ const f=oc.createBiquadFilter();
+      f.type='highpass'; f.frequency.value=b.lo; f.Q.value=q;
+      node.connect(f); node=f; });
+    BUTTER4.forEach(q=>{ const f=oc.createBiquadFilter();
+      f.type='lowpass'; f.frequency.value=b.hi; f.Q.value=q;
+      node.connect(f); node=f; });
+    node.connect(mg,0,ci);
+  });
+  src.start();
+  const out=await oc.startRendering();
+  return use.map((b,ci)=>{
+    const d=out.getChannelData(ci);
+    let s=0; for(let j=0;j<d.length;j++) s+=d[j]*d[j];
+    const rms=Math.sqrt(s/Math.max(1,d.length));
+    return { band:SPEC_NAMES[b.i], lo:b.lo, hi:+b.hi.toFixed(0),
+             db:+(20*Math.log10(Math.max(rms,1e-9))).toFixed(1) };
+  });
+}
+
+/* THE SHAPE, WHICH IS THE PART WORTH COMPARING.
+
+   Two mixes at different volumes have different band levels and the same
+   tone, so comparing absolute dB answers the wrong question. Each band is
+   therefore reported against its own mix's broadband total, which makes
+   the result a level-invariant fingerprint: turn the whole thing up 6dB
+   and every number here is unchanged.
+
+   WHAT THAT COSTS, because it is not free and it will mislead anybody who
+   does not know it. The numbers are relative to a total that every band
+   contributes to, so a change in a LOUD band moves all the others the
+   opposite way. Lifting a 6dB shelf over white noise — whose top octave
+   holds half the energy — reads as +1.5dB up top and -4dB across the mids,
+   which looks like a broadband cut and is nothing of the kind. The honest
+   way to read a comparison is as a tilt between bands rather than as nine
+   independent verdicts; diffSpec says so out loud when the spread is wide
+   enough for it to matter. */
+function specShape(bands){
+  let tot=0; for(const b of bands) tot+=Math.pow(10,b.db/10);
+  const ref=10*Math.log10(Math.max(tot,1e-12));
+  return bands.map(b=>({band:b.band, lo:b.lo, hi:b.hi, rel:+(b.db-ref).toFixed(1)}));
+}
+/* Side against mid. Plain arithmetic on purpose — there is no filter here
+   to get wrong, and 0 means mono. */
+function widthOf(buf){
+  if(!buf || buf.numberOfChannels<2) return 0;
+  const L=buf.getChannelData(0), R=buf.getChannelData(1);
+  let m=0,s=0;
+  for(let i=0;i<L.length;i++){ const mi=(L[i]+R[i])*0.5, si=(L[i]-R[i])*0.5; m+=mi*mi; s+=si*si; }
+  return +(Math.sqrt(s/Math.max(1,L.length))/Math.max(1e-9,Math.sqrt(m/Math.max(1,L.length)))).toFixed(3);
+}
+function sliceBuf(buf, from, secs){
+  const sr=buf.sampleRate;
+  const a=Math.max(0, Math.floor((from||0)*sr));
+  const n=Math.min(buf.length-a, Math.ceil((secs||1e9)*sr));
+  if(a<=0 && n>=buf.length) return buf;
+  const ctx=decodeCtx()||new OfflineAudioContext(1,1,sr);
+  const out=ctx.createBuffer(buf.numberOfChannels, Math.max(1,n), sr);
+  for(let c=0;c<buf.numberOfChannels;c++)
+    out.copyToChannel(buf.getChannelData(c).subarray(a,a+n), c);
+  return out;
+}
+async function specReport(buf){
+  const bands=await bandEnergy(buf);
+  const L=buf.getChannelData(0), R=buf.numberOfChannels>1?buf.getChannelData(1):L;
+  let pk=0; for(let i=0;i<L.length;i++){
+    const a=Math.abs(L[i]), b=Math.abs(R[i]); if(a>pk)pk=a; if(b>pk)pk=b; }
+  let lufs=null, crest=null;
+  try{ const li=lufsIntegrated(buf);
+    if(li.lufs>-Infinity){ lufs=+li.lufs.toFixed(2);
+      crest=+((20*Math.log10(Math.max(pk,1e-6)))-li.lufs).toFixed(2); } }catch(e){}
+  return { seconds:+buf.duration.toFixed(2), rate:buf.sampleRate, bands,
+    shape:specShape(bands), width:widthOf(buf), peak:+pk.toFixed(4),
+    lufs, crestDb:crest };
+}
+/* The reference lives for the session only. It is a measurement, not a
+   recording: the audio is analysed and dropped, so nothing of somebody
+   else's track is kept, saved into a project, or available to be bounced. */
+let refSpec=null;
+
+function diffSpec(mine, ref){
+  const byBand={}; ref.shape.forEach(b=>{ byBand[b.band]=b.rel; });
+  const bands=mine.shape.filter(b=>byBand[b.band]!=null).map(b=>({
+    band:b.band, mix:b.rel, ref:byBand[b.band],
+    delta:+(b.rel-byBand[b.band]).toFixed(1) }));
+  const worst=bands.filter(b=>Math.abs(b.delta)>=2)
+    .sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+  const notes=worst.map(b=>b.band+'Hz is '+(b.delta>0?'+':'')+b.delta+'dB '
+    +(b.delta>0?'louder':'quieter')+' than the reference');
+  if(mine.lufs!=null && ref.lufs!=null){
+    const d=+(mine.lufs-ref.lufs).toFixed(1);
+    if(Math.abs(d)>=1) notes.push('overall level is '+(d>0?'+':'')+d+' LUFS against it');
+  }
+  if(mine.crestDb!=null && ref.crestDb!=null){
+    const d=+(mine.crestDb-ref.crestDb).toFixed(1);
+    if(d>=2) notes.push('crest is '+d+'dB wider — more peaky, which usually reads as under-mixed rather than dynamic');
+    else if(d<=-2) notes.push('crest is '+(-d)+'dB tighter — more squashed than the reference');
+  }
+  const dw=+(mine.width-ref.width).toFixed(2);
+  if(Math.abs(dw)>=0.1) notes.push('stereo is '+(dw>0?'wider':'narrower')+' by '+Math.abs(dw).toFixed(2)+' side/mid');
+  /* The caveat, attached to the answer rather than buried in a comment:
+     these deltas are normalised against each mix's own total, so one band
+     being badly out drags the sign of the rest. Said only when the spread
+     is wide enough to actually mislead. */
+  /* A single note is not a mix reference, and reference({pad}) makes it easy
+     to point this at one by accident. Comparing a four-bar mix against one
+     piano note reads as +35dB in the upper mids and means nothing at all —
+     the same apples-to-oranges that made the first vsSource useless. Said
+     here rather than refused, because referencing an imported LOOP on a pad
+     is a perfectly good thing to want. */
+  if(ref.seconds!=null && ref.seconds<10)
+    notes.unshift('the reference is only '+ref.seconds+'s long. If that is a '
+      +'single note or hit rather than a passage of music, these numbers are '
+      +'comparing two different kinds of signal and none of them mean anything.');
+  const spread=bands.length ? Math.max.apply(null,bands.map(b=>b.delta))
+                            - Math.min.apply(null,bands.map(b=>b.delta)) : 0;
+  if(spread>=5) notes.push('read these as a tilt, not as nine separate faults: '
+    +'the bands are normalised against each mix\'s own total, so one band being '
+    +'far out pushes the others the other way. The gap between the ends is '
+    +spread.toFixed(1)+'dB.');
+  return { reference:ref.name||'(unnamed)', bands,
+    worst:worst.map(b=>b.band), matched:worst.length===0,
+    lufs:{mix:mine.lufs, ref:ref.lufs},
+    crestDb:{mix:mine.crestDb, ref:ref.crestDb},
+    width:{mix:mine.width, ref:ref.width},
+    notes:notes.length?notes:['tonal balance is within 2dB of the reference in every band'] };
+}
+
+/* ---- SETTINGS THAT LIE ABOUT HAVING DONE SOMETHING ---------------------
+
+   set() assigns straight into S with no clamp — the clamps live only in
+   the document loader — so two whole classes of silent failure were
+   possible and both of them happened while writing a piece for this app.
+
+   MUD was passed as +0.14. It is a 300Hz bell whose useful range is -9..0
+   because it is a CUT; a positive value is a boost of a seventh of a
+   decibel. AIR was passed as 0.16, a pad's low shelf as -0.8. Every one of
+   those reads back exactly as it was set, and not one of them is audible:
+   several versions of a track were "re-EQed" with moves that did nothing,
+   after which the samples got the blame.
+
+   The second class is worse. A value outside the loader's range is applied
+   live and clamped on reload, so the project sounds one way now and a
+   different way tomorrow — and nothing says so at any point.
+
+   Both are cheap to catch, so they are caught, and set() answers with what
+   it quietly refused to do. */
+const MIXRANGE={
+  mEqLo:[-12,12,'dB','low shelf at 110Hz'],
+  mEqMid:[-12,12,'dB','bell at 1kHz, Q 0.7'],
+  mEqHi:[-12,12,'dB','high shelf at 6.5kHz'],
+  mMud:[-9,0,'dB','bell at 300Hz, and it is a CUT — a positive value is not a boost here'],
+  mAir:[0,9,'dB','shelf at 12kHz, and it is a LIFT — a negative value does nothing'],
+  mTrim:[-24,12,'dB',''], mCeil:[-12,0,'dB','limiter ceiling'],
+  mWidth:[0,2,'x',''], mMono:[0,300,'Hz',''],
+  mFocus:[-1,1,'',''], mDeess:[0,1,'',''],
+  masterVol:[0,2,'x',''], compAmt:[0,1,''],
+  revLvl:[0,1,''], delayFb:[0,0.95,''], swing:[0,1,''], human:[0,1,''],
+  scDepth:[0,1,''], scRel:[0.01,2,'s','']
+};
+const PADDB=['eqLo','eqMid','eqHi'];
+/* The ranges the document loader will clamp a pad field to, so pad() can
+   say so at the time rather than letting a reload change the mix. */
+const PADRANGE={ gain:[0,2], pan:[-1,1], rev:[0,1], dly:[0,1],
+  att:[0,2], dec:[0.001,10], sus:[0,1], rel:[0.005,1],
+  fcut:[0,1], fres:[0,20], drv:[0,1], crush:[1,16],
+  eqLo:[-12,12], eqMid:[-12,12], eqHi:[-12,12],
+  start:[0,0.99], end:[0.01,1], vary:[0,1], speed:[0.25,4],
+  layXf:[0,0.5], relGain:[0,2], atkGain:[0,2], atkLen:[0.01,0.5],
+  bowSlur:[0.005,0.5], bowIn:[0,2], bowLen:[0.25,30], bowBite:[0,0.4] };
+function mixWarnings(only){
+  const out=[];
+  for(const k in MIXRANGE){
+    if(only && !(k in only)) continue;
+    const r=MIXRANGE[k], lo=r[0], hi=r[1], unit=r[2], note=r[3]||'';
+    const v=S[k];
+    if(v==null || typeof v!=='number' || !isFinite(v)) continue;
+    if(v<lo-1e-9 || v>hi+1e-9)
+      out.push({field:k, value:v, severity:'out-of-range', says:k+' is '+v
+        +', outside '+lo+'..'+hi+'. It applies now and a save/reload clamps it to '
+        +clamp(v,lo,hi)+', so the project will not sound the same twice.'
+        +(note?' '+note+'.':'')});
+    else if(unit==='dB' && v!==0 && Math.abs(v)<0.5)
+      out.push({field:k, value:v, severity:'inaudible', says:k+' is '+v
+        +'dB. Below about half a decibel a broadband move is not audible — '
+        +'it reads back as set and changes nothing.'+(note?' '+note+'.':'')});
+  }
+  return out;
+}
+
 /* Integrated loudness of a finished buffer, to the standard. */
 function lufsIntegrated(buf){
   const sr=buf.sampleRate, c=k1770Coeffs(sr), chans=[];
@@ -18457,7 +23631,7 @@ async function renderMixInner(padSet, traxSet, opt){
               if(!worst && plk && plk.prob!=null && takeRnd()>plk.prob) continue;
               let pw=ev.when; if(plk&&plk.nudge) pw+=plk.nudge*pd;
               let phv=pv;
-              if(!worst && S.human>0){ pw=Math.max(0.01,pw+(takeRnd()*2-1)*S.human*0.012);
+              if(!worst && (S.human>0||S.humanDrift>0)){ pw=Math.max(0.01,pw+humanTimeOffset(pw,takeRnd));
                 phv=clamp(pv*(1-takeRnd()*S.human*0.22),0.05,1); }
               const pch=(plk&&plk.pitches&&plk.pitches.length)?plk.pitches:[(plk&&plk.pitch)||0];
               const prat=(plk&&plk.rat>1)?plk.rat:1, pIsChord=pch.length>1;
@@ -18476,7 +23650,7 @@ async function renderMixInner(padSet, traxSet, opt){
           if(!worst && lk && lk.prob!=null && takeRnd()>lk.prob) continue;
           let when=t+st*sd+swing; if(lk&&lk.nudge) when+=lk.nudge*sd;
           let hv=v;
-          if(!worst && S.human>0){ when=Math.max(0.01,when+(takeRnd()*2-1)*S.human*0.012);   // same humanize as live playback
+          if(!worst && (S.human>0||S.humanDrift>0)){ when=Math.max(0.01,when+humanTimeOffset(when,takeRnd));   // same humanize as live playback
             hv=clamp(v*(1-takeRnd()*S.human*0.22),0.05,1); }
           /* the same gate the live scheduler applies, against the same pure
              function, so the file cannot disagree with what was played */
@@ -18504,7 +23678,7 @@ async function renderMixInner(padSet, traxSet, opt){
               if(!worst && plk && plk.prob!=null && takeRnd()>plk.prob) continue;
               let pw=f.when; if(plk&&plk.nudge) pw+=plk.nudge*pd;
               let pv=clamp(f.v*hv,0.02,1);
-              if(!worst && S.human>0){ pw=Math.max(0.01,pw+(takeRnd()*2-1)*S.human*0.012);
+              if(!worst && (S.human>0||S.humanDrift>0)){ pw=Math.max(0.01,pw+humanTimeOffset(pw,takeRnd));
                 pv=clamp(pv*(1-takeRnd()*S.human*0.22),0.05,1); }
               const pch=(plk&&plk.pitches&&plk.pitches.length)?plk.pitches:[(plk&&plk.pitch)||0];
               const prat=(plk&&plk.rat>1)?plk.rat:1, pIsChord=pch.length>1;

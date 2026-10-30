@@ -1,0 +1,195 @@
+/* Every analyser the app has must be reachable over MCP.
+
+   This test exists because for a long time it was not true. The MCP
+   server exposed thirty-four tools, all of them for writing or
+   transport, and not one analyser: an agent connecting to it could load
+   sounds, write steps and render a mix, and had no way whatever to find
+   out whether the result was any good. Its own README said that reading
+   the level back was the whole point.
+
+   The cost was a real one. A track was bounced using six of the
+   seventeen checks the app has, and the three that would have caught
+   what the listener then complained about — perceived loudness, small
+   speaker translation, and the spectrum of an instrument on its own —
+   were among the eleven not run.
+
+   So the rule is that adding a check to the app and forgetting to
+   expose it should break the build, rather than quietly leaving the next
+   agent half-blind. Driven off the source rather than a hand-written
+   list, because a hand-written list is the thing that went stale. */
+
+import { test } from 'node:test';
+import assert from 'node:assert';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const legacy = readFileSync(resolve(root, 'src/legacy.js'), 'utf8');
+const mcp = readFileSync(resolve(root, 'mcp/server.mjs'), 'utf8');
+
+/* The analysers: calls that report on the music rather than change it.
+   Named explicitly because "is this a question or an instruction" is not
+   something a regex can decide — but the list is asserted against the
+   app, so a rename breaks the test rather than silently shrinking it. */
+const ANALYSERS = [
+  'critique', 'loudness', 'translate', 'pulse', 'motif', 'melody',
+  'counterpoint', 'continuity', 'dynamics', 'spectrum', 'compare',
+  'reference', 'schedule', 'vsDry',
+];
+/* attack() and release() look like they belong here and do not: they wire
+   layers onto a pad and mark the project dirty. They change the music
+   rather than report on it. */
+
+test('every analyser named here still exists in the app', () => {
+  for (const a of ANALYSERS) {
+    const re = new RegExp('^\\s{2}(?:async\\s+)?' + a + '\\s*\\(', 'm');
+    assert.ok(re.test(legacy),
+      a + '() is in the analyser list but no longer defined in src/legacy.js — '
+      + 'if it was renamed, rename it here and in mcp/server.mjs too');
+  }
+});
+
+test('every analyser is reachable over MCP', () => {
+  const missing = [];
+  for (const a of ANALYSERS) {
+    /* either its own tool, or dispatched by name from one */
+    const hasTool = mcp.includes("'jbh_" + a.toLowerCase() + "'")
+      || new RegExp("jbh\\('" + a + "'").test(mcp);
+    if (!hasTool) missing.push(a);
+  }
+  assert.deepStrictEqual(missing, [],
+    'these report on the music and an agent cannot reach them over MCP: '
+    + missing.join(', ') + '. Add a tool to mcp/server.mjs TOOLS and a case to '
+    + 'its dispatch. An agent that cannot listen writes blind.');
+});
+
+/* The generators are not analysers, but an agent that cannot reach them
+   is missing the parts of this app that make sounds rather than judge
+   them — and those are the ones with no equivalent anywhere else here. */
+const GENERATORS = ['balance', 'mutate', 'paint', 'resynth', 'tape', 'freeze'];
+
+test('the tools that make and solve things are reachable over MCP', () => {
+  const missing = GENERATORS.filter(g =>
+    !(mcp.includes("'jbh_" + g + "'") || new RegExp("jbh\\('" + g + "'").test(mcp)));
+  assert.deepStrictEqual(missing, [],
+    'not reachable over MCP: ' + missing.join(', ')
+    + '. These have no equivalent elsewhere in the app.');
+  for (const g of GENERATORS) {
+    const re = new RegExp('^\\s{2}(?:async\\s+)?' + g + '\\s*\\(', 'm');
+    assert.ok(re.test(legacy), g + '() is listed here but not defined in src/legacy.js');
+  }
+});
+
+test('the two calls that teach the workflow are exposed, and first', () => {
+  assert.ok(/name: 'jbh_howto'/.test(mcp), 'jbh_howto is not exposed');
+  assert.ok(/name: 'jbh_review'/.test(mcp), 'jbh_review is not exposed');
+  /* first in the list, because an agent reads the tool list top down and
+     the whole problem was that choosing checks by hand is unreliable */
+  const names = [...mcp.matchAll(/name: '(jbh_[a-z_0-9]+)'/g)].map(m => m[1]);
+  assert.strictEqual(names[0], 'jbh_howto',
+    'jbh_howto should be the first tool listed, not ' + names[0]);
+  assert.strictEqual(names[1], 'jbh_review',
+    'jbh_review should be the second tool listed, not ' + names[1]);
+});
+
+test('howto() carries the traps, not just the happy path', () => {
+  const m = /howto\(\)\s*\{\s*return\s*\{([\s\S]{0,16000}?)\n  \},/.exec(legacy);
+  assert.ok(m, 'howto() not found or no longer returns an object literal');
+  const body = m[1];
+  assert.ok(/order:/.test(body), 'howto() should give the order to work in');
+  assert.ok(/traps:/.test(body), 'howto() should name the traps');
+  assert.ok(/norms:/.test(body), 'howto() should carry the measured norms');
+  /* the specific ones that cost the most, so a future trim does not quietly
+     drop the expensive lessons */
+  for (const [what, re] of [
+    ['the octave/pitch trap', /octave|pitch/i],
+    ['gain being relative to the source', /gain is a multiplier|measured peak/i],
+    ['perceived loudness', /perceived|loudness\(\)/i],
+    ['bass harmonics on small speakers', /harmonic/i],
+  ]) assert.ok(re.test(body), 'howto() no longer mentions ' + what);
+
+  /* THE LESSONS THAT COST A WHOLE WEEK, AND WHICH THE REST OF THIS CALL
+     WILL QUIETLY DROWN IF THEY ARE NOT PINNED. A track passed every
+     mixing check here and was heard as "drone machine noise": its bass
+     held one pitch throughout and nothing in the app measures whether
+     the harmony moves. These belong before the sound advice, not
+     after it. */
+  assert.ok(/first:/.test(body),
+    'howto() must lead with what matters before mixing — see the drone');
+  const first = /first:\s*\[([\s\S]*?)\n    \],/.exec(body);
+  assert.ok(first, 'howto().first should be a list');
+  for (const [what, re] of [
+    ['writing music rather than texture', /WRITE MUSIC|chords that change/i],
+    ['velocity layers being what makes a kit real', /velocity layer/i],
+    ['a found sound not being a drum', /found sound is not a drum/i],
+    ['packs that lie about being real', /may not be|synthesised/i],
+    ['the checks not being able to hear music', /cannot tell you whether it is music/i],
+  ]) assert.ok(re.test(first[1]), 'howto().first no longer mentions ' + what);
+
+  /* AND THE ONE LINE SOMEONE WHO READS ONE LINE GETS. `first` can be
+     perfectly written and still never reached: an agent that takes
+     howto().says as the summary of the call gets whatever that string
+     holds. It held "make one sound, place() it, then make the next" —
+     true, and the advice that matters least — for as long as `first`
+     existed above it, which is how the same drone would have been
+     written by a reader who did everything right. */
+  const says = /\n    says:'([\s\S]*?)'\s*\};/.exec(body);
+  assert.ok(says, 'howto().says should be a string');
+  assert.ok(/harmony moves|drone|Write music/i.test(says[1]),
+    'howto().says must lead with the writing, not the mixing — it reads: '
+      + says[1].slice(0, 90));
+});
+
+test('review() reports what it could not run', () => {
+  const m = /async review\(opt\)\{([\s\S]*?)\n  \},/.exec(legacy);
+  assert.ok(m, 'review() not found');
+  const body = m[1];
+  assert.ok(/skipped/.test(body),
+    'review() must report skipped checks — a check that silently did not run '
+    + 'reads exactly like one that passed');
+  assert.ok(/catch/.test(body),
+    'review() must keep going when one analyser throws');
+  assert.ok(/toolsRun|ran\.length/.test(body),
+    'review() must say how many checks it managed');
+});
+
+/* AN OPTION THE MCP SERVER PASSES AND THE FUNCTION DOES NOT READ.
+
+   jbh_resynth passed `jumble` for a long time. resynth() has no such
+   option — it was replaced by novelty, boredom and stickiness, and the
+   MCP surface was never updated. So an agent working over MCP could set
+   a knob that did nothing, while the seven that worked were unreachable
+   because the schema did not mention them.
+
+   Nothing caught it, because the existing coverage tests check that a
+   TOOL exists, never that its arguments connect to anything. This walks
+   each generator's dispatch case, takes every `key: a.key` it forwards,
+   and checks the function in src/legacy.js actually reads `o.key`. */
+test('every option the MCP server forwards is one the function reads', () => {
+  const problems = [];
+  for (const g of GENERATORS) {
+    const disp = new RegExp("case 'jbh_" + g + "':[\\s\\S]*?\\]\\)\\);", 'm').exec(mcp);
+    if (!disp) { problems.push(g + ': no dispatch case found'); continue; }
+    /* the object literal the server builds, minus the leading pad/from
+       positional argument */
+    const forwarded = [...disp[0].matchAll(/([A-Za-z][\w]*)\s*:\s*a\.([A-Za-z][\w]*)/g)]
+      .map(m => m[1]);
+    const fn = new RegExp('^\\s{2}(?:async\\s+)?' + g + '\\s*\\(([\\s\\S]*?)\\n  \\},', 'm')
+      .exec(legacy);
+    if (!fn) { problems.push(g + '(): not found in src/legacy.js'); continue; }
+    const body = fn[1];
+    for (const key of new Set(forwarded)) {
+      /* `o.key`, or destructured, or read off the options object under
+         another local name — all of these count as reading it */
+      const read = new RegExp('\\bo\\.' + key + '\\b').test(body)
+        || new RegExp('\\bopt\\.' + key + '\\b').test(body)
+        || new RegExp('[{,]\\s*' + key + '\\s*[,}=:]').test(body);
+      if (!read) problems.push(g + '() is sent `' + key + '` and never reads it');
+    }
+  }
+  assert.deepStrictEqual(problems, [],
+    'the MCP surface and the function have drifted apart:\n  ' + problems.join('\n  ')
+    + '\nAn option that is forwarded but never read is a knob an agent can turn '
+    + 'with no effect, and it reads exactly like a knob that does not work.');
+});

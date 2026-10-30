@@ -1,0 +1,1399 @@
+{
+ "pack": "VCSL — idiophones: mallets, bells, glass and metal (CC0)",
+ "source": "https://github.com/sgossner/VCSL",
+ "note": "Measured by scripts/timbre-atlas.mjs. peakDb is the level the sample ARRIVES at, which is what gain has to correct for first. airVsBodyDb is energy above 2kHz against below 500Hz: positive carries air, strongly negative cannot, whatever is done to it with a filter.",
+ "instruments": [
+  {
+   "instrument": "btree",
+   "samples": 6,
+   "measured": 2,
+   "peakDb": -40.2,
+   "attackMs": 30,
+   "decayMs": 640,
+   "airVsBodyDb": 38.2,
+   "owns": "4k-8k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -39
+    },
+    {
+     "band": "60-120",
+     "rel": -41
+    },
+    {
+     "band": "120-250",
+     "rel": -42.1
+    },
+    {
+     "band": "250-500",
+     "rel": -50.1
+    },
+    {
+     "band": "500-1k",
+     "rel": -52.5
+    },
+    {
+     "band": "1k-2k",
+     "rel": -15.4
+    },
+    {
+     "band": "2k-4k",
+     "rel": -4.3
+    },
+    {
+     "band": "4k-8k",
+     "rel": -0.4
+    },
+    {
+     "band": "8k-16k",
+     "rel": -2.5
+    }
+   ]
+  },
+  {
+   "instrument": "sleigh",
+   "samples": 6,
+   "measured": 2,
+   "peakDb": -26.5,
+   "attackMs": 1385,
+   "decayMs": 3770,
+   "airVsBodyDb": 36.4,
+   "owns": "4k-8k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -43.7
+    },
+    {
+     "band": "60-120",
+     "rel": -42.5
+    },
+    {
+     "band": "120-250",
+     "rel": -39.3
+    },
+    {
+     "band": "250-500",
+     "rel": -42.3
+    },
+    {
+     "band": "500-1k",
+     "rel": -43.2
+    },
+    {
+     "band": "1k-2k",
+     "rel": -27.2
+    },
+    {
+     "band": "2k-4k",
+     "rel": -6.5
+    },
+    {
+     "band": "4k-8k",
+     "rel": -2
+    },
+    {
+     "band": "8k-16k",
+     "rel": -4.7
+    }
+   ]
+  },
+  {
+   "instrument": "glock",
+   "samples": 18,
+   "measured": 2,
+   "peakDb": -26,
+   "attackMs": 20,
+   "decayMs": 460,
+   "airVsBodyDb": 35.7,
+   "owns": "4k-8k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -36.5
+    },
+    {
+     "band": "60-120",
+     "rel": -40.7
+    },
+    {
+     "band": "120-250",
+     "rel": -43.4
+    },
+    {
+     "band": "250-500",
+     "rel": -53.2
+    },
+    {
+     "band": "500-1k",
+     "rel": -7.5
+    },
+    {
+     "band": "1k-2k",
+     "rel": -45.6
+    },
+    {
+     "band": "2k-4k",
+     "rel": -14.8
+    },
+    {
+     "band": "4k-8k",
+     "rel": 0
+    },
+    {
+     "band": "8k-16k",
+     "rel": -5.1
+    }
+   ]
+  },
+  {
+   "instrument": "anvil",
+   "samples": 9,
+   "measured": 2,
+   "peakDb": -5.2,
+   "attackMs": 15,
+   "decayMs": 295,
+   "airVsBodyDb": 26.3,
+   "owns": "4k-8k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -31.8
+    },
+    {
+     "band": "60-120",
+     "rel": -27.5
+    },
+    {
+     "band": "120-250",
+     "rel": -35.3
+    },
+    {
+     "band": "250-500",
+     "rel": -35.9
+    },
+    {
+     "band": "500-1k",
+     "rel": -37.9
+    },
+    {
+     "band": "1k-2k",
+     "rel": -6
+    },
+    {
+     "band": "2k-4k",
+     "rel": -9.6
+    },
+    {
+     "band": "4k-8k",
+     "rel": -0.8
+    },
+    {
+     "band": "8k-16k",
+     "rel": -4.8
+    }
+   ]
+  },
+  {
+   "instrument": "wblock",
+   "samples": 10,
+   "measured": 2,
+   "peakDb": -23.3,
+   "attackMs": 25,
+   "decayMs": 65,
+   "airVsBodyDb": 23.6,
+   "owns": "1k-2k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -26.8
+    },
+    {
+     "band": "60-120",
+     "rel": -32.5
+    },
+    {
+     "band": "120-250",
+     "rel": -32.6
+    },
+    {
+     "band": "250-500",
+     "rel": -32.2
+    },
+    {
+     "band": "500-1k",
+     "rel": -25.1
+    },
+    {
+     "band": "1k-2k",
+     "rel": -0.1
+    },
+    {
+     "band": "2k-4k",
+     "rel": -2.5
+    },
+    {
+     "band": "4k-8k",
+     "rel": -5.3
+    },
+    {
+     "band": "8k-16k",
+     "rel": -21.4
+    }
+   ]
+  },
+  {
+   "instrument": "cabasa",
+   "samples": 6,
+   "measured": 2,
+   "peakDb": -21.8,
+   "attackMs": 50,
+   "decayMs": 80,
+   "airVsBodyDb": 21,
+   "owns": "8k-16k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -24.5
+    },
+    {
+     "band": "60-120",
+     "rel": -23.5
+    },
+    {
+     "band": "120-250",
+     "rel": -32.3
+    },
+    {
+     "band": "250-500",
+     "rel": -26.9
+    },
+    {
+     "band": "500-1k",
+     "rel": -21.1
+    },
+    {
+     "band": "1k-2k",
+     "rel": -10.1
+    },
+    {
+     "band": "2k-4k",
+     "rel": -6.3
+    },
+    {
+     "band": "4k-8k",
+     "rel": -4.5
+    },
+    {
+     "band": "8k-16k",
+     "rel": -1.3
+    }
+   ]
+  },
+  {
+   "instrument": "claves",
+   "samples": 6,
+   "measured": 2,
+   "peakDb": -23,
+   "attackMs": 10,
+   "decayMs": 105,
+   "airVsBodyDb": 20,
+   "owns": "2k-4k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -23.3
+    },
+    {
+     "band": "60-120",
+     "rel": -25.3
+    },
+    {
+     "band": "120-250",
+     "rel": -28.1
+    },
+    {
+     "band": "250-500",
+     "rel": -31.6
+    },
+    {
+     "band": "500-1k",
+     "rel": -34.5
+    },
+    {
+     "band": "1k-2k",
+     "rel": -3.6
+    },
+    {
+     "band": "2k-4k",
+     "rel": -0.5
+    },
+    {
+     "band": "4k-8k",
+     "rel": -10
+    },
+    {
+     "band": "8k-16k",
+     "rel": -27.2
+    }
+   ]
+  },
+  {
+   "instrument": "fcym",
+   "samples": 1,
+   "measured": 1,
+   "peakDb": -37.4,
+   "attackMs": 50,
+   "decayMs": 295,
+   "airVsBodyDb": 15.4,
+   "owns": "2k-4k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -17.9
+    },
+    {
+     "band": "60-120",
+     "rel": -20.6
+    },
+    {
+     "band": "120-250",
+     "rel": -27.7
+    },
+    {
+     "band": "250-500",
+     "rel": -29.2
+    },
+    {
+     "band": "500-1k",
+     "rel": -34.2
+    },
+    {
+     "band": "1k-2k",
+     "rel": -36.8
+    },
+    {
+     "band": "2k-4k",
+     "rel": -3.6
+    },
+    {
+     "band": "4k-8k",
+     "rel": -3.6
+    },
+    {
+     "band": "8k-16k",
+     "rel": -10.2
+    }
+   ]
+  },
+  {
+   "instrument": "tglock",
+   "samples": 27,
+   "measured": 2,
+   "peakDb": -11.4,
+   "attackMs": 0,
+   "decayMs": 115,
+   "airVsBodyDb": 14.6,
+   "owns": "1k-2k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -19.7
+    },
+    {
+     "band": "60-120",
+     "rel": -21.5
+    },
+    {
+     "band": "120-250",
+     "rel": -20.2
+    },
+    {
+     "band": "250-500",
+     "rel": -22.4
+    },
+    {
+     "band": "500-1k",
+     "rel": -23.1
+    },
+    {
+     "band": "1k-2k",
+     "rel": 0
+    },
+    {
+     "band": "2k-4k",
+     "rel": -6.8
+    },
+    {
+     "band": "4k-8k",
+     "rel": -1.3
+    },
+    {
+     "band": "8k-16k",
+     "rel": -25
+    }
+   ]
+  },
+  {
+   "instrument": "chimes2",
+   "samples": 22,
+   "measured": 2,
+   "peakDb": -6.9,
+   "attackMs": 5,
+   "decayMs": 2735,
+   "airVsBodyDb": 14.1,
+   "owns": "1k-2k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -64.7
+    },
+    {
+     "band": "60-120",
+     "rel": -56.9
+    },
+    {
+     "band": "120-250",
+     "rel": -30
+    },
+    {
+     "band": "250-500",
+     "rel": -24.7
+    },
+    {
+     "band": "500-1k",
+     "rel": -3.7
+    },
+    {
+     "band": "1k-2k",
+     "rel": -0.9
+    },
+    {
+     "band": "2k-4k",
+     "rel": -9.8
+    },
+    {
+     "band": "4k-8k",
+     "rel": -20.9
+    },
+    {
+     "band": "8k-16k",
+     "rel": -39.2
+    }
+   ]
+  },
+  {
+   "instrument": "chimes",
+   "samples": 18,
+   "measured": 2,
+   "peakDb": -3.5,
+   "attackMs": 35,
+   "decayMs": 4920,
+   "airVsBodyDb": 12,
+   "owns": "1k-2k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -33.3
+    },
+    {
+     "band": "60-120",
+     "rel": -39.4
+    },
+    {
+     "band": "120-250",
+     "rel": -40.6
+    },
+    {
+     "band": "250-500",
+     "rel": -21.6
+    },
+    {
+     "band": "500-1k",
+     "rel": -3.1
+    },
+    {
+     "band": "1k-2k",
+     "rel": -1.4
+    },
+    {
+     "band": "2k-4k",
+     "rel": -10.3
+    },
+    {
+     "band": "4k-8k",
+     "rel": -16.1
+    },
+    {
+     "band": "8k-16k",
+     "rel": -26.2
+    }
+   ]
+  },
+  {
+   "instrument": "tri",
+   "samples": 34,
+   "measured": 2,
+   "peakDb": -25.2,
+   "attackMs": 10,
+   "decayMs": 135,
+   "airVsBodyDb": 10.1,
+   "owns": "4k-8k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -12.9
+    },
+    {
+     "band": "60-120",
+     "rel": -15.4
+    },
+    {
+     "band": "120-250",
+     "rel": -16.4
+    },
+    {
+     "band": "250-500",
+     "rel": -22.6
+    },
+    {
+     "band": "500-1k",
+     "rel": -25.8
+    },
+    {
+     "band": "1k-2k",
+     "rel": -14.5
+    },
+    {
+     "band": "2k-4k",
+     "rel": -5
+    },
+    {
+     "band": "4k-8k",
+     "rel": -2.9
+    },
+    {
+     "band": "8k-16k",
+     "rel": -5.4
+    }
+   ]
+  },
+  {
+   "instrument": "vibbow",
+   "samples": 6,
+   "measured": 2,
+   "peakDb": -28,
+   "attackMs": 2215,
+   "decayMs": 3600,
+   "airVsBodyDb": 9.5,
+   "owns": "1k-2k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -19.3
+    },
+    {
+     "band": "60-120",
+     "rel": -19
+    },
+    {
+     "band": "120-250",
+     "rel": -12.6
+    },
+    {
+     "band": "250-500",
+     "rel": -23
+    },
+    {
+     "band": "500-1k",
+     "rel": -7.8
+    },
+    {
+     "band": "1k-2k",
+     "rel": 0
+    },
+    {
+     "band": "2k-4k",
+     "rel": -1.6
+    },
+    {
+     "band": "4k-8k",
+     "rel": -16.2
+    },
+    {
+     "band": "8k-16k",
+     "rel": -14.5
+    }
+   ]
+  },
+  {
+   "instrument": "vibh",
+   "samples": 22,
+   "measured": 2,
+   "peakDb": -11.8,
+   "attackMs": 10,
+   "decayMs": 1930,
+   "airVsBodyDb": 9.1,
+   "owns": "1k-2k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -72.5
+    },
+    {
+     "band": "60-120",
+     "rel": -72.1
+    },
+    {
+     "band": "120-250",
+     "rel": -33.5
+    },
+    {
+     "band": "250-500",
+     "rel": -75.2
+    },
+    {
+     "band": "500-1k",
+     "rel": -42.1
+    },
+    {
+     "band": "1k-2k",
+     "rel": 0
+    },
+    {
+     "band": "2k-4k",
+     "rel": -24.8
+    },
+    {
+     "band": "4k-8k",
+     "rel": -35.1
+    },
+    {
+     "band": "8k-16k",
+     "rel": -54.8
+    }
+   ]
+  },
+  {
+   "instrument": "suscym",
+   "samples": 18,
+   "measured": 2,
+   "peakDb": -29.3,
+   "attackMs": 1730,
+   "decayMs": 1585,
+   "airVsBodyDb": 5.2,
+   "owns": "500-1k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -37.6
+    },
+    {
+     "band": "60-120",
+     "rel": -33.6
+    },
+    {
+     "band": "120-250",
+     "rel": -41.4
+    },
+    {
+     "band": "250-500",
+     "rel": -7.2
+    },
+    {
+     "band": "500-1k",
+     "rel": -1.4
+    },
+    {
+     "band": "1k-2k",
+     "rel": -17.6
+    },
+    {
+     "band": "2k-4k",
+     "rel": -3.4
+    },
+    {
+     "band": "4k-8k",
+     "rel": -7.8
+    },
+    {
+     "band": "8k-16k",
+     "rel": -17.7
+    }
+   ]
+  },
+  {
+   "instrument": "kalimbt",
+   "samples": 27,
+   "measured": 2,
+   "peakDb": -2.7,
+   "attackMs": 105,
+   "decayMs": 205,
+   "airVsBodyDb": 2.8,
+   "owns": "500-1k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -43.2
+    },
+    {
+     "band": "60-120",
+     "rel": -16
+    },
+    {
+     "band": "120-250",
+     "rel": -16.3
+    },
+    {
+     "band": "250-500",
+     "rel": -5.2
+    },
+    {
+     "band": "500-1k",
+     "rel": -0.5
+    },
+    {
+     "band": "1k-2k",
+     "rel": -18
+    },
+    {
+     "band": "2k-4k",
+     "rel": -2.2
+    },
+    {
+     "band": "4k-8k",
+     "rel": -13.3
+    },
+    {
+     "band": "8k-16k",
+     "rel": -18.3
+    }
+   ]
+  },
+  {
+   "instrument": "glass",
+   "samples": 8,
+   "measured": 2,
+   "peakDb": -22.2,
+   "attackMs": 2885,
+   "decayMs": 175,
+   "airVsBodyDb": 2.5,
+   "owns": "500-1k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -50.9
+    },
+    {
+     "band": "60-120",
+     "rel": -53.8
+    },
+    {
+     "band": "120-250",
+     "rel": -55.1
+    },
+    {
+     "band": "250-500",
+     "rel": -41.9
+    },
+    {
+     "band": "500-1k",
+     "rel": 0
+    },
+    {
+     "band": "1k-2k",
+     "rel": 0
+    },
+    {
+     "band": "2k-4k",
+     "rel": -39.7
+    },
+    {
+     "band": "4k-8k",
+     "rel": -46.5
+    },
+    {
+     "band": "8k-16k",
+     "rel": -49.3
+    }
+   ]
+  },
+  {
+   "instrument": "brake",
+   "samples": 17,
+   "measured": 2,
+   "peakDb": -22.7,
+   "attackMs": 3550,
+   "decayMs": 1700,
+   "airVsBodyDb": 2.1,
+   "owns": "1k-2k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -15.7
+    },
+    {
+     "band": "60-120",
+     "rel": -17.5
+    },
+    {
+     "band": "120-250",
+     "rel": -20.9
+    },
+    {
+     "band": "250-500",
+     "rel": -23.4
+    },
+    {
+     "band": "500-1k",
+     "rel": -0.7
+    },
+    {
+     "band": "1k-2k",
+     "rel": -0.4
+    },
+    {
+     "band": "2k-4k",
+     "rel": -11
+    },
+    {
+     "band": "4k-8k",
+     "rel": -23
+    },
+    {
+     "band": "8k-16k",
+     "rel": -20.9
+    }
+   ]
+  },
+  {
+   "instrument": "xylo",
+   "samples": 48,
+   "measured": 2,
+   "peakDb": -7.1,
+   "attackMs": 10,
+   "decayMs": 95,
+   "airVsBodyDb": 1.7,
+   "owns": "4k-8k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -24
+    },
+    {
+     "band": "60-120",
+     "rel": -29.1
+    },
+    {
+     "band": "120-250",
+     "rel": -57.1
+    },
+    {
+     "band": "250-500",
+     "rel": -1.1
+    },
+    {
+     "band": "500-1k",
+     "rel": -33.1
+    },
+    {
+     "band": "1k-2k",
+     "rel": -22.1
+    },
+    {
+     "band": "2k-4k",
+     "rel": -7.4
+    },
+    {
+     "band": "4k-8k",
+     "rel": -0.1
+    },
+    {
+     "band": "8k-16k",
+     "rel": -30.6
+    }
+   ]
+  },
+  {
+   "instrument": "mbira",
+   "samples": 24,
+   "measured": 2,
+   "peakDb": -22.1,
+   "attackMs": 110,
+   "decayMs": 490,
+   "airVsBodyDb": 1.2,
+   "owns": "1k-2k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -41.1
+    },
+    {
+     "band": "60-120",
+     "rel": -27.2
+    },
+    {
+     "band": "120-250",
+     "rel": -5.7
+    },
+    {
+     "band": "250-500",
+     "rel": -33.3
+    },
+    {
+     "band": "500-1k",
+     "rel": -4.4
+    },
+    {
+     "band": "1k-2k",
+     "rel": -0.9
+    },
+    {
+     "band": "2k-4k",
+     "rel": -6.1
+    },
+    {
+     "band": "4k-8k",
+     "rel": -11
+    },
+    {
+     "band": "8k-16k",
+     "rel": -15.1
+    }
+   ]
+  },
+  {
+   "instrument": "hchime",
+   "samples": 19,
+   "measured": 2,
+   "peakDb": -16.5,
+   "attackMs": 60,
+   "decayMs": 5930,
+   "airVsBodyDb": 0.1,
+   "owns": "2k-4k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -52.5
+    },
+    {
+     "band": "60-120",
+     "rel": -58.2
+    },
+    {
+     "band": "120-250",
+     "rel": -46.6
+    },
+    {
+     "band": "250-500",
+     "rel": -0.1
+    },
+    {
+     "band": "500-1k",
+     "rel": -39.2
+    },
+    {
+     "band": "1k-2k",
+     "rel": -19.3
+    },
+    {
+     "band": "2k-4k",
+     "rel": 0
+    },
+    {
+     "band": "4k-8k",
+     "rel": -46.4
+    },
+    {
+     "band": "8k-16k",
+     "rel": -54.8
+    }
+   ]
+  },
+  {
+   "instrument": "balafonh",
+   "samples": 18,
+   "measured": 2,
+   "peakDb": -13,
+   "attackMs": 10,
+   "decayMs": 165,
+   "airVsBodyDb": -3.7,
+   "owns": "1k-2k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -54.9
+    },
+    {
+     "band": "60-120",
+     "rel": -33.4
+    },
+    {
+     "band": "120-250",
+     "rel": -19.4
+    },
+    {
+     "band": "250-500",
+     "rel": -1.7
+    },
+    {
+     "band": "500-1k",
+     "rel": -22.3
+    },
+    {
+     "band": "1k-2k",
+     "rel": 0
+    },
+    {
+     "band": "2k-4k",
+     "rel": -5.4
+    },
+    {
+     "band": "4k-8k",
+     "rel": -26.5
+    },
+    {
+     "band": "8k-16k",
+     "rel": -41
+    }
+   ]
+  },
+  {
+   "instrument": "nyunga",
+   "samples": 19,
+   "measured": 2,
+   "peakDb": -4.1,
+   "attackMs": 5,
+   "decayMs": 380,
+   "airVsBodyDb": -5,
+   "owns": "120-250",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -42.2
+    },
+    {
+     "band": "60-120",
+     "rel": -42.4
+    },
+    {
+     "band": "120-250",
+     "rel": -0.9
+    },
+    {
+     "band": "250-500",
+     "rel": -24.5
+    },
+    {
+     "band": "500-1k",
+     "rel": -1
+    },
+    {
+     "band": "1k-2k",
+     "rel": -22.5
+    },
+    {
+     "band": "2k-4k",
+     "rel": -8.7
+    },
+    {
+     "band": "4k-8k",
+     "rel": -13.4
+    },
+    {
+     "band": "8k-16k",
+     "rel": -11.1
+    }
+   ]
+  },
+  {
+   "instrument": "shaker",
+   "samples": 14,
+   "measured": 2,
+   "peakDb": -27.8,
+   "attackMs": 40,
+   "decayMs": 195,
+   "airVsBodyDb": -6.6,
+   "owns": "20-60",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -1.4
+    },
+    {
+     "band": "60-120",
+     "rel": -10
+    },
+    {
+     "band": "120-250",
+     "rel": -14.7
+    },
+    {
+     "band": "250-500",
+     "rel": -30.4
+    },
+    {
+     "band": "500-1k",
+     "rel": -34
+    },
+    {
+     "band": "1k-2k",
+     "rel": -38.3
+    },
+    {
+     "band": "2k-4k",
+     "rel": -31.1
+    },
+    {
+     "band": "4k-8k",
+     "rel": -13.1
+    },
+    {
+     "band": "8k-16k",
+     "rel": -8.6
+    }
+   ]
+  },
+  {
+   "instrument": "balafon",
+   "samples": 18,
+   "measured": 2,
+   "peakDb": -12.1,
+   "attackMs": 10,
+   "decayMs": 280,
+   "airVsBodyDb": -14,
+   "owns": "1k-2k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -51.5
+    },
+    {
+     "band": "60-120",
+     "rel": -35.3
+    },
+    {
+     "band": "120-250",
+     "rel": -17.9
+    },
+    {
+     "band": "250-500",
+     "rel": -0.3
+    },
+    {
+     "band": "500-1k",
+     "rel": -20.2
+    },
+    {
+     "band": "1k-2k",
+     "rel": -0.1
+    },
+    {
+     "band": "2k-4k",
+     "rel": -15.9
+    },
+    {
+     "band": "4k-8k",
+     "rel": -19.2
+    },
+    {
+     "band": "8k-16k",
+     "rel": -39.7
+    }
+   ]
+  },
+  {
+   "instrument": "kalimba",
+   "samples": 15,
+   "measured": 2,
+   "peakDb": -12.3,
+   "attackMs": 5,
+   "decayMs": 470,
+   "airVsBodyDb": -17.4,
+   "owns": "120-250",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -28.7
+    },
+    {
+     "band": "60-120",
+     "rel": -34.2
+    },
+    {
+     "band": "120-250",
+     "rel": -0.4
+    },
+    {
+     "band": "250-500",
+     "rel": -3.5
+    },
+    {
+     "band": "500-1k",
+     "rel": -3.4
+    },
+    {
+     "band": "1k-2k",
+     "rel": -12.1
+    },
+    {
+     "band": "2k-4k",
+     "rel": -18.1
+    },
+    {
+     "band": "4k-8k",
+     "rel": -23.4
+    },
+    {
+     "band": "8k-16k",
+     "rel": -23.4
+    }
+   ]
+  },
+  {
+   "instrument": "vibs",
+   "samples": 22,
+   "measured": 2,
+   "peakDb": -14.2,
+   "attackMs": 15,
+   "decayMs": 2025,
+   "airVsBodyDb": -30,
+   "owns": "1k-2k",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -46.5
+    },
+    {
+     "band": "60-120",
+     "rel": -47.4
+    },
+    {
+     "band": "120-250",
+     "rel": -9.3
+    },
+    {
+     "band": "250-500",
+     "rel": -49.1
+    },
+    {
+     "band": "500-1k",
+     "rel": -48
+    },
+    {
+     "band": "1k-2k",
+     "rel": 0
+    },
+    {
+     "band": "2k-4k",
+     "rel": -42.4
+    },
+    {
+     "band": "4k-8k",
+     "rel": -46.3
+    },
+    {
+     "band": "8k-16k",
+     "rel": -44.5
+    }
+   ]
+  },
+  {
+   "instrument": "marimba",
+   "samples": 30,
+   "measured": 1,
+   "peakDb": -31.3,
+   "attackMs": 5,
+   "decayMs": 1695,
+   "airVsBodyDb": -35.3,
+   "owns": "60-120",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -26.9
+    },
+    {
+     "band": "60-120",
+     "rel": -0.2
+    },
+    {
+     "band": "120-250",
+     "rel": -44.5
+    },
+    {
+     "band": "250-500",
+     "rel": -33.1
+    },
+    {
+     "band": "500-1k",
+     "rel": -13.6
+    },
+    {
+     "band": "1k-2k",
+     "rel": -25
+    },
+    {
+     "band": "2k-4k",
+     "rel": -36.1
+    },
+    {
+     "band": "4k-8k",
+     "rel": -44.8
+    },
+    {
+     "band": "8k-16k",
+     "rel": -56.7
+    }
+   ]
+  },
+  {
+   "instrument": "slit",
+   "samples": 6,
+   "measured": 2,
+   "peakDb": -17.9,
+   "attackMs": 5,
+   "decayMs": 305,
+   "airVsBodyDb": -42.6,
+   "owns": "120-250",
+   "shape": [
+    {
+     "band": "20-60",
+     "rel": -43.9
+    },
+    {
+     "band": "60-120",
+     "rel": -0.4
+    },
+    {
+     "band": "120-250",
+     "rel": 0
+    },
+    {
+     "band": "250-500",
+     "rel": -17.3
+    },
+    {
+     "band": "500-1k",
+     "rel": -21
+    },
+    {
+     "band": "1k-2k",
+     "rel": -28
+    },
+    {
+     "band": "2k-4k",
+     "rel": -40.2
+    },
+    {
+     "band": "4k-8k",
+     "rel": -50.9
+    },
+    {
+     "band": "8k-16k",
+     "rel": -55.4
+    }
+   ]
+  }
+ ]
+}

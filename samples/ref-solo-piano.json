@@ -1,0 +1,65 @@
+{
+ "name": "solo piano (bounced from this app by another agent; judged good by the listener)",
+ "shape": [
+  {
+   "band": "20-60",
+   "lo": 20,
+   "hi": 60,
+   "rel": -21.5
+  },
+  {
+   "band": "60-120",
+   "lo": 60,
+   "hi": 120,
+   "rel": -10.8
+  },
+  {
+   "band": "120-250",
+   "lo": 120,
+   "hi": 250,
+   "rel": -7
+  },
+  {
+   "band": "250-500",
+   "lo": 250,
+   "hi": 500,
+   "rel": -9.2
+  },
+  {
+   "band": "500-1k",
+   "lo": 500,
+   "hi": 1000,
+   "rel": -12.8
+  },
+  {
+   "band": "1k-2k",
+   "lo": 1000,
+   "hi": 2000,
+   "rel": -20.5
+  },
+  {
+   "band": "2k-4k",
+   "lo": 2000,
+   "hi": 4000,
+   "rel": -31.4
+  },
+  {
+   "band": "4k-8k",
+   "lo": 4000,
+   "hi": 8000,
+   "rel": -48.7
+  },
+  {
+   "band": "8k-16k",
+   "lo": 8000,
+   "hi": 16000,
+   "rel": -70.2
+  }
+ ],
+ "lufs": -16.5,
+ "crestDb": 15,
+ "seconds": 36,
+ "note": "Nine-band spectrum relative to the whole, measured by scripts/reference-profile.mjs. This is a description of a shape, not audio. Load it with reference(profile), then compare() or balance().",
+ "caution": "VERY dark on purpose: 8-16k sits at -70dB because there are no cymbals in it, not because the top was rolled off. Load it for a solo keyboard piece. Loading it for anything with a kit in it will tell you to delete the kit — the same mistake the ambient-hall profile invites in the other direction.",
+ "circularity": "Measured from this app's own output, which the file warns against. It is included because the listener judged the piece good, which is the one signal here that is not circular. Replace it with an outside recording when one is available."
+}
