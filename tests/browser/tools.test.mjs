@@ -51,11 +51,23 @@ export default async function ({ browser, base }) {
     t.ok('and opening TOOLS really opens it',
       present.pad.every(p => p.shown) && present.mix.every(p => !p.shown),
       'v-tools is the open view');
-    t.ok('the tools tab says which pad it is about to act on',
-      await page.evaluate(() => {
-        const el = document.querySelector('#v-tools [data-padname]');
-        return !!el && /pad \d+/.test(el.textContent || '');
-      }), 'the pad is named on the tab');
+    /* It has to name the pad the way the REST OF THE APP names it. The first
+       version of this asked for /pad \d+/ and passed on "E-Piano Tine — pad
+       7" while the overwrite dialog one tap later said "Replace what is on
+       A08?" — two names for one pad, from the same press. So the test is not
+       "is there a number here" but "does it agree with the EDIT panel", which
+       is the thing that was actually wrong. */
+    const named = await page.evaluate(() => {
+      const el = document.querySelector('#v-tools [data-padname]');
+      const ep = document.getElementById('epTitle');
+      return { tools: (el && el.textContent || '').trim(),
+        edit: (ep && ep.textContent || '').trim() };
+    });
+    t.ok('the tools tab names the pad in the app\'s own A01..D16 form',
+      /^[A-D]\d\d\b/.test(named.tools), '"' + named.tools + '"');
+    t.ok('and it is the same pad the EDIT panel is showing',
+      named.tools.slice(0, 3) === named.edit.slice(0, 3),
+      'TOOLS "' + named.tools + '" vs EDIT "' + named.edit + '"');
 
     /* ---- PAINT: the cheapest of them, and it must leave a real sample --- */
     t.head('PAINT MAKES A SOUND OUT OF NOTHING');

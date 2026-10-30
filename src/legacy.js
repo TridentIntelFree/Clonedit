@@ -13886,6 +13886,16 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           if(Math.abs(+st.pitch||0)>0.2 && rnd()<0.22*AMT)
             setPmode(st, PMODES[Math.floor(rnd()*PMODES.length)]);
           put(st); tried++;
+          /* 15 renders at two-and-a-half seconds each is nearly a minute, and
+             without this the only thing on screen for the whole of it is the
+             word "working". Walking the app as a person, I pressed MUTATE,
+             went and did four other things, came back and the button was
+             still greyed out — I had written it off as hung. Nothing was
+             wrong with it; nothing was telling me so either. */
+          if(typeof o.onStep==='function'){
+            try{ o.onStep(tried, GEN*POP); }catch(e){}
+            await new Promise(r=>setTimeout(r,0));   // let it paint before the render blocks
+          }
           const rep=await measure();
           if(!rep) continue;
           const sc=score(rep);
@@ -15172,7 +15182,12 @@ async function toolRun(btnId, label, fn){
     toolLog(label+' could not run:\n  '+String((e&&e.message)||e));
   }finally{ b.disabled=false; b.textContent=was; }
 }
-const padLabel=(i)=>(S.pads[i]&&S.pads[i].name)?(S.pads[i].name+' (pad '+i+')'):('pad '+i);
+/* Pads are A01..D16 everywhere a person looks — the pad grid, the EDIT
+   panel, the mixer strip, the overwrite dialog. This said "pad 7", the raw
+   index, so one press of PAINT put "Replace what is on A08?" in a dialog and
+   "E-Piano Tine (pad 7) left alone" in the log underneath it. Two names for
+   one pad, a line apart. */
+const padLabel=(i)=>(S.pads[i]&&S.pads[i].name)?(S.pads[i].name+' ('+padName(i)+')'):padName(i);
 /* Naming the pad is half of it; the other half is being able to get to it.
    mixEditPad already does exactly this from the mixer — select, open EDIT,
    switch to PADS — so the tools tab borrows it rather than repeating it. */
@@ -15238,7 +15253,19 @@ $('btnToolPaint').addEventListener('click',()=>toolRun('btnToolPaint','PAINT',as
 $('btnToolMutate').addEventListener('click',()=>toolRun('btnToolMutate','MUTATE',async()=>{
   const i=S.editPad|0;
   if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample on it.';
-  const r=await window.MVX.mutate(i,{want:'different', population:5, generations:3});
+  /* The only tool here that is not nearly instant. Measured on this machine:
+     FREEZE 195ms, TAPE 175ms, REBUILD 843ms, PAINT 110ms — and MUTATE 37.8
+     SECONDS, because it renders the pad sixteen times. So it says the number
+     before it starts and counts through it, rather than leaving "working" on
+     screen for a minute and letting the person conclude it has died. */
+  const total=15;
+  toolLog(['MUTATE '+padLabel(i),'',
+    'Rendering '+(total+1)+' versions of this pad and measuring each one.',
+    'About half a minute. The pad goes back as it was unless you keep the result.']);
+  const r=await window.MVX.mutate(i,{want:'different', population:5, generations:3,
+    onStep:(done,all)=>toolLog(['MUTATE '+padLabel(i),'',
+      'version '+done+' of '+all+' — '+'█'.repeat(done)+'·'.repeat(Math.max(0,all-done)),
+      '', 'Measuring each against the sound it came from.'])});
   const out=['MUTATE '+padLabel(i), r.says, ''];
   if(r.changed.length){
     out.push('what it moved:');
@@ -16699,8 +16726,8 @@ function drawToolPad(){
   const el=$('tlPad'); if(!el) return;
   const i=S.editPad|0, p=S.pads[i];
   const has=!!(p && p.bufId>=0);
-  el.textContent = (has?(p.name||'pad '+i):'empty')+' — pad '+i
-    + (has?'':'  (load a sound onto it first)');
+  el.textContent = padName(i) + (has ? ' · '+(p.name||'loaded')
+    : ' — empty, load a sound onto it first');
   el.style.color = has?'var(--amber)':'var(--txt-dim)';
 }
 function drawPadRec(){
@@ -21052,7 +21079,25 @@ if($('mlTonic')){
       lcd('CHORDS SET on pattern '+(S.pattern+1)+(r.warning?' (see note)':''));
     }catch(e){ lcd(e.message); $('mlInfo').textContent=e.message; }
   });
-  $('mlChords').addEventListener('blur',drawMusicalLayer);
+  /* THERE WAS A BLUR LISTENER HERE AND IT ATE EVERY PROGRESSION TYPED.
+     drawMusicalLayer rewrites the chord box from S.chords, guarded by
+     `document.activeElement !== $('mlChords')` so it never fights live
+     typing. The guard is correct and the blur hook defeated it: by the time
+     blur fires the box is no longer the active element, so the redraw was
+     allowed to overwrite it — and tapping SET blurs the box BEFORE the click
+     lands. Traced:
+
+         blur:  value="Dm Bb F C"
+         click: value=""
+         LCD:   CHORDS CLEARED on pattern 1
+
+     So typing a progression and pressing SET cleared it, every time, and the
+     panel whose whole point was "a person can set this without an API" could
+     not be used by hand at all. Nothing caught it because the test set the
+     value and called the handler; only a real tap blurs.
+     Nothing needs the redraw on blur — the info line describes what is
+     STORED, which a blur does not change. Text you typed and did not apply
+     now stays in the box, which is also the better answer. */
 
   /* ---- OFFER / WRITE IT ------------------------------------------- */
   let mlCands=null, mlOpts=null;

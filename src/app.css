@@ -337,6 +337,14 @@ body.sz-sm #fxPip,body.sz-xs #fxPip{font-size:9px;padding:1px 4px;letter-spacing
 .denbar span{font-size:10px;color:var(--txt-dim);line-height:1.35;min-width:0;flex:1}
 .row{display:flex;gap:var(--sp-2);align-items:center;margin-bottom:var(--sp-3);flex-wrap:wrap}
 .lbl{font-size:var(--fs-xs);color:var(--txt-dim);letter-spacing:.6px;min-width:62px}
+/* A label and the control it names are ONE flex item, so a wrap cannot fall
+   between them. .row wraps, and every item in it is a wrap opportunity, so on
+   a phone "OUT" ended the line and its field began the next one — the label
+   then reads as belonging to the control above it. Swept across all thirteen
+   tabs at 390px it happened four times: PRE-VERB and BUILD A KIT's FROM, the
+   punch OUT on TRAX, and the MIDI output CH. */
+.pair{display:flex;align-items:center;gap:var(--sp-2);min-width:0}
+.pair .lbl{min-width:0}
 .grow{flex:1}
 /* A heading should say "new section" without shouting. Bigger, warmer, and
    separated by space rather than by a rule across the whole panel. */

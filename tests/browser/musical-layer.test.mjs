@@ -206,6 +206,55 @@ export default async function ({ browser, base }) {
     t.ok('and it says which symbol it could not read',
       /Fsplork/.test(ml.badMsg), ml.badMsg.slice(0, 90));
 
+    /* ---- AND NOW THE WAY A PERSON DOES IT ------------------------------
+       Everything above sets .value and calls .click() in one synchronous
+       pass. The box is never focused, so it is never blurred, and that is
+       exactly the step that was broken: drawMusicalLayer rewrites the box
+       from S.chords unless the box is the active element, a blur listener
+       called it, and tapping SET blurs before the click lands. Traced on a
+       real tap:
+
+           blur:  value="Dm Bb F C"
+           click: value=""
+           LCD:   CHORDS CLEARED on pattern 1
+
+       The panel's whole reason to exist is that a person can set a
+       progression without the API, and by hand it cleared every one. So
+       this types with the keyboard and clicks with the mouse. */
+    t.head('TYPED IN BY HAND AND SET WITH A TAP');
+    await page.evaluate(() => {
+      window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+      window.JBH.chords(0, null);
+      document.querySelector('#tabs button[data-v="seq"]').click();
+    });
+    await page.waitForTimeout(250);
+    await page.locator('#mlChords').click();
+    await page.locator('#mlChords').fill('Dm Bb F C');
+    const atBlur = await page.locator('#mlChords').inputValue();
+    await page.locator('#mlSet').click();
+    await page.waitForTimeout(250);
+    const typed = await page.evaluate(() => ({
+      stored: window.JBH.chords(0),
+      box: document.getElementById('mlChords').value,
+      lcd: document.getElementById('lcdmsg').textContent.trim() }));
+    t.ok('what was typed is still in the box when SET reads it',
+      atBlur === 'Dm Bb F C', 'typed "' + atBlur + '"');
+    t.ok('TAPPING SET STORES THE PROGRESSION, it does not clear it',
+      !!typed.stored && typed.stored.join(' ') === 'Dm Bb F C',
+      typed.stored ? typed.stored.join(' ') : 'nothing stored — ' + typed.lcd.slice(0, 60));
+    t.ok('and it says so', /CHORDS SET/.test(typed.lcd), typed.lcd.slice(0, 60));
+
+    /* clearing has to keep working, since that is the branch that was
+       firing when it should not have been */
+    await page.locator('#mlChords').click();
+    await page.locator('#mlChords').fill('');
+    await page.locator('#mlSet').click();
+    await page.waitForTimeout(250);
+    t.ok('an empty box still clears, deliberately',
+      await page.evaluate(() => !window.JBH.chords(0)
+        && /CHORDS CLEARED/.test(document.getElementById('lcdmsg').textContent)),
+      'emptying the box and tapping SET is how you clear it');
+
     t.head('OFFER WRITES NOTHING UNTIL WRITE IT IS PRESSED');
     const off = await page.evaluate(async () => {
       await window.JBH.clear();
