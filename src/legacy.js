@@ -13804,7 +13804,11 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     let rs=(o.seed|0)||0x9E3779B9;
     const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
 
-    const FIELDS=knobs.map(x=>x.k).concat(['ftype','reverse','keepTime','keepPitch']);
+    /* gain is in FIELDS so it is snapshotted and restored with everything
+       else, but deliberately NOT in KNOBS: the search must never win by
+       turning the pad up, and the level compensation below is the only
+       thing allowed to touch it. */
+    const FIELDS=knobs.map(x=>x.k).concat(['ftype','reverse','keepTime','keepPitch','gain']);
     const snap=()=>{ const o2={}; for(const k of FIELDS) o2[k]=p[k]; return o2; };
     const put=(st)=>{ for(const k in st) p[k]=st[k]; };
     const original=snap();
@@ -13856,18 +13860,52 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        the original, twice, identically. */
     const tilt=(r)=>{ const hi=r.shape.filter(b=>b.lo>=2000).reduce((a,c)=>a+c.rel,0);
       const lo=r.shape.filter(b=>b.lo<500).reduce((a,c)=>a+c.rel,0); return hi-lo; };
+    /* A VARIATION OF A SOUND IS THAT SOUND CHANGED. IT IS NOT A QUIETER ONE.
+       Nothing in the score used to say so, and the search found the cheapest
+       route to a different spectrum every single time: switch the filter to
+       bandpass and let the level fall out of the pad. Measured on a piano
+       strike, four runs, every one of them:
+
+           LUFS -20.61 -> -46.39   (-25.8 dB)
+           ftype off->bandpass, fres 0.9->0.707, eqLo 0->1.006
+
+       Reported as "mutate just made a piano strike very quiet but doesn't
+       sound otherwise altered", which is exactly right — what is left after
+       26dB of loss is a thin remnant of the same note.
+       dist() deliberately compares shape with level removed, so that a
+       candidate cannot win by being LOUDER. The gap was the other
+       direction: nothing stopped it winning by being quieter. Three
+       decibels either way is free; past that it costs 1.5 per decibel, so a
+       candidate more than about eight decibels off has given away more than
+       the shape term can ever pay back.
+
+       How much is free is not a taste: it is how much the pad's own gain can
+       give back afterwards. Gain stops at 2, so a pad sitting at 1.0 has
+       6dB of headroom and a loss inside that is fully recoverable — those
+       candidates cost nothing, and the compensation at the end of the search
+       puts the level back. Past that the loss is permanent and it is
+       charged for. Penalising everything instead, which was the first
+       attempt here, swapped one failure for its mirror image: level held to
+       0.1dB and shape change down to 0.2dB, a mutation you cannot hear. */
+    const headroomDb=20*Math.log10(2/Math.max(0.05, +(original.gain==null?1:original.gain)));
+    const FREE=Math.max(3, Math.min(9, headroomDb));
+    const levelCost=(cand)=>{
+      if(cand.lufs==null || base.lufs==null) return 0;
+      const off=Math.abs(cand.lufs-base.lufs);
+      return off<=FREE ? 0 : (off-FREE)*1.5;
+    };
     const score=(cand)=>{
-      const d=dist(base,cand);
+      const d=dist(base,cand), pen=levelCost(cand);
       switch(WANT){
         /* a mutation that nobody recognises is a different sound, not a
            variation of this one, so distance is rewarded up to a point
            and then flat. Six decibels of shape change is a long way. */
-        case 'different': return Math.min(d,7)-Math.max(0,d-7)*0.6;
-        case 'similar':   return -d;
-        case 'brighter':  return tilt(cand)-tilt(base);
-        case 'darker':    return tilt(base)-tilt(cand);
-        case 'punchier':  return (cand.crestDb==null?0:cand.crestDb)-(base.crestDb==null?0:base.crestDb);
-        case 'fuller':    return -Math.abs(d-3);
+        case 'different': return Math.min(d,7)-Math.max(0,d-7)*0.6-pen;
+        case 'similar':   return -d-pen;
+        case 'brighter':  return tilt(cand)-tilt(base)-pen;
+        case 'darker':    return tilt(base)-tilt(cand)-pen;
+        case 'punchier':  return (cand.crestDb==null?0:cand.crestDb)-(base.crestDb==null?0:base.crestDb)-pen;
+        case 'fuller':    return -Math.abs(d-3)-pen;
         default: throw new Error('want must be different, similar, brighter, darker, punchier or fuller');
       }
     };
@@ -13903,7 +13941,23 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
             st[kn.k]=+Math.max(kn.lo, Math.min(kn.hi, v)).toFixed(4);
           }
           const tonal=(WANT==='brighter'||WANT==='darker'||WANT==='different');
-          if(rnd()<(tonal?0.30:0.12)*AMT) st.ftype=FTYPES[Math.floor(rnd()*FTYPES.length)];
+          if(rnd()<(tonal?0.30:0.12)*AMT){
+            st.ftype=FTYPES[Math.floor(rnd()*FTYPES.length)];
+            /* A FILTER THAT IS SWITCHED ON HAS TO BE PUT SOMEWHERE AUDIBLE.
+               fcut defaults to 1 and cutHz maps that to 16kHz, so turning on
+               a bandpass parked it an octave above anything a piano has and
+               took 26dB out of the pad. That was the whole of "mutate just
+               made a piano strike very quiet": the filter was not shaping
+               the sound, it was muting it, and because the search scores
+               colour with level divided out it read as a triumph.
+               Placed where each type does something musical, the filter goes
+               back to being the biggest timbral lever here instead of an
+               off switch: a lowpass over the body, a highpass under it, a
+               bandpass across it. */
+            if(st.ftype==='lowpass')       st.fcut=+(0.45+rnd()*0.40).toFixed(4);   // 600Hz-8k
+            else if(st.ftype==='highpass') st.fcut=+(0.18+rnd()*0.34).toFixed(4);   // 100Hz-800
+            else if(st.ftype==='bandpass') st.fcut=+(0.38+rnd()*0.34).toFixed(4);   // 350Hz-3.5k
+          }
           if(rnd()<0.08*AMT) st.reverse=!st.reverse;
           /* only worth trying when the pitch knob is actually off its
              rest, since all three modes are identical at a ratio of 1 */
@@ -13926,6 +13980,21 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           if(sc>bestScore){ bestScore=sc; bestState=Object.assign({},st); bestRep=rep;
             history.push({generation:g+1, score:+sc.toFixed(2),
               shapeChangeDb:+dist(base,rep).toFixed(2)}); }
+        }
+      }
+      /* GIVE THE LEVEL BACK. Colour and loudness are different questions and
+         the search only has an opinion about the first: dist() compares
+         shape with level divided out. So a bandpass that lands the right
+         colour four decibels down is a good answer wearing a bad one, and
+         the fix is a gain, not a veto. Within the pad's own headroom this
+         restores the original loudness exactly; past it, it gets as close as
+         gain 2 allows and levelCost has already made sure nothing that far
+         down could win. */
+      if(bestRep && base && bestRep.lufs!=null && base.lufs!=null){
+        const lossDb=base.lufs-bestRep.lufs;
+        if(Math.abs(lossDb)>0.5){
+          const g0=+(original.gain==null?1:original.gain);
+          bestState.gain=+Math.max(0,Math.min(2, g0*Math.pow(10,lossDb/20))).toFixed(4);
         }
       }
     } finally {
@@ -15321,7 +15390,12 @@ $('btnToolMutate').addEventListener('click',()=>toolRun('btnToolMutate','MUTATE'
   toolLog(['MUTATE '+padLabel(i),'',
     'Rendering '+(total+1)+' versions of this pad and measuring each one.',
     'About half a minute. The pad goes back as it was unless you keep the result.']);
+  /* A fresh seed per press. The default is a fixed constant, which is right
+     for the API and for tests — the same seed reproduces the same search —
+     and wrong for a button whose whole promise is variations: four presses
+     in a row returned the identical result, down to the decimal. */
   const r=await window.MVX.mutate(i,{want:'different', population:5, generations:3,
+    seed:(Date.now()^(i*2654435761))&0x7fffffff,
     onStep:(done,all)=>toolLog(['MUTATE '+padLabel(i),'',
       'version '+done+' of '+all+' — '+'█'.repeat(done)+'·'.repeat(Math.max(0,all-done)),
       '', 'Measuring each against the sound it came from.'])});

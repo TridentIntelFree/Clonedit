@@ -379,6 +379,55 @@ export default async function ({ browser, base }) {
       /written to/i.test(over.says) && !/pass \{keep/i.test(over.says),
       over.says.slice(-70));
 
+    /* ---- "DIFFERENT" MUST NOT MEAN "QUIETER" --------------------------
+       Reported after the previous fix: "mutate just made a piano strike very
+       quiet but doesn't sound otherwise altered." dist() compares spectral
+       shape with level divided out, so a candidate could not win by being
+       louder — and nothing stopped it winning by being quieter. The cheapest
+       route to a different spectrum was to switch the filter to bandpass,
+       which defaults to a 16kHz cutoff, and let the sound fall out of the
+       pad. Measured on a piano, four runs, every one identical:
+
+           LUFS -20.61 -> -46.39   (-25.8 dB)   ftype off->bandpass
+
+       Both halves are tested, because the first fix traded this fault for
+       its mirror image: level held to a tenth of a decibel and the colour
+       change down to 0.2dB, a mutation nobody can hear. */
+    t.head('A VARIATION IS THE SAME SOUND CHANGED, NOT A QUIETER ONE');
+    const runs = await page.evaluate(async () => {
+      const out = [];
+      for (let k = 0; k < 4; k++) {
+        await window.JBH.clear();
+        await window.JBH.instrument('p', { pack: 'samples/salamander.json',
+          match: '^sal:', lo: 48, hi: 60, max: 1 });
+        const pad = window.JBH.instPads('p')[0].pad;
+        const r = await window.MVX.mutate(pad, { want: 'different',
+          population: 4, generations: 2, seed: 1000 + k * 7919 });
+        out.push({ d: +(r.after.lufs - r.before.lufs).toFixed(2), shape: r.shapeChangeDb });
+      }
+      return out;
+    });
+    const worst = Math.max(...runs.map(r => Math.abs(r.d)));
+    const loudest = Math.max(...runs.map(r => r.shape));
+    t.ok('no run loses the level it was measured at',
+      worst <= 3, 'worst level change ' + worst + 'dB across ' + runs.length + ' runs ('
+        + runs.map(r => (r.d >= 0 ? '+' : '') + r.d).join(', ') + ')');
+    t.ok('AND IT STILL CHANGES THE COLOUR — the other way to fail this',
+      loudest >= 3, 'best colour change ' + loudest + 'dB ('
+        + runs.map(r => r.shape).join(', ') + ')');
+    t.ok('the level is given back through gain, not by refusing the change',
+      await page.evaluate(async () => {
+        await window.JBH.clear();
+        await window.JBH.instrument('p', { pack: 'samples/salamander.json',
+          match: '^sal:', lo: 48, hi: 60, max: 1 });
+        const pad = window.JBH.instPads('p')[0].pad;
+        const r = await window.MVX.mutate(pad, { want: 'different',
+          population: 6, generations: 2, seed: 4242 });
+        /* gain is snapshotted and restored like every other field, so a
+           search that was not kept must leave it exactly as it found it */
+        return window.JBH.pad(pad).gain === 0.9 && r.settings.gain != null;
+      }), 'gain is part of the result and restored when not kept');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
