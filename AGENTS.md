@@ -10,23 +10,32 @@ Both are in the MCP server (`mcp/server.mjs`) and on `window.JBH`.
 
 ## SHIPPING IT. READ THIS BEFORE YOU GO LOOKING FOR THE ANSWER
 
-The loop is **build, merge to main, launch, they test**. It has run more than
-two hundred times. It is four commands and it is not a decision to be
-reopened:
+The loop is **build, merge to main, and it is live**. It has run more than
+two hundred times. It is three commands and there is no launch step:
 
 ```
 npm run build                    # tests, lint, vite, emit, smoke -> index.html
 git add -A && git commit         # index.html is COMMITTED; CI fails if it drifts from src/
-git push origin main
-# launch: Actions > Pages > Run workflow   (.github/workflows/pages.yml)
+git push origin main             # <- this IS the deploy
 ```
 
-Live at **https://tridentintelfree.github.io/Clonedit/**
+Live at **https://tridentintelfree.github.io/Clonedit/** within about a minute.
 
-**GitHub Pages is already enabled and has been for a long time.** Do not
-"set up hosting", do not weigh hosting options, do not propose an artifact,
-a private host or a new pipeline. If you catch yourself designing a deploy,
-stop: it exists.
+**PUSHING TO MAIN PUBLISHES THE SITE. THERE IS NOTHING ELSE TO RUN.** Pages
+is set to *Deploy from a branch* (main, root), so GitHub's own
+`pages build and deployment` fires on every push and serves the repository
+as it stands — index.html, samples/, icons, the manifest and the service
+worker. It is in the Actions tab under that name, it is on run 189, and it
+is not one of this repo's workflow files, which is why it is easy to miss:
+`.github/workflows/` holds only CI.
+
+Do not "set up hosting", do not weigh hosting options, do not propose an
+artifact or a private host, and above all **do not add a Pages workflow**.
+One was added in this session and it was pure harm: redundant with a
+deployer that had already run 188 times, contending with it for the Pages
+environment so that both sat queued, and carrying `enablement: true`, which
+can switch the source away from the branch and break the automatic deploy
+entirely. It was deleted. If you catch yourself designing a deploy, stop.
 
 **You cannot see the live site from a cloud session.** The agent proxy denies
 `tridentintelfree.github.io`, so curl returns `HTTP 000` and that means
