@@ -12,16 +12,24 @@ account; open it from a file:// URL if you like. It is about 1.3 MB.
 
 ### The sections
 
-| Tab | What it does |
-| --- | --- |
-| **PADS / SMPL** | 64 pads across four banks. Import, record from the mic, or synthesise a sound from PRESETS; chop, trim, warp, reverse, slice on transients. BUILD KIT carves a whole kit out of one sample. |
-| **SEQ** | 16–64 steps, grid or circle view. Per-track lengths for polymeter, euclidean fills, groove templates, a NOTES lane for melodies, POLY for a pad at its own tempo, and **step locks** — give one step its own pitch, probability, ratchet, nudge, cutoff, level, pan, decay or start point. |
-| **TRAX** | Eight tape lanes with a **Track View**: headers left, bar ruler on top, clips drawn where they play. Drag to move, drag the edges to trim, fades, and **punch in/out** that replaces a span and keeps the rest. |
-| **LIVE** | Thirteen synth voices — including phase distortion, PWM, a partial cluster, formant, ring modulation and a per-note **grand piano** — through DRIVE, CHORUS, PHASER, TREMOLO and a tuneable ROOM. Nine ways to play them, a keyboard that is always on screen, and a tombola where notes bounce inside a spinning shape. |
-| **MIC / AMP** | Record a voice, or play a guitar or line input through an amp simulation. |
-| **MIX / OUT / DJ** | Per-pad faders and sends, a mastering chain, performance filters, and WAV bounce or stem export. |
-| **MIDI** | USB MIDI where the browser has it, plus BLE MIDI over Web Bluetooth; clock in and out at 24 PPQN, notes out to hardware, CC mapping. |
-| **PROJ** | Named projects, undo history, autosave to IndexedDB, a portable text **song document** format, and **AGENT LINK**. |
+Navigation is two rows. The top one holds five activities — **SOUND**,
+**WRITE**, **PLAY**, **MIX**, **SONG** — and is always wholly on screen; the
+row under it holds the tabs of whichever activity is open, and is not drawn at
+all when an activity has one (WRITE and SONG are a single tap). The bar this
+replaced held all twelve tabs and scrolled sideways, which hid half of them.
+
+| Activity | Tab | What it does |
+| --- | --- | --- |
+| SOUND | **PADS / SMPL** | 64 pads across four banks. Import, record from the mic, or synthesise a sound from PRESETS; chop, trim, warp, reverse, slice on transients. BUILD KIT carves a whole kit out of one sample. |
+| SOUND | **TOOLS** | PAINT a sound from inharmonic partials, REBUILD one out of the pieces of your other pads, FREEZE an instant of it into something that sustains, RUN TO TAPE for a pitch that will not hold still, and MUTATE to vary a sound and keep what measures best. All five act on the pad the tab names at the top. |
+| WRITE | **SEQ** | 16–64 steps, grid or circle view. Per-track lengths for polymeter, euclidean fills, groove templates, a NOTES lane for melodies, POLY for a pad at its own tempo, and **step locks** — give one step its own pitch, probability, ratchet, nudge, cutoff, level, pan, decay or start point. |
+| PLAY | **TRAX** | Eight tape lanes with a **Track View**: headers left, bar ruler on top, clips drawn where they play. Drag to move, drag the edges to trim, fades, and **punch in/out** that replaces a span and keeps the rest. |
+| PLAY | **LIVE** | Thirteen synth voices — including phase distortion, PWM, a partial cluster, formant, ring modulation and a per-note **grand piano** — through DRIVE, CHORUS, PHASER, TREMOLO and a tuneable ROOM. Nine ways to play them, a keyboard that is always on screen, and a tombola where notes bounce inside a spinning shape. |
+| PLAY | **MIC / AMP** | Record a voice, or play a guitar or line input through an amp simulation. |
+| PLAY | **DJ** | Two decks with performance filters. |
+| PLAY | **MIDI** | USB MIDI where the browser has it, plus BLE MIDI over Web Bluetooth; clock in and out at 24 PPQN, notes out to hardware, CC mapping. |
+| MIX | **MIX / OUT** | Per-pad faders and sends, sidechain ducking, and a mastering chain. REVIEW MIX runs every analyser at once; BALANCE solves the group levels against a loaded reference. |
+| SONG | **PROJ** | WAV bounce, per-pad stems and MIDI export. Named projects, undo history, autosave to IndexedDB, a portable text **song document** format, and **AGENT LINK**. |
 
 ### Driving it from an agent
 

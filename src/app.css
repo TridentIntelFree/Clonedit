@@ -267,15 +267,56 @@ body.sz-sm #fxPip,body.sz-xs #fxPip{font-size:9px;padding:1px 4px;letter-spacing
   padding-left:4px;padding-right:4px;white-space:nowrap;color:var(--lcd)}
 
 /* tabs */
-/* Ten tabs already crowded a phone and an eleventh will not fit at all. They
-   now size to their labels and scroll sideways, growing to fill the bar when
-   there is room, so the targets stay comfortable at any width. */
+/* NAVIGATION IS TWO ROWS NOW, AND THE TOP ONE NEVER SCROLLS.
+   What was here before: "Ten tabs already crowded a phone and an eleventh will
+   not fit at all. They now size to their labels and scroll sideways." That was
+   a patch, and by twelve tabs it had stopped working as one — a destination
+   off the edge of the screen is a destination nobody picks, and published
+   navigation guidance lands consistently on about five primary items with the
+   overflow NAMED rather than scrolled past.
+   So #groups holds five activities and is always wholly visible: five equal
+   columns, no overflow, no scroll, at any width this app supports. #tabs below
+   it shows only the members of the open activity, which is at most six and
+   usually two or three, and the row is removed altogether when an activity has
+   a single member — WRITE and SONG are one tap, exactly as before. */
+#groups{display:flex;border-bottom:1px solid var(--edge);background:var(--chassis)}
+/* Both rows are deliberately shorter than the single row they replace, and
+   the budget is not aesthetic. Fixed chrome comes straight out of the view
+   below it, and two tabs are measured against that: the pad grid must clear
+   the bottom of a 360x640 phone, and LIVE's tombola must still be three
+   quarters visible at 390x780. One 37px row became 79px and both of those
+   broke. 34 + 26 fits them with room, and neither goes under the 24px tap
+   floor this app holds everywhere. */
+#groups button{flex:1 1 0;min-width:0;border:none;border-radius:0;min-height:24px;
+  padding:7px 4px;font-size:var(--fs-sm);letter-spacing:.6px;background:var(--chassis);
+  color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  border-bottom:2px solid transparent}
+#groups button.on{color:var(--amber);font-weight:700;border-bottom-color:var(--amber)}
+/* The badge means "this is holding something that will make a sound when you
+   press play". It was on the TRAX tab because that tab was always on screen;
+   now TRAX lives inside PLAY, so the group has to carry it too or the warning
+   disappears behind a tap — see drawTraxBadge. */
+#groups button.hasload::after{content:attr(data-n);margin-left:5px;font-size:9px;font-weight:700;
+  color:var(--lcd-bg);background:var(--send);border-radius:7px;padding:1px 5px;vertical-align:1px}
+
 #tabs{display:flex;border-bottom:1px solid var(--edge);background:var(--panel);
   overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-behavior:smooth}
 #tabs::-webkit-scrollbar{display:none}
-#tabs button{flex:1 0 auto;border:none;border-radius:0;min-height:0;
-  padding:13px 18px;font-size:var(--fs-sm);letter-spacing:.6px;background:var(--panel);
+/* Every button stays in the DOM whatever is open, because the tour, the coach,
+   the session restore and five call sites in the engine all navigate by
+   #tabs button[data-v="x"].click() — and a programmatic click still fires on a
+   display:none button. Only the open group's members are drawn. */
+#tabs button{display:none;flex:1 1 auto;border:none;border-radius:0;min-height:24px;
+  padding:3px 14px;font-size:var(--fs-xs);letter-spacing:.6px;background:var(--panel);
   color:var(--txt-dim);white-space:nowrap;border-bottom:2px solid transparent}
+#tabs[data-g="sound"] button[data-g="sound"],
+#tabs[data-g="write"] button[data-g="write"],
+#tabs[data-g="play"]  button[data-g="play"],
+#tabs[data-g="mix"]   button[data-g="mix"],
+#tabs[data-g="song"]  button[data-g="song"]{display:block}
+/* one member: the row would be a single full-width button saying what the
+   group above it already says */
+#tabs.solo{display:none}
 #tabs button.on{background:var(--chassis);color:var(--amber);font-weight:600;border-bottom-color:var(--amber)}
 /* A tab that is holding something which will make a sound. Only TRAX uses it so
    far, and only because a tape lane plays with the transport whether or not you
@@ -296,6 +337,14 @@ body.sz-sm #fxPip,body.sz-xs #fxPip{font-size:9px;padding:1px 4px;letter-spacing
 .denbar span{font-size:10px;color:var(--txt-dim);line-height:1.35;min-width:0;flex:1}
 .row{display:flex;gap:var(--sp-2);align-items:center;margin-bottom:var(--sp-3);flex-wrap:wrap}
 .lbl{font-size:var(--fs-xs);color:var(--txt-dim);letter-spacing:.6px;min-width:62px}
+/* A label and the control it names are ONE flex item, so a wrap cannot fall
+   between them. .row wraps, and every item in it is a wrap opportunity, so on
+   a phone "OUT" ended the line and its field began the next one — the label
+   then reads as belonging to the control above it. Swept across all thirteen
+   tabs at 390px it happened four times: PRE-VERB and BUILD A KIT's FROM, the
+   punch OUT on TRAX, and the MIDI output CH. */
+.pair{display:flex;align-items:center;gap:var(--sp-2);min-width:0}
+.pair .lbl{min-width:0}
 .grow{flex:1}
 /* A heading should say "new section" without shouting. Bigger, warmer, and
    separated by space rather than by a rule across the whole panel. */
@@ -370,8 +419,14 @@ h3 span{font-weight:400}
 
 /* Deliberately compact controls opt out of the comfortable minimum: these are
    grids and strips whose size is doing a job (a step is square by definition,
-   a channel strip has to fit several across a phone). */
-.step,.ncell,#tabs button,#bpmbox button,#transport button,
+   a channel strip has to fit several across a phone).
+   #tabs button was on this list and is not any more. It could afford to opt
+   out while it was a single 37px row — 13px of padding kept it well clear of
+   the floor whatever the minimum said. As the second row of a two-row bar it
+   is 3px of padding, and the opt-out took it to 22px: under the floor, on the
+   row you navigate the whole app with. It holds 24 now like everything else
+   you have to hit. */
+.step,.ncell,#bpmbox button,#transport button,
 .mstrip button,.packrow button,.projrow button,#seqpadstrip button,
 #patrow button,#chainrow button,#silrow .step,#songlist button,#traxlist button{min-height:0}
 
@@ -640,7 +695,8 @@ body.sz-big .cmd{font-size:13px}
    header's left column on a 360px screen and rendered as "JBH-8" — and BIG is
    about the text you read, not the badge you already know. */
 body.sz-big #lcdstrip{font-size:var(--fs-md);min-height:42px}
-body.sz-big #tabs button{padding:15px 20px;font-size:var(--fs-md)}
+body.sz-big #groups button{padding:11px 4px;font-size:var(--fs-md)}
+body.sz-big #tabs button{padding:6px 18px;font-size:var(--fs-sm)}
 body.sz-big .hint{font-size:var(--fs-lg)}
 body.sz-big .hint-body, body.sz-big .ex-body{font-size:14px;line-height:1.7}
 body.sz-big .hint-more, body.sz-big .ex > summary{font-size:12px}
@@ -658,7 +714,8 @@ body.sz-sm #lcdstrip{padding:4px var(--sp-2);min-height:30px;font-size:var(--fs-
 body.sz-sm #lcdstrip input[type=number]{min-height:30px;padding:3px 4px;font-size:13px}
 body.sz-sm #bpmbox button{width:28px;height:28px;font-size:var(--fs-xs)}
 body.sz-sm #masterMeter{padding:2px var(--sp-2) 3px}
-body.sz-sm #tabs button{padding:9px 13px;font-size:var(--fs-xs)}
+body.sz-sm #groups button{padding:6px 3px;font-size:var(--fs-xs)}
+body.sz-sm #tabs button{padding:2px 11px;font-size:10px}
 body.sz-sm .view{padding:9px}
 body.sz-sm .hint{font-size:var(--fs-xs);padding:6px 9px;margin-bottom:var(--sp-2)}
 body.sz-sm .denbar button{min-height:28px;font-size:10px}
@@ -681,7 +738,20 @@ body.sz-xs #bpmbox{gap:2px}
 body.sz-xs #bpmbox button{width:24px;height:24px;font-size:10px;border-radius:5px}
 body.sz-xs #masterMeter{padding:1px 6px 2px;gap:5px}
 body.sz-xs #masterMeter .mbar{height:3px}
-body.sz-xs #tabs button{padding:7px 10px;font-size:10px;letter-spacing:.3px}
+/* TINY HAS TO PAY FOR THE SECOND NAVIGATION ROW, AND THIS IS WHERE FROM.
+   Measured at 360x640, the phone that reported the original complaint: the
+   furniture was 107px with one tab row and the pad grid cleared the bottom by
+   21px. Two rows cost 32px more, so the grid ran 11px off the screen — the
+   exact fault TINY exists to prevent.
+   It cannot be tuned away. Both rows are tap targets and the floor in this app
+   is 24px, so two rows are 48px and there were 46px to spend. So something
+   else goes, and the master meter is the right thing: it is a readout, not a
+   control, the OUT tab carries the same information in full, and TINY already
+   drops the build line and every row hint on the same reasoning. 25px back,
+   and the grid clears by 14. */
+body.sz-xs #masterMeter{display:none}
+body.sz-xs #groups button{min-height:24px;padding:4px 2px;font-size:10px;line-height:1.2;letter-spacing:.3px}
+body.sz-xs #tabs button{min-height:24px;padding:3px 8px;font-size:9px;line-height:1.2;letter-spacing:.3px}
 body.sz-xs .view{padding:7px}
 /* The lead paragraph goes; the button that opens the full explanation stays,
    so the learning material is one tap away rather than gone. */
@@ -785,7 +855,8 @@ input[type=range]::-webkit-slider-thumb{transition:border-color .12s ease,backgr
   #btnUndo,#btnRedo,#btnTour{width:30px}
   #lcdstrip{padding:4px 10px;min-height:26px}
   #masterMeter{padding:2px 10px 3px}
-  #tabs button{padding:8px 0}
+  #groups button{padding:5px 2px}
+  #tabs button{padding:3px 0}
   .view{padding:8px}
   /* Clamp to exactly two lines — tap to read the rest. box-sizing is border-box,
      so the cap has to carry the padding, AND it has to track the line-height:

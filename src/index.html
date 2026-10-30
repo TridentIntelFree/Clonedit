@@ -89,19 +89,44 @@
   <button aria-label="Dismiss the sample rate warning" id="btnSrX">&#215;</button>
 </div>
 
-<div id="tabs" role="tablist" aria-label="Sections">
-  <button role="tab" aria-label="Pads" data-v="pads" class="on">PADS</button>
-  <button role="tab" aria-label="Sampler" data-v="smpl">SMPL</button>
-  <button role="tab" aria-label="Sequencer" data-v="seq">SEQ</button>
-  <button role="tab" aria-label="Tape tracks" data-v="trax">TRAX</button>
-  <button role="tab" aria-label="Microphone" data-v="mic">MIC</button>
-  <button role="tab" aria-label="Live instruments" data-v="live">LIVE</button>
-  <button role="tab" aria-label="Amp and guitar input" data-v="amp">AMP</button>
-  <button role="tab" aria-label="DJ decks" data-v="dj">DJ</button>
-  <button role="tab" aria-label="Mixer" data-v="mix">MIX</button>
-  <button role="tab" aria-label="Master output" data-v="out">OUT</button>
-  <button role="tab" aria-label="MIDI" data-v="midi">MIDI</button>
-  <button role="tab" aria-label="Projects and export" data-v="proj">PROJ</button>
+<!-- TWO ROWS, BECAUSE TWELVE DESTINATIONS NEVER FIT IN ONE.
+     The bar above used to hold all twelve and scroll sideways, and the comment
+     over its own CSS admitted the bind: "Ten tabs already crowded a phone and
+     an eleventh will not fit at all." Scrolling was the patch. It does not
+     solve the problem, it hides it — a destination off the edge of the screen
+     is one nobody chooses, and the published guidance is consistent that a
+     primary bar holds about five, with the overflow named rather than scrolled
+     past.
+     So the top row is five ACTIVITIES, always visible, never scrolling. The
+     row under it holds the members of whichever activity is open, and is not
+     drawn at all when an activity has only one — WRITE and SONG are still one
+     tap, exactly as they were.
+     Every data-v below is unchanged and every button still exists in #tabs,
+     because the tour, the coach bar, the session restore and five call sites
+     inside the engine all navigate by
+     #tabs button[data-v="x"].click(). Clicking a tab opens its group as well,
+     so not one of those callers had to learn that groups exist. -->
+<div id="groups" role="tablist" aria-label="Activities">
+  <button role="tab" aria-label="Sound — pads, sampler and sound tools" data-g="sound" class="on">SOUND</button>
+  <button role="tab" aria-label="Write — the sequencer" data-g="write">WRITE</button>
+  <button role="tab" aria-label="Play — tape, mic, live instruments, amp, decks and MIDI" data-g="play">PLAY</button>
+  <button role="tab" aria-label="Mix — mixer and master output" data-g="mix">MIX</button>
+  <button role="tab" aria-label="Song — projects, bouncing and export" data-g="song">SONG</button>
+</div>
+<div id="tabs" role="tablist" aria-label="Sections" data-g="sound">
+  <button role="tab" aria-label="Pads" data-g="sound" data-v="pads" class="on">PADS</button>
+  <button role="tab" aria-label="Sampler" data-g="sound" data-v="smpl">SMPL</button>
+  <button role="tab" aria-label="Sound tools" data-g="sound" data-v="tools">TOOLS</button>
+  <button role="tab" aria-label="Sequencer" data-g="write" data-v="seq">SEQ</button>
+  <button role="tab" aria-label="Tape tracks" data-g="play" data-v="trax">TRAX</button>
+  <button role="tab" aria-label="Microphone" data-g="play" data-v="mic">MIC</button>
+  <button role="tab" aria-label="Live instruments" data-g="play" data-v="live">LIVE</button>
+  <button role="tab" aria-label="Amp and guitar input" data-g="play" data-v="amp">AMP</button>
+  <button role="tab" aria-label="DJ decks" data-g="play" data-v="dj">DJ</button>
+  <button role="tab" aria-label="MIDI" data-g="play" data-v="midi">MIDI</button>
+  <button role="tab" aria-label="Mixer" data-g="mix" data-v="mix">MIX</button>
+  <button role="tab" aria-label="Master output" data-g="mix" data-v="out">OUT</button>
+  <button role="tab" aria-label="Projects and export" data-g="song" data-v="proj">PROJ</button>
 </div>
 
 <!-- One suggestion at a time, drawn from the actual state of the project.
@@ -201,7 +226,7 @@ one instrument being played rather than two samples overlapping.</p>
   </div>
   <div id="padgrid"></div>
   <div id="editpanel" style="display:none">
-    <div class="row"><span class="lbl">PAD</span><span id="epTitle" style="color:var(--amber);font-size:12px">—</span>
+    <div class="row"><span class="lbl">PAD</span><span id="epTitle" data-padname style="color:var(--amber);font-size:12px">—</span>
       <span class="grow"></span>
       <button id="epClear">CLEAR</button>
     </div>
@@ -498,8 +523,8 @@ Imported audio is stored on this device only; it is not uploaded anywhere.</p>
       <option value="plate">PLATE</option><option value="spring">SPRING</option>
       <option value="cath">CATHEDRAL</option><option value="gated">GATED</option>
     </select>
-    <span class="lbl">FROM</span>
-    <select aria-label="Pre-verb source" id="pvSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select>
+    <span class="pair"><span class="lbl">FROM</span>
+    <select aria-label="Pre-verb source" id="pvSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select></span>
   </div>
   <div class="pslider adv"><span class="lbl">LENGTH</span><input aria-label="Pre-verb swell length" type="range" id="pvLen" min="0.2" max="4" step="0.05" value="1.5"><span class="val" id="pvLenV">1.50s</span></div>
   <div class="pslider adv"><span class="lbl">AMOUNT</span><input aria-label="Pre-verb amount" type="range" id="pvMix" min="0.05" max="1.5" step="0.05" value="0.85"><span class="val" id="pvMixV">85%</span></div>
@@ -522,8 +547,8 @@ Imported audio is stored on this device only; it is not uploaded anywhere.</p>
       <option value="8" selected>8 · + open hat, clap, tom, rim</option>
       <option value="12">12 · + sub, crash, ride, fx</option>
     </select>
-    <span class="lbl">FROM</span>
-    <select aria-label="Build the kit from" id="kbSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select>
+    <span class="pair"><span class="lbl">FROM</span>
+    <select aria-label="Build the kit from" id="kbSrc"><option value="whole">whole sample</option><option value="slice">selected slice</option></select></span>
   </div>
   <div class="pslider"><span class="lbl">TUNE</span><input type="range" id="kbTune" min="-12" max="12" step="1" value="0"><span class="val" id="kbTuneV">0 st</span></div>
   <div class="pslider"><span class="lbl">DECAY</span><input type="range" id="kbDecay" min="0.4" max="2.2" step="0.05" value="1"><span class="val" id="kbDecayV">1.00×</span></div>
@@ -561,6 +586,138 @@ Imported audio is stored on this device only; it is not uploaded anywhere.</p>
     <select id="assignFrom"></select>
     <button id="btnAssign" class="grow">ASSIGN SLICES &#8594; PADS</button>
   </div>
+</div>
+
+<!-- TOOLS -->
+<!-- These five act on ONE PAD — the one selected in PADS ▸ EDIT, which is
+     S.editPad. They used to live on PROJ, a tab about saving and exporting
+     that names no pad anywhere, so every one of them operated on a sound you
+     could not see. PAINT was the sharp end of that: it calls loadIntoTarget
+     with noAsk, so pressing it replaced whatever sample was on the selected
+     pad, silently, from a page titled "Projects and export".
+     Everywhere else the app already states its target — #epTitle on PADS,
+     #seqPadName on SEQ, #mxPad on MIX. PROJ was the one place that acted on
+     the selection without naming it. This tab names it, at the top, with a
+     way back to the pad it means. -->
+<div class="view" role="tabpanel" aria-label="Sound tools" id="v-tools">
+  <div class="hint">
+  <div class="hint-lead" data-lead-short><b>SOUND TOOLS</b> — five ways to change a sound that nothing else here can do. All five act on the pad named below.</div>
+  <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-tools">MAKING A SOUND RATHER THAN CHOOSING ONE</button>
+  <div class="hint-body" id="learn-tools" hidden>
+<p class="lead-was"><b>SOUND TOOLS</b> — five ways to change a sound that no knob here can reach. Every one of them acts on the pad shown at the top of this tab: the one selected in <b>PADS &#9656; EDIT</b>.</p>
+<h4>These are not effects</h4>
+<p>A filter, a drive or an EQ shapes a recording you already have. These four
+make a different recording. <b>PAINT</b> builds one out of partials that no
+oscillator-and-filter chain can produce; <b>REBUILD</b> makes one out of pieces
+of your other pads; <b>FREEZE</b> turns a fifth of a second into something that
+sustains forever; <b>TAPE</b> gives a sound a pitch that will not hold still.
+That is why they live on their own tab and not in the EDIT panel.</p>
+
+<h4>Which ones overwrite, and which ones do not</h4>
+<p><b>PAINT</b> replaces the sample on the selected pad, so it asks first when
+that pad is holding something. <b>MUTATE</b> puts the pad back the way it was
+unless you keep the result. <b>REBUILD</b>, <b>FREEZE</b> and <b>TAPE</b> all
+write to a free pad and leave the original alone.</p>
+
+<h4>Why the pad is named at the top</h4>
+<p>Because these tools act on a selection made on another tab. A control that
+changes something you cannot see is the one kind of control this app tries hard
+not to have, and for a while these five were exactly that.</p>
+
+<p class="try"><b>Try this:</b> load a kit, select the snare in PADS &#9656;
+EDIT, come here and press <b>FREEZE PAD</b>. The snare's rattle becomes a
+sustained chord sitting on a free pad, and the snare is untouched.</p>
+  </div>
+</div>
+  <div class="row" id="toolPadRow">
+    <span class="lbl">PAD</span>
+    <span id="tlPad" data-padname style="color:var(--amber);font-size:12px;flex:1">&mdash;</span>
+    <button id="btnToolGoPad" title="Open this pad in the PADS editor">EDIT THIS PAD</button>
+  </div>
+  <div class="row" style="flex-wrap:wrap;gap:4px">
+    <button id="btnToolPaint" data-acts="pad" class="grow" title="Draw a bell as a spectrum and resynthesise it onto this pad">PAINT A BELL</button>
+    <button id="btnToolMutate" data-acts="pad" class="grow" title="Vary this pad's sound, measure each variation, keep the best">MUTATE PAD</button>
+    <button id="btnToolResynth" data-acts="pad" class="grow" title="Rebuild this pad using the pieces of every other pad">REBUILD PAD</button>
+  </div>
+  <!-- REBUILD's controls. The button alone ran resynth() on its
+       defaults, so every one of Samplebrain's parameters was reachable
+       from the API and from nowhere a person could press. That is the
+       same gap the buttons above were added to close, reopened one
+       level down: the tool was exposed and its controls were not.
+
+       Collapsed, because their own manual says of this parameter set
+       "we gradually added more and more tweakable parameters until it
+       became slightly out of control", and because one button that
+       does something sensible is the right default. Open it and the
+       whole thing is here. -->
+  <details class="ex" id="resynthOpts"><summary>Rebuild controls</summary><div class="ex-body">
+    <div class="row" style="gap:6px;align-items:center">
+      <span class="lbl">SEARCH</span>
+      <select id="rsAlgo" class="grow" aria-label="Rebuild search algorithm">
+        <option value="basic" selected>BASIC &mdash; search every block</option>
+        <option value="synaptic">SYNAPTIC &mdash; wander a similarity network</option>
+        <option value="slide">SLIDE &mdash; synaptic, and warp the timing</option>
+        <option value="reversed">REVERSED &mdash; take the least similar block</option>
+      </select>
+    </div>
+    <div class="pslider"><span class="lbl">BINS</span><input type="range" id="rsBins" min="4" max="100" step="1" value="32"><span class="val" id="rsBinsV">32</span></div>
+    <div class="pslider"><span class="lbl">MFCC</span><input type="range" id="rsMfcc" min="0" max="1" step="0.05" value="0.35"><span class="val" id="rsMfccV">35%</span></div>
+    <div class="pslider"><span class="lbl">BLOCK</span><input type="range" id="rsBlock" min="10" max="400" step="5" value="60"><span class="val" id="rsBlockV">60ms</span></div>
+    <div class="pslider"><span class="lbl">BRAIN</span><input type="range" id="rsBrainBlock" min="10" max="400" step="5" value="60"><span class="val" id="rsBrainBlockV">60ms</span></div>
+    <div class="pslider"><span class="lbl">NOVELTY</span><input type="range" id="rsNovelty" min="0" max="1" step="0.05" value="0.3"><span class="val" id="rsNoveltyV">30%</span></div>
+    <div class="pslider"><span class="lbl">BOREDOM</span><input type="range" id="rsBoredom" min="0" max="1" step="0.05" value="0.25"><span class="val" id="rsBoredomV">25%</span></div>
+    <div class="pslider"><span class="lbl">STICKY</span><input type="range" id="rsSticky" min="0" max="1" step="0.05" value="0.25"><span class="val" id="rsStickyV">25%</span></div>
+    <div class="pslider"><span class="lbl">STRETCH</span><input type="range" id="rsStretch" min="1" max="8" step="1" value="1"><span class="val" id="rsStretchV">1&times;</span></div>
+    <div class="pslider" id="rsSlideRow"><span class="lbl">SLIP</span><input type="range" id="rsSlideErr" min="0.5" max="40" step="0.5" value="6"><span class="val" id="rsSlideErrV">6dB</span></div>
+    <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:4px">
+      <label style="font-size:11px"><input type="checkbox" id="rsAutotune"> AUTOTUNE</label>
+      <label style="font-size:11px"><input type="checkbox" id="rsStereo"> STEREO</label>
+      <span class="grow"></span>
+      <button id="rsReset" title="Back to the defaults">RESET</button>
+    </div>
+    <p style="margin:8px 0 0;font-size:10px;color:var(--txt-dim);line-height:1.5">
+      <b>BINS</b> and <b>MFCC</b> set how finely two blocks are told apart.
+      The original matcher here used 8 bins and no MFCC, which cannot
+      separate sounds a finer one can &mdash; that is the difference
+      between a rebuild and a mush. <b>BRAIN</b> block size is deliberately
+      separate from the target's. <b>SLIP</b> only applies to SLIDE: it is
+      how far off a block may be before the target is held and stretched
+      to wait for a better one, which is what warps the timing.</p>
+  </div></details>
+  <div class="row" style="flex-wrap:wrap;gap:4px">
+    <button id="btnToolFreeze" data-acts="pad" class="grow" title="Hold one instant of this pad's spectrum as a sustained pad">FREEZE PAD</button>
+    <button id="btnToolTape" data-acts="pad" class="grow" title="Run this pad to tape — wow, flutter, drift and saturation">RUN TO TAPE</button>
+  </div>
+  <div id="toolLog" class="toollog" role="log" aria-live="polite" aria-label="Sound tool results"
+    style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
+           padding:8px;margin:6px 0;font-size:11px;line-height:1.5;max-height:200px;
+           overflow-y:auto;color:var(--txt-dim);white-space:pre-wrap"></div>
+  <details class="ex"><summary>What each of these does</summary><div class="ex-body">
+    <p style="margin-top:0"><b>PAINT A BELL</b> draws a sound as a spectrum and resynthesises it, the
+way MetaSynth does: an image is a spectrogram, with time across, frequency up
+and brightness as level. The button makes a bell with genuinely inharmonic
+partials &mdash; something no oscillator-and-filter chain here can produce.
+From the API, <span class="lit">paint({rows})</span> takes a whole grid.</p>
+    <p><b>MUTATE PAD</b> makes variations of the current pad's sound, measures
+each one, and keeps whichever wins. Randomising alone gives noise; every
+candidate is scored against the sound it came from. It restores the pad unless
+you keep the result.</p>
+    <p><b>REBUILD PAD</b> plays the current pad using the pieces of every other
+loaded pad: it chops both into short blocks and rebuilds this sound out of the
+closest-matching blocks of the others. The shape is the target's, the substance
+is theirs.</p>
+    <p><b>FREEZE PAD</b> holds one instant of this sound for as long as you like.
+It reads the spectrum a quarter of the way through, keeps the strongest partials
+and sustains them &mdash; so any one-shot becomes a pad: a door knock, a can, the
+moment a bell has stopped clanging and is only ringing. Nothing loops, because
+nothing is replayed.</p>
+    <p><b>RUN TO TAPE</b> gives the sound a pitch that will not hold still.
+Everything made here is perfectly in tune for a whole note, which never happened
+on tape. <i>Wow</i> is slow and heard as the pitch sagging; <i>flutter</i> is fast
+and heard as roughness; <i>drift</i> wanders off and never quite returns.
+Saturation and a softer top come with it. Both of these write to a free pad, so
+the original is left alone.</p>
+  </div></details>
 </div>
 
 <!-- SEQ -->
@@ -690,7 +847,7 @@ immediately.</p>
     <button id="btnPtnBpm">PTN TEMPO</button>
     <span id="ptnBpmInfo" style="font-size:10px;color:var(--txt-dim)">each pattern keeps its own BPM</span>
   </div>
-  <h3>TRACK <span id="seqPadName" style="color:var(--amber)"></span></h3>
+  <h3>TRACK <span id="seqPadName" data-padname style="color:var(--amber)"></span></h3>
   <div id="seqpadstrip"></div>
   <div class="row">
     <span class="lbl">PTN</span>
@@ -1119,10 +1276,10 @@ hum a bassline into the mic over your beat. Then set the lane to loop with the
   </div>
   <div class="row" style="margin-bottom:2px">
     <button id="btnPunch">PUNCH</button>
-    <span class="lbl">IN</span><input type="number" id="punchIn" min="1" max="256" step="0.25" value="1"
-      style="width:80px" aria-label="Punch in, in bars">
-    <span class="lbl">OUT</span><input type="number" id="punchOut" min="1" max="256" step="0.25" value="3"
-      style="width:80px" aria-label="Punch out, in bars">
+    <span class="pair"><span class="lbl">IN</span><input type="number" id="punchIn" min="1" max="256" step="0.25" value="1"
+      style="width:80px" aria-label="Punch in, in bars"></span>
+    <span class="pair"><span class="lbl">OUT</span><input type="number" id="punchOut" min="1" max="256" step="0.25" value="3"
+      style="width:80px" aria-label="Punch out, in bars"></span>
     <span class="grow" id="punchHint" style="font-size:10px;color:var(--txt-dim)">off &mdash; a take replaces the whole lane</span>
   </div>
   <div id="tvwrap" style="display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--lcd-bg)">
@@ -1722,9 +1879,32 @@ the habit that separates fast mixes from long ones.</p>
   </div>
   <div class="pslider"><span class="lbl">DEPTH</span><input type="range" id="mxScDepth" min="0" max="0.95" step="0.01"><span class="val" id="mxScDepthV"></span></div>
   <div class="pslider"><span class="lbl">RECOVER</span><input type="range" id="mxScRel" min="0.05" max="0.6" step="0.01"><span class="val" id="mxScRelV"></span></div>
-  <h3>SELECTED PAD SENDS <span id="mxPad" style="color:var(--amber)"></span></h3>
-  <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="mxPadRev" min="0" max="1" step="0.01"><span class="val" id="mxPadRevV"></span></div>
-  <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="mxPadDly" min="0" max="1" step="0.01"><span class="val" id="mxPadDlyV"></span></div>
+  <h3>SELECTED PAD SENDS <span id="mxPad" data-padname style="color:var(--amber)"></span></h3>
+  <div class="pslider"><span class="lbl">REVERB</span><input type="range" id="mxPadRev" data-acts="pad" min="0" max="1" step="0.01"><span class="val" id="mxPadRevV"></span></div>
+  <div class="pslider"><span class="lbl">DELAY</span><input type="range" id="mxPadDly" data-acts="pad" min="0" max="1" step="0.01"><span class="val" id="mxPadDlyV"></span></div>
+  <!-- REVIEW and BALANCE are mix-scoped: one measures the whole mix, the
+       other solves the instrument group levels against a loaded reference.
+       They were on PROJ, three tabs from the mixer. -->
+  <h3>MIX TOOLS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; measure the whole mix, and solve it</span></h3>
+  <div class="row" style="flex-wrap:wrap;gap:4px">
+    <button id="btnToolReview" class="grow" title="Run every analyser and list what is wrong, worst first">REVIEW MIX</button>
+    <button id="btnToolBalance" class="grow" title="Solve the group levels against the loaded reference">BALANCE</button>
+  </div>
+  <div id="mixToolLog" class="toollog" role="log" aria-live="polite" aria-label="Mix tool results"
+    style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
+           padding:8px;margin:6px 0;font-size:11px;line-height:1.5;max-height:200px;
+           overflow-y:auto;color:var(--txt-dim);white-space:pre-wrap"></div>
+  <details class="ex"><summary>What these two do</summary><div class="ex-body">
+    <p style="margin-top:0"><b>REVIEW MIX</b> runs every analyser in the app at
+once &mdash; balance, perceived loudness, small-speaker translation, pulse,
+melodic shape, voice independence &mdash; sorts what it finds by severity and
+says which checks it could not reach. A check that silently did not run reads
+exactly like a check that passed, so it reports its own coverage.</p>
+    <p><b>BALANCE</b> solves the instrument levels instead of guessing them.
+Load a finished mix with <span class="lit">reference()</span> first; it then
+renders each group once and fits the gains so the whole thing lands on that
+reference's own band shape. It suggests, it does not apply.</p>
+  </div></details>
   <details class="ex"><summary>Sends versus channel effects</summary><div class="ex-body">
     <p>Send levels for every pad live in PADS → EDIT. Everything here bakes into the WAV bounce.</p>
 <p>This is the distinction worth learning. A channel's EQ affects that channel
@@ -2077,8 +2257,8 @@ select master volume, and wiggle any knob. It is bound in one move.</p>
   <div class="row">
     <button id="btnNotesOut">NOTES OUT</button>
     <button id="btnClkOut">CLOCK OUT</button>
-    <span class="lbl">CH</span>
-    <select aria-label="MIDI output channel" id="midiOutCh"></select>
+    <span class="pair"><span class="lbl">CH</span>
+    <select aria-label="MIDI output channel" id="midiOutCh"></select></span>
   </div>
   <details class="ex"><summary>Driving other gear</summary><div class="ex-body">
     <p>NOTES OUT sends every sequencer step and pad hit (pad's NOTE + step pitch). CLOCK OUT sends 24&nbsp;PPQN clock with START/STOP so drum machines &amp; synth arps follow this tempo.</p>
@@ -2200,19 +2380,19 @@ Same notes, different performance. Keep whichever you prefer.</p>
        by side they read as alternatives of equal standing, which sent people
        to the worse one first. The live link leads now; the paste box is the
        fallback, folded away, and honest about being one. -->
-  <h3>AI &amp; AGENTS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; external control</span></h3>
+  <h3 class="adv">AI &amp; AGENTS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; external control</span></h3>
 
-  <div class="row">
+  <div class="adv row">
     <button id="btnAgentLink" class="grow">&#9679; OPEN AGENT LINK</button>
     <button id="btnAgentPing" title="Ask a connected client to identify itself">PING</button>
   </div>
-  <div id="agentStat" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px;line-height:1.45">
+  <div class="adv" id="agentStat" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px;line-height:1.45">
     closed
   </div>
   <!-- Opening the link starts a listener, which is invisible. Without the
        panel below, the button appeared to do nothing. Shown automatically
        the first time the link opens with no client attached. -->
-  <details id="agentHow" class="ex"><summary>Connecting a client</summary><div class="ex-body">
+  <details id="agentHow" class="adv ex"><summary>Connecting a client</summary><div class="ex-body">
     <p>Clients run on this device. The app has no server, so nothing can reach
 this screen from elsewhere; all three routes below need a computer.</p>
 
@@ -2253,15 +2433,15 @@ reports as connected.</p>
     <p>Live control of this screen from another device would need a relay
 server. Not implemented.</p>
   </div></details>
-  <div id="agentLog" role="log" aria-live="polite" aria-label="Messages to and from the connected client"
+  <div class="adv" id="agentLog" role="log" aria-live="polite" aria-label="Messages to and from the connected client"
     style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
            padding:8px;margin:4px 0;font-size:11px;line-height:1.5;max-height:160px;overflow-y:auto;color:var(--txt-dim)"></div>
-  <div class="row" id="agentSayRow" style="display:none">
+  <div class="adv row" id="agentSayRow" style="display:none">
     <input type="text" id="agentSay" class="grow" placeholder="message the client&hellip;"
       aria-label="Message to the connected client" autocomplete="off">
     <button id="btnAgentSay">SEND</button>
   </div>
-  <details class="ex"><summary>What a client can control</summary><div class="ex-body">
+  <details class="adv ex"><summary>What a client can control</summary><div class="ex-body">
     <p>The full surface, while the transport runs: load sounds (synthesised,
 downloaded or recorded), write steps and locks, place tape clips, set the LIVE
 instrument, trigger pads, change tempo, bounce, and read the resulting level
@@ -2275,110 +2455,7 @@ socket. Anything driving a browser can call
 link renders as text, never as markup.</p>
   </div></details>
 
-  <!-- These five grew out of an agent's workflow and were reachable only
-       from the API, which meant the person actually using the app could
-       not get at them at all. Each one does something that cannot be
-       done any other way here. -->
-  <h3 style="margin-top:14px">SOUND TOOLS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; measure, solve, and make</span></h3>
-  <div class="row" style="flex-wrap:wrap;gap:4px">
-    <button id="btnToolReview" class="grow" title="Run every analyser and list what is wrong, worst first">REVIEW MIX</button>
-    <button id="btnToolBalance" class="grow" title="Solve the group levels against the loaded reference">BALANCE</button>
-  </div>
-  <div class="row" style="flex-wrap:wrap;gap:4px">
-    <button id="btnToolPaint" class="grow" title="Draw a bell as a spectrum and resynthesise it onto this pad">PAINT A BELL</button>
-    <button id="btnToolMutate" class="grow" title="Vary this pad's sound, measure each variation, keep the best">MUTATE PAD</button>
-    <button id="btnToolResynth" class="grow" title="Rebuild this pad using the pieces of every other pad">REBUILD PAD</button>
-  </div>
-  <!-- REBUILD's controls. The button alone ran resynth() on its
-       defaults, so every one of Samplebrain's parameters was reachable
-       from the API and from nowhere a person could press. That is the
-       same gap the buttons above were added to close, reopened one
-       level down: the tool was exposed and its controls were not.
-
-       Collapsed, because their own manual says of this parameter set
-       "we gradually added more and more tweakable parameters until it
-       became slightly out of control", and because one button that
-       does something sensible is the right default. Open it and the
-       whole thing is here. -->
-  <details class="ex" id="resynthOpts"><summary>Rebuild controls</summary><div class="ex-body">
-    <div class="row" style="gap:6px;align-items:center">
-      <span class="lbl">SEARCH</span>
-      <select id="rsAlgo" class="grow" aria-label="Rebuild search algorithm">
-        <option value="basic" selected>BASIC &mdash; search every block</option>
-        <option value="synaptic">SYNAPTIC &mdash; wander a similarity network</option>
-        <option value="slide">SLIDE &mdash; synaptic, and warp the timing</option>
-        <option value="reversed">REVERSED &mdash; take the least similar block</option>
-      </select>
-    </div>
-    <div class="pslider"><span class="lbl">BINS</span><input type="range" id="rsBins" min="4" max="100" step="1" value="32"><span class="val" id="rsBinsV">32</span></div>
-    <div class="pslider"><span class="lbl">MFCC</span><input type="range" id="rsMfcc" min="0" max="1" step="0.05" value="0.35"><span class="val" id="rsMfccV">35%</span></div>
-    <div class="pslider"><span class="lbl">BLOCK</span><input type="range" id="rsBlock" min="10" max="400" step="5" value="60"><span class="val" id="rsBlockV">60ms</span></div>
-    <div class="pslider"><span class="lbl">BRAIN</span><input type="range" id="rsBrainBlock" min="10" max="400" step="5" value="60"><span class="val" id="rsBrainBlockV">60ms</span></div>
-    <div class="pslider"><span class="lbl">NOVELTY</span><input type="range" id="rsNovelty" min="0" max="1" step="0.05" value="0.3"><span class="val" id="rsNoveltyV">30%</span></div>
-    <div class="pslider"><span class="lbl">BOREDOM</span><input type="range" id="rsBoredom" min="0" max="1" step="0.05" value="0.25"><span class="val" id="rsBoredomV">25%</span></div>
-    <div class="pslider"><span class="lbl">STICKY</span><input type="range" id="rsSticky" min="0" max="1" step="0.05" value="0.25"><span class="val" id="rsStickyV">25%</span></div>
-    <div class="pslider"><span class="lbl">STRETCH</span><input type="range" id="rsStretch" min="1" max="8" step="1" value="1"><span class="val" id="rsStretchV">1&times;</span></div>
-    <div class="pslider" id="rsSlideRow"><span class="lbl">SLIP</span><input type="range" id="rsSlideErr" min="0.5" max="40" step="0.5" value="6"><span class="val" id="rsSlideErrV">6dB</span></div>
-    <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:4px">
-      <label style="font-size:11px"><input type="checkbox" id="rsAutotune"> AUTOTUNE</label>
-      <label style="font-size:11px"><input type="checkbox" id="rsStereo"> STEREO</label>
-      <span class="grow"></span>
-      <button id="rsReset" title="Back to the defaults">RESET</button>
-    </div>
-    <p style="margin:8px 0 0;font-size:10px;color:var(--txt-dim);line-height:1.5">
-      <b>BINS</b> and <b>MFCC</b> set how finely two blocks are told apart.
-      The original matcher here used 8 bins and no MFCC, which cannot
-      separate sounds a finer one can &mdash; that is the difference
-      between a rebuild and a mush. <b>BRAIN</b> block size is deliberately
-      separate from the target's. <b>SLIP</b> only applies to SLIDE: it is
-      how far off a block may be before the target is held and stretched
-      to wait for a better one, which is what warps the timing.</p>
-  </div></details>
-  <div class="row" style="flex-wrap:wrap;gap:4px">
-    <button id="btnToolFreeze" class="grow" title="Hold one instant of this pad's spectrum as a sustained pad">FREEZE PAD</button>
-    <button id="btnToolTape" class="grow" title="Run this pad to tape — wow, flutter, drift and saturation">RUN TO TAPE</button>
-  </div>
-  <div id="toolLog" role="log" aria-live="polite" aria-label="Sound tool results"
-    style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
-           padding:8px;margin:6px 0;font-size:11px;line-height:1.5;max-height:200px;
-           overflow-y:auto;color:var(--txt-dim);white-space:pre-wrap"></div>
-  <details class="ex"><summary>What these five do</summary><div class="ex-body">
-    <p style="margin-top:0"><b>REVIEW MIX</b> runs every analyser in the app at
-once &mdash; balance, perceived loudness, small-speaker translation, pulse,
-melodic shape, voice independence &mdash; sorts what it finds by severity and
-says which checks it could not reach. A check that silently did not run reads
-exactly like a check that passed, so it reports its own coverage.</p>
-    <p><b>BALANCE</b> solves the instrument levels instead of guessing them.
-Load a finished mix with <span class="lit">reference()</span> first; it then
-renders each group once and fits the gains so the whole thing lands on that
-reference's own band shape. It suggests, it does not apply.</p>
-    <p><b>PAINT A BELL</b> draws a sound as a spectrum and resynthesises it, the
-way MetaSynth does: an image is a spectrogram, with time across, frequency up
-and brightness as level. The button makes a bell with genuinely inharmonic
-partials &mdash; something no oscillator-and-filter chain here can produce.
-From the API, <span class="lit">paint({rows})</span> takes a whole grid.</p>
-    <p><b>MUTATE PAD</b> makes variations of the current pad's sound, measures
-each one, and keeps whichever wins. Randomising alone gives noise; every
-candidate is scored against the sound it came from. It restores the pad unless
-you keep the result.</p>
-    <p><b>REBUILD PAD</b> plays the current pad using the pieces of every other
-loaded pad: it chops both into short blocks and rebuilds this sound out of the
-closest-matching blocks of the others. The shape is the target's, the substance
-is theirs.</p>
-    <p><b>FREEZE PAD</b> holds one instant of this sound for as long as you like.
-It reads the spectrum a quarter of the way through, keeps the strongest partials
-and sustains them &mdash; so any one-shot becomes a pad: a door knock, a can, the
-moment a bell has stopped clanging and is only ringing. Nothing loops, because
-nothing is replayed.</p>
-    <p><b>RUN TO TAPE</b> gives the sound a pitch that will not hold still.
-Everything made here is perfectly in tune for a whole note, which never happened
-on tape. <i>Wow</i> is slow and heard as the pitch sagging; <i>flutter</i> is fast
-and heard as roughness; <i>drift</i> wanders off and never quite returns.
-Saturation and a softer top come with it. Both of these write to a free pad, so
-the original is left alone.</p>
-  </div></details>
-
-  <details class="ex" style="margin-top:8px"><summary>Playing, not just placing</summary><div class="ex-body">
+  <details class="adv ex" style="margin-top:8px"><summary>Playing, not just placing</summary><div class="ex-body">
     <p style="margin-top:0"><span class="lit">phrase(name, from, to, opt)</span>
 &mdash; shape notes that are already written. <span class="lit">vel</span>
 multiplies velocity, <span class="lit">time</span> displaces in step fractions,
@@ -2400,7 +2477,7 @@ drifts rather than jitters. Separate from <span class="lit">human</span>, which
 is per-note noise, and off by default.</p>
   </div></details>
 
-  <details class="ex" style="margin-top:8px"><summary>Checking a mix</summary><div class="ex-body">
+  <details class="adv ex" style="margin-top:8px"><summary>Checking a mix</summary><div class="ex-body">
     <p style="margin-top:0"><span class="lit">critique()</span> runs the checks
 below and returns only what is wrong. Empty is the good answer.</p>
     <p><span class="lit">spectrum()</span> &mdash; tonal balance in nine octave
@@ -2420,7 +2497,7 @@ clamp it to.</p>
 curve.</p>
   </div></details>
 
-  <details id="songDocBox" class="ex" style="margin-top:8px"><summary>Song document (no client required)</summary><div class="ex-body">
+  <details id="songDocBox" class="adv ex" style="margin-top:8px"><summary>Song document (no client required)</summary><div class="ex-body">
     <p style="margin-top:0"><b>SPEC</b> writes a prompt into the box; paste the
 assistant&rsquo;s reply back and press <b>LOAD DOC</b>. One-way, between takes,
 and limited to the first sixteen pads &mdash; no tape lanes, LIVE instrument or
@@ -2435,12 +2512,12 @@ downloaded sounds. Prefer the agent link above.</p>
 CURRENT writes the present session out in the same format.</p>
   </div></details>
 
-  <div class="row" style="margin-top:8px">
+  <div class="adv row" style="margin-top:8px">
     <span class="lbl">DIAG</span>
     <button id="btnDiag" class="grow" title="engine state snapshot">ENGINE SNAPSHOT</button>
     <button id="btnDiagCopy" title="Copy the diagnostic report to the clipboard">COPY</button>
   </div>
-  <div style="font-size:10px;color:var(--txt-dim);margin:2px 0 4px">Writes a state dump into the song-document box, opening it &mdash; useful in a bug report, and the fastest way to show an agent what is going on.</div>
+  <div class="adv" style="font-size:10px;color:var(--txt-dim);margin:2px 0 4px">Writes a state dump into the song-document box, opening it &mdash; useful in a bug report, and the fastest way to show an agent what is going on.</div>
 
   <h3>SESSION FILE (JSON)</h3>
   <div class="row">
