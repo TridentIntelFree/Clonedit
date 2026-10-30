@@ -8,6 +8,61 @@ they return, in prose, and why.
 
 Both are in the MCP server (`mcp/server.mjs`) and on `window.JBH`.
 
+## SHIPPING IT. READ THIS BEFORE YOU GO LOOKING FOR THE ANSWER
+
+The loop is **build, merge to main, launch, they test**. It has run more than
+two hundred times. It is four commands and it is not a decision to be
+reopened:
+
+```
+npm run build                    # tests, lint, vite, emit, smoke -> index.html
+git add -A && git commit         # index.html is COMMITTED; CI fails if it drifts from src/
+git push origin main
+# launch: Actions > Pages > Run workflow   (.github/workflows/pages.yml)
+```
+
+Live at **https://tridentintelfree.github.io/Clonedit/**
+
+**GitHub Pages is already enabled and has been for a long time.** Do not
+"set up hosting", do not weigh hosting options, do not propose an artifact,
+a private host or a new pipeline. If you catch yourself designing a deploy,
+stop: it exists.
+
+**You cannot see the live site from a cloud session.** The agent proxy denies
+`tridentintelfree.github.io`, so curl returns `HTTP 000` and that means
+NOTHING about whether the site is up:
+
+```
+connect_rejected — gateway answered 403 to CONNECT (policy denial)
+host: tridentintelfree.github.io:443
+```
+
+Check `curl -sS "$HTTPS_PROXY/__agentproxy/status"` before concluding
+anything from a failed fetch, and verify a deploy by its workflow run
+instead. A whole session was spent re-deriving all of the above, twice,
+because an `HTTP 000` was read as "probably not deployed" rather than "I am
+not allowed to look".
+
+**Why this section exists.** Everything else in this file is about making
+music, and the one thing a session is most often asked to do — put the new
+build in front of the person — was written down nowhere. So each fresh
+session re-invented it from the repository, and the re-invention was worse
+than the thing it replaced: a four-option question about hosting, an
+auto-deploy pipeline nobody wanted, and a PR's worth of turns spent before
+anything was launched. A procedure that lives only in the user's head is a
+procedure the next session will get wrong.
+
+**The repo is public and that is fine.** It is early, nothing depends on it,
+and the source is public already. "Who can access it" is not a question that
+needs reopening either.
+
+**One trap, left by the session that wrote this.** `pages.yml` runs
+`actions/configure-pages` with `enablement: true`, which can switch the Pages
+source from *Deploy from a branch* to *GitHub Actions*. If the site stops
+updating on a plain push to main, that is why: either run the workflow after
+pushing, or set Settings > Pages back to a branch source and delete
+`pages.yml`.
+
 ## Why this file exists
 
 The app has seventeen analysers. A finished track was bounced here using
