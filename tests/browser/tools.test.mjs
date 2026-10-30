@@ -394,27 +394,50 @@ export default async function ({ browser, base }) {
        its mirror image: level held to a tenth of a decibel and the colour
        change down to 0.2dB, a mutation nobody can hear. */
     t.head('A VARIATION IS THE SAME SOUND CHANGED, NOT A QUIETER ONE');
+    /* Measured on the KEPT pad, not on r.after. r.after is the winning
+       candidate as the search heard it, which is BEFORE the gain
+       compensation is applied — so asserting on it tests the search's raw
+       output and not the sound the person ends up with. The first version
+       of this test did exactly that and would have passed a result that is
+       three decibels down once written. Render the pad, keep the
+       mutation, render it again. */
     const runs = await page.evaluate(async () => {
+      const hear = async (pad) => {
+        const row = S.patterns[S.pattern].steps[pad];
+        const had = row.slice(); row.fill(0); row[0] = 0.9;
+        const buf = await renderMix(new Set([pad]), new Set(), { loops: 1, src: 'pat', noTail: false });
+        for (let i = 0; i < row.length; i++) row[i] = had[i];
+        const rep = await specReport(buf);
+        return { lufs: rep.lufs, peak: 20 * Math.log10(Math.max(rep.peak, 1e-6)) };
+      };
       const out = [];
       for (let k = 0; k < 4; k++) {
         await window.JBH.clear();
         await window.JBH.instrument('p', { pack: 'samples/salamander.json',
           match: '^sal:', lo: 48, hi: 60, max: 1 });
         const pad = window.JBH.instPads('p')[0].pad;
+        const was = await hear(pad);
         const r = await window.MVX.mutate(pad, { want: 'different',
-          population: 4, generations: 2, seed: 1000 + k * 7919 });
-        out.push({ d: +(r.after.lufs - r.before.lufs).toFixed(2), shape: r.shapeChangeDb });
+          population: 4, generations: 2, seed: 1000 + k * 7919, keep: true });
+        const now = await hear(pad);
+        out.push({ d: +(now.lufs - was.lufs).toFixed(2),
+          dPeak: +(now.peak - was.peak).toFixed(2),
+          shape: r.shapeChangeDb, short: r.levelShort });
       }
       return out;
     });
-    const worst = Math.max(...runs.map(r => Math.abs(r.d)));
-    const loudest = Math.max(...runs.map(r => r.shape));
-    t.ok('no run loses the level it was measured at',
-      worst <= 3, 'worst level change ' + worst + 'dB across ' + runs.length + ' runs ('
-        + runs.map(r => (r.d >= 0 ? '+' : '') + r.d).join(', ') + ')');
-    t.ok('AND IT STILL CHANGES THE COLOUR — the other way to fail this',
-      loudest >= 3, 'best colour change ' + loudest + 'dB ('
+    const quietest = Math.min(...runs.map(r => Math.min(r.d, r.dPeak)));
+    const weakest = Math.min(...runs.map(r => r.shape));
+    t.ok('NO MUTATION COMES BACK QUIETER THAN THE SOUND IT CAME FROM',
+      quietest >= -3, 'worst drop ' + quietest + 'dB across ' + runs.length + ' kept runs — lufs '
+        + runs.map(r => (r.d >= 0 ? '+' : '') + r.d).join(', ') + ' · peak '
+        + runs.map(r => (r.dPeak >= 0 ? '+' : '') + r.dPeak).join(', '));
+    t.ok('AND EVERY ONE CHANGES THE COLOUR AUDIBLY — the other way to fail this',
+      weakest >= 2, 'weakest colour change ' + weakest + 'dB ('
         + runs.map(r => r.shape).join(', ') + ')');
+    t.ok('and it says when the gain could not give the level back',
+      runs.every(r => r.short === 0 || r.short > 0),
+      'levelShort reported on every run (' + runs.map(r => r.short).join(', ') + ')');
     t.ok('the level is given back through gain, not by refusing the change',
       await page.evaluate(async () => {
         await window.JBH.clear();
