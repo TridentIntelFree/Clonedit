@@ -967,6 +967,21 @@ where they come back into alignment. On a grid that relationship is invisible.</
     </select>
     <button id="mlOffer" title="Offer several ways to play it. Writes nothing.">OFFER</button>
   </div>
+  <!-- WITHOUT THIS THE PANEL ABOVE IS A DEAD END. infill() writes for an
+       INSTRUMENT, and an instrument is a pad carrying an `inst` tag.
+       instrument() sets one; sound(), the kits and every sample loaded by
+       hand do not — so on an ordinary project the dropdown reads "no tagged
+       instruments", disables itself and OFFER with it, and nothing anywhere
+       in the app could create a tag. The API could: pad(i,{inst:'bass'}) is
+       all it takes. This is that, where the dead end is. -->
+  <div class="row" style="gap:4px;flex-wrap:wrap">
+    <span class="lbl">TAG</span>
+    <span id="mlTagPad" style="color:var(--amber);font-size:11px;min-width:34px">—</span>
+    <input type="text" id="mlTagName" class="grow" maxlength="16" placeholder="name it: bass, lead, keys&hellip;"
+      aria-label="Name this pad as an instrument" autocomplete="off" style="min-width:110px">
+    <button id="mlTagGo" title="Make the selected pad an instrument this can write for">TAG IT</button>
+  </div>
+  <div id="mlTagInfo" style="font-size:10px;color:var(--txt-dim);margin:-2px 0 6px;line-height:1.45"></div>
   <div class="row" style="gap:4px" id="mlPickRow" hidden>
     <select id="mlPick" class="grow" aria-label="Which candidate to write"></select>
     <button id="mlApply" title="Write the chosen one onto this pattern">WRITE IT</button>

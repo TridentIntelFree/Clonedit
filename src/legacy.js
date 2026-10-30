@@ -13813,6 +13813,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const put=(st)=>{ for(const k in st) p[k]=st[k]; };
     const original=snap();
     let wrote=-1;              // which pad, if any, ended up holding the winner
+    let levelShort=0;          // dB the gain could not give back, 0 when it could
 
     const measure=async()=>{
       const buf=await renderMix(new Set([i]), new Set(), ro);
@@ -13887,8 +13888,19 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        charged for. Penalising everything instead, which was the first
        attempt here, swapped one failure for its mirror image: level held to
        0.1dB and shape change down to 0.2dB, a mutation you cannot hear. */
+    /* THE FLOOR USED TO BE 3dB AND THAT WAS A LIE ON A LOUD PAD. Headroom is
+       what gain can give back, and a pad already at 2.0 has none — allowing
+       it three decibels of loss anyway meant accepting a candidate that
+       could never be restored. Mutating a mutation walks straight into this:
+       each round spends headroom (0.9 -> 1.49 -> 1.88 measured over two),
+       and the round that saturates is the one that comes back quiet with no
+       way to fix it. Reported as "the third pad was very quiet after double
+       mutate". */
     const headroomDb=20*Math.log10(2/Math.max(0.05, +(original.gain==null?1:original.gain)));
-    const FREE=Math.max(3, Math.min(9, headroomDb));
+    const FREE=Math.max(1, Math.min(9, headroomDb));
+    /* How much spectral change counts as audible. 1.5dB across nine bands is
+       about where a side-by-side comparison stops being a guess. */
+    const FLOOR=1.5;
     const levelCost=(cand)=>{
       if(cand.lufs==null || base.lufs==null) return 0;
       const off=Math.abs(cand.lufs-base.lufs);
@@ -13900,7 +13912,19 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         /* a mutation that nobody recognises is a different sound, not a
            variation of this one, so distance is rewarded up to a point
            and then flat. Six decibels of shape change is a long way. */
-        case 'different': return Math.min(d,7)-Math.max(0,d-7)*0.6-pen;
+        /* A CHANGE TOO SMALL TO HEAR IS NOT A VARIATION, AND IT MUST NOT BE
+           ALLOWED TO WIN. The original scores zero, so any candidate that
+           moved the spectrum at all beat it — and a knob nudged by two per
+           cent moves the spectrum a little. The search banked that nudge as
+           its new best and every later candidate then had to beat THAT,
+           from a position barely distinguishable from where it started.
+           A session's DIAG showed the result exactly: three pads sharing
+           one buffer, the two mutations differing from the original by 2%
+           and 5% of delay send and nothing else.
+           Under the floor a candidate scores the same as doing nothing, so
+           it cannot become the new best and the search keeps looking from
+           the sound it was given. */
+        case 'different': return d<FLOOR ? 0 : Math.min(d,7)-Math.max(0,d-7)*0.6-pen;
         case 'similar':   return -d-pen;
         case 'brighter':  return tilt(cand)-tilt(base)-pen;
         case 'darker':    return tilt(base)-tilt(cand)-pen;
@@ -13933,12 +13957,38 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
              are left alone. */
           const live=knobs.filter(x=>!((x.k==='fcut'||x.k==='fres') && st.ftype==='off'));
           const pool=live.length?live:knobs;
-          const howMany=1+Math.floor(rnd()*3);
+          /* EVERY THIRD CANDIDATE IS A BOLD ONE. The structural moves — a
+             filter switched on, the sample reversed, real drive or crush —
+             are the only ones that change what a sound IS rather than
+             trimming it, and they were each gated behind a probability
+             multiplied by AMT: a filter at 0.30 x 0.35 is one candidate in
+             ten, reverse at 0.08 x 0.35 is one in thirty-six. Over fifteen
+             tries the search would often never reach for any of them, and
+             what came back was a few per cent of delay.
+             So a third of the candidates are guaranteed one, and move the
+             ordinary knobs three times as far while they are at it. The
+             other two thirds stay gentle, which is what finds the smaller
+             wins once a bold move has landed. */
+          const bold=(c%3===0);
+          const reach=bold?3:1;
+          const howMany=(bold?2:1)+Math.floor(rnd()*3);
           for(let m=0;m<howMany;m++){
             const kn=pool[Math.floor(rnd()*pool.length)];
-            const span=(kn.hi-kn.lo)*kn.scale*AMT;
+            const span=(kn.hi-kn.lo)*kn.scale*AMT*reach;
             let v=(+st[kn.k]||0)+(rnd()*2-1)*span;
             st[kn.k]=+Math.max(kn.lo, Math.min(kn.hi, v)).toFixed(4);
+          }
+          if(bold){
+            const pick=Math.floor(rnd()*4);
+            if(pick===0){ st.ftype=FTYPES[1+Math.floor(rnd()*3)]; }      // never 'off'
+            else if(pick===1){ st.reverse=!st.reverse; }
+            else if(pick===2){ st.drv=+(0.25+rnd()*0.6).toFixed(4); }
+            else { st.crush=+(2+rnd()*7).toFixed(4); }
+            if(st.ftype!=='off' && pick===0){
+              if(st.ftype==='lowpass')       st.fcut=+(0.45+rnd()*0.40).toFixed(4);
+              else if(st.ftype==='highpass') st.fcut=+(0.18+rnd()*0.34).toFixed(4);
+              else                           st.fcut=+(0.38+rnd()*0.34).toFixed(4);
+            }
           }
           const tonal=(WANT==='brighter'||WANT==='darker'||WANT==='different');
           if(rnd()<(tonal?0.30:0.12)*AMT){
@@ -13991,10 +14041,25 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
          gain 2 allows and levelCost has already made sure nothing that far
          down could win. */
       if(bestRep && base && bestRep.lufs!=null && base.lufs!=null){
-        const lossDb=base.lufs-bestRep.lufs;
+        /* Matched on the PEAK as much as the integrated level. LUFS is
+           energy over the whole tail, so a mutation that lengthens the
+           decay reads louder and gets the gain pulled down — and what you
+           lose is the strike, on a sound whose loudness IS its strike.
+           Matching peak alone has the opposite failure on a pad, so this
+           splits the difference between the two. */
+        const pk=(r)=>20*Math.log10(Math.max(r.peak==null?1e-6:r.peak,1e-6));
+        const dLufs=base.lufs-bestRep.lufs;
+        const dPeak=pk(base)-pk(bestRep);
+        const lossDb=(dLufs+dPeak)/2;
         if(Math.abs(lossDb)>0.5){
           const g0=+(original.gain==null?1:original.gain);
-          bestState.gain=+Math.max(0,Math.min(2, g0*Math.pow(10,lossDb/20))).toFixed(4);
+          const want=g0*Math.pow(10,lossDb/20);
+          bestState.gain=+Math.max(0,Math.min(2,want)).toFixed(4);
+          /* Say when the gain could not reach: at the cap the result IS
+             quieter than the sound it came from and no setting here fixes
+             it, which is a thing to be told rather than left to discover
+             by pressing play. */
+          if(want>2.0001) levelShort=+(20*Math.log10(want/2)).toFixed(2);
         }
       }
     } finally {
@@ -14050,7 +14115,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       changed.push({field:'pitchMode', from:pmWas, to:pmNow});
     }
     return { pad:i, name:p.name||('pad '+i), want:WANT, tried, kept:!!o.keep,
-      wrote, wroteName:(wrote>=0?padName(wrote):null),
+      wrote, wroteName:(wrote>=0?padName(wrote):null), levelShort,
       changed, settings:bestState, pitchMode:pmNow,
       shapeChangeDb:+dist(base,bestRep).toFixed(2),
       before:{shape:base.shape, crestDb:base.crestDb, lufs:base.lufs},
@@ -21229,11 +21294,34 @@ function drawMusicalLayer(){
         o.value=n; o.textContent=n; sel.appendChild(o); }
     } else {
       const o=document.createElement('option');
-      o.value=''; o.textContent='no tagged instruments'; sel.appendChild(o);
+      o.value=''; o.textContent='no tagged instruments \u2014 tag one below';
+      sel.appendChild(o);
     }
     if(names.indexOf(cur)>=0) sel.value=cur;
     sel.disabled=!names.length;
     if($('mlOffer')) $('mlOffer').disabled=!names.length;
+    /* WHAT TAGGING WOULD DO, SAID WHERE THE DEAD END IS. Written inline
+       rather than in a helper: the first version declared one inside the
+       `if($('mlTonic'))` block that holds the handlers, so this function --
+       which is top level -- could not see it, and the try/catch around the
+       call swallowed the ReferenceError. The row stayed blank and nothing
+       said why, which is the exact failure mode this file keeps warning
+       about. */
+    const tp=$('mlTagPad'), ti=$('mlTagInfo');
+    if(tp && ti){
+      const ei=S.editPad|0, ep=S.pads[ei];
+      tp.textContent=padName(ei);
+      if(!ep || ep.bufId<0){
+        ti.textContent='Select a pad with a sound on it, over on PADS, and it can be tagged here.';
+      } else if(ep.inst){
+        ti.textContent=padName(ei)+' is already tagged \u201c'+ep.inst+'\u201d'
+          +(ep.srcNote==null?', but has no source pitch, so nothing can write for it yet.':'.');
+      } else {
+        ti.textContent=padName(ei)+' ('+(ep.name||'a sound')+') is not tagged, so nothing can write '
+          +'a part for it. Tagging keeps the sound and gives it a name, and OFFER can then write '
+          +'notes for it, pitched from middle C.';
+      }
+    }
   }
 }
 
@@ -21288,6 +21376,24 @@ if($('mlTonic')){
      STORED, which a blur does not change. Text you typed and did not apply
      now stays in the box, which is also the better answer. */
 
+  /* ---- TAGGING A PAD SO infill() CAN SEE IT ------------------------
+     instPads() wants THREE things — an inst name, a loaded buffer and a
+     srcNote — and a tag that set only the first would leave the dropdown
+     just as empty while looking like it had worked. srcNote is the pitch
+     the recording sounds at, which is what note() transposes from; 60 is
+     the honest default for a sample nobody has told us about, and it is
+     stated rather than assumed silently. */
+  $('mlTagGo').addEventListener('click',()=>{
+    const i=S.editPad|0, p=S.pads[i];
+    const name=($('mlTagName').value||'').trim().slice(0,16);
+    if(!p || p.bufId<0){ lcd('PAD '+padName(i)+' HAS NO SOUND ON IT — load one first.'); return; }
+    if(!name){ lcd('NAME IT FIRST — "bass", "lead", whatever you will recognise.'); return; }
+    p.inst=name;
+    if(p.srcNote==null) p.srcNote=60;
+    dirty(); drawMusicalLayer(); try{ drawPads(); drawEdit(); }catch(e){}
+    $('mlInst').value=name;
+    lcd(padName(i)+' IS NOW "'+name+'" — OFFER can write for it.');
+  });
   /* ---- OFFER / WRITE IT ------------------------------------------- */
   let mlCands=null, mlOpts=null;
   $('mlOffer').addEventListener('click',async()=>{
