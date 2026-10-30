@@ -8727,7 +8727,14 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R229 · 2026-10-30 · five activities, not twelve tabs';
+const BUILD = 'JBH-88 · R230 · 2026-10-30 · mutate keeps what it finds';
+/* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
+   which build you are looking at, and it is the first thing anyone checks
+   when they ask "do I have the newest version?". Two commits shipped under
+   R229 — the second one changed how MUTATE behaves — and the header read the
+   same both times, so there was no way to tell a stale page from a fresh one
+   by looking at it. A version string that does not move is worse than none,
+   because it reads as confirmation. */
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
