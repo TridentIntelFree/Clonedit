@@ -361,6 +361,69 @@ export default async function ({ browser, base }) {
       /only 8|room for|Select pattern/.test(span.noRoom.info),
       span.noRoom.info.slice(0, 110));
 
+    /* ---- WHERE IN THE PATTERN THE PART STARTS ------------------------
+       infill() has always taken a `from` and no control reached it, so
+       every part the panel wrote began at bar 1 and writing a different
+       ending meant dropping to the API. The options are built from the
+       pattern's own LEN, because a stale "from bar 4" on a pattern that
+       is now one bar long is a refusal whose cause is invisible. */
+    t.head('A PART CAN START PART-WAY THROUGH THE PATTERN');
+    const from = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('keys', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 48, hi: 72, max: 8 });
+      const wait = async (id) => { for (let i = 0; i < 200; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (!document.getElementById(id).disabled) return; } };
+      const list = () => ({
+        opts: [...document.getElementById('mlFrom').options].map(o => o.textContent),
+        disabled: document.getElementById('mlFrom').disabled });
+      window.JBH.key('A', 'minor');
+      window.JBH.pattern(0, { plen: 16, clear: true, select: true });
+      const at1 = list();
+      window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+      const at4 = list();
+      window.JBH.chords(0, ['Am', 'F', 'C', 'G']);
+      document.getElementById('mlRole').value = 'lead';
+      const go = async (f, span) => {
+        document.getElementById('mlFrom').value = String(f);
+        document.getElementById('mlSpan').value = String(span);
+        document.getElementById('mlOffer').click();
+        await wait('mlOffer');
+        const info = document.getElementById('mlInfo').textContent;
+        if (!/ways to play/.test(info)) return { refused: info };
+        document.getElementById('mlApply').click();
+        await wait('mlApply');
+        const said = document.getElementById('mlInfo').textContent;
+        const r = await window.JBH.infill('keys',
+          { from: f, bars: span, n: 1, role: 'lead', src: 'pat', seed: 3 });
+        const steps = r.candidates[0].notes.map(n => n[1]);
+        return { said, lo: Math.min(...steps), hi: Math.max(...steps) };
+      };
+      const half = await go(2, 2);
+      window.JBH.pattern(0, { clear: true, select: true });
+      window.JBH.chords(0, ['Am', 'F', 'C', 'G']);
+      return { at1, at4, half, tooLong: await go(2, 4), spanning: await go(2, 8) };
+    });
+    t.ok('a one-bar pattern offers one place to start, and says so by disabling',
+      from.at1.opts.length === 1 && from.at1.disabled === true,
+      from.at1.opts.join(' / ') + ' disabled=' + from.at1.disabled);
+    t.ok('a four-bar pattern offers four, rebuilt when LEN changes',
+      from.at4.opts.length === 4 && from.at4.disabled === false, from.at4.opts.join(' / '));
+    t.ok('writing from bar 3 of 4 puts every note in the second half',
+      from.half.lo >= 32 && from.half.hi <= 63,
+      'steps ' + from.half.lo + '–' + from.half.hi + ' (bar 3 starts at 32)');
+    /* the off-by-one most likely to be read: `from` is a zero-based index
+       and the sentence printed it raw, so "from bar 3" answered "bars 2–3" */
+    t.ok('and it reports the bars ONE-BASED, matching the control',
+      /bars 3–4/.test(from.half.said || ''), (from.half.said || '').slice(0, 95));
+    t.ok('a span with no room left in the pattern is refused, with the room named',
+      from.tooLong.refused && /room for 2/.test(from.tooLong.refused),
+      (from.tooLong.refused || '(it wrote it)').slice(0, 100));
+    t.ok('and a multi-pattern span from a middle bar is refused as meaningless',
+      from.spanning.refused && /bar 1|nowhere/.test(from.spanning.refused),
+      (from.spanning.refused || '(it wrote it)').slice(0, 100));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

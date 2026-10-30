@@ -408,6 +408,31 @@ first chunk only — the candidates are what the first four bars sound
 like — which the info line says out loud, because scoring one thing
 and writing another is the sort of quiet mismatch this file is full of.
 
+### A part does not have to start at bar 1
+
+`infill()` has always taken a `from`, and until now no control in the
+panel reached it, so every part the UI wrote began at the top of the
+pattern. Writing a different ending, or filling the second half of a
+phrase, meant dropping to the API — which is the kind of gap that makes
+a panel look finished and leave half its function unreachable.
+
+The bar list is rebuilt from the selected pattern's own LEN, since a
+one-bar pattern has one place to start, and a stale "from bar 4" on a
+pattern that has since been shortened is a refusal whose cause the
+person cannot see.
+
+Two numbers to keep straight, because getting them wrong is visible in
+the one sentence guaranteed to be read: `from` is a ZERO-based bar
+index internally, and every bar and pattern the person reads is
+ONE-based. `says` printed `from` raw, so choosing "from bar 3" answered
+"wrote into bars 2–3" in the same sentence that called the pattern
+"pattern 1".
+
+`from` and a multi-pattern span are mutually exclusive and it refuses
+rather than reconciling them: each pattern after the first starts at
+its own bar 1, so there is nowhere for a middle starting bar to mean
+anything once the span crosses a pattern boundary.
+
 ### FEEL is a cross-rhythm and cannot be a triplet
 
 **16 does not divide by 3.** Three even hits in a bar cannot be written

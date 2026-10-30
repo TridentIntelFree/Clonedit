@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R233 · 2026-10-30 · write spans 1-16 bars, with cross-rhythms';
+const BUILD = 'JBH-88 · R234 · 2026-10-30 · write chooses its span, its feel and where it starts';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -10880,8 +10880,15 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         failed:r.failed||0, chords:prog.slice(),
         score:chosen?chosen.score:score(notes.map(
           ([midi,step,vel,beats])=>({midi,step,vel,beats}))),
-        says:'wrote '+notes.length+' notes for '+inst+' into bars '+from+'–'
-          +(from+bars-1)+' over '+prog.join(' ')+'.' };
+        /* BARS COUNT FROM ONE HERE, because everything else the person
+           reads does. `from` is a zero-based index and this printed it
+           raw, so choosing "from bar 3" in the panel got the answer
+           "wrote into bars 2–3" — the off-by-one visible, in the one
+           place it is guaranteed to be read. Patterns are already
+           reported as 1-based in the same sentence. */
+        says:'wrote '+notes.length+' notes for '+inst+' into bar'
+          +(bars===1?' '+(from+1):'s '+(from+1)+'–'+(from+bars))
+          +' over '+prog.join(' ')+'.' };
     }
 
     const best=cands[0];
@@ -21486,6 +21493,33 @@ function drawProgPicker(){
   if(cur) sel.value=cur;
 }
 
+/* THE BARS OF THE SELECTED PATTERN, as places a part can start.
+   A 1-bar pattern has one, a 4-bar pattern has four, and the list has
+   to be rebuilt whenever LEN changes or the selection moves — a stale
+   "from bar 4" on a pattern that is now one bar long is a refusal the
+   person cannot see the cause of. Kept at top level for the same
+   reason drawProgPicker is: drawMusicalLayer calls it, and declared
+   inside the `if($('mlTonic'))` block it was invisible from there and
+   the try/catch around the caller swallowed the ReferenceError. That
+   mistake has now been made twice in this file. */
+function drawFromPicker(){
+  const sel=$('mlFrom'); if(!sel) return;
+  const cap=Math.max(1, Math.floor(patLen(S.patterns[S.pattern])/16));
+  const want=[]; for(let b=0;b<cap;b++) want.push(b);
+  const have=[...sel.options].map(o=>+o.value);
+  if(have.length!==want.length || have.some((v,i)=>v!==want[i])){
+    const cur=+sel.value||0;
+    sel.textContent='';
+    want.forEach(b=>{
+      const o=document.createElement('option');
+      o.value=String(b); o.textContent='from bar '+(b+1);
+      sel.appendChild(o);
+    });
+    sel.value=String(Math.min(cur, cap-1));
+  }
+  sel.disabled = cap<2;
+}
+
 function drawMusicalLayer(){
   if(!$('mlTonic')) return;
   const k=S.key, bars=mlBars();
@@ -21499,6 +21533,7 @@ function drawMusicalLayer(){
      until they finish it. */
   if(k) $('mlMode').value = k.mode;
   $('mlBarsLbl').textContent = bars+(bars===1?' BAR':' BARS');
+  drawFromPicker();
   /* what fits the key, so "what could go here" is answerable without
      the person having to know — suggestion, never a constraint */
   if(k && typeof keyChords==='function'){
@@ -21688,7 +21723,20 @@ if($('mlTonic')){
          A span needs room, and room is LEN. Say which length to set
          rather than spending the whole arrangement to avoid asking. */
       const cap=mlBarsCapacity();
-      if(chunk>cap){
+      /* WHERE IT STARTS. A span that begins part-way through the pattern
+         has less room, and it is not an arrangement either — chunking
+         across patterns only makes sense from bar 1, because the second
+         chunk starts at the top of the next pattern by construction. So
+         `from` and a multi-pattern span are mutually exclusive, said
+         out loud rather than resolved by silently moving one of them. */
+      const from=Math.max(0, Math.min(cap-1, parseInt($('mlFrom').value,10)||0));
+      const room=cap-from;
+      if(chunk>room){
+        if(from>0)
+          throw new Error('pattern '+(S.pattern+1)+' is '+cap+' bar'
+            +(cap===1?'':'s')+' and this starts at bar '+(from+1)+', so there '
+            +'is room for '+room+', not '+span+'. Choose a span of '+room
+            +' bar'+(room===1?'':'s')+', or start from bar 1.');
         const need=PATLENS.find(L=>L>=chunk*16)||MAXSTEPS;
         const pats=Math.ceil(span/chunk);
         throw new Error('pattern '+(S.pattern+1)+' is '
@@ -21698,7 +21746,21 @@ if($('mlTonic')){
           +' fills pattern'+(pats>1?'s '+(S.pattern+1)+'–'+(S.pattern+pats):' '+(S.pattern+1))
           +'. Or choose a span of '+cap+' bar'+(cap===1?'':'s')+'.');
       }
-      const opts={ from:0, bars:chunk, n:5, role:$('mlRole').value,
+      /* UNREACHABLE WHILE A PATTERN CAPS AT FOUR BARS, and kept
+         deliberately. A multi-pattern span needs chunk<=room, and with
+         cap at most 4 and from at least 1 the room check above always
+         fires first — so this message cannot currently be seen. It
+         becomes live the moment MAXSTEPS or PATLENS grow, which is
+         exactly when the mistake it describes would be easy to make.
+         Said out loud because a guard nobody can trigger reads like a
+         guard that has been tested. */
+      if(from>0 && span>chunk)
+        throw new Error('a span of '+span+' bars runs across '
+          +Math.ceil(span/chunk)+' patterns, and each one after this starts at '
+          +'its own bar 1, so there is nowhere for "from bar '+(from+1)+'" to '
+          +'mean anything. Start from bar 1 for a span this long, or keep '
+          +'the span inside this pattern.');
+      const opts={ from:from, bars:chunk, n:5, role:$('mlRole').value,
         feel:$('mlFeel').value, src:'pat', seed:(Date.now()&0x7fffffff) };
       mlSpanBars=span; mlChunkBars=chunk;
       const r=await window.MVX.infill(inst,opts);

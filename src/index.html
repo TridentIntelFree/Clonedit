@@ -999,6 +999,14 @@ where they come back into alignment. On a grid that relationship is invisible.</
       <option value="7">7 over 8</option>
       <option value="9">9 over 8</option>
     </select>
+    <!-- WHERE IN THE PATTERN TO WRITE. infill() has always taken a
+         `from` and nothing in the panel reached it, so every part was
+         written from bar 1 and writing a different ending meant using
+         the API. The options are rebuilt from the pattern's own length,
+         because a 1-bar pattern has one place to start. -->
+    <select id="mlFrom" aria-label="Which bar to start writing at">
+      <option value="0" selected>from bar 1</option>
+    </select>
     <button id="mlOffer" title="Offer several ways to play it. Writes nothing.">OFFER</button>
   </div>
   <!-- WITHOUT THIS THE PANEL ABOVE IS A DEAD END. infill() writes for an
