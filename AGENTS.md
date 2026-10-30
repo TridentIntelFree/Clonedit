@@ -433,6 +433,30 @@ rather than reconciling them: each pattern after the first starts at
 its own bar 1, so there is nowhere for a middle starting bar to mean
 anything once the span crosses a pattern boundary.
 
+### A CONTROL MUST NOT OFFER WHAT CANNOT WORK
+
+The span cap above shipped as a regression, and the shape of it is the
+part worth keeping. A fresh board is one pattern of 16 steps — ONE BAR
+— and the span control defaults to 4. The moment a span had to fit the
+pattern, OFFER refused on every untouched project: load an instrument,
+declare a key, pick a progression, press OFFER, read "set LEN to 64"
+and get no music. The panel's whole flow, dead on arrival.
+
+Every test in `tests/browser/musical-layer.test.mjs` passed over it,
+because **every one of them opens with `pattern(0,{plen:64,…})`**. Six
+green assertions about spans working, written in the same session, none
+of them on the default board. A fixture that is convenient for every
+test is a fixture that tests one configuration.
+
+Two rules out of it. A test suite needs at least one case that touches
+nothing it does not have to — no plen, no clear, no state set by hand —
+because that is the configuration every new person is in. And a control
+should not offer a choice that cannot work and then explain itself
+after the fact: the impossible spans are disabled now, each labelled
+with the LEN that would buy it, and the selection falls back to the
+widest span that fits. The refusal still exists underneath as a
+backstop; it is no longer the way anyone finds out.
+
 ### FEEL is a cross-rhythm and cannot be a triplet
 
 **16 does not divide by 3.** Three even hits in a bar cannot be written

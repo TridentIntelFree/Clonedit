@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R234 · 2026-10-30 · write chooses its span, its feel and where it starts';
+const BUILD = 'JBH-88 · R235 · 2026-10-30 · write works on an untouched board again';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -21520,6 +21520,42 @@ function drawFromPicker(){
   sel.disabled = cap<2;
 }
 
+/* THE SPANS THIS PATTERN CAN ACTUALLY TAKE.
+   THIS IS A REGRESSION FIX AND THE REGRESSION WAS MINE. A fresh board
+   is one pattern of 16 steps — one bar — and the span control defaults
+   to 4, so once a span had to fit the pattern, OFFER refused on every
+   untouched project: load an instrument, set a key, pick a
+   progression, press OFFER, get "set LEN to 64" and no music. Reported
+   as "it's not working. I do the same stuff click offer and all that
+   and it doesn't write", which is exactly what it did.
+
+   The refusal was right and arrived at the wrong moment. A control
+   should not offer a choice that cannot work and then explain itself
+   afterwards — so an impossible span is disabled, says which LEN would
+   buy it, and the selection falls back to the largest span that fits.
+   On a fresh board that is 1 bar, and OFFER writes.
+
+   Spans past 4 bars stay available at LEN 64 because they cross into
+   the next pattern: what has to fit is the CHUNK, not the span. */
+function drawSpanPicker(){
+  const sel=$('mlSpan'); if(!sel) return;
+  const cap=Math.max(1, Math.floor(patLen(S.patterns[S.pattern])/16));
+  const perPat=Math.max(1, Math.floor(MAXSTEPS/16));
+  let widest=null;
+  [...sel.options].forEach(o=>{
+    const span=Math.max(1, parseInt(o.value,10)||1);
+    const chunk=Math.min(span, perPat);
+    const ok=chunk<=cap;
+    const base=span+(span===1?' bar':' bars');
+    o.disabled=!ok;
+    o.textContent = ok ? base
+      : base+' · needs LEN '+(PATLENS.find(L=>L>=chunk*16)||MAXSTEPS);
+    if(ok) widest=o.value;
+  });
+  const cur=sel.options[sel.selectedIndex];
+  if((!cur || cur.disabled) && widest!=null) sel.value=widest;
+}
+
 function drawMusicalLayer(){
   if(!$('mlTonic')) return;
   const k=S.key, bars=mlBars();
@@ -21533,7 +21569,7 @@ function drawMusicalLayer(){
      until they finish it. */
   if(k) $('mlMode').value = k.mode;
   $('mlBarsLbl').textContent = bars+(bars===1?' BAR':' BARS');
-  drawFromPicker();
+  drawFromPicker(); drawSpanPicker();
   /* what fits the key, so "what could go here" is answerable without
      the person having to know — suggestion, never a constraint */
   if(k && typeof keyChords==='function'){

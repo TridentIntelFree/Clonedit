@@ -424,6 +424,67 @@ export default async function ({ browser, base }) {
       from.spanning.refused && /bar 1|nowhere/.test(from.spanning.refused),
       (from.spanning.refused || '(it wrote it)').slice(0, 100));
 
+    /* ---- THE UNTOUCHED BOARD ----------------------------------------
+       THE CASE EVERY OTHER TEST IN THIS FILE MISSED, and it shipped
+       broken because of it. All of them open with
+       pattern(0,{plen:64,...}), so none of them ever saw the DEFAULT
+       pattern, which is 16 steps — one bar. Once a span had to fit the
+       pattern, the span control's default of 4 bars could not, and
+       OFFER refused on every fresh project: the panel's whole flow,
+       end to end, dead on arrival, with six green assertions above it
+       about spans working.
+       So this one touches nothing it does not have to. No plen, no
+       clear, no chords written by hand — a key, a progression off the
+       dropdown, and the two buttons. If it writes a note, the panel
+       works for someone opening the app. */
+    t.head('IT WRITES ON AN UNTOUCHED BOARD, WITH NOTHING SET BUT A KEY');
+    const virgin = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('keys', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 48, hi: 72, max: 8 });
+      const wait = async (id) => { for (let i = 0; i < 200; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (!document.getElementById(id).disabled) return; } };
+      document.getElementById('mlTonic').value = 'A';
+      document.getElementById('mlTonic').dispatchEvent(new Event('change', { bubbles: true }));
+      document.getElementById('mlMode').value = 'minor';
+      document.getElementById('mlMode').dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 150));
+      const prog = document.getElementById('mlProgPick');
+      prog.selectedIndex = 1;
+      prog.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 150));
+      document.getElementById('mlSet').click();
+      await new Promise(r => setTimeout(r, 200));
+      const spans = [...document.getElementById('mlSpan').options]
+        .map(o => ({ v: o.value, off: o.disabled, sel: o.selected, text: o.textContent }));
+      document.getElementById('mlOffer').click();
+      await wait('mlOffer');
+      const offered = document.getElementById('mlInfo').textContent;
+      const nOpts = document.getElementById('mlPick').options.length;
+      document.getElementById('mlApply').click();
+      await wait('mlApply');
+      return { spans, offered, nOpts,
+        said: document.getElementById('mlInfo').textContent,
+        hits: (await window.JBH.pattern(0, {})).hits,
+        plen: (await window.JBH.pattern(0, {})).plen };
+    });
+    t.ok('the default pattern really is one bar — the case the others skip',
+      virgin.plen === 16, 'plen ' + virgin.plen);
+    t.ok('the span control selects a span THAT FITS, not one that cannot',
+      (virgin.spans.find(o => o.sel) || {}).v === '1',
+      'selected ' + JSON.stringify((virgin.spans.find(o => o.sel) || {}).text));
+    t.ok('and an impossible span is disabled, naming the LEN that would buy it',
+      virgin.spans.filter(o => o.off).length === 4
+        && /needs LEN 64/.test((virgin.spans.find(o => o.v === '4') || {}).text || ''),
+      virgin.spans.map(o => o.text + (o.off ? '(off)' : '')).join(' | '));
+    t.ok('OFFER OFFERS rather than refusing',
+      /ways to play/.test(virgin.offered) && virgin.nOpts >= 2,
+      virgin.offered.slice(0, 80));
+    t.ok('AND WRITE IT PUTS NOTES ON THE BOARD',
+      virgin.hits > 0 && /wrote \d+ notes/.test(virgin.said),
+      virgin.hits + ' hits · ' + virgin.said.slice(0, 70));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
