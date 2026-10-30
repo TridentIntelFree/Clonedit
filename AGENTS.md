@@ -1449,6 +1449,37 @@ heard as the pitch sagging; flutter is fast and heard as roughness
 rather than as pitch; drift is neither and never quite comes back. All
 three in cents, with small defaults, because real machines are subtle.
 
+## mutate() cannot make a new sound, and will be asked to
+
+`mutate()` turns the PAD'S OWN KNOBS and nothing else: filter, drive,
+crush, the envelope, EQ, pitch, start, the two sends, reverse. It renders
+the pad, measures it, tries variations and keeps the best. **It never
+touches the audio.** The most transformed thing it can return is your
+sample with a filter on it, and that is its ceiling however well it works.
+
+Measured through the button on a piano strike, working correctly:
+
+```
+ftype off->lowpass, fcut 1->0.56 (1.1kHz), eqLo +1.9dB, gain 0.9->0.81
+7.5dB rms of spectral difference, peak within 0.1dB
+```
+
+Audible, correct, and still just a filtered piano.
+
+So when someone asks for a sound that is *significantly different* — and
+they will, because "mutate" promises more than a knob search can deliver —
+**the tool is `resynth()`, REBUILD PAD.** That one rebuilds the target out
+of blocks of the other loaded pads, so the substance is genuinely new. It
+wants several pads loaded to draw from; with one pad there is nothing to
+rebuild from but itself.
+
+A session was spent fixing three real faults in mutate — it demanded the
+pad be sequenced first, it discarded its own winner, and it scored a muted
+pad as a triumph — and all three were worth fixing. But the person was
+asking for transformation the whole time, and mutate was never going to
+give it to them. Say which tool does the job before improving the one that
+cannot.
+
 ## Reach for what is already there
 
 The next gain is usually not a new call. `poly()` gives a pad its own
