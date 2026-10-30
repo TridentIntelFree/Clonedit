@@ -298,6 +298,87 @@ export default async function ({ browser, base }) {
       && reset.autotune === false && reset.algo === 'basic',
       JSON.stringify(reset));
 
+    /* ---- MUTATE, REPORTED FROM THE APP --------------------------------
+       "I get sample, add it to pad, go to mutate, it forces me to put that
+       pad into sequence before I can alter it, then after it does process it
+       the new sound can't be found and it doesn't alter the sequence noise
+       or the pad sound."
+
+       Three faults in one sentence, and nothing here tested mutate at all.
+       measure() renders the pattern, so a pad with no steps read as silence
+       and the call refused; and the search restores the pad unless told
+       otherwise, so the winner was found, measured, reported and thrown
+       away — from a button labelled MUTATE PAD. */
+    t.head('MUTATE A SOUND THAT IS NOT IN THE SEQUENCE YET');
+    await goto('tools');
+    const fresh = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('p', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 48, hi: 60, max: 1 });
+      const pad = window.JBH.instPads('p')[0].pad;
+      S.editPad = pad;
+      return { pad, steps: S.patterns[S.pattern].steps[pad].filter(v => v > 0).length };
+    });
+    t.ok('the pad has a sample and no steps — the reported starting point',
+      fresh.steps === 0, 'pad ' + fresh.pad + ', ' + fresh.steps + ' steps');
+
+    await page.locator('#btnToolMutate').click();
+    await page.waitForFunction(() => !document.getElementById('btnToolMutate').disabled,
+      null, { timeout: 150000 });
+    const ran = await page.evaluate(() => ({
+      log: (document.getElementById('toolLog').textContent || ''),
+      offered: getComputedStyle(document.getElementById('mutKeepRow')).display !== 'none',
+      stepsNow: S.patterns[S.pattern].steps[S.editPad].filter(v => v > 0).length }));
+    t.ok('IT RUNS WITHOUT MAKING YOU SEQUENCE THE PAD FIRST',
+      !/write some steps|nothing to mutate/i.test(ran.log),
+      ran.log.split('\n')[1] ? ran.log.split('\n')[1].slice(0, 80) : ran.log.slice(0, 80));
+    t.ok('and the step it borrowed to hear the pad is given back',
+      ran.stepsNow === 0, ran.stepsNow + ' steps left behind');
+    t.ok('IT OFFERS SOMEWHERE TO PUT THE RESULT, rather than discarding it',
+      ran.offered, 'the keep row is shown');
+
+    const before = await page.evaluate(() => ({
+      loaded: window.JBH.state().pads.loaded,
+      src: JSON.stringify(window.JBH.pad(S.editPad)) }));
+    await page.locator('#btnMutNew').click();
+    await page.waitForTimeout(400);
+    const copy = await page.evaluate(() => {
+      const src = S.editPad;
+      let n = -1;
+      for (let k = 0; k < 64; k++) if (S.pads[k] && S.pads[k].bufId >= 0 && /mut$/.test(S.pads[k].name || '')) n = k;
+      return { n, loaded: window.JBH.state().pads.loaded,
+        sameAudio: n >= 0 && S.pads[n].bufId === S.pads[src].bufId,
+        joined: n >= 0 ? !!S.pads[n].inst : null,
+        srcNow: JSON.stringify(window.JBH.pad(src)),
+        gone: getComputedStyle(document.getElementById('mutKeepRow')).display === 'none' };
+    });
+    t.ok('NEW PAD really makes a pad you can find and play',
+      copy.n >= 0 && copy.loaded === before.loaded + 1,
+      before.loaded + ' pads -> ' + copy.loaded + ', the new one is ' + (copy.n >= 0 ? 'pad ' + copy.n : 'MISSING'));
+    t.ok('it plays the same recording, not a copy of the audio',
+      copy.sameAudio, 'same bufId');
+    t.ok('and it does not silently join the instrument it came from',
+      copy.joined === false, 'inst cleared on the copy');
+    t.ok('the original is untouched when you choose NEW PAD',
+      copy.srcNow === before.src, 'source pad unchanged');
+    t.ok('and the offer clears once it has been placed', copy.gone, 'row hidden');
+
+    /* REPLACE is the other half of the choice. Driven through the API with a
+       small search so this does not cost another forty seconds. */
+    t.head('AND REPLACE ACTUALLY CHANGES THE PAD');
+    const over = await page.evaluate(async () => {
+      const i = S.editPad;
+      const was = JSON.stringify(window.JBH.pad(i));
+      const r = await window.MVX.mutate(i, { want: 'different', population: 2, generations: 1, keep: true });
+      return { was, now: JSON.stringify(window.JBH.pad(i)), wrote: r.wrote, says: r.says };
+    });
+    t.ok('keep:true writes the winner onto the pad it came from',
+      over.wrote === fresh.pad && over.now !== over.was,
+      'wrote to pad ' + over.wrote + '; settings changed: ' + (over.now !== over.was));
+    t.ok('and it says where it went instead of telling you to do it yourself',
+      /written to/i.test(over.says) && !/pass \{keep/i.test(over.says),
+      over.says.slice(-70));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

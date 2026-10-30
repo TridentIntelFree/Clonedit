@@ -688,6 +688,18 @@ sustained chord sitting on a free pad, and the snare is untouched.</p>
     <button id="btnToolFreeze" data-acts="pad" class="grow" title="Hold one instant of this pad's spectrum as a sustained pad">FREEZE PAD</button>
     <button id="btnToolTape" data-acts="pad" class="grow" title="Run this pad to tape — wow, flutter, drift and saturation">RUN TO TAPE</button>
   </div>
+  <!-- Where a mutation goes. It used to go nowhere: the pad was measured,
+       the winner found, the pad put back, and the answer was a list of field
+       names with "set them yourself" under it. These appear once there is a
+       result to place, and they are the whole point of the tool. -->
+  <div class="row" id="mutKeepRow" style="display:none;flex-wrap:wrap;gap:4px;
+       border:1px solid var(--amber);border-radius:6px;padding:7px;margin:4px 0">
+    <span class="lbl" style="min-width:0;color:var(--amber)">KEEP IT</span>
+    <span id="mutKeepWhat" style="flex:1;min-width:120px;font-size:10px;color:var(--txt-dim)"></span>
+    <button id="btnMutNew" title="Copy this sound onto the next empty pad and leave the original alone">&rarr; NEW PAD</button>
+    <button id="btnMutOver" title="Replace the sound on the pad it came from">REPLACE IT</button>
+    <button id="btnMutDrop" aria-label="Discard this mutation">&times;</button>
+  </div>
   <div id="toolLog" class="toollog" role="log" aria-live="polite" aria-label="Sound tool results"
     style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
            padding:8px;margin:6px 0;font-size:11px;line-height:1.5;max-height:200px;

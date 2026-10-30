@@ -704,6 +704,18 @@ sustained chord sitting on a free pad, and the snare is untouched.</p>
     <button id="btnToolFreeze" data-acts="pad" class="grow" title="Hold one instant of this pad's spectrum as a sustained pad">FREEZE PAD</button>
     <button id="btnToolTape" data-acts="pad" class="grow" title="Run this pad to tape — wow, flutter, drift and saturation">RUN TO TAPE</button>
   </div>
+  <!-- Where a mutation goes. It used to go nowhere: the pad was measured,
+       the winner found, the pad put back, and the answer was a list of field
+       names with "set them yourself" under it. These appear once there is a
+       result to place, and they are the whole point of the tool. -->
+  <div class="row" id="mutKeepRow" style="display:none;flex-wrap:wrap;gap:4px;
+       border:1px solid var(--amber);border-radius:6px;padding:7px;margin:4px 0">
+    <span class="lbl" style="min-width:0;color:var(--amber)">KEEP IT</span>
+    <span id="mutKeepWhat" style="flex:1;min-width:120px;font-size:10px;color:var(--txt-dim)"></span>
+    <button id="btnMutNew" title="Copy this sound onto the next empty pad and leave the original alone">&rarr; NEW PAD</button>
+    <button id="btnMutOver" title="Replace the sound on the pad it came from">REPLACE IT</button>
+    <button id="btnMutDrop" aria-label="Discard this mutation">&times;</button>
+  </div>
   <div id="toolLog" class="toollog" role="log" aria-live="polite" aria-label="Sound tool results"
     style="display:none;background:var(--lcd-bg);border:1px solid var(--line);border-radius:6px;
            padding:8px;margin:6px 0;font-size:11px;line-height:1.5;max-height:200px;
@@ -19678,6 +19690,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const snap=()=>{ const o2={}; for(const k of FIELDS) o2[k]=p[k]; return o2; };
     const put=(st)=>{ for(const k in st) p[k]=st[k]; };
     const original=snap();
+    let wrote=-1;              // which pad, if any, ended up holding the winner
 
     const measure=async()=>{
       const buf=await renderMix(new Set([i]), new Set(), ro);
@@ -19685,10 +19698,26 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       const r=await specReport(buf);
       return r && r.peak>=0.002 ? r : null;
     };
+    /* A SOUND-DESIGN TOOL MUST NOT MAKE YOU SEQUENCE THE SOUND FIRST.
+       measure() renders the PATTERN, so a pad with nothing written for it
+       reads as silence, and this used to refuse: "nothing to mutate. Write
+       some steps for it first." That is backwards. You load a sample, you
+       shape it, and THEN you decide where it goes — reported from the app
+       as "I get sample, add it to pad, go to mutate, it forces me to put
+       that pad into sequence before I can alter it."
+       So it lends the pad a single step for the length of the search and
+       takes it back afterwards, the same way it already borrows and
+       restores the pad's own settings. */
+    let lentStep=-1;
+    if(ro.src!=='song'){
+      const lp=S.patterns[S.pattern], lrow=lp&&lp.steps&&lp.steps[i];
+      if(lrow && !lrow.some(v=>+v>0)){ lrow[0]=0.9; lentStep=0; }
+    }
+
     const base=await measure();
-    if(!base) throw new Error('pad '+i+(p.name?' ('+p.name+')':'')+' is silent over '
-      +(ro.src==='song'?'the song':'this pattern')+' — nothing to mutate. '
-      +'Write some steps for it first.');
+    if(!base) throw new Error('pad '+i+(p.name?' ('+p.name+')':'')+' made no sound when '
+      +'rendered, so there is nothing to measure. Check the pad is not muted, its level '
+      +'is above zero, and its start point is before the end of the sample.');
 
     /* HOW FAR APART ARE TWO SOUNDS. The spectral shape only: both are
        normalised against their own total inside specShape, so this is
@@ -19782,8 +19811,40 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         }
       }
     } finally {
-      put(o.keep?bestState:original);
+      if(lentStep>=0){                       // give the borrowed step back
+        const lp=S.patterns[S.pattern];
+        if(lp && lp.steps && lp.steps[i]) lp.steps[i][lentStep]=0;
+      }
+      /* WHERE THE WINNER GOES IS THE CALLER'S CHOICE, and until now there
+         was only one answer: nowhere. The pad was always put back, and the
+         result was a list of field names and numbers with "pass {keep:true}
+         or set them yourself" underneath — from a button labelled MUTATE
+         PAD. Reported as "after it does process it the new sound can't be
+         found and it doesn't alter the sequence noise or the pad sound",
+         which is exactly right: there was no new sound anywhere.
+           toPad  — put it on another pad, original untouched
+           keep   — overwrite this pad
+           neither— measure only, as before */
+      if(o.toPad!=null && (o.toPad|0)!==i){
+        put(original);                       // the source keeps its own sound
+        const t=clamp(o.toPad|0,0,NPADS-1), q=S.pads[t];
+        if(q){
+          for(const k in p) if(Object.prototype.hasOwnProperty.call(p,k)) q[k]=p[k];
+          for(const k of FIELDS) q[k]=bestState[k];
+          q.name=((p.name||('pad '+i))+' mut').slice(0,24);
+          /* It must not silently join the instrument it was copied from:
+             instPads() finds pads by inst+srcNote, so an extra pad on the
+             same note would change what note() plays. tape() teaches the
+             same lesson from the other direction. */
+          q.inst=null; q.srcNote=null;
+          wrote=t;
+        }
+      } else {
+        put(o.keep?bestState:original);
+        if(o.keep) wrote=i;
+      }
       try{ reapplyLivePads(); }catch(e){}
+      try{ drawPads(); drawEdit(); }catch(e){}
       dirty();
     }
 
@@ -19802,6 +19863,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       changed.push({field:'pitchMode', from:pmWas, to:pmNow});
     }
     return { pad:i, name:p.name||('pad '+i), want:WANT, tried, kept:!!o.keep,
+      wrote, wroteName:(wrote>=0?padName(wrote):null),
       changed, settings:bestState, pitchMode:pmNow,
       shapeChangeDb:+dist(base,bestRep).toFixed(2),
       before:{shape:base.shape, crestDb:base.crestDb, lufs:base.lufs},
@@ -19810,8 +19872,10 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       says: changed.length
         ? ('moved '+changed.map(c=>c.field).join(', ')+' — '
           +(+dist(base,bestRep).toFixed(1))+'dB of spectral shape change over '+tried+' tries'
-          +(o.keep?'. Applied.':'. NOT applied: pass {keep:true} to keep it, or set the '
-            +'fields in `changed` yourself.'))
+          +(wrote>=0
+            ? '. Written to '+padName(wrote)+(wrote===i?', replacing the original.':', original untouched.')
+            : '. Not written anywhere yet: pass {keep:true} to overwrite this pad, or '
+              +'{toPad:n} to put it on another one.'))
         : 'nothing beat the original over '+tried+' tries — try a larger amount, more '
           +'generations, or a different want.' };
   },
@@ -21147,11 +21211,67 @@ $('btnToolMutate').addEventListener('click',()=>toolRun('btnToolMutate','MUTATE'
   if(r.changed.length){
     out.push('what it moved:');
     for(const c of r.changed) out.push('  '+c.field+': '+c.from+' → '+c.to);
-    out.push('', 'The pad is back as it was. To keep this, set those fields,',
-      'or call mutate(pad,{keep:true}) from the API.');
+    out.push('', 'Nothing is written yet — choose NEW PAD or REPLACE IT above.');
+    mutOffer(i, r);
+  } else {
+    mutHide();
   }
   return out;
 }));
+
+/* THE RESULT HAS TO BE PLACEABLE, OR THE TOOL DOES NOTHING.
+   mutate() restores the pad unless told otherwise, which is right for a
+   search — you do not want fifteen candidates each overwriting your sound —
+   and wrong as a final answer. The run above measures and reports; these
+   two buttons are what turn the winner into a sound you can play. The
+   search is not repeated: the winning settings came back with the result,
+   so placing it is instant either way. */
+let mutLast=null;
+function mutHide(){ const r=$('mutKeepRow'); if(r) r.style.display='none'; mutLast=null; }
+function mutOffer(pad, res){
+  mutLast={pad, res};
+  const row=$('mutKeepRow'); if(!row) return;
+  const free=firstEmptyPad();
+  const nb=$('btnMutNew');
+  nb.disabled = free<0;
+  nb.textContent = free>=0 ? ('→ '+padName(free)) : '→ NO EMPTY PAD';
+  $('mutKeepWhat').textContent = res.changed.length+' setting'
+    +(res.changed.length===1?'':'s')+' moved on '+padName(pad)
+    +' · '+res.shapeChangeDb+'dB of colour';
+  row.style.display='flex';
+}
+function mutPlace(toPad){
+  if(!mutLast) return;
+  const { pad, res } = mutLast;
+  const p=S.pads[pad];
+  const dest=(toPad==null)?pad:toPad;
+  const q=S.pads[dest];
+  if(!q) return;
+  if(dest!==pad){
+    for(const k in p) if(Object.prototype.hasOwnProperty.call(p,k)) q[k]=p[k];
+    q.name=((p.name||padName(pad))+' mut').slice(0,24);
+    q.inst=null; q.srcNote=null;       // a copy must not join the instrument it came from
+  }
+  Object.assign(q, res.settings);
+  try{ reapplyLivePads(); }catch(e){}
+  try{ drawPads(); drawEdit(); drawSeq(); }catch(e){}
+  dirty();
+  mutHide();
+  const where=padName(dest)+(dest===pad?'' : ', copied from '+padName(pad));
+  toolLog(['MUTATE — written to '+where, '',
+    res.changed.map(c=>'  '+c.field+': '+c.from+' → '+c.to).join('\n'),
+    '', dest===pad
+      ? 'This pad now sounds like the result. UNDO puts it back.'
+      : 'Tap '+padName(dest)+' on the PADS tab to hear it. The original is untouched.']);
+  lcd('MUTATION WRITTEN TO '+padName(dest)+' — undo restores');
+}
+$('btnMutNew').addEventListener('click',()=>{
+  const free=firstEmptyPad();
+  if(free<0){ lcd('EVERY PAD IS FULL — clear one, or use REPLACE IT.'); return; }
+  mutPlace(free);
+});
+$('btnMutOver').addEventListener('click',()=>mutPlace(null));
+$('btnMutDrop').addEventListener('click',()=>{ mutHide(); lcd('MUTATION DISCARDED'); });
 
 /* REBUILD'S CONTROLS. The button used to call resynth() on its bare
    defaults, so every parameter the function has was reachable from the
