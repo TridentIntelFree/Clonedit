@@ -452,6 +452,36 @@ figure, and it is the obvious way to write it.
 Measured on one seed over four bars: straight uses 8 of the 16
 positions in a bar, 3-over-4 uses all 16.
 
+**FEEL IS NOT poly() AND THE PERSON ASKED FOR poly().** Twice, in the
+words "polyrhythms" and "Poly options for the write function". What
+shipped is a cross-rhythm written on the 16-step grid, which is a real
+effect and is not the same thing, so do not read the FEEL dropdown as
+that request being closed.
+
+The genuine article is already in the app and `src/pure/poly.js` makes
+it easy to reach: a pad's BPM counts ITS OWN hits per minute, so a pad
+at 75 against a project at 100 is three hits per bar against four
+beats — true 3-against-4, re-anchored every bar with LOCK TO BAR on,
+phasing with it off. No arithmetic needs inventing.
+
+What a true-poly WRITE needs, and why it was not done in the session
+that added FEEL:
+
+- a part is written across one pad PER PITCH, and a poly lane belongs
+  to a pad, so the whole instrument's pads need the same `bpm`,
+  `cells` and `lock` or the voices come apart;
+- the pitch of a cell lives in a LOCK — `pat.locks[LK(pad,cell,true)]`
+  — and that path was not verified, which is the actual reason this
+  stopped here rather than any difficulty in the idea;
+- it collides with FEEL in the UI. One moves the part off the grid onto
+  its own tempo, the other keeps it on the grid and lets it drift, and
+  offering both in one list without saying which is which would be
+  worse than offering neither.
+
+So: one control, labelled so the two cannot be confused, and the cell
+pitch-lock path checked in the browser before anything is written
+against it.
+
 ## Check while you build, not after
 
 Everything in this file was being run once, at the end, on a finished
