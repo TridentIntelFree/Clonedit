@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R228 · 2026-10-22 · two voices, not one voice and chords';
+const BUILD = 'JBH-88 · R229 · 2026-10-30 · five activities, not twelve tabs';
 /* The header line sits directly under a logo that already says JBH-88, and it
    clips at 138px — so a third of the width it had was spent repeating the app
    name, and the part that says what changed never appeared. The full string is
@@ -5440,7 +5440,11 @@ function padGlowTick(now){
 }
 
 /* edit panel */
-function drawEditTitleOnly(){ $('epTitle').textContent=padName(S.editPad)+(S.pads[S.editPad].name?' · '+S.pads[S.editPad].name:''); }
+/* The one place the selected pad's name is written. TOOLS shows the same
+   selection on another tab, so it is refreshed from here rather than from its
+   own set of callers — there is one selection, so there is one writer. */
+function drawEditTitleOnly(){ $('epTitle').textContent=padName(S.editPad)+(S.pads[S.editPad].name?' · '+S.pads[S.editPad].name:'');
+  try{ drawToolPad(); }catch(e){} }
 function drawEdit(){
   const p=S.pads[S.editPad];
   drawEditTitleOnly();
@@ -6410,7 +6414,7 @@ function a11yPass(root){
   a11yTabs();
 }
 function a11yTabs(){
-  document.querySelectorAll('#tabs button').forEach(b=>
+  document.querySelectorAll('#tabs button, #groups button').forEach(b=>
     b.setAttribute('aria-selected', b.classList.contains('on') ? 'true' : 'false'));
 }
 /* Toggle buttons carry their state in a CSS class, which is invisible to a
@@ -7711,11 +7715,59 @@ function applyMasterG(g, ctx){
 function applyMaster(){ if(LIVE&&AC) applyMasterG(LIVE,AC); }
 
 /* ---------------- tabs ---------------- */
-/* The bar scrolls sideways now, so a tab you switch to from anywhere else —
-   the tour, a "go to SMPL" shortcut — has to be brought into view or it just
-   appears to do nothing. */
+/* NAVIGATION IS TWO ROWS. #groups holds five activities and is always wholly
+   on screen; #tabs under it holds the members of whichever activity is open.
+   Why, and what the twelve-wide scrolling bar cost, is written over the CSS.
+
+   The rule that made this cheap to do and safe to keep: NOTHING OUTSIDE THESE
+   FEW LINES KNOWS GROUPS EXIST. Every button that was in #tabs is still in
+   #tabs with the same data-v, open group or not, so the tour, the coach bar,
+   the session restore and the five call sites in the engine still navigate by
+   #tabs button[data-v="x"].click() and none of them were touched. A
+   programmatic click fires on a display:none button, and the handler opens the
+   owning group before it does anything else — so a caller that has never heard
+   of an activity still lands on a visible tab.
+   The same property is what keeps the browser suites honest: twelve of them
+   navigate this way, and they are testing the app, not this layout. */
+const TABGROUPS=[
+  {g:'sound', tabs:['pads','smpl','tools']},
+  {g:'write', tabs:['seq']},
+  {g:'play',  tabs:['trax','mic','live','amp','dj','midi']},
+  {g:'mix',   tabs:['mix','out']},
+  {g:'song',  tabs:['proj']}];
+function groupOf(v){ for(const G of TABGROUPS) if(G.tabs.indexOf(v)>=0) return G.g; return TABGROUPS[0].g; }
+/* Which member you were last on, per activity, so coming back to PLAY returns
+   you to the deck you were using rather than to its first tab. */
+const GRP_KEY='jbh_grouplast_v1';
+let grpLast={}; try{ grpLast=JSON.parse(localStorage.getItem(GRP_KEY)||'{}')||{}; }catch(e){ grpLast={}; }
+function showGroup(g){
+  const bar=$('tabs'); if(!bar) return;
+  const G=TABGROUPS.find(x=>x.g===g) || TABGROUPS[0];
+  bar.dataset.g=G.g;
+  bar.classList.toggle('solo', G.tabs.length<2);   // a one-member row says nothing the group above has not
+  document.querySelectorAll('#groups button').forEach(x=>{
+    const on=x.dataset.g===G.g;
+    x.classList.toggle('on',on);
+    x.setAttribute('aria-selected', String(on));
+  });
+}
+/* A tab brought here from elsewhere still has to be scrolled to: PLAY has six
+   members and that row can overflow on a narrow phone, even though the five
+   activities above it never do. */
 function tabIntoView(b){ try{ b.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'}); }catch(e){} }
+document.querySelectorAll('#groups button').forEach(b=>b.addEventListener('click',()=>{
+  const G=TABGROUPS.find(x=>x.g===b.dataset.g); if(!G) return;
+  const open=document.querySelector('#tabs button.on');
+  if(open && groupOf(open.dataset.v)===G.g){ showGroup(G.g); return; }   // already inside it
+  const want=(G.tabs.indexOf(grpLast[G.g])>=0) ? grpLast[G.g] : G.tabs[0];
+  const t=document.querySelector('#tabs button[data-v="'+want+'"]');
+  if(t) t.click();
+}));
 document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',()=>{
+  const g=groupOf(b.dataset.v);
+  showGroup(g);                       // before anything else, or the tab is opened behind a closed group
+  grpLast[g]=b.dataset.v;
+  try{ localStorage.setItem(GRP_KEY, JSON.stringify(grpLast)); }catch(e){}
   tabIntoView(b);
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
@@ -7727,6 +7779,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',
     drawWave(); drawEdit();
     refreshHaveKeys().then(()=>{ drawPackList(); drawDownloads(); updateStoreMeter(); });   // always reflect current on-device library
   }
+  if(b.dataset.v==='tools'){ drawToolPad(); }
   if(b.dataset.v==='mix'){ drawEdit(); drawSidechain(); drawMixer(); }
   if(b.dataset.v==='proj'){ $('bSrc').value=(S.songOn&&S.song.length)?'song':((S.chainOn&&S.chain.length)?'chain':'pat'); drawProjects(); drawRewind(); drawTake(); }
   if(b.dataset.v==='trax'){ drawTrax(); }
@@ -15096,11 +15149,16 @@ $('btnCopyTab').addEventListener('click',()=>copyBlock('cmdTab','SNIPPET'));
    They render into a log rather than a status line because every one of
    them answers with a list, and the whole point of these is the detail.
    Everything written there is set as TEXT, never as markup. */
+/* Two logs now, because the tools were split by what they act on: the five
+   pad tools write to the one on TOOLS, REVIEW and BALANCE to the one on MIX.
+   Writing to every .toollog rather than to a chosen one keeps that a layout
+   question — move a button to another tab and its answer follows it, with no
+   second place to remember to update. */
 function toolLog(lines){
-  const el=$('toolLog'); if(!el) return;
-  el.style.display='block';
-  el.textContent=(Array.isArray(lines)?lines.join('\n'):String(lines))+'\n';
-  el.scrollTop=0;
+  const els=document.querySelectorAll('.toollog');
+  if(!els.length) return;
+  const txt=(Array.isArray(lines)?lines.join('\n'):String(lines))+'\n';
+  els.forEach(el=>{ el.style.display='block'; el.textContent=txt; el.scrollTop=0; });
 }
 async function toolRun(btnId, label, fn){
   const b=$(btnId); if(!b || b.disabled) return;
@@ -15115,6 +15173,10 @@ async function toolRun(btnId, label, fn){
   }finally{ b.disabled=false; b.textContent=was; }
 }
 const padLabel=(i)=>(S.pads[i]&&S.pads[i].name)?(S.pads[i].name+' (pad '+i+')'):('pad '+i);
+/* Naming the pad is half of it; the other half is being able to get to it.
+   mixEditPad already does exactly this from the mixer — select, open EDIT,
+   switch to PADS — so the tools tab borrows it rather than repeating it. */
+$('btnToolGoPad').addEventListener('click',()=>{ mixEditPad(S.editPad|0); });
 
 $('btnToolReview').addEventListener('click',()=>toolRun('btnToolReview','REVIEW',async()=>{
   const src=(S.songOn && S.song && S.song.length)?'song':'pat';
@@ -15149,6 +15211,14 @@ $('btnToolBalance').addEventListener('click',()=>toolRun('btnToolBalance','BALAN
 
 $('btnToolPaint').addEventListener('click',()=>toolRun('btnToolPaint','PAINT',async()=>{
   const i=S.editPad|0;
+  /* PAINT is the one tool here that DESTROYS something. The other four either
+     restore the pad (MUTATE) or write to a free one (REBUILD, FREEZE, TAPE),
+     but this calls paint({pad:i}), which reaches loadIntoTarget with noAsk —
+     so for as long as it sat on the projects tab, pressing it replaced the
+     sample on a pad that tab never named. The app already has the sentence
+     for this and every other overwrite route asks it. */
+  if(!confirmPadOverwrite(i,'painted bell'))
+    return padLabel(i)+' left alone — nothing was replaced.';
   /* a bell: partials at ratios a bar cannot be filtered into having */
   const f=220;
   const r=await window.MVX.paint({pad:i, seconds:2.4, name:'painted bell',
@@ -16612,6 +16682,26 @@ function drawTraxBadge(){
   b.classList.toggle('hasload',n>0);
   b.dataset.n=n||'';
   b.setAttribute('aria-label','Tape tracks'+(n?', '+n+' lane'+(n>1?'s':'')+' holding audio that plays with the transport':''));
+  /* The whole argument above was "the count goes where it can always be seen
+     — on the tab itself". TRAX is inside PLAY now, so the tab is NOT always
+     seen, and the badge would vanish behind a tap for anyone whose phantom
+     sound is a tape lane they have forgotten. It goes on the activity too. */
+  const g=document.querySelector('#groups button[data-g="'+groupOf('trax')+'"]');
+  if(g){
+    g.classList.toggle('hasload',n>0);
+    g.dataset.n=n||'';
+  }
+}
+/* These tools act on S.editPad, chosen on another tab. Every other tab that
+   acts on the selection names it — #epTitle, #seqPadName, #mxPad — and the one
+   that did not is why they were moved here. */
+function drawToolPad(){
+  const el=$('tlPad'); if(!el) return;
+  const i=S.editPad|0, p=S.pads[i];
+  const has=!!(p && p.bufId>=0);
+  el.textContent = (has?(p.name||'pad '+i):'empty')+' — pad '+i
+    + (has?'':'  (load a sound onto it first)');
+  el.style.color = has?'var(--amber)':'var(--txt-dim)';
 }
 function drawPadRec(){
   const st=$('btnPadSteps'), au=$('btnPadAudio'), h=$('padRecHint');
@@ -24958,7 +25048,7 @@ const SIZES=[
   { id:'sm',   cls:'sz-sm',  name:'COMPACT',
     say:'tighter bars and smaller chrome. Pads, steps and faders are untouched.' },
   { id:'xs',   cls:'sz-xs',  name:'TINY',
-    say:'the smallest the furniture goes: no build line, and each tab opens with just its LEARN button instead of a paragraph.' },
+    say:'the smallest the furniture goes: no build line, no output meter — the OUT tab has it in full — and each tab opens with just its LEARN button instead of a paragraph.' },
 ];
 function sizeRead(){
   let id; try{ id=localStorage.getItem(SIZE_KEY); }catch(e){}

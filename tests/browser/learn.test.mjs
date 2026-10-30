@@ -28,11 +28,25 @@ export default async function ({ browser, base }) {
         openMore: more.filter(b => b.getAttribute('aria-expanded') === 'true').length,
         bodiesHidden: [...document.querySelectorAll('.hint-body')].every(b => b.hidden),
         leads: document.querySelectorAll('.hint-lead').length,
+        /* Counted off the views rather than hard-coded. It was 12, and the
+           tools tab made it 13 — a number written into the test is a number
+           that has to be edited every time the app gains a tab, which is how
+           a real gap gets papered over with a bumped constant. The claim is
+           "every tab", so the test should say every tab. */
+        views: document.querySelectorAll('.view').length,
+        without: [...document.querySelectorAll('.view')]
+          .filter(v => !v.querySelector('.hint-lead') || !v.querySelector('.hint-more'))
+          .map(v => v.id),
       };
     });
-    t.note('    ' + initial.nEx + ' per-control explainers · ' + initial.nMore + ' per-tab lessons');
-    t.ok('every tab still has its one-line lead', initial.leads === 12, initial.leads + ' leads');
-    t.ok('there is an explainer on every tab', initial.nMore === 12, initial.nMore + '');
+    t.note('    ' + initial.nEx + ' per-control explainers · ' + initial.nMore + ' per-tab lessons'
+      + ' · ' + initial.views + ' tabs');
+    t.ok('every tab still has its one-line lead', initial.leads === initial.views,
+      initial.leads + ' leads for ' + initial.views + ' tabs');
+    t.ok('there is an explainer on every tab', initial.nMore === initial.views
+      && initial.without.length === 0,
+      initial.without.length ? 'missing on ' + initial.without.join(', ')
+        : initial.nMore + ' on ' + initial.views + ' tabs');
     t.ok('the per-control explainers exist', initial.nEx >= 15, initial.nEx + '');
     t.ok('none of them start open', initial.openEx === 0 && initial.openMore === 0,
       initial.openEx + ' + ' + initial.openMore + ' open');

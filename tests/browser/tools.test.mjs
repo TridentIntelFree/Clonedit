@@ -19,18 +19,43 @@ export default async function ({ browser, base }) {
   const t = checker();
   const { ctx, page, errors } = await boot(browser, base);
   try {
-    /* the panel lives in the project tab */
-    await page.evaluate(async () => {
-      document.querySelector('#tabs button[data-v="proj"]').click();
+    /* The five pad tools live on TOOLS and the two mix tools on MIX. They
+       were all on PROJ, which names no pad, so each of them acted on a
+       selection the person could not see — the layout test is the one that
+       holds that line now, and this suite follows them to where they went.
+       It matters that these clicks are REAL navigation and not a formality:
+       a tool whose answer lands in a log on another tab is a tool that looks
+       like it did nothing. */
+    const goto = async (v) => page.evaluate(async (name) => {
+      document.querySelector('#tabs button[data-v="' + name + '"]').click();
       await new Promise(r => setTimeout(r, 150));
-    });
+    }, v);
+    await goto('tools');
 
-    t.head('THE BUTTONS ARE THERE AND THEY ARE WIRED');
-    const present = await page.evaluate(() =>
-      ['btnToolReview', 'btnToolBalance', 'btnToolPaint', 'btnToolMutate', 'btnToolResynth',
-        'btnToolFreeze', 'btnToolTape']
-        .map(id => ({ id, found: !!document.getElementById(id) })));
-    for (const p of present) t.ok('there is a ' + p.id, p.found, p.found ? 'present' : 'MISSING');
+    t.head('THE BUTTONS ARE THERE, THEY ARE WIRED, AND THEY ARE WHERE THEY ACT');
+    const present = await page.evaluate(() => {
+      const where = (id) => {
+        const el = document.getElementById(id);
+        const v = el && el.closest('.view');
+        return { id, found: !!el, view: v ? v.id : null, shown: !!(v && v.classList.contains('on')) };
+      };
+      return { pad: ['btnToolPaint', 'btnToolMutate', 'btnToolResynth', 'btnToolFreeze', 'btnToolTape'].map(where),
+        mix: ['btnToolReview', 'btnToolBalance'].map(where) };
+    });
+    for (const p of present.pad)
+      t.ok('there is a ' + p.id + ', on the tools tab', p.found && p.view === 'v-tools',
+        p.found ? p.view : 'MISSING');
+    for (const p of present.mix)
+      t.ok('there is a ' + p.id + ', on the mixer', p.found && p.view === 'v-mix',
+        p.found ? p.view : 'MISSING');
+    t.ok('and opening TOOLS really opens it',
+      present.pad.every(p => p.shown) && present.mix.every(p => !p.shown),
+      'v-tools is the open view');
+    t.ok('the tools tab says which pad it is about to act on',
+      await page.evaluate(() => {
+        const el = document.querySelector('#v-tools [data-padname]');
+        return !!el && /pad \d+/.test(el.textContent || '');
+      }), 'the pad is named on the tab');
 
     /* ---- PAINT: the cheapest of them, and it must leave a real sample --- */
     t.head('PAINT MAKES A SOUND OUT OF NOTHING');
@@ -55,8 +80,55 @@ export default async function ({ browser, base }) {
     t.ok('and it says what it painted',
       /painted/i.test(painted.log), painted.log.split('\n')[1] || '(no second line)');
 
+    /* ---- PAINT IS THE ONE THAT DESTROYS SOMETHING ----------------------
+       The other four either restore the pad or write to a free one. This
+       calls paint({pad:i}), which reaches loadIntoTarget with noAsk — so
+       while it sat on PROJ it replaced the sample on a pad that tab did not
+       name, with no warning. Both halves are tested, because a guard that
+       cannot be got past is as broken as one that never fires. */
+    t.head('PAINT ASKS BEFORE IT REPLACES A SOUND');
+    const loadOne = () => page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('p', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 48, hi: 60, max: 1 });
+      const pad = window.JBH.instPads('p')[0].pad;
+      window.JBH.pad(pad, { name: 'keepme' });
+      S.editPad = pad;
+      return pad;
+    });
+    const press = (pad) => page.evaluate(async (i) => {
+      document.getElementById('btnToolPaint').click();
+      for (let k = 0; k < 120; k++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (!document.getElementById('btnToolPaint').disabled) break;
+      }
+      return { name: window.JBH.pad(i).name,
+        log: (document.getElementById('toolLog') || {}).textContent || '' };
+    }, pad);
+
+    const padA = await loadOne();
+    let asked = false;
+    const onDismiss = (d) => { asked = true; d.dismiss(); };
+    page.on('dialog', onDismiss);
+    const refused = await press(padA);
+    page.off('dialog', onDismiss);
+    t.ok('it asks when the selected pad is holding something', asked, 'a dialog was raised');
+    t.ok('and saying no leaves the sound exactly where it was',
+      refused.name === 'keepme' && /left alone/i.test(refused.log),
+      'pad ' + padA + ' still holds "' + refused.name + '"');
+
+    const padB = await loadOne();
+    const onAccept = (d) => d.accept();
+    page.on('dialog', onAccept);
+    const allowed = await press(padB);
+    page.off('dialog', onAccept);
+    t.ok('and saying yes still paints, so the guard is not a wall',
+      allowed.name !== 'keepme' && /painted/i.test(allowed.log),
+      'pad ' + padB + ' now holds "' + allowed.name + '"');
+
     /* ---- REVIEW: the one that matters most, on a tiny arrangement ------- */
     t.head('REVIEW RUNS THE WHOLE BATTERY FROM A BUTTON');
+    await goto('mix');
     const reviewed = await page.evaluate(async () => {
       await window.JBH.clear();
       await window.JBH.instrument('p', { pack: 'samples/salamander.json',
@@ -78,8 +150,15 @@ export default async function ({ browser, base }) {
       /from \d+ checks/.test(reviewed),
       (/from \d+ checks/.exec(reviewed) || ['(not stated)'])[0]);
 
+    t.ok('and the answer is readable on the tab the button is on',
+      await page.evaluate(() => {
+        const el = document.querySelector('#v-mix .toollog');
+        return !!el && el.style.display !== 'none' && /REVIEW of the/.test(el.textContent || '');
+      }), 'the mixer has its own log, so the verdict is not left on another tab');
+
     /* ---- FREEZE and TAPE, which must not eat the pad they came from ---- */
     t.head('FREEZE AND TAPE LEAVE THE ORIGINAL ALONE');
+    await goto('tools');
     const made = await page.evaluate(async () => {
       await window.JBH.clear();
       await window.JBH.instrument('p', { pack: 'samples/salamander.json',
