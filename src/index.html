@@ -982,6 +982,23 @@ where they come back into alignment. On a grid that relationship is invisible.</
       <option value="bass">bass</option><option value="lead" selected>lead</option>
       <option value="arp">arp</option><option value="pad">pad</option>
     </select>
+    <select id="mlSpan" aria-label="How many bars to write">
+      <option value="1">1 bar</option><option value="2">2 bars</option>
+      <option value="4" selected>4 bars</option>
+      <option value="8">8 bars</option><option value="16">16 bars</option>
+    </select>
+    <!-- A cycle whose length does not divide 16 pulls against the bar.
+         Named "over", never "triplet": 16 steps do not divide by 3, so
+         three even hits in a bar cannot be written on this grid at all —
+         poly() is the call for that. -->
+    <select id="mlFeel" aria-label="Rhythmic feel">
+      <option value="straight" selected>straight</option>
+      <option value="3">3 over 4</option>
+      <option value="5">5 over 4</option>
+      <option value="6">6 over 4</option>
+      <option value="7">7 over 8</option>
+      <option value="9">9 over 8</option>
+    </select>
     <button id="mlOffer" title="Offer several ways to play it. Writes nothing.">OFFER</button>
   </div>
   <!-- WITHOUT THIS THE PANEL ABOVE IS A DEAD END. infill() writes for an

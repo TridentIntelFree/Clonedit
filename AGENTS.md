@@ -381,6 +381,52 @@ third, then distance from the Essen norms — which is **not** ranked by
 worth. Nothing here can hear them. If the one ranked fifth sounds
 best, the ranking is wrong and the ear is right.
 
+### A SPAN IS CAPPED AT FOUR BARS, because a pattern is
+
+`MAXSTEPS` is 64 and a bar is 16 steps, so **one pattern holds four
+bars and no more**. That is the real ceiling on every `bars:` option in
+this app, and for a long time nothing said so. Asked for eight,
+`infill()` generated notes out at step 122 and `step()` clamped every
+one of them onto the last step of the pattern — five of eighteen notes
+on step 63 in one measured run. That is the HOLLOWAY stumble again,
+arriving by a different route, and the infill suite missed it because
+it only ever asked for four bars.
+
+It refuses now and names what fits. A longer span is several patterns:
+the WRITE panel cuts it into four-bar chunks and writes each into the
+next pattern along, seeding each from the first so the chunks are
+variations rather than copies. There are eight pattern slots, the
+chunks have to be **consecutive**, and a span with nowhere left to go
+is refused rather than wrapped — written with `% S.patterns.length` it
+wrapped, and sixteen bars from pattern 6 wrote its second half back
+over patterns 1 and 2, in that order, with nothing said.
+
+Two things to carry from that. A span longer than one pattern is an
+ARRANGEMENT question, so the chunking belongs to the panel and not to
+`infill()`, which stays one voice over one span. And OFFER scores the
+first chunk only — the candidates are what the first four bars sound
+like — which the info line says out loud, because scoring one thing
+and writing another is the sort of quiet mismatch this file is full of.
+
+### FEEL is a cross-rhythm and cannot be a triplet
+
+**16 does not divide by 3.** Three even hits in a bar cannot be written
+on this grid at all; ask EUCLID for 3 in 16 and it answers 5-5-6, which
+is audibly not a triplet. So the feels in the WRITE panel are named
+"3 over", "5 over", "7 over" and not "triplet", and the refusal for an
+unknown feel points at `poly()`, which gives a pad its own BPM and is
+the only call here that produces real triplets.
+
+What a cycle of N steps does instead is drift. Because N does not
+divide the bar, the figure lands somewhere new each time round and
+comes back after N bars — a hemiola, and the drift is the whole effect.
+So **the cycle is laid across the WHOLE SPAN, not restarted per bar.**
+Restarting it every bar is what turns a cross-rhythm back into a
+figure, and it is the obvious way to write it.
+
+Measured on one seed over four bars: straight uses 8 of the 16
+positions in a bar, 3-over-4 uses all 16.
+
 ## Check while you build, not after
 
 Everything in this file was being run once, at the end, on a finished

@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R232 · 2026-10-30 · it writes a tune, and offers progressions';
+const BUILD = 'JBH-88 · R233 · 2026-10-30 · write spans 1-16 bars, with cross-rhythms';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -10625,6 +10625,61 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
              [[0,0.75],[4,0.75],[8,0.75],[12,0.75]] ],
     };
 
+    /* ---- CROSS-RHYTHM, WHICH THE CELLS ABOVE CANNOT DO -------------
+       Every cell is built on 2, 4 or 8 steps, so all of them line up
+       with the bar and none of them pulls against it. A cycle whose
+       length does NOT divide 16 does: three steps against a four-step
+       beat is a hemiola, and because 16 is not a multiple of 3 the
+       figure lands somewhere new in each bar and comes back around
+       after three of them. That drift is the whole effect, so the cycle
+       is laid across the WHOLE SPAN rather than restarted per bar --
+       restarting it every bar is what turns a cross-rhythm back into a
+       figure.
+
+       What this is NOT is triplets. A bar here is 16 steps and 16 does
+       not divide by 3, so three even hits in a bar cannot be written on
+       this grid at all; ask EUCLID and it answers 5-5-6, which is
+       audibly not a triplet. poly() is the call for that -- it gives a
+       pad its own BPM -- and the names below say "over" rather than
+       "triplet" so nobody reads this as something it is not. */
+    const CYCLES={ '3':3, '5':5, '7':7, '6':6, '9':9 };
+    const cycleSlots=(N)=>{
+      const per=[]; for(let b=0;b<bars;b++) per.push([]);
+      for(let t=0; t<bars*16; t+=N){
+        const b=Math.floor(t/16);
+        if(b>=bars) break;
+        /* beats are quarter notes and four steps make one, so a cycle
+           of N steps sounds for N/4 of a beat */
+        per[b].push([t%16, Math.max(0.25, +(N/4).toFixed(3))]);
+      }
+      return per;
+    };
+    /* A SPAN THAT DOES NOT FIT USED TO BE WRITTEN ANYWAY, ONTO STEP 63.
+       A pattern is at most MAXSTEPS steps and a bar is 16, so four bars
+       is the ceiling. Asked for eight, this generated notes at step 122
+       and step() clamped every one of them to the last step of the
+       pattern: measured, five notes piled on step 63 out of eighteen.
+       That is the HOLLOWAY stumble exactly, and the infill suite already
+       tests for it at four bars — it simply never asked for more.
+       Refuse, and say what will fit and how to get more. */
+    const CAP=patLen(S.patterns[S.pattern]);
+    if((from+bars)*16 > CAP){
+      const fits=Math.max(0, Math.floor(CAP/16)-from);
+      throw new Error('pattern '+(S.pattern+1)+' is '+CAP+' steps, which is '
+        +Math.floor(CAP/16)+' bar'+(Math.floor(CAP/16)===1?'':'s')+', so '
+        +(from?'from bar '+(from+1)+' there is room for ':'it holds ')+fits
+        +' not '+bars+'. Set the pattern longer (LEN, up to '+MAXSTEPS
+        +'), or write the next patterns and chain them — a span longer than '
+        +'one pattern has to be written one pattern at a time.');
+    }
+
+    const feel=String(o.feel||'straight');
+    if(feel!=='straight' && !CYCLES[feel])
+      throw new Error("feel must be 'straight' or one of "+Object.keys(CYCLES).join(', ')
+        +" (steps per cycle). Three against a four-step beat is a hemiola; "
+        +"true triplets need poly(), because 16 steps do not divide by 3.");
+    const CYCLE_PER = CYCLES[feel] ? cycleSlots(CYCLES[feel]) : null;
+
     const nearest=(pc, around)=>{
       let best=null, bd=1e9;
       for(let m=lo;m<=hi;m++){
@@ -10649,6 +10704,9 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
            not lock to one figure the way a drum machine would */
         let cell=pick(cells), guard=0;
         while(bars>1 && out.length && cell===out[out.length-1]._cell && guard++<6) cell=pick(cells);
+        /* a cross-rhythm is one continuous cycle, so the bar takes the
+           slice of it that falls here rather than a figure of its own */
+        if(CYCLE_PER) cell=CYCLE_PER[b];
         const want3 = role!=='pad';      /* state the third: 94.6% of Bach's sonorities do */
         let stated3=false;
         const slots=cell.slice();
@@ -21594,14 +21652,55 @@ if($('mlTonic')){
     lcd(padName(i)+' IS NOW "'+name+'" — OFFER can write for it.');
   });
   /* ---- OFFER / WRITE IT ------------------------------------------- */
-  let mlCands=null, mlOpts=null;
+  let mlCands=null, mlOpts=null, mlSpanBars=4, mlChunkBars=4;
+  /* how many whole bars the SELECTED pattern can still hold */
+  const mlBarsCapacity=()=>Math.max(1, Math.floor(patLen(S.patterns[S.pattern])/16));
   $('mlOffer').addEventListener('click',async()=>{
     const inst=$('mlInst').value;
     if(!inst) return;
     const b=$('mlOffer'); b.disabled=true; const was=b.textContent; b.textContent='…';
     try{
-      const opts={ from:0, bars:mlBars(), n:5, role:$('mlRole').value,
-        src:'pat', seed:(Date.now()&0x7fffffff) };
+      /* A SPAN LONGER THAN A PATTERN IS WRITTEN ACROSS PATTERNS.
+         MAXSTEPS is 64 and a bar is 16, so four bars is all one pattern
+         holds — asking for eight used to generate notes at step 122 and
+         let step() clamp them onto step 63, five of them in one test.
+         Eight and sixteen bars are two and four patterns, so the span is
+         cut into four-bar chunks, each chunk prepared and written into
+         the pattern that holds it, and each given its own seed so the
+         chunks are reproducible and not identical.
+         OFFER still offers on the FIRST chunk only: the candidates are
+         what the first four bars will sound like, and the rest follows
+         from the same seed. Saying so beats quietly scoring one thing
+         and writing another. */
+      const span=Math.max(1, parseInt($('mlSpan').value,10)||4);
+      const perPat=Math.max(1, Math.floor(MAXSTEPS/16));
+      const chunk=Math.min(span, perPat);
+      /* THE CHUNK IS A PATTERN'S WORTH, NOT WHATEVER THIS PATTERN
+         HAPPENS TO HOLD. Capped by the selected pattern's CURRENT
+         length — `Math.min(span, perPat, mlBarsCapacity())` — this went
+         quietly wrong on the default pattern, which is 16 steps. Driving
+         the panel by hand: a fresh board, LEN 16, span 8 bars, and it
+         wrote ONE BAR INTO EVERY ONE OF THE EIGHT PATTERN SLOTS,
+         overwriting all of them, each fragment sitting over the same
+         chord because the chords were copied along with it. It reported
+         "Wrote 8 bars across patterns 1, 2, 3, 4, 5, 6, 7, 8", which is
+         true and is not eight bars of music.
+         A span needs room, and room is LEN. Say which length to set
+         rather than spending the whole arrangement to avoid asking. */
+      const cap=mlBarsCapacity();
+      if(chunk>cap){
+        const need=PATLENS.find(L=>L>=chunk*16)||MAXSTEPS;
+        const pats=Math.ceil(span/chunk);
+        throw new Error('pattern '+(S.pattern+1)+' is '
+          +patLen(S.patterns[S.pattern])+' steps, which is '+cap+' bar'
+          +(cap===1?'':'s')+', and '+span+' bars is written in chunks of '
+          +chunk+'. Set LEN to '+need+', then '+span+' bar'+(span===1?'':'s')
+          +' fills pattern'+(pats>1?'s '+(S.pattern+1)+'–'+(S.pattern+pats):' '+(S.pattern+1))
+          +'. Or choose a span of '+cap+' bar'+(cap===1?'':'s')+'.');
+      }
+      const opts={ from:0, bars:chunk, n:5, role:$('mlRole').value,
+        feel:$('mlFeel').value, src:'pat', seed:(Date.now()&0x7fffffff) };
+      mlSpanBars=span; mlChunkBars=chunk;
       const r=await window.MVX.infill(inst,opts);
       mlCands=r.candidates; mlOpts=opts;
       const pick=$('mlPick');
@@ -21617,7 +21716,12 @@ if($('mlTonic')){
         pick.appendChild(o);
       });
       $('mlPickRow').hidden=false;
-      $('mlInfo').textContent=r.says;
+      $('mlInfo').textContent=r.says
+        + (mlSpanBars>mlChunkBars
+          ? '  These are the first '+mlChunkBars+' bars; WRITE IT fills '+mlSpanBars
+            +' bars across '+Math.ceil(mlSpanBars/mlChunkBars)+' patterns from this one, '
+            +'each with its own variation of the same idea.'
+          : '');
       lcd(r.candidates.length+' WAYS TO PLAY '+inst.toUpperCase()+' — nothing written yet');
     }catch(e){ $('mlInfo').textContent=e.message; lcd('INFILL: '+String(e.message).slice(0,60)); }
     finally{ b.disabled=false; b.textContent=was; }
@@ -21628,10 +21732,49 @@ if($('mlTonic')){
     const seed=+$('mlPick').value;
     const b=$('mlApply'); b.disabled=true;
     try{
-      const r=await window.MVX.infill($('mlInst').value,
-        Object.assign({},mlOpts,{apply:seed}));
-      drawSteps(); drawNotes(); dirty();
-      $('mlInfo').textContent=r.says+' Press OFFER again for another set, or undo.';
+      const inst=$('mlInst').value;
+      const chunks=Math.max(1, Math.ceil(mlSpanBars/mlChunkBars));
+      const startPat=S.pattern;
+      /* THE CHUNKS RUN FORWARD AND THERE ARE ONLY NPAT OF THEM.
+         Written with `(startPat+k)%S.patterns.length` this wrapped: a
+         16-bar span started on pattern 6 wrote bars 1-8 into 6 and 7
+         and then bars 9-16 back over 1 and 2, in that order, with
+         nothing said. Sixteen bars is four patterns and they have to
+         be four CONSECUTIVE ones or the span is not a span. */
+      if(startPat+chunks > S.patterns.length)
+        throw new Error(mlSpanBars+' bars is '+chunks+' patterns and there '
+          +'are only '+S.patterns.length+', so from pattern '+(startPat+1)
+          +' there is room for '+(S.patterns.length-startPat)*mlChunkBars
+          +'. Select pattern '+(S.patterns.length-chunks+1)+' or earlier.');
+      const src=S.chords[startPat] ? S.chords[startPat].slice() : null;
+      const wrote=[];
+      let r=null;
+      for(let k=0;k<chunks;k++){
+        const target=startPat+k;
+        if(k>0){
+          /* the next pattern has to be able to hold the chunk, and has to
+             know its harmony or infill has nothing to write against. Its
+             own chords win when it has them — a pattern that was already
+             given a progression is not overwritten by this. */
+          /* pattern() is 0-BASED — readBack returns {index:n} for the
+             same n it was handed. Passing target+1 selected the pattern
+             after the one being written into, which is the quiet kind of
+             off-by-one that writes a correct part into the wrong place. */
+          const pr=await window.MVX.pattern(target,{select:true,
+            plen:Math.max(patLen(S.patterns[target]), mlChunkBars*16)});
+          if(pr && pr.warning) throw new Error(pr.warning);
+          if(!S.chords[target] && src) window.MVX.chords(target, src);
+        }
+        r=await window.MVX.infill(inst,
+          Object.assign({},mlOpts,{apply:(seed+k*2654435761)>>>0}));
+        wrote.push(target+1);
+      }
+      if(chunks>1){ await window.MVX.pattern(startPat,{select:true}); }
+      drawSteps(); drawNotes(); drawMusicalLayer(); dirty();
+      $('mlInfo').textContent=(chunks>1
+        ? ('Wrote '+mlSpanBars+' bars across pattern'+(wrote.length>1?'s ':' ')
+           +wrote.join(', ')+'. ')
+        : '') + r.says+' Press OFFER again for another set, or undo.';
       lcd('WROTE '+r.wrote+' NOTES for '+r.inst);
     }catch(e){ $('mlInfo').textContent=e.message; lcd(String(e.message).slice(0,60)); }
     finally{ b.disabled=false; }

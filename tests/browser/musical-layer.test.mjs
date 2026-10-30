@@ -290,6 +290,77 @@ export default async function ({ browser, base }) {
     t.ok('WRITE IT is what actually writes',
       off.afterApply > 0, off.afterOffer + ' notes -> ' + off.afterApply);
 
+    /* ---- A SPAN LONGER THAN ONE PATTERN -----------------------------
+       A pattern holds 64 steps and a bar is 16, so four bars is the
+       ceiling and eight has to become two patterns. Both halves of that
+       went wrong when it was written: infill() generated steps out past
+       the end and step() clamped them onto step 63, and the handler that
+       spread the chunks indexed them with `% S.patterns.length`, which
+       wraps -- sixteen bars from pattern 6 wrote its second half back
+       over patterns 1 and 2, in that order, silently. So this checks
+       that eight bars land in two CONSECUTIVE patterns and that a span
+       with nowhere to go is refused instead of wrapping. */
+    t.head('EIGHT BARS ARE WRITTEN ACROSS TWO PATTERNS');
+    const span = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('bass', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 36, hi: 55 });
+      const wait = async (id) => { for (let i = 0; i < 200; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (!document.getElementById(id).disabled) return; } };
+      const run = async (startPat, span) => {
+        for (let p = 0; p < 8; p++) window.JBH.pattern(p, { clear: true });
+        window.JBH.pattern(startPat, { plen: 64, clear: true, select: true });
+        window.JBH.chords(startPat, ['Bm7', 'Gmaj7', 'Dmaj7', 'A']);
+        window.JBH.key('D', 'major');
+        document.getElementById('mlRole').value = 'bass';
+        document.getElementById('mlSpan').value = String(span);
+        document.getElementById('mlOffer').click();
+        await wait('mlOffer');
+        const offered = document.getElementById('mlInfo').textContent;
+        document.getElementById('mlApply').click();
+        await wait('mlApply');
+        /* READ THE INFO LINE BEFORE TOUCHING ANYTHING ELSE. Counting the
+           hits first calls pattern() eight times, each of which redraws
+           the panel, and drawMusicalLayer rewrites mlInfo — so the test
+           read "Pattern 1: Bm7 Gmaj7..." and the assertion that it names
+           both patterns failed on a handler that had named them
+           correctly. The weaker /pattern/i assertion beside it PASSED on
+           that same wrong text, which is the more useful half of the
+           lesson. */
+        const info = document.getElementById('mlInfo').textContent;
+        const selected = (await window.JBH.pattern(null, {})).index;
+        const hits = [];
+        for (let p = 0; p < 8; p++) {
+          const r = await window.JBH.pattern(p, {});
+          hits.push(r.hits);
+        }
+        return { hits, offered, info, selected };
+      };
+      return { eight: await run(0, 8), noRoom: await run(6, 16) };
+    });
+    const e = span.eight;
+    t.ok('bars 1-4 go in the selected pattern and bars 5-8 in the NEXT one',
+      e.hits[0] > 0 && e.hits[1] > 0, 'hits per pattern: ' + e.hits.join(','));
+    t.ok('and nothing is written into any pattern after those two',
+      e.hits.slice(2).every(h => h === 0), 'hits per pattern: ' + e.hits.join(','));
+    /* not "the note counts differ" — two chunks off two seeds can land on
+       the same count by chance, and a test that fails one run in twenty
+       is worse than no test. The structural claim is the one worth
+       pinning: it names BOTH patterns it wrote. */
+    t.ok('and it names both patterns it wrote, not just the one',
+      /patterns 1, 2/.test(e.info), e.info.slice(0, 60));
+    t.ok('it says how many bars it wrote, and leaves the first selected',
+      /8 bars/.test(e.info) && e.selected === 0, e.info.slice(0, 90));
+    t.ok('OFFER says the candidates are only the first chunk',
+      /first 4 bars|first 4|8 bars/.test(e.offered || e.info), (e.offered || '').slice(0, 90));
+    t.ok('SIXTEEN BARS FROM PATTERN 7 IS REFUSED, not wrapped onto pattern 1',
+      span.noRoom.hits[0] === 0 && span.noRoom.hits[1] === 0,
+      'hits per pattern: ' + span.noRoom.hits.join(','));
+    t.ok('and the refusal says how much room there is and where to start',
+      /only 8|room for|Select pattern/.test(span.noRoom.info),
+      span.noRoom.info.slice(0, 110));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

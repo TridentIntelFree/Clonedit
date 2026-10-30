@@ -180,6 +180,64 @@ export default async function ({ browser, base }) {
       tune.every(c => c.m9 === 0) && med(tune.map(c => c.no3)) === 0,
       'minor ninths ' + tune.map(c => c.m9).join(',') + ' · bars with no third ' + tune.map(c => c.no3).join(','));
 
+    /* ---- A SPAN BIGGER THAN THE PATTERN, AND A RHYTHM THAT CROSSES IT
+       MAXSTEPS is 64 and a bar is 16, so four bars is all one pattern
+       holds. Asked for eight, this used to generate notes out at step
+       122 and let step() clamp every one onto the last step: measured,
+       five of eighteen landed on step 63. That is the HOLLOWAY stumble,
+       and the suite tested for it at four bars without ever asking for
+       more. It refuses now, and says what will fit.
+       The feels are cross-rhythms, not triplets: 16 does not divide by
+       3, so three even hits in a bar cannot be written on this grid at
+       all. A three-step CYCLE can, and because it does not divide the
+       bar it lands somewhere new each time round, which is the effect. */
+    t.head('A SPAN THAT DOES NOT FIT IS REFUSED, NOT CLAMPED');
+    const span = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('keys', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 48, hi: 72, max: 8 });
+      window.JBH.key('D', 'minor');
+      window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+      window.JBH.chords(0, ['Dm', 'Bb', 'F', 'C']);
+      const out = {};
+      for (const bars of [4, 8]) {
+        try {
+          const r = await window.JBH.infill('keys', { from: 0, bars, n: 1, role: 'lead', src: 'pat', seed: 5 });
+          const steps = r.candidates[0].notes.map(n => n[1]);
+          out[bars] = { ok: true, max: Math.max(...steps), past: steps.filter(x => x > 63).length };
+        } catch (e) { out[bars] = { ok: false, msg: e.message }; }
+      }
+      return out;
+    });
+    t.ok('four bars fit a 64-step pattern and stay inside it',
+      span[4].ok && span[4].past === 0, 'highest step ' + span[4].max);
+    t.ok('EIGHT BARS ARE REFUSED rather than clamped onto the last step',
+      span[8].ok === false && /does not fit|holds 4 not 8|4 bars/.test(span[8].msg),
+      span[8].ok ? 'IT WROTE THEM: ' + span[8].past + ' notes past the end' : span[8].msg.slice(0, 80));
+    t.ok('and the refusal says what will fit and how to get more',
+      span[8].ok === false && /LEN|longer|pattern/i.test(span[8].msg), span[8].msg.slice(0, 70));
+
+    t.head('A FEEL THAT CROSSES THE BAR');
+    const feel = await page.evaluate(async () => {
+      const grab = async (f) => {
+        const r = await window.JBH.infill('keys',
+          { from: 0, bars: 4, n: 1, role: 'lead', src: 'pat', seed: 11, feel: f });
+        const st = r.candidates[0].notes.map(n => n[1] % 16);
+        return { positions: [...new Set(st)].sort((a, b) => a - b), n: st.length };
+      };
+      let refused = null;
+      try { await window.JBH.infill('keys', { from: 0, bars: 4, n: 1, feel: 'triplet', src: 'pat' }); }
+      catch (e) { refused = e.message; }
+      return { straight: await grab('straight'), three: await grab('3'), refused };
+    });
+    t.ok('a three-step cycle uses positions the straight cells never touch',
+      feel.three.positions.length > feel.straight.positions.length,
+      'straight uses ' + feel.straight.positions.join(',')
+        + ' · 3-over-4 uses ' + feel.three.positions.join(','));
+    t.ok('and an unknown feel is refused, naming what a triplet actually needs',
+      feel.refused && /poly\(\)|do not divide|16 steps/.test(feel.refused),
+      (feel.refused || '(accepted it)').slice(0, 95));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
