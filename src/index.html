@@ -944,6 +944,23 @@ where they come back into alignment. On a grid that relationship is invisible.</
     <span class="grow"></span>
     <span id="mlKeyChords" style="font-size:10px;color:var(--txt-dim)"></span>
   </div>
+  <!-- Typing chord symbols assumes you already know which ones you want,
+       which is the part most people are stuck on. These are DEGREES of the
+       declared key, so one choice spells Cmaj7 G7 Am7 Fmaj7 in C major and
+       Dm7 Bbmaj7 Fmaj7 C7 in D minor. Built by indexing the key's own
+       diatonic chords, which carry the quality the mode implies — NOT by
+       tonal's fromRoman, which reads numerals against the major scale of
+       whatever tonic it is handed and returns D B F# C# for D minor. -->
+  <div class="row" style="gap:4px;flex-wrap:wrap">
+    <span class="lbl">SHAPE</span>
+    <select id="mlProgPick" class="grow" aria-label="A progression to start from" style="min-width:140px">
+      <option value="">pick a progression&hellip;</option>
+    </select>
+    <select id="mlProgKind" aria-label="Triads or seventh chords">
+      <option value="triad" selected>TRIADS</option>
+      <option value="7th">7THS</option>
+    </select>
+  </div>
   <div class="row" style="gap:4px">
     <span class="lbl" id="mlBarsLbl">BARS</span>
     <input id="mlChords" class="grow" type="text" spellcheck="false"

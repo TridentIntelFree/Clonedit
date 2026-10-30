@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R231 · 2026-10-30 · mutate you can hear, and TAG a pad';
+const BUILD = 'JBH-88 · R232 · 2026-10-30 · it writes a tune, and offers progressions';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -10584,6 +10584,22 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     let lo=o.lo!=null?o.lo|0:roots[0], hi=o.hi!=null?o.hi|0:roots[roots.length-1];
     if(!(hi>lo)){ lo=48; hi=72; }
 
+    /* THE SCALE THE PASSING NOTES COME FROM. The declared key when there
+       is one; otherwise the union of the progression's own chord tones,
+       which is the best available guess and still beats arpeggiating.
+       It is never inferred from notes already written — inferring the
+       harmony from the notes is what makes a wrong note look correct. */
+    const SCALE_PCS=(()=>{
+      try{
+        if(S.key && typeof scalePcs==='function'){
+          const sc=scalePcs(S.key.tonic, S.key.mode);
+          if(sc && sc.length) return sc;
+        }
+      }catch(e){}
+      const u=new Set(); for(const c of info) for(const pc of c.pcs) u.add(pc);
+      return [...u];
+    })();
+
     /* ---- RHYTHMIC CELLS -------------------------------------------
        Figures, not offsets. Each is [step, beats] within a 16-step
        bar, and each is something a player would actually do: a bass
@@ -10645,7 +10661,22 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
             /* root or third on a strong beat — roots and fifths alone
                state no quality, and whatever chromatic is passing then
                becomes the note that defines the chord */
-            pcChoices=[ch.root, ch.third!=null?ch.third:ch.root];
+            /* Nearest, not random. A passing note only counts as a step
+               if the note AFTER it is a step away too: C-D-E is two
+               stepwise intervals, C-D-A is one step and a leap. Picking
+               the strong beat at random threw away half of every step
+               the weak beats had just made. A quarter of the time it
+               still takes the other one, so the line is not forced to
+               crawl. */
+            const strongPcs=[ch.root, ch.third!=null?ch.third:ch.root];
+            pcChoices = rnd()<0.75
+              ? [strongPcs.reduce((bestPc,pc)=>{
+                  const m=nearest(pc,prev), bm=nearest(bestPc,prev);
+                  if(m==null) return bestPc;
+                  if(bm==null) return pc;
+                  return Math.abs(m-prev)<Math.abs(bm-prev)?pc:bestPc;
+                }, strongPcs[0])]
+              : strongPcs;
           } else if(last && b<bars-1){
             /* the approach into the next bar, chosen against BOTH
                chords. Taken as a blind chromatic below the next root it
@@ -10658,13 +10689,58 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
               && !ch.pcs.some(t=>((pc-t)%12+12)%12===1));
             pcChoices=good.length?good:ch.pcs.slice();
           } else {
+            /* A WEAK BEAT IS WHERE A MELODY STEPS, AND THIS ONLY EVER
+               ARPEGGIATED. Every slot drew from ch.pcs — the chord tones —
+               and two chord tones are a third apart by construction, so
+               stepwise motion was arithmetically impossible. Measured over
+               five candidates it came out at 0, 0, 0, 7.7 and 8.3 per cent
+               against 46.9% in the 8,514 Essen melodies this is scored on.
+               The line was harmonically immaculate and it was not a tune:
+               D4 F4 A4, F4 A4 C5, C5 G4 E4.
+               So the passing notes come from the KEY, not the chord. A
+               scale tone one or two semitones from the note before is
+               offered alongside the chord tones, which is the ordinary
+               shape of a melody — chord tones on the beat, steps between
+               them. The semitone-above-a-chord-tone filter below still
+               applies to them, which is what keeps the 4th off a major
+               chord and the b13 off a dominant. */
             pcChoices=ch.pcs.slice();
-            if(want3 && !stated3 && ch.third!=null) pcChoices=[ch.third].concat(pcChoices);
+            const stepPcs=SCALE_PCS.filter(pc=>{
+              const m=nearest(pc, prev);
+              if(m==null || m===prev) return false;
+              return Math.abs(m-prev)<=2;
+            });
+            /* weighted, not forced: the norms want about half the
+               intervals stepwise, a fifth repeated and the rest thirds
+               and leaps, so the chord tones have to keep their share */
+            /* The third is not optional. Passing notes displace it, and
+               letting them take every weak slot left two bars a phrase
+               stating no quality at all — which is the fault the strong
+               beats were written to avoid in the first place. So the
+               last weak slot in a bar belongs to the third whenever the
+               bar has not stated one yet; everything before it may
+               step. */
+            const lastChance = want3 && !stated3 && ch.third!=null && si>=slots.length-2;
+            if(lastChance) pcChoices=[ch.third];
+            else if(stepPcs.length && rnd()<0.75) pcChoices=stepPcs;
+            else if(want3 && !stated3 && ch.third!=null) pcChoices=[ch.third].concat(pcChoices);
           }
           /* never a semitone above a chord tone — the interval that
              actually beats, and the one rule harmony() is built on */
           pcChoices=pcChoices.filter(pc=>!ch.pcs.some(t=>((pc-t)%12+12)%12===1));
-          if(!pcChoices.length) pcChoices=[ch.root];
+          /* THE FALLBACK USED TO BE THE ROOT, AND ON A MAJOR SEVENTH THE
+             ROOT IS THE CLASH. Gmaj7 is G B D F#, and G sits a semitone
+             above F# inside its own chord — so when the filter emptied
+             the list, the thing it fell back to was exactly the interval
+             it had just removed everything else for. It only showed once
+             the scale tones made the list empty often enough to notice:
+             six candidates, up to four minor ninths each, every one of
+             them a root. Fall back to a chord tone that survives the same
+             test, and only then to the third. */
+          if(!pcChoices.length){
+            const safe=ch.pcs.filter(pc=>!ch.pcs.some(t=>((pc-t)%12+12)%12===1));
+            pcChoices = safe.length ? safe : [ch.third!=null?ch.third:ch.root];
+          }
           const pc=pick(pcChoices);
           /* contour: stay near the previous note. A line that leaps
              everywhere scores badly on melody() and sounds like a
@@ -21244,6 +21320,114 @@ function scaleLabel(){
    harmony is — which was the original point of storing it at all. */
 function mlBars(){ return Math.max(1, Math.round(patLen(S.patterns[S.pattern])/16)); }
 
+/* PROGRESSION PICKER. These live at TOP LEVEL, not inside the
+   if($('mlTonic')) block that holds the handlers, because
+   drawMusicalLayer calls drawProgPicker and drawMusicalLayer is top
+   level. A helper declared in that block is invisible from here and the
+   try/catch around the call eats the ReferenceError, which is exactly
+   how the tag row shipped blank earlier today. Same mistake, same hour.
+*/
+/* ---- PROGRESSIONS BY DEGREE, NOT BY TYPING ----------------------
+   Written as scale degrees so one entry works in any key and either
+   mode: keyChords() carries the quality the mode implies, so degree 5
+   is Am7 in C major and Bbmaj7 in D minor without this table knowing
+   anything about either. Nothing here is auto-applied — picking one
+   fills the box and SET is still the thing that writes, so you see the
+   chords before they land. */
+/* Each one belongs to a MODE. Indexing a major progression's degrees in a
+   minor key is diatonically correct and musically wrong: I-V-vi-IV is
+   "pop" because of what those qualities do in major, and the same indices
+   in D minor give Dm Am Bb Gm -- a different, weaker progression wearing
+   the same name. ii-V-I is worse: in minor the ii is diminished, so the
+   picker offered Edim Am Dm and called it a turnaround. A real minor
+   turnaround wants a dominant V the natural minor does not contain, so it
+   is simply not offered there. */
+const PROGS=[
+  { n:'pop',            m:'maj', d:[0,4,5,3] },
+  { n:'sensitive',      m:'maj', d:[5,3,0,4] },
+  { n:'doo-wop',        m:'maj', d:[0,5,3,4] },
+  { n:'turnaround',     m:'maj', d:[1,4,0] },
+  { n:'plain cadence',  m:'maj', d:[0,3,4,0] },
+  { n:'rising',         m:'maj', d:[0,2,3,4] },
+  { n:'circle',         m:'maj', d:[5,1,4,0] },
+  { n:'epic',           m:'min', d:[0,5,2,6] },
+  /* the V has to be MAJOR or it is not the cadence. Natural minor offers
+     only a minor v, so this one degree is forced: the raised leading note
+     is the whole gesture, and without it this is merely a descending
+     progression wearing a Spanish name. */
+  { n:'andalusian',     m:'min', d:[0,6,5,4], major:[3] },
+  { n:'folk',           m:'min', d:[0,6,3,0] },
+  { n:'lament',         m:'min', d:[0,3,6,2] },
+  { n:'climb',          m:'min', d:[0,2,3,4] },
+  { n:'two-chord vamp', m:'any', d:[0,3] },
+  { n:'one chord',      m:'any', d:[0] },
+];
+/* major or minor is read off the key's OWN tonic chord, so dorian and
+   phrygian get the minor set without this listing every mode */
+function keyIsMinor(){
+  try{
+    const dia=keyChords(S.key.tonic, S.key.mode);
+    const i=chordInfo(dia && dia[0]);
+    return !!(i && i.intervals.includes(3));
+  }catch(e){ return false; }
+}
+/* the numerals a degree deserves in THIS key, rather than a fixed
+   label that is wrong in half of them */
+function degreeLabel(deg, mode){
+  const info=(typeof chordInfo==='function' && S.key)
+    ? chordInfo((keyChords(S.key.tonic, S.key.mode)||[])[deg]) : null;
+  const R=['I','II','III','IV','V','VI','VII'][deg];
+  if(!info) return R;
+  const minorish=info.intervals.includes(3);
+  return minorish ? R.toLowerCase() : R;
+}
+function progChords(p){
+  if(!S.key || typeof keyChords!=='function') return null;
+  const dia=keyChords(S.key.tonic, S.key.mode);
+  if(!dia || !dia.length) return null;
+  const kind=$('mlProgKind') ? $('mlProgKind').value : 'triad';
+  return p.d.map((i,n)=>{
+    const sym=dia[i%dia.length];
+    const tri=(kind==='triad' && typeof toTriad==='function') ? toTriad(sym) : sym;
+    /* a degree the progression needs MAJOR whatever the mode gives it */
+    if(p.major && p.major.indexOf(n)>=0){
+      const info=(typeof chordInfo==='function') ? chordInfo(tri) : null;
+      if(info && typeof midiName==='function'){
+        const root=midiName(60+info.root).replace(/-?\d+$/,'');
+        return kind==='triad' ? root : root+'7';
+      }
+    }
+    return tri;
+  });
+}
+function drawProgPicker(){
+  const sel=$('mlProgPick'); if(!sel) return;
+  const cur=sel.value;
+  sel.textContent='';
+  const o0=document.createElement('option');
+  o0.value=''; o0.textContent = S.key ? 'pick a progression…' : 'declare a key first';
+  sel.appendChild(o0);
+  if(S.key){
+    const min=keyIsMinor();
+    PROGS.forEach((p,i)=>{
+      if(p.m!=='any' && p.m!==(min?'min':'maj')) return;
+      const o=document.createElement('option');
+      o.value=String(i);
+      /* the numeral has to name the chord it will actually produce,
+         including a degree the progression forces major */
+      const numerals=p.d.map((d,n)=>{
+        const lab=degreeLabel(d, S.key.mode);
+        return (p.major && p.major.indexOf(n)>=0) ? lab.toUpperCase() : lab;
+      }).join('–');
+      const spelled=progChords(p);
+      o.textContent=p.n+'  '+numerals+(spelled?'  ·  '+spelled.join(' '):'');
+      sel.appendChild(o);
+    });
+  }
+  sel.disabled=!S.key;
+  if(cur) sel.value=cur;
+}
+
 function drawMusicalLayer(){
   if(!$('mlTonic')) return;
   const k=S.key, bars=mlBars();
@@ -21307,6 +21491,7 @@ function drawMusicalLayer(){
        call swallowed the ReferenceError. The row stayed blank and nothing
        said why, which is the exact failure mode this file keeps warning
        about. */
+    try{ drawProgPicker(); }catch(e){}
     const tp=$('mlTagPad'), ti=$('mlTagInfo');
     if(tp && ti){
       const ei=S.editPad|0, ep=S.pads[ei];
@@ -21375,6 +21560,20 @@ if($('mlTonic')){
      Nothing needs the redraw on blur — the info line describes what is
      STORED, which a blur does not change. Text you typed and did not apply
      now stays in the box, which is also the better answer. */
+
+  const fillFromProg=()=>{
+    const sel=$('mlProgPick'); if(!sel || !sel.value) return;
+    const p=PROGS[+sel.value]; if(!p) return;
+    const got=progChords(p);
+    if(!got){ lcd('DECLARE A KEY FIRST — the degrees need one to spell.'); return; }
+    $('mlChords').value=got.join(', ');
+    $('mlInfo').textContent='Not written yet. '+p.n+', '+got.length+' bar'
+      +(got.length===1?'':'s')+': '+got.join(' ')+'. Tap SET to put it on this pattern, '
+      +'or edit it first.';
+    lcd('PROGRESSION READY: '+got.join(' ')+' — tap SET');
+  };
+  $('mlProgPick').addEventListener('change',fillFromProg);
+  $('mlProgKind').addEventListener('change',()=>{ drawProgPicker(); fillFromProg(); });
 
   /* ---- TAGGING A PAD SO infill() CAN SEE IT ------------------------
      instPads() wants THREE things — an inst name, a loaded buffer and a
