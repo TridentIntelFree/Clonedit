@@ -27426,14 +27426,33 @@ function polyWrite(){
   $('btnPolyStep').classList.toggle('on',fromStep);
   $('btnPolyFree').classList.toggle('on',!fromStep);
   const dur=polyFigureDur(cfg,bar);
+  /* WHAT THE SECOND HALF OF THIS USED TO LEAVE OUT, and it is the thing
+     people actually want to know. Asked for "conflicting timings on the
+     same track" and for poly to "only affect the pad I have selected",
+     and the app has done both since R149 — a pad plays its grid row AND
+     its poly lane, on two clocks, and the config lives on that pad
+     alone. The hint called it "phasing" and never said so, so the
+     feature was there and unfindable. Measured on one pad: 4 grid events
+     became 7 with a 3-cell lane at 75 against 100, and the neighbouring
+     pad stayed at 2.
+     It names the ratio because that is the musical fact — 3 against 4 is
+     a thing a person recognises, where "75 BPM" is arithmetic. */
+  const gridHits=(()=>{ const pt=curPat(), L=trackLen(pt,S.seqPad); let n=0;
+    for(let i=0;i<L;i++) if(pt.steps[S.seqPad][i]>0) n++; return n; })();
+  const polyHits=padPolyHits(curPat(),S.seqPad);
   $('polyTrigHint').innerHTML = fromStep
     ? 'Every lit step of this pad fires the whole figure instead of one hit — '
-      +'<b>'+padPolyHits(curPat(),S.seqPad)+' hit'+(padPolyHits(curPat(),S.seqPad)===1?'':'s')
+      +'<b>'+polyHits+' hit'+(polyHits===1?'':'s')
       +' spread over '+(Math.round(dur*100)/100)+'s</b>, which is '
       +(Math.round(dur/(bar/NSTEPS)*10)/10)+' steps of the grid. No step, no sound.'
-    : 'The figure runs on its own clock for as long as the sequence plays, whether or not '
-      +'this pad has steps on the grid. Use it for phasing; it will keep going after you '
-      +'empty the row above.';
+    : '<b>Two timings on this one pad at once.</b> The figure runs on its own clock '
+      +'and the grid row above goes on playing underneath it'
+      +((gridHits&&polyHits)
+        ? ' — <b>'+polyHits+' against '+gridHits+'</b> per bar'
+        : ', so put hits on the grid too and they will disagree')
+      +'. It is set per pad: '+padName(S.seqPad)+' alone runs at this tempo and every '
+      +'other pad keeps the project\'s. It will keep going after you empty the row '
+      +'above, which is what makes it phase.';
   document.querySelectorAll('.polypre').forEach(b=>{
     const want=mainBpmOf(bar)*parseFloat(b.dataset.mul);
     b.classList.toggle('on', Math.abs(want-raw.bpm)<0.6);

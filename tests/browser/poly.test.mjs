@@ -374,6 +374,40 @@ export default async function ({ browser, base }) {
     t.note('    triplet button: "' + ui.tripSays + '"');
     t.ok('the triplet button says 3 hits per beat', /3 hits per beat/.test(ui.tripSays), ui.tripSays);
 
+    /* ---- AND THE PANEL HAS TO SAY SO ---------------------------------
+       The two-lane behaviour below has worked since R149 and was asked
+       for again — "I want conflicting timings on the same track
+       sometimes", "I want it to only affect the pad I have selected".
+       Both were already true. The hint for ON ITS OWN called the mode
+       "phasing" and never mentioned that the grid row keeps playing or
+       that the setting is per pad, so a feature that existed and was
+       tested stayed unfindable. A capability nobody can see is worth
+       what a capability nobody built is worth. */
+    t.head('ON ITS OWN SAYS THAT BOTH LANES PLAY, AND THAT IT IS ONE PAD');
+    const hint = await page.evaluate(async () => {
+      const pad = S.seqPad, pat = S.patterns[S.pattern];
+      pat.locks = {}; pat.steps[pad].fill(0);
+      for (const st of [0, 4, 8, 12]) pat.steps[pad][st] = 0.9;
+      pat.poly = { [pad]: { on: true, bpm: 75, cells: 3, lock: true, trig: 'free',
+        row: polyEmptyRow() } };
+      for (const c of [0, 1, 2]) pat.poly[pad].row[c] = 0.9;
+      S.bpm = 100; drawPoly();
+      const free = document.getElementById('polyTrigHint').textContent;
+      document.getElementById('btnPolyStep').click();
+      const step = document.getElementById('polyTrigHint').textContent;
+      document.getElementById('btnPolyFree').click();
+      return { free, step, pad: padName(pad) };
+    });
+    t.ok('it says both timings sound together on the one pad',
+      /two timings on this one pad/i.test(hint.free), hint.free.slice(0, 80));
+    t.ok('and names the ratio, which is the musical fact rather than the BPM',
+      /3 against 4/.test(hint.free), (hint.free.match(/\d+ against \d+/) || ['(no ratio)'])[0]);
+    t.ok('and says which pad it applies to, and that the others are unaffected',
+      hint.free.includes(hint.pad) && /other pad/.test(hint.free),
+      'names ' + hint.pad + ': ' + /other pad/.test(hint.free));
+    t.ok('while FROM EACH STEP still explains the opposite arrangement',
+      /No step, no sound/.test(hint.step), hint.step.slice(-40));
+
     t.head('LOCK EXPLAINS ITSELF');
     t.note('    137 locked → shows ' + ui.lockedShown + ', hint "' + ui.lockedHint + '"');
     /* 137 against 100 is 5.48 hits per bar, which cannot fit. Locked it becomes
