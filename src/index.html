@@ -1112,6 +1112,21 @@ where they come back into alignment. On a grid that relationship is invisible.</
       </div>
       <div id="polygrid"></div>
     </div>
+    <!-- EVERY PAD'S TEMPO IN ONE PLACE. The panel above sets the SELECTED
+         pad, which is right for working on one figure and useless for the
+         thing poly is actually for: 3:4:5 inside one bar needs three pads
+         set against each other, and reading one of them at a time means
+         holding the other two in your head. This lists every pad that has
+         a sample, says what tempo it is running at as a RATIO against the
+         project, and sets it in one tap. -->
+    <details class="toolbox" id="polyAllBox"><summary>EVERY PAD'S TEMPO &mdash; stack 3:4:5</summary><div>
+      <div id="polyAll" style="font-size:11px"></div>
+      <p style="margin:8px 0 0;font-size:10px;color:var(--txt-dim);line-height:1.5">
+        A ratio is against the project tempo, so <b>3:4</b> is three hits in
+        the time of four beats. Pads set here run <b>ON THEIR OWN</b> clock,
+        which means each one keeps playing its grid row underneath &mdash; that
+        is what makes the timings conflict rather than replace each other.</p>
+    </div></details>
     <details class="ex"><summary>Giving a pad its own BPM</summary><div class="ex-body">
       <p>A pad on <b>OWN BPM</b> plays a <em>figure</em> &mdash; a short run of
       cells at its own tempo &mdash; instead of a single hit. Every lit step of

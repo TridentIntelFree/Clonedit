@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R238 · 2026-10-31 · 1045 more CC0 samples: Steinway, harps, sax, drums';
+const BUILD = 'JBH-88 · R239 · 2026-10-31 · every pad\'s tempo in one place, as a ratio';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -21314,7 +21314,128 @@ function polyWrite(){
 /* The pad's OWN lane, drawn as its own cells with its own data. Not the step
    grid at a different length — a second sequencer for the same pad, running at
    the pad's tempo while the grid above runs at the project's. */
+/* EVERY PAD'S TEMPO, AS A RATIO. The per-pad panel answers "what is THIS
+   pad doing"; this answers "what are they doing against each other",
+   which is the question poly exists for. AGENTS.md: poly "produces real
+   cross-rhythm — 3:4:5 inside one bar — and six tracks were written in
+   this repo before anyone used it". Setting three pads against each other
+   one selected pad at a time is a large part of why.
+
+   Shown as a RATIO and not a BPM on purpose. 3:4 is a thing a musician
+   recognises; 75 against 100 is the same fact requiring arithmetic, and
+   the arithmetic is what stops people reaching for it.
+
+   Every ratio set here uses trig 'free', because that is the mode where
+   the pad's grid row goes on playing underneath — which is what makes the
+   timings CONFLICT instead of replacing one another. */
+const POLY_RATIOS=[
+  { label:'—',    mul:0,       cells:0 },
+  { label:'1:2',  mul:0.5,     cells:2 },
+  { label:'2:3',  mul:2/3,     cells:2 },
+  { label:'3:4',  mul:0.75,    cells:3 },
+  { label:'1:1',  mul:1,       cells:4 },
+  { label:'5:4',  mul:1.25,    cells:5 },
+  { label:'3:2',  mul:1.5,     cells:3 },
+  { label:'5:3',  mul:5/3,     cells:5 },
+  { label:'2:1',  mul:2,       cells:4 },
+  { label:'7:4',  mul:1.75,    cells:7 },
+  { label:'3:1',  mul:3,       cells:3 },
+];
+function polyRatioLabel(bpm, base){
+  if(!(bpm>0)||!(base>0)) return '?';
+  let best=null, bd=1e9;
+  for(const r of POLY_RATIOS){
+    if(!r.mul) continue;
+    const d=Math.abs(base*r.mul-bpm);
+    if(d<bd){ bd=d; best=r; }
+  }
+  return (best && bd < base*0.04) ? best.label : Math.round(bpm)+'bpm';
+}
+function drawPolyAll(){
+  const host=$('polyAll'); if(!host) return;
+  /* polyBar(), not an independent calculation of the same thing: the
+     QUICK buttons above compute their targets as mainBpmOf(polyBar()) and
+     a ratio label that disagreed with them by a hair would show a pad set
+     from one control as "75bpm" in the other. One source for the base. */
+  const pat=curPat(), base=mainBpmOf(polyBar());
+  const proj=Math.round(bpmAbs());
+  host.textContent='';
+  const pads=[];
+  for(let i=0;i<NPADS;i++) if(S.pads[i] && S.pads[i].bufId>=0) pads.push(i);
+  if(!pads.length){
+    const e=document.createElement('p');
+    e.style.cssText='margin:4px 0;color:var(--txt-dim)';
+    e.textContent='No pads loaded yet. Put a sound on a pad and it appears here.';
+    host.appendChild(e); return;
+  }
+  const head=document.createElement('p');
+  head.style.cssText='margin:0 0 6px;color:var(--txt-dim)';
+  head.textContent='Project runs at '+proj+' BPM. A pad on — follows it.';
+  host.appendChild(head);
+  for(const i of pads){
+    const raw=pat.poly && pat.poly[i];
+    const on=!!(raw && raw.on);
+    const row=document.createElement('div');
+    row.className='row';
+    row.style.cssText='gap:6px;align-items:center;margin-bottom:4px';
+
+    const nm=document.createElement('span');
+    nm.style.cssText='min-width:58px;font-family:inherit;'
+      +(on?'color:var(--amber)':'color:var(--txt-dim)');
+    nm.textContent=padName(i)+' '+(S.pads[i].name||'').slice(0,7);
+    row.appendChild(nm);
+
+    const sel=document.createElement('select');
+    sel.setAttribute('aria-label','Tempo ratio for pad '+padName(i));
+    sel.style.cssText='flex:0 0 76px';
+    const cur=on ? polyRatioLabel(raw.bpm, base) : '—';
+    for(const r of POLY_RATIOS){
+      const o=document.createElement('option');
+      o.value=r.label; o.textContent=r.label;
+      if(r.label===cur) o.selected=true;
+      sel.appendChild(o);
+    }
+    /* a pad whose tempo is not one of the ratios keeps its own entry
+       rather than being silently snapped to the nearest one */
+    if(on && cur.endsWith('bpm')){
+      const o=document.createElement('option');
+      o.value=cur; o.textContent=cur; o.selected=true; sel.appendChild(o);
+    }
+    sel.addEventListener('change',async()=>{
+      const r=POLY_RATIOS.find(x=>x.label===sel.value);
+      try{
+        if(!r || !r.mul){ await window.MVX.poly(i,{on:false}); }
+        else {
+          const want=Math.round(base*r.mul);
+          const have=pat.poly && pat.poly[i];
+          const props={ on:true, bpm:want, trig:'free', lock:true };
+          /* only lay down a figure if the pad has none, so changing the
+             ratio on a lane you have drawn does not wipe it */
+          if(!have || !padPolyHits(pat,i)){
+            props.cells=r.cells;
+            props.row=Array.from({length:r.cells},()=>0.85);
+          }
+          await window.MVX.poly(i,props);
+        }
+        drawPolyAll(); drawPoly(); drawPads(); drawSteps(); dirty();
+      }catch(e){ lcd('POLY: '+String(e.message).slice(0,48)); }
+    });
+    row.appendChild(sel);
+
+    const says=document.createElement('span');
+    says.style.cssText='flex:1;min-width:0;color:var(--txt-dim)';
+    if(on){
+      const hits=padPolyHits(pat,i);
+      says.textContent=Math.round(raw.bpm)+'bpm · '+hits+' hit'+(hits===1?'':'s')
+        +' · grid '+(pat.steps[i].some(v=>v>0)?'plays too':'empty');
+    } else says.textContent='project tempo';
+    row.appendChild(says);
+    host.appendChild(row);
+  }
+}
+
 function drawPoly(){
+  try{ drawPolyAll(); }catch(e){}
   polyWrite();
   const gr=$('polygrid'); if(!gr) return; gr.innerHTML='';
   polyHeadAt=-2;                                   // the cells are new objects

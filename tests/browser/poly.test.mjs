@@ -408,6 +408,67 @@ export default async function ({ browser, base }) {
     t.ok('while FROM EACH STEP still explains the opposite arrangement',
       /No step, no sound/.test(hint.step), hint.step.slice(-40));
 
+    /* ---- EVERY PAD'S TEMPO IN ONE PLACE ------------------------------
+       "And the bpm control of every pad in sequence." The per-pad panel
+       answers "what is THIS pad doing"; poly exists for 3:4:5 inside one
+       bar, and setting three pads against each other through one
+       selected-pad control means holding the other two in your head.
+       AGENTS.md: poly "produces real cross-rhythm — 3:4:5 inside one bar
+       — and six tracks were written in this repo before anyone used it".
+
+       The assertions that matter are that the RATIO is against the real
+       sounding tempo (a label of 3:4 computed off the wrong base is a
+       lie, and the base is computed independently of the QUICK buttons
+       unless it comes from the same call), and that setting it leaves the
+       pad's grid row playing — otherwise it replaces the part instead of
+       conflicting with it. */
+    t.head('EVERY PAD TEMPO: SET THREE PADS AGAINST EACH OTHER AT ONCE');
+    const all = await page.evaluate(async () => {
+      await window.JBH.clear();
+      for (let i = 0; i < 3; i++)
+        await window.JBH.bass({ style: 'sub', midi: 36 + i * 7, seconds: 0.5, pad: i });
+      window.JBH.pattern(0, { plen: 16, clear: true, select: true });
+      for (const st of [0, 4, 8, 12]) window.JBH.step(0, st, 0.9);
+      for (const st of [0, 8]) window.JBH.step(1, st, 0.8);
+      for (const st of [2, 6, 10, 14]) window.JBH.step(2, st, 0.7);
+      S.bpm = 120; drawSteps(); drawPoly();
+      const before = await window.JBH.schedule({ src: 'pat', full: true });
+      const sels = [...document.querySelectorAll('#polyAll select')];
+      const pick = async (i, label) => { sels[i].value = label;
+        sels[i].dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise(r => setTimeout(r, 250)); };
+      await pick(1, '3:4'); await pick(2, '5:4');
+      const after = await window.JBH.schedule({ src: 'pat', full: true });
+      const n = (sc, pad) => (sc.events || []).filter(e => e.pad === pad).length;
+      return { rows: sels.length,
+        bpm: [0, 1, 2].map(i => { const q = window.JBH.poly(i); return q && q.on ? Math.round(q.bpm) : null; }),
+        trig: [0, 1, 2].map(i => { const q = window.JBH.poly(i); return q && q.on ? q.trig : null; }),
+        before: [n(before, 0), n(before, 1), n(before, 2)],
+        after: [n(after, 0), n(after, 1), n(after, 2)],
+        gridKept: [0, 1, 2].map(i => S.patterns[0].steps[i].filter(v => v > 0).length),
+        labels: [...document.querySelectorAll('#polyAll select')].map(x => x.value) };
+    });
+    t.ok('it lists every loaded pad, not just the selected one',
+      all.rows === 3, all.rows + ' rows for 3 loaded pads');
+    t.ok('A RATIO IS AGAINST THE REAL TEMPO — 3:4 of 120 is 90, 5:4 is 150',
+      all.bpm[1] === 90 && all.bpm[2] === 150,
+      'got ' + all.bpm.join(', ') + ' at a project tempo of 120');
+    t.ok('and the pad that was left alone stays on the project tempo',
+      all.bpm[0] === null, 'pad 0 poly: ' + all.bpm[0]);
+    t.ok('they are set to run on their own clock, which is what conflicts',
+      all.trig[1] === 'free' && all.trig[2] === 'free', all.trig.join(', '));
+    /* the whole point: the figure is ADDED to the pad, not substituted for
+       what was there. Until R149 turning poly on replaced the grid row. */
+    t.ok('EACH PAD KEEPS ITS GRID ROW and gains the poly hits on top',
+      all.after[1] === all.before[1] + 3 && all.after[2] === all.before[2] + 5,
+      'pad1 ' + all.before[1] + '->' + all.after[1]
+        + ', pad2 ' + all.before[2] + '->' + all.after[2]);
+    t.ok('and the grid steps themselves are untouched',
+      all.gridKept[0] === 4 && all.gridKept[1] === 2 && all.gridKept[2] === 4,
+      'steps per pad: ' + all.gridKept.join(', '));
+    t.ok('the panel reads back the ratios it was set to',
+      all.labels[1] === '3:4' && all.labels[2] === '5:4', all.labels.join(' '));
+
     t.head('LOCK EXPLAINS ITSELF');
     t.note('    137 locked → shows ' + ui.lockedShown + ', hint "' + ui.lockedHint + '"');
     /* 137 against 100 is 5.48 hits per bar, which cannot fit. Locked it becomes
