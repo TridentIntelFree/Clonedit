@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R235 · 2026-10-30 · write works on an untouched board again';
+const BUILD = 'JBH-88 · R236 · 2026-10-31 · magenta writes the shape, the rules keep the harmony';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -10679,6 +10679,10 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         +" (steps per cycle). Three against a four-step beat is a hemiola; "
         +"true triplets need poly(), because 16 steps do not divide by 3.");
     const CYCLE_PER = CYCLES[feel] ? cycleSlots(CYCLES[feel]) : null;
+    /* on by default because it measures better on the app's own norms;
+       {shape:false} is the old chord-and-scale chooser, kept so the two
+       can be compared rather than taken on trust */
+    const useShape = o.shape !== false && role !== 'pad';
 
     const nearest=(pc, around)=>{
       let best=null, bd=1e9;
@@ -10698,6 +10702,21 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       const cells=CELLS[role];
       const out=[];
       let prev=Math.round((lo+hi)/2);
+      /* ---- THE SHAPE TO FOLLOW ---------------------------------------
+         Every pitch here was chosen from the chord and the key, which is
+         harmonically safe and cannot write a tune: the line's direction
+         was whatever fell out of "a chord tone here, a scale tone
+         there". Adding scale tones bought stepwise MOTION and still no
+         contour, because a melody has somewhere it is going.
+         So the direction comes from a magenta contour and the NOTE does
+         not. The pitch class is still chosen entirely by the rules
+         below, and the shape only moves the anchor that decides which
+         octave to reach for — so the model cannot introduce a clash the
+         filter would have rejected, and it cannot touch the rhythm,
+         which is the mistake that gave HOLLOWAY its stumble. */
+      const shp = (useShape && typeof pickContour==='function')
+        ? pickContour(seed ^ (bars*2654435761), bars*5) : null;
+      let shpI=0;
       for(let b=0;b<bars;b++){
         const ch=info[b], next=info[(b+1)%bars];
         /* no two consecutive bars on the same cell, so the part does
@@ -10783,6 +10802,13 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
             else if(stepPcs.length && rnd()<0.75) pcChoices=stepPcs;
             else if(want3 && !stated3 && ch.third!=null) pcChoices=[ch.third].concat(pcChoices);
           }
+          /* where the SHAPE wants the next note. Computed before the
+             class is chosen, because it is what chooses it. */
+          let anchor=prev;
+          if(shp && shp.iv.length){
+            anchor=clamp(prev + shp.iv[shpI % shp.iv.length], lo, hi);
+            shpI++;
+          }
           /* never a semitone above a chord tone — the interval that
              actually beats, and the one rule harmony() is built on */
           pcChoices=pcChoices.filter(pc=>!ch.pcs.some(t=>((pc-t)%12+12)%12===1));
@@ -10799,11 +10825,29 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
             const safe=ch.pcs.filter(pc=>!ch.pcs.some(t=>((pc-t)%12+12)%12===1));
             pcChoices = safe.length ? safe : [ch.third!=null?ch.third:ch.root];
           }
-          const pc=pick(pcChoices);
+          /* WHICH allowed class, not just which octave. Picking pc at
+             random and only then placing it near the anchor wasted the
+             contour: asked for +2, the randomly chosen class was often a
+             third away, and measured over 25 candidates that turned
+             12.3% leaps into 22.2% against a 13.1% norm — the shape made
+             the line LEAPIER than no shape at all. The anchor has to
+             choose among the classes the harmony allows, which is the
+             only way a small move in the contour can come out small. */
+          let pc;
+          if(shp && pcChoices.length>1){
+            let bd=1e9;
+            for(const c of pcChoices){
+              const m2=nearest(c, anchor);
+              if(m2==null) continue;
+              const d=Math.abs(m2-anchor);
+              if(d<bd || (d===bd && rnd()<0.5)){ bd=d; pc=c; }
+            }
+            if(pc==null) pc=pick(pcChoices);
+          } else pc=pick(pcChoices);
           /* contour: stay near the previous note. A line that leaps
              everywhere scores badly on melody() and sounds like a
              random walk, which passes every other check here. */
-          let m=nearest(pc, role==='bass' ? lo+((prev-lo)%12) : prev);
+          let m=nearest(pc, role==='bass' ? lo+((anchor-lo)%12) : anchor);
           if(m==null) m=nearest(pc, (lo+hi)/2);
           if(m==null) continue;
           if(pc===ch.third) stated3=true;

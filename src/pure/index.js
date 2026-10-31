@@ -20,3 +20,6 @@ export * from './sfz.js';
    published as globals ahead of the engine like everything else in
    this folder. */
 export * from './theory.js';
+/* melodic shapes from magenta, generated and filtered offline — see the
+   header there for why they are intervals and why they are baked in */
+export * from './contours.js';

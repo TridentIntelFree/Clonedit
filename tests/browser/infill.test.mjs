@@ -238,6 +238,58 @@ export default async function ({ browser, base }) {
       feel.refused && /poly\(\)|do not divide|16 steps/.test(feel.refused),
       (feel.refused || '(accepted it)').slice(0, 95));
 
+    /* ---- A MODEL CHOOSES THE SHAPE, NOT THE NOTES --------------------
+       The contours in src/pure/contours.js come from magenta. What must
+       stay true is that they can only choose among pitch classes the
+       harmony has already allowed: chord tone on a strong beat, scale
+       tone on a weak one, never a semitone above a chord tone. If the
+       shape could place a note directly, a trained model would be able
+       to write the one interval this whole repo is built around
+       rejecting — so this asserts the harmony invariants hold with the
+       shape ON, across several seeds and a progression with a major
+       seventh in it, which is where the old fallback used to clash with
+       itself.
+       It also pins that the shape CHANGES something. A flag that is
+       wired to nothing passes every test about safety. */
+    t.head('THE MAGENTA SHAPE CANNOT BREAK THE HARMONY');
+    const mag = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('keys', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 48, hi: 84, max: 18 });
+      window.JBH.key('D', 'major');
+      window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+      window.JBH.chords(0, ['Bm7', 'Gmaj7', 'Dmaj7', 'A']);
+      const gather = async (shape) => {
+        let m9 = 0, no3 = 0, n = 0, sig = [];
+        for (const seed of [11, 22, 33, 44]) {
+          const r = await window.JBH.infill('keys',
+            { from: 0, bars: 4, n: 3, role: 'lead', src: 'pat', seed, shape });
+          for (const c of r.candidates) {
+            m9 += c.score.minorNinths || 0;
+            no3 += c.score.barsWithNoThird || 0;
+            n++;
+          }
+          sig.push(r.candidates[0].notes.map(x => x[0]).join('.'));
+        }
+        return { m9, no3, n, sig: sig.join('|') };
+      };
+      return { on: await gather(true), off: await gather(false),
+        corpus: (typeof MAGENTA_CONTOURS !== 'undefined') ? MAGENTA_CONTOURS.length : 0 };
+    });
+    t.ok('the contour corpus is published to the engine, not just to Node',
+      mag.corpus >= 100, mag.corpus + ' contours visible to the app');
+    t.ok('NO MINOR NINTHS with the shape on — the model never places a note',
+      mag.on.m9 === 0, mag.on.m9 + ' across ' + mag.on.n + ' candidates');
+    t.ok('and no bar is left without a third',
+      mag.on.no3 === 0, mag.on.no3 + ' bars across ' + mag.on.n + ' candidates');
+    t.ok('the shape actually changes the line — the flag is wired to something',
+      mag.on.sig !== mag.off.sig,
+      mag.on.sig === mag.off.sig ? 'IDENTICAL: the option does nothing'
+        : 'different notes with it on and off');
+    t.ok('and turning it off is still harmonically clean, so the old path survives',
+      mag.off.m9 === 0 && mag.off.no3 === 0,
+      mag.off.m9 + ' ninths, ' + mag.off.no3 + ' bars with no third');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
