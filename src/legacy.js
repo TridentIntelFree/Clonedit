@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R237 · 2026-10-31 · bass you build: sub, reese, growl, wobble, drop';
+const BUILD = 'JBH-88 · R238 · 2026-10-31 · 1045 more CC0 samples: Steinway, harps, sax, drums';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under

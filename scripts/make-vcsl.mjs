@@ -35,13 +35,30 @@
    and anything with a gap worth worrying about is listed at the end
    rather than left for a mix to discover. */
 
+/* TWO SETS, ONE PARSER. --wide builds samples/vcsl-wide.json from the rest
+   of the library: pianos, harpsichords, harps, winds and drums. It shares
+   this file rather than getting its own because the thing most likely to
+   be wrong is the OCTAVE CONVENTION, and that must live in exactly one
+   place. VCSL names its files an octave below what they sound, and this
+   repo has already shipped a cello playing in viola range once -- a
+   second importer with its own copy of midiOf() is how that comes back.
+
+     node scripts/make-vcsl.mjs /tmp/vcsl-idx            # idiophones
+     node scripts/make-vcsl.mjs /tmp/vcsl-idx --wide     # everything else
+
+   RUN scripts/audit-pitch.mjs ON THE RESULT BEFORE WRITING MUSIC ON IT.
+   The offset below is measured for the idiophones and ASSUMED for these,
+   which is exactly the state the strings were in when they came back
+   "unnatural". */
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const SRC = process.argv[2];
 if (!SRC) { console.error('usage: node scripts/make-vcsl.mjs <path-to-VCSL-clone>'); process.exit(2); }
-const OUT = resolve(import.meta.dirname, '..', 'samples', 'vcsl-mallets.json');
+const WIDE = process.argv.includes('--wide');
+const OUT = resolve(import.meta.dirname, '..', 'samples',
+  WIDE ? 'vcsl-wide.json' : 'vcsl-mallets.json');
 const RAW = 'https://raw.githubusercontent.com/sgossner/VCSL/master/';
 
 /* OCTAVE NAMING, MEASURED RATHER THAN ASSUMED. Like VSCO, this library
@@ -115,12 +132,65 @@ const WANT = [
   { dir: 'Idiophones/Struck Idiophones/Slit Drum',               tag: 'slit',    cat: 'PERC',   name: 'Slit drum' },
 ];
 
+/* --- THE REST OF THE LIBRARY ------------------------------------------
+   Chosen for VARIETY and for being real recordings with velocity layers
+   and round robins, which is the whole argument for a sampled instrument
+   over a synthesised one: a ghost note and an accent have to be different
+   recordings, not one waveform at two gains.
+
+   The Steinway is the headline -- 351 files, named
+   JHPiano_NoSus_Close_A#0_vl2_rr1, so layers AND round robins across the
+   whole keyboard. NoSus is taken rather than Sus because an undamped
+   piano rings into the next chord, and AGENTS.md has a long section on
+   what that does to the harmony.
+
+   AND THREE OF THESE DO NOT USE THE LIBRARY'S OWN OCTAVE CONVENTION.
+   Built at the idiophones' offset and then put through
+   scripts/audit-pitch.mjs, the Steinway, the concert harp and the FM
+   piano all read -12.0 semitones with 100% agreement: they are named at
+   concert pitch while the mallets are named an octave low. The UPRIGHT
+   piano reads correct at the mallet offset -- so this library samples two
+   pianos under two different conventions, which is exactly the trap
+   AGENTS.md records for VSCO's violin folders, found again by the script
+   written to catch it. Measured, not assumed; `oct: 1` is the fix and the
+   audit is the evidence.
+
+   WHAT IS NOT HERE, and it is what was asked for: VCSL has no electric
+   bass, no synth bass and nothing like a dubstep sub. Neither does any
+   other CC0 library reachable from this session. That is why bass() was
+   built instead -- a sub is a frequency, not a recording of anything. */
+const WANT_WIDE = [
+  /* --- keys --- */
+  { dir: 'Chordophones/Zithers/Grand Piano, Steinway B/NoSus',   tag: 'stein',  cat: 'KEYS', name: 'Steinway B', pitched: 1, oct: 1 },
+  { dir: 'Chordophones/Zithers/Upright Piano, Yamaha',           tag: 'upright',cat: 'KEYS', name: 'Upright piano', pitched: 1 },
+  { dir: 'Chordophones/Zithers/Harpsichord, Flemish/Sustains',   tag: 'hpsi',   cat: 'KEYS', name: 'Harpsichord', pitched: 1 },
+  { dir: 'Electrophones/TX81Z/FM Piano',                         tag: 'fmp',    cat: 'KEYS', name: 'FM piano', pitched: 1, oct: 1 },
+  { dir: 'Aerophones/Edge-blown Aerophones/Pipe Organ/Quiet',    tag: 'organ',  cat: 'KEYS', name: 'Pipe organ', pitched: 1 },
+  /* --- plucked and struck strings --- */
+  { dir: 'Chordophones/Composite Chordophones/Concert Harp',     tag: 'harp',   cat: 'PLUCK', name: 'Concert harp', pitched: 1, oct: 1 },
+  { dir: 'Chordophones/Composite Chordophones/Folk Harp',        tag: 'fharp',  cat: 'PLUCK', name: 'Folk harp', pitched: 1 },
+  { dir: 'Chordophones/Zithers/Dan Tranh/Normal',                tag: 'dantranh',cat: 'PLUCK', name: 'Dan tranh', pitched: 1 },
+  { dir: 'Chordophones/Composite Chordophones/Strumstick',       tag: 'strum',  cat: 'PLUCK', name: 'Strumstick', pitched: 1 },
+  /* --- wind: the register a mallet palette has nothing in --- */
+  { dir: 'Aerophones/Reed Aerophones/Tenor Saxophone/Non-Vibrato', tag: 'tsax', cat: 'WIND', name: 'Tenor sax', pitched: 1 },
+  { dir: 'Aerophones/Edge-blown Aerophones/Baroque Alto Recorder', tag: 'rec',  cat: 'WIND', name: 'Alto recorder', pitched: 1 },
+  { dir: 'Aerophones/Lip Aerophones/Didgeridoo',                 tag: 'didg',   cat: 'WIND', name: 'Didgeridoo' },
+  /* --- drums: real heads, struck, with layers --- */
+  { dir: 'Membranophones/Struck Membranophones/Timpani 2/Hit',   tag: 'timp',   cat: 'DRUMS', name: 'Timpani' },
+  { dir: 'Membranophones/Struck Membranophones/Bass Drum 2',     tag: 'bdrum',  cat: 'DRUMS', name: 'Bass drum' },
+  { dir: 'Membranophones/Struck Membranophones/Snare Drum, Modern 1', tag: 'snr', cat: 'DRUMS', name: 'Snare' },
+  { dir: 'Membranophones/Struck Membranophones/Conga',           tag: 'conga',  cat: 'DRUMS', name: 'Conga' },
+  { dir: 'Membranophones/Struck Membranophones/Bongos',          tag: 'bongo',  cat: 'DRUMS', name: 'Bongos' },
+  { dir: 'Membranophones/Struck Membranophones/Darbuka',         tag: 'darb',   cat: 'DRUMS', name: 'Darbuka' },
+  { dir: 'Membranophones/Struck Membranophones/Frame Drum',      tag: 'frame',  cat: 'DRUMS', name: 'Frame drum' },
+];
+
 /* Takes that would quietly change an instrument's character if they got
    mixed in with its ordinary notes. `Legacy` folders are older, noisier
    recordings of the same instruments; rolls and scrapes are gestures
    rather than notes; `_Decay` is the release half of a glass sustain and
    belongs to the sustain, not beside it. */
-const SKIP = /(legacy|roll|scrape|gliss|_decay|sweep|crescendo)/i;
+const SKIP = /(legacy|roll|scrape|gliss|_decay|sweep|cresc)/i;
 
 const files = execFileSync('git', ['-C', SRC, 'ls-tree', '-r', '--name-only', 'HEAD'],
   { encoding: 'utf8', maxBuffer: 1 << 28 }).split('\n').filter(f => /\.wav$/i.test(f));
@@ -153,7 +223,7 @@ function parse(path, oct) {
 const out = [];
 const report = [];
 const warn = [];
-for (const w of WANT) {
+for (const w of (WIDE ? WANT_WIDE : WANT)) {
   const pre = w.dir.toLowerCase() + '/';
   const mine = files.filter(f => f.toLowerCase().startsWith(pre) && !SKIP.test(f.slice(w.dir.length)));
   const oct = w.oct == null ? DEFAULT_OCTAVE_OFFSET : w.oct;
@@ -208,13 +278,18 @@ for (const w of WANT) {
 
 out.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 writeFileSync(OUT, JSON.stringify({
-  name: 'VCSL — idiophones: mallets, bells, glass and metal (CC0)',
+  name: WIDE ? 'VCSL — keys, plucked strings, winds and drums (CC0)'
+             : 'VCSL — idiophones: mallets, bells, glass and metal (CC0)',
   license: 'CC0 1.0 Universal — Versilian Community Sample Library by Versilian Studios '
     + '(Sam Gossner). Public domain: free to use, modify, sell and redistribute.',
   source: 'https://github.com/sgossner/VCSL',
   note: 'Generated by scripts/make-vcsl.mjs from the repository tree. Fetched on '
-    + 'demand; no audio is stored here. Struck and plucked idiophones, carried '
-    + 'for the real top octave that synthesised sources do not have.',
+    + 'demand; no audio is stored here. '
+    + (WIDE ? 'Pianos, harpsichord, harps, winds and struck drums — real '
+            + 'recordings with velocity layers and round robins. VCSL has no '
+            + 'electric or synth bass; bass() builds those instead.'
+            : 'Struck and plucked idiophones, carried for the real top octave '
+            + 'that synthesised sources do not have.'),
   samples: out,
 }, null, 1) + '\n');
 
