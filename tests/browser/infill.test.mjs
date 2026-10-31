@@ -290,6 +290,83 @@ export default async function ({ browser, base }) {
       mag.off.m9 === 0 && mag.off.no3 === 0,
       mag.off.m9 + ' ninths, ' + mag.off.no3 + ' bars with no third');
 
+    /* ---- EVERY LAYER AT ONCE -----------------------------------------
+       "Can we have write consider each layer of the sequence
+       simultaneously? Bass on one hi on another synth on another and it
+       create a tune."
+
+       infill() stays one voice over one span — that constraint is from
+       the co-creative research and is load-bearing. ensemble() writes the
+       voices one at a time, foundation first, each one knowing what the
+       earlier ones play, and offers whole ARRANGEMENTS to pick between.
+
+       The claim to defend is the inter-voice one, because it is the thing
+       no check in this app was making: Bach's semitone/minor-9th class is
+       1.08% of 179,005 SOUNDING VOICE-PAIRS, and infill()'s own filter
+       only ever looked at the chord — a held note from another part is
+       not in the chord symbol, so nothing could see it. */
+    t.head('ENSEMBLE: THREE PARTS, EACH WRITTEN AGAINST THE OTHERS');
+    const ens = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('bass', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 28, hi: 48, max: 8 });
+      await window.JBH.instrument('mid', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 52, hi: 72, max: 10 });
+      await window.JBH.instrument('top', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 74, hi: 88, max: 8 });
+      window.JBH.key('D', 'minor');
+      window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+      window.JBH.chords(0, ['Dm', 'Bb', 'F', 'C']);
+      const vs = [{ inst: 'bass', role: 'bass' }, { inst: 'mid', role: 'lead' },
+        { inst: 'top', role: 'arp' }];
+      const offer = await window.JBH.ensemble(vs, { from: 0, bars: 4, n: 5, seed: 77 });
+      const afterOffer = (await window.JBH.schedule({ src: 'pat', full: false })).notes;
+      const done = await window.JBH.ensemble(vs,
+        { from: 0, bars: 4, n: 5, seed: 77, apply: offer.candidates[0].seed });
+      const sc = await window.JBH.schedule({ src: 'pat', full: true });
+      const per = {};
+      for (const n of ['bass', 'mid', 'top']) {
+        const pads = window.JBH.instPads(n).map(x => x.pad != null ? x.pad : x);
+        per[n] = (sc.events || []).filter(e => pads.indexOf(e.pad) >= 0).length;
+      }
+      let harm = null;
+      try { harm = await window.JBH.harmony({ src: 'pat' }); } catch (e) { harm = { err: e.message }; }
+      let refusedOne = null, refusedSeven = null;
+      try { await window.JBH.ensemble([{ inst: 'bass', role: 'bass' }], { bars: 4 }); }
+      catch (e) { refusedOne = e.message; }
+      try {
+        await window.JBH.ensemble(new Array(7).fill({ inst: 'bass', role: 'lead' }), { bars: 4 });
+      } catch (e) { refusedSeven = e.message; }
+      return { cands: offer.candidates.map(c => c.score), afterOffer, done, per,
+        m9: (harm && harm.minorNinths) ? harm.minorNinths.length : 'n/a',
+        no3: (harm && harm.barsWithNoThird) ? harm.barsWithNoThird.length : 'n/a',
+        refusedOne, refusedSeven, says: offer.says };
+    });
+    t.ok('it offers whole arrangements, scored between the voices',
+      ens.cands.length === 5 && ens.cands.every(c => c.voicePairs > 0),
+      ens.cands.map(c => c.rubs + '/' + c.voicePairs).join(' · '));
+    t.ok('and OFFERING WRITES NOTHING, as the single-voice call does',
+      ens.afterOffer === 0, ens.afterOffer + ' notes after offering');
+    t.ok('the best candidate has no semitone clash between any two voices',
+      ens.cands[0].rubs === 0,
+      ens.cands[0].rubs + ' in ' + ens.cands[0].voicePairs + ' sounding voice-pairs');
+    /* 68% is Palestrina's, measured from 70 scores. A pair of voices that
+       move together on every beat is one voice in thirds. */
+    t.ok('oblique motion lands near the measured Palestrina norm of 68%',
+      ens.cands[0].oblique >= 45 && ens.cands[0].oblique <= 95,
+      ens.cands[0].oblique + '% oblique, ' + ens.cands[0].parallel + '% parallel');
+    t.ok('APPLYING WRITES EVERY VOICE, not just the first',
+      ens.per.bass > 0 && ens.per.mid > 0 && ens.per.top > 0,
+      'bass ' + ens.per.bass + ', mid ' + ens.per.mid + ', top ' + ens.per.top);
+    /* the per-voice guarantees must survive the ensemble: harmony() reads
+       the whole board, so this is all three parts against the chords */
+    t.ok('and harmony() finds no minor ninth and no bar without a third',
+      ens.m9 === 0 && ens.no3 === 0, ens.m9 + ' ninths, ' + ens.no3 + ' bars');
+    t.ok('one voice is refused, and points at infill() instead',
+      ens.refusedOne && /infill/.test(ens.refusedOne), (ens.refusedOne || '').slice(0, 70));
+    t.ok('and seven voices are refused as a texture rather than parts',
+      ens.refusedSeven && /six/.test(ens.refusedSeven), (ens.refusedSeven || '').slice(0, 70));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

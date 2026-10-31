@@ -485,6 +485,66 @@ export default async function ({ browser, base }) {
       virgin.hits > 0 && /wrote \d+ notes/.test(virgin.said),
       virgin.hits + ' hits · ' + virgin.said.slice(0, 70));
 
+    /* ---- ALL LAYERS, THROUGH THE TWO BUTTONS -------------------------
+       The ensemble call is tested in the infill suite; this is the part a
+       person touches. Roles are NOT asked for: an instrument sampled at
+       the bottom of the keyboard is the bass whatever it is called, so
+       they come from each instrument's mean sampled pitch. Asking would
+       be asking someone to tell the app something it already knows. */
+    t.head('ALL LAYERS: ONE TICK WRITES EVERY INSTRUMENT');
+    const allui = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.instrument('bassy', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 28, hi: 48, max: 8 });
+      await window.JBH.instrument('synthy', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 52, hi: 72, max: 10 });
+      await window.JBH.instrument('hiya', { pack: 'samples/salamander.json',
+        match: '^sal:', lo: 74, hi: 88, max: 8 });
+      const wait = async (id) => { for (let i = 0; i < 300; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (!document.getElementById(id).disabled) return; } };
+      window.JBH.key('D', 'minor');
+      window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+      window.JBH.chords(0, ['Dm', 'Bb', 'F', 'C']);
+      drawSteps();
+      const all = document.getElementById('mlAll');
+      all.checked = true; all.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 200));
+      const roles = document.getElementById('mlInfo').textContent;
+      document.getElementById('mlOffer').click();
+      await wait('mlOffer');
+      const opts = [...document.getElementById('mlPick').options].map(o => o.textContent);
+      const mid = (await window.JBH.schedule({ src: 'pat', full: false })).notes;
+      document.getElementById('mlApply').click();
+      await wait('mlApply');
+      const sc = await window.JBH.schedule({ src: 'pat', full: true });
+      const per = {};
+      for (const n of ['bassy', 'synthy', 'hiya']) {
+        const pads = window.JBH.instPads(n).map(x => x.pad != null ? x.pad : x);
+        per[n] = (sc.events || []).filter(e => pads.indexOf(e.pad) >= 0).length;
+      }
+      /* and unticking must put the single-voice path back, not leave the
+         panel writing arrangements from a stale flag */
+      all.checked = false; all.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 150));
+      const backToOne = document.getElementById('mlPickRow').hidden;
+      return { roles, opts, mid, per, backToOne,
+        said: document.getElementById('mlInfo').textContent };
+    });
+    t.ok('ticking ALL reads the roles off the register, without asking',
+      /bassy as bass/.test(allui.roles) && /hiya as arp/.test(allui.roles),
+      allui.roles.slice(0, 95));
+    t.ok('OFFER lists whole arrangements with their clash counts',
+      allui.opts.length >= 3 && /clash/.test(allui.opts[0] || ''),
+      (allui.opts[0] || '').slice(0, 60));
+    t.ok('and still writes nothing until WRITE IT',
+      allui.mid === 0, allui.mid + ' notes after offering');
+    t.ok('WRITE IT PUTS A PART ON ALL THREE INSTRUMENTS',
+      allui.per.bassy > 0 && allui.per.synthy > 0 && allui.per.hiya > 0,
+      Object.entries(allui.per).map(([k, v]) => k + ' ' + v).join(', '));
+    t.ok('and unticking ALL returns the panel to the single-voice path',
+      allui.backToOne === true, 'picker hidden again: ' + allui.backToOne);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

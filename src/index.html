@@ -1015,6 +1015,15 @@ where they come back into alignment. On a grid that relationship is invisible.</
   <div class="row" style="gap:4px;flex-wrap:wrap;margin-top:6px">
     <span class="lbl">WRITE</span>
     <select id="mlInst" class="grow" aria-label="Which instrument to write for"></select>
+    <!-- ALL LAYERS. infill() writes one voice because handing someone a
+         finished arrangement overwhelms them, and that still holds — this
+         writes the voices one at a time, foundation first, each knowing
+         what is already under it, and offers whole ARRANGEMENTS to choose
+         between. Roles come from register: the lowest instrument is the
+         bass, the highest is the arp, the rest carry the tune. -->
+    <label id="mlAllWrap" style="font-size:10px;display:flex;align-items:center;gap:3px"
+      title="Write every tagged instrument at once, each part against the others">
+      <input type="checkbox" id="mlAll"> ALL</label>
     <select id="mlRole" aria-label="What kind of part">
       <option value="bass">bass</option><option value="lead" selected>lead</option>
       <option value="arp">arp</option><option value="pad">pad</option>

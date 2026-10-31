@@ -381,6 +381,60 @@ third, then distance from the Essen norms — which is **not** ranked by
 worth. Nothing here can hear them. If the one ranked fifth sounds
 best, the ranking is wrong and the ear is right.
 
+### ensemble() — every layer at once, each against the others
+
+"Can we have write consider each layer of the sequence simultaneously?
+Bass on one hi on another synth on another and it create a tune."
+
+`infill()` stays one voice over one span; that constraint is from the
+co-creative research and is load-bearing. `ensemble()` does not throw it
+away — it writes the voices ONE AT A TIME, foundation first, each one
+knowing what the earlier ones already play, and offers whole
+ARRANGEMENTS to choose between. The person still chooses; they choose
+between ensembles rather than between bass lines.
+
+```
+ensemble([{inst:'bass',role:'bass'},{inst:'keys',role:'lead'}], {bars:4, n:5})
+ensemble(voices, {bars:4, apply:<seed>})
+```
+
+**Order is foundation-first and it matters.** The bass states the
+harmony, so it goes first and everything else is written over it. Write
+the lead first and the bass has to dodge a line that was not thinking
+about it.
+
+**The two inter-voice numbers were already measured here and nothing
+used them.** Both are in the norms table further down:
+
+- the semitone/minor-9th class is **1.08% of Bach's 179,005 sounding
+  voice-pairs**. `infill()` has always refused it against the CHORD, and
+  that filter is blind between voices — a held note from another part is
+  not in the chord symbol. `against:` closes that.
+- oblique motion is **68% of moves between a pair of Palestrina
+  voices**. Two parts moving together on every beat are one part in
+  thirds. Scored, never forced: pushing a number is what this file's
+  longest section warns about.
+
+**The honest size of the effect.** Measured over four draws of three
+voices, writing them independently gave a mean 1.56% clash rate and the
+ensemble 1.28% against Bach's 1.08% — closer, and not dramatic, because
+two of the four independent draws already had none. The real gain is
+that the clash rate is MEASURED at all, so a candidate with 0 in 82
+sounding voice-pairs can be picked instead of discovered by ear. The
+spread across one offer was 0/82, 0/74, 0/64, 2/77, 5/70, so the
+ranking does separate them.
+
+**Register is the other half and is not a counterpoint rule.** Three
+voices in the same octave fight however correct their intervals are, so
+each voice keeps its instrument's own sampled range. That is what
+`place()` says about a mix, one layer up.
+
+On the WRITE panel it is the **ALL** tick next to the instrument. Roles
+are not asked for — an instrument sampled at the bottom of the keyboard
+is the bass whatever it is called, so they come from each instrument's
+mean sampled pitch: lowest takes bass, highest takes arp, the rest carry
+the tune.
+
 ### A SPAN IS CAPPED AT FOUR BARS, because a pattern is
 
 `MAXSTEPS` is 64 and a bar is 16 steps, so **one pattern holds four

@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R239 · 2026-10-31 · every pad\'s tempo in one place, as a ratio';
+const BUILD = 'JBH-88 · R240 · 2026-10-31 · ALL LAYERS: every voice written against the others';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -10684,6 +10684,39 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        can be compared rather than taken on trust */
     const useShape = o.shape !== false && role !== 'pad';
 
+    /* ---- THE OTHER VOICES, IF THERE ARE ANY -------------------------
+       infill() writes ONE voice and that is deliberate — a model that
+       hands over a finished arrangement overwhelms the person. But a
+       voice written with no knowledge of the others is not a part, it is
+       a solo that happens to be playing at the same time, and the two
+       checks this repo measured for exactly this question went unused
+       while parts were written one at a time:
+
+       - Bach's semitone/minor-9th class is 1.08% of 179,005 SOUNDING
+         VOICE-PAIRS. The rule infill already applies is "not a semitone
+         above a chord tone". Between voices the same interval is the one
+         that actually beats, and nothing was checking it.
+       - Palestrina's oblique motion is 68% of moves between a pair of
+         voices. Two voices that move together on every beat are one
+         voice in thirds, which counterpoint() reports as "chords with a
+         tune on top".
+
+       `against` is a list of notes already written — {midi, step, beats}
+       — and it is consulted per slot for whatever is SOUNDING then, not
+       per bar, because a note's length is what decides whether it is
+       still there when the next voice arrives. */
+    const AGAINST=Array.isArray(o.against)?o.against.filter(n=>n&&n.midi!=null):[];
+    /* which of them are sounding at an absolute step, and where each was
+       a moment before — the second is what oblique motion needs */
+    const soundingAt=(absStep)=>{
+      const out=[];
+      for(const n of AGAINST){
+        const st=n.step|0, len=Math.max(1, Math.round((n.beats||1)*4));
+        if(absStep>=st && absStep<st+len) out.push(n);
+      }
+      return out;
+    };
+
     const nearest=(pc, around)=>{
       let best=null, bd=1e9;
       for(let m=lo;m<=hi;m++){
@@ -10812,6 +10845,23 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           /* never a semitone above a chord tone — the interval that
              actually beats, and the one rule harmony() is built on */
           pcChoices=pcChoices.filter(pc=>!ch.pcs.some(t=>((pc-t)%12+12)%12===1));
+          /* AND NEVER A SEMITONE ABOVE A VOICE THAT IS STILL SOUNDING.
+             Same interval, same corpus, measured between voices rather
+             than against the chord; the chord filter above cannot see it,
+             because a held note from another part is not in the chord
+             symbol. Kept as a filter on the pitch CLASS so it composes
+             with everything else here rather than overriding it. */
+          const nowSounding = AGAINST.length ? soundingAt((from+b)*16+st) : [];
+          if(nowSounding.length){
+            const keep=pcChoices.filter(pc=>!nowSounding.some(n=>{
+              const d=((pc-(n.midi%12))%12+12)%12;
+              return d===1;
+            }));
+            /* only if something survives: a rule that empties the list
+               has to yield, or the fallback writes the clash it just
+               removed everything else for */
+            if(keep.length) pcChoices=keep;
+          }
           /* THE FALLBACK USED TO BE THE ROOT, AND ON A MAJOR SEVENTH THE
              ROOT IS THE CLASH. Gmaj7 is G B D F#, and G sits a semitone
              above F# inside its own chord — so when the filter emptied
@@ -13919,6 +13969,183 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       says:'painted '+parts.length+' partials from '+Math.round(parts[0].hz)+'Hz to '
         +Math.round(parts[parts.length-1].hz)+'Hz onto '+padName(target)
         +'. It is a sample now — pad() it, chop() it, mutate() it like any other.' };
+  },
+
+  /* ENSEMBLE: EVERY LAYER AT ONCE, EACH WRITTEN AGAINST THE OTHERS.
+
+     "Can we have write consider each layer of the sequence
+     simultaneously? Bass on one hi on another synth on another and it
+     create a tune."
+
+     infill() writes one voice over one span, and that constraint is
+     load-bearing — the co-creative research it came from is clear that
+     handing someone a finished arrangement overwhelms them. This does
+     not throw that away: it writes the voices ONE AT A TIME, in order,
+     each one knowing what the earlier ones already play, and then offers
+     whole arrangements to choose between. The person still chooses; they
+     choose between ensembles rather than between bass lines.
+
+     ORDER IS FOUNDATION-FIRST and it matters. The bass states the
+     harmony, so it goes first and everything else is written over it.
+     Write the lead first and the bass has to dodge a line that was not
+     thinking about it, which is how you get a part that is correct
+     against the chord symbol and wrong against the piece.
+
+     WHAT MAKES THE PARTS FIT, and both numbers are measured in this repo
+     rather than recalled:
+
+     - the semitone/minor-9th class is 1.08% of Bach's 179,005 sounding
+       voice-pairs, the second rarest thing in the corpus. infill()
+       already refuses it against the CHORD; `against` now refuses it
+       between VOICES, which the chord filter cannot see because a held
+       note from another part is not in the chord symbol.
+     - oblique motion is 68% of moves between a pair of Palestrina
+       voices. Two parts that move together on every beat are one part in
+       thirds. Scored here, not forced: pushing a number is what
+       AGENTS.md spends its longest section warning about, so it ranks
+       candidates and never edits a part to improve itself.
+
+     REGISTER IS THE OTHER HALF and it is not a counterpoint rule at all.
+     Three voices in the same octave fight however correct their
+     intervals are, so each voice is given its own slice of its
+     instrument's range unless it was told otherwise. That is the same
+     thing place() says about a mix, one layer up. */
+  async ensemble(voices, opt){
+    const o=opt||{};
+    if(!Array.isArray(voices) || voices.length<2)
+      throw new Error('ensemble needs at least two voices: '
+        +'ensemble([{inst:"bass",role:"bass"},{inst:"keys",role:"lead"}], {bars:4}). '
+        +'For one voice, infill() is the call.');
+    if(voices.length>6) throw new Error(voices.length+' voices is past six; '
+      +'past that they stop being parts and start being a texture.');
+
+    /* bass first, then the rest in the order given — foundation up */
+    const ORDER={bass:0, pad:1, arp:2, lead:3};
+    const list=voices.map((v,i)=>({
+      inst:String(v.inst||''), role:v.role||'lead', lo:v.lo, hi:v.hi, i
+    }));
+    for(const v of list){
+      if(!v.inst) throw new Error('every voice needs an inst tag');
+      if(!window.MVX.instPads(v.inst).length)
+        throw new Error('no instrument "'+v.inst+'" — tag its pads with '
+          +'pad(i,{inst:"'+v.inst+'"}) and give each a srcNote first.');
+      if(['bass','lead','pad','arp'].indexOf(v.role)<0)
+        throw new Error("role must be 'bass', 'lead', 'pad' or 'arp' — got '"+v.role+"'");
+    }
+    const written=list.slice().sort((a,b)=>
+      (ORDER[a.role]-ORDER[b.role]) || (a.i-b.i));
+
+    const bars=clamp(o.bars==null?4:o.bars|0, 1, 64);
+    const from=Math.max(0, o.from|0);
+    const want=clamp(o.n==null?4:o.n|0, 1, 8);
+
+    /* ---- HOW WELL DO THESE PARTS GET ON ---------------------------- */
+    const pairScore=(A,B)=>{
+      /* every moment where one of A sounds while one of B does */
+      let pairs=0, rubs=0;
+      let moves=0, oblique=0, parallel=0;
+      const sortedA=A.slice().sort((x,y)=>x.step-y.step);
+      const sortedB=B.slice().sort((x,y)=>x.step-y.step);
+      const sounding=(arr,st)=>arr.filter(n=>{
+        const len=Math.max(1, Math.round((n.beats||1)*4));
+        return st>=n.step && st<n.step+len;
+      });
+      const steps=[...new Set(sortedA.concat(sortedB).map(n=>n.step))].sort((x,y)=>x-y);
+      let prevA=null, prevB=null;
+      for(const st of steps){
+        const a=sounding(sortedA,st), b=sounding(sortedB,st);
+        if(!a.length || !b.length) continue;
+        for(const x of a) for(const y of b){
+          pairs++;
+          const d=Math.abs(x.midi-y.midi)%12;
+          if(d===1) rubs++;
+        }
+        const ta=a[a.length-1].midi, tb=b[b.length-1].midi;
+        if(prevA!=null && prevB!=null){
+          const da=Math.sign(ta-prevA), db=Math.sign(tb-prevB);
+          if(da!==0 || db!==0){
+            moves++;
+            if(da===0 || db===0) oblique++;
+            else if(da===db) parallel++;
+          }
+        }
+        prevA=ta; prevB=tb;
+      }
+      return { pairs, rubs:rubs, moves, oblique, parallel };
+    };
+
+    const buildOne=async(v, against, seed)=>{
+      const r=await this.infill(v.inst, { from, bars, n:1, role:v.role,
+        src:o.src||'pat', seed, against, lo:v.lo, hi:v.hi,
+        shape:o.shape, feel:o.feel });
+      const c=r.candidates[0];
+      return c.notes.map(([midi,step,vel,beats])=>({midi,step,vel,beats,inst:v.inst}));
+    };
+
+    const cands=[];
+    for(let k=0;k<want;k++){
+      const seed=((o.seed|0) || 0x51ED) ^ (k*2654435761);
+      const parts={}; let all=[];
+      for(const v of written){
+        const notes=await buildOne(v, all, (seed ^ (v.inst.length*2246822519) ^ (v.i*40503))>>>0);
+        parts[v.inst]=notes;
+        all=all.concat(notes);
+      }
+      /* every pair of voices, so three parts is three comparisons */
+      let pairs=0, rubs=0, moves=0, oblique=0, parallel=0;
+      for(let a=0;a<written.length;a++) for(let b=a+1;b<written.length;b++){
+        const q=pairScore(parts[written[a].inst], parts[written[b].inst]);
+        pairs+=q.pairs; rubs+=q.rubs; moves+=q.moves;
+        oblique+=q.oblique; parallel+=q.parallel;
+      }
+      const rubPct=pairs?100*rubs/pairs:0;
+      const obqPct=moves?100*oblique/moves:0;
+      cands.push({ seed:seed>>>0, parts, notes:all.length,
+        score:{ voicePairs:pairs, rubs, rubPct:+rubPct.toFixed(2),
+          oblique:+obqPct.toFixed(1), parallel:moves?+(100*parallel/moves).toFixed(1):0 },
+        /* ranked by FAULT: a clash between voices first, then distance
+           from Palestrina's 68%. Not by worth — nothing here can hear it */
+        fault:+(rubPct*10 + Math.abs(obqPct-68)/10).toFixed(3) });
+    }
+    cands.sort((a,b)=>a.fault-b.fault);
+
+    if(o.apply!=null){
+      const chosen=cands.find(c=>c.seed===(o.apply>>>0)) || cands[0];
+      let wrote=0;
+      /* THE AGAINST-CHAIN HAS TO BE REBUILT, NOT SKIPPED. Written with
+         `against:[]` here, every voice would be written as though it were
+         alone — so the arrangement that got written would not be the one
+         that was scored and offered, which is the precise mismatch this
+         file keeps catching elsewhere ("quietly scoring one thing and
+         writing another"). The candidate already holds each voice's
+         notes, so the chain is replayed from it. */
+      let sofar=[];
+      for(const v of written){
+        const r=await this.infill(v.inst, { from, bars, role:v.role,
+          src:o.src||'pat', lo:v.lo, hi:v.hi, shape:o.shape, feel:o.feel,
+          against:sofar,
+          apply:(chosen.seed ^ (v.inst.length*2246822519) ^ (v.i*40503))>>>0 });
+        wrote+=r.wrote||0;
+        sofar=sofar.concat(chosen.parts[v.inst]||[]);
+      }
+      return { applied:chosen.seed, voices:written.map(v=>v.inst), wrote,
+        score:chosen.score,
+        says:'wrote '+wrote+' notes across '+written.length+' voices — '
+          +written.map(v=>v.inst).join(', ')+' — over bars '+(from+1)+'–'+(from+bars)
+          +'. '+chosen.score.rubs+' semitone clashes between voices, '
+          +chosen.score.oblique+'% oblique motion against 68% in Palestrina.' };
+    }
+
+    const best=cands[0];
+    return { voices:written.map(v=>({inst:v.inst, role:v.role})), bars, from,
+      candidates:cands.map(c=>({ seed:c.seed, notes:c.notes, score:c.score, fault:c.fault })),
+      says:cands.length+' arrangement'+(cands.length===1?'':'s')+' for '
+        +written.map(v=>v.inst).join(' + ')+', written foundation-first so each '
+        +'part knows the ones under it. Nothing is written. The best on the '
+        +'numbers is seed '+best.seed+' ('+best.score.rubs+' semitone clashes in '
+        +best.score.voicePairs+' sounding voice-pairs, '+best.score.oblique
+        +'% oblique against 68% in Palestrina). Ranked by fault, not by worth — '
+        +'if the third one sounds better, it is better.' };
   },
 
   /* BASS, DESIGNED RATHER THAN SAMPLED.
@@ -21983,6 +22210,27 @@ function drawSpanPicker(){
   if((!cur || cur.disabled) && widest!=null) sel.value=widest;
 }
 
+/* THE VOICES OF AN ARRANGEMENT, WITH ROLES FROM REGISTER.
+   "Bass on one hi on another synth on another" — the roles are not
+   something a person should have to assign, because the pads already
+   say it: an instrument sampled at the bottom of the keyboard is the
+   bass whatever it is called. Sorted by mean sampled pitch, lowest
+   takes bass, highest takes arp, everything between carries the tune. */
+function mlVoices(){
+  const byInst={};
+  for(const p of S.pads){
+    if(!p || p.bufId<0 || !p.inst || p.srcNote==null) continue;
+    (byInst[p.inst]=byInst[p.inst]||[]).push(p.srcNote);
+  }
+  const names=Object.keys(byInst);
+  if(!names.length) return [];
+  const rows=names.map(n=>({ inst:n,
+    mid:byInst[n].reduce((a,b)=>a+b,0)/byInst[n].length }))
+    .sort((a,b)=>a.mid-b.mid);
+  return rows.map((r,i)=>({ inst:r.inst,
+    role: i===0 ? 'bass' : (i===rows.length-1 && rows.length>2 ? 'arp' : 'lead') }));
+}
+
 function drawMusicalLayer(){
   if(!$('mlTonic')) return;
   const k=S.key, bars=mlBars();
@@ -22150,14 +22398,59 @@ if($('mlTonic')){
     lcd(padName(i)+' IS NOW "'+name+'" — OFFER can write for it.');
   });
   /* ---- OFFER / WRITE IT ------------------------------------------- */
-  let mlCands=null, mlOpts=null, mlSpanBars=4, mlChunkBars=4;
+  let mlCands=null, mlOpts=null, mlSpanBars=4, mlChunkBars=4, mlEnsemble=null;
   /* how many whole bars the SELECTED pattern can still hold */
   const mlBarsCapacity=()=>Math.max(1, Math.floor(patLen(S.patterns[S.pattern])/16));
+  if($('mlAll')) $('mlAll').addEventListener('change',()=>{
+    mlEnsemble=null; mlCands=null; $('mlPickRow').hidden=true;
+    const vs=mlVoices();
+    $('mlInfo').textContent = $('mlAll').checked
+      ? (vs.length<2 ? 'ALL needs at least two tagged instruments.'
+         : 'ALL LAYERS: ' + vs.map(v=>v.inst+' as '+v.role).join(', ')
+           + '. Roles come from register — OFFER writes them foundation-first, '
+           + 'each part against the ones under it.')
+      : '';
+    if($('mlOffer')) $('mlOffer').disabled = $('mlAll').checked ? vs.length<2 : !$('mlInst').value;
+  });
   $('mlOffer').addEventListener('click',async()=>{
     const inst=$('mlInst').value;
-    if(!inst) return;
+    const allOn=!!($('mlAll') && $('mlAll').checked);
+    if(!inst && !allOn) return;
     const b=$('mlOffer'); b.disabled=true; const was=b.textContent; b.textContent='…';
     try{
+      /* ALL LAYERS is a different call with the same two buttons. It
+         offers whole arrangements rather than one voice's candidates, so
+         the picker lists ensembles and WRITE IT writes every part. */
+      if(allOn){
+        const vs=mlVoices();
+        if(vs.length<2) throw new Error('ALL needs at least two tagged instruments — '
+          +'there '+(vs.length===1?'is one':'are none')+'. Tag more pads below, or '
+          +'untick ALL to write a single voice.');
+        const span=Math.max(1, parseInt($('mlSpan').value,10)||4);
+        const chunk=Math.min(span, Math.max(1, Math.floor(MAXSTEPS/16)));
+        const cap=mlBarsCapacity();
+        if(chunk>cap) throw new Error('pattern '+(S.pattern+1)+' is '+cap+' bar'
+          +(cap===1?'':'s')+' and this wants '+chunk
+          +'. Set LEN longer, or choose a shorter span.');
+        const opts={ from:Math.max(0,Math.min(cap-1,parseInt($('mlFrom').value,10)||0)),
+          bars:chunk, n:5, src:'pat', feel:$('mlFeel').value,
+          seed:(Date.now()&0x7fffffff) };
+        mlSpanBars=span; mlChunkBars=chunk; mlEnsemble=vs; mlOpts=opts;
+        const r=await window.MVX.ensemble(vs, opts);
+        mlCands=r.candidates;
+        const pick=$('mlPick'); pick.textContent='';
+        r.candidates.forEach((c,i)=>{
+          const o=document.createElement('option');
+          o.value=String(c.seed);
+          o.textContent=(i===0?'best on the numbers — ':'')
+            +c.notes+' notes, '+c.score.rubs+' clash'+(c.score.rubs===1?'':'es')
+            +', '+c.score.oblique+'% oblique';
+          pick.appendChild(o);
+        });
+        $('mlPickRow').hidden=false;
+        $('mlInfo').textContent=r.says;
+        return;
+      }
       /* A SPAN LONGER THAN A PATTERN IS WRITTEN ACROSS PATTERNS.
          MAXSTEPS is 64 and a bar is 16, so four bars is all one pattern
          holds — asking for eight used to generate notes at step 122 and
@@ -22257,6 +22550,14 @@ if($('mlTonic')){
     const seed=+$('mlPick').value;
     const b=$('mlApply'); b.disabled=true;
     try{
+      if(mlEnsemble){
+        const r=await window.MVX.ensemble(mlEnsemble,
+          Object.assign({}, mlOpts, {apply:seed}));
+        drawSteps(); drawNotes(); drawMusicalLayer(); dirty();
+        $('mlInfo').textContent=r.says+' Press OFFER again for another set, or undo.';
+        lcd('WROTE '+r.wrote+' NOTES across '+r.voices.length+' voices');
+        return;
+      }
       const inst=$('mlInst').value;
       const chunks=Math.max(1, Math.ceil(mlSpanBars/mlChunkBars));
       const startPat=S.pattern;
