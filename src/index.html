@@ -684,6 +684,42 @@ sustained chord sitting on a free pad, and the snare is untouched.</p>
       how far off a block may be before the target is held and stretched
       to wait for a better one, which is what warps the timing.</p>
   </div></details>
+  <!-- BASS, BUILT RATHER THAN SAMPLED. Every bass here used to be a
+       recording of something else pitched down, which AGENTS.md has the
+       cautionary tale for: a door knock pitched down is a loud door knock.
+       A sub is not a recording of anything, it is a frequency, so the
+       honest way to get a clean one is to state it. These are recipes for
+       paint(), which is already additive synthesis.
+       CARRIES is the control that matters and the one nobody would guess:
+       below about 400Hz nothing is reproduced on a phone, so a pure sub is
+       felt on a big speaker and absent on a small one. It lifts the
+       harmonics in 120Hz-1kHz, which is the part a phone can actually
+       reproduce, and the result line reports the measured share. -->
+  <details class="toolbox"><summary>BASS &mdash; build a sub, a wobble or a drop</summary><div>
+    <div class="row" style="gap:4px;flex-wrap:wrap">
+      <select id="bsStyle" class="grow" aria-label="What kind of bass">
+        <option value="sub" selected>SUB &mdash; clean, the one you feel</option>
+        <option value="reese">REESE &mdash; detuned stacks beating</option>
+        <option value="growl">GROWL &mdash; formants moving</option>
+        <option value="wobble">WOBBLE &mdash; mids pump, sub holds</option>
+        <option value="drop">DROP &mdash; falls, then sits on the note</option>
+      </select>
+      <select id="bsNote" aria-label="Which note"></select>
+    </div>
+    <div class="pslider"><span class="lbl">CARRIES</span><input type="range" id="bsBright" min="0" max="1" step="0.05" value="0.5"><span class="val" id="bsBrightV">50%</span></div>
+    <div class="pslider" id="bsWobRow"><span class="lbl">RATE</span><input type="range" id="bsWob" min="0.5" max="12" step="0.1" value="3"><span class="val" id="bsWobV">3.0Hz</span></div>
+    <div class="pslider" id="bsDetRow"><span class="lbl">DETUNE</span><input type="range" id="bsDet" min="0" max="40" step="1" value="12"><span class="val" id="bsDetV">12c</span></div>
+    <div class="pslider" id="bsFallRow"><span class="lbl">FALL</span><input type="range" id="bsFall" min="0.05" max="0.8" step="0.01" value="0.22"><span class="val" id="bsFallV">22%</span></div>
+    <div class="pslider"><span class="lbl">LENGTH</span><input type="range" id="bsSecs" min="0.4" max="6" step="0.1" value="2"><span class="val" id="bsSecsV">2.0s</span></div>
+    <div class="row" style="gap:4px;margin-top:4px">
+      <button id="btnBass" class="grow" title="Build it onto the next empty pad, tagged bass">MAKE BASS</button>
+    </div>
+    <p style="margin:8px 0 0;font-size:10px;color:var(--txt-dim);line-height:1.5">
+      It lands on an empty pad, tagged <b>bass</b>, so place(), balance() and
+      the melodic checks can all see it. WOBBLE leaves the fundamental
+      steady on purpose &mdash; modulating the sub too makes the weight come
+      and go, and the weight is the point.</p>
+  </div></details>
   <div class="row" style="flex-wrap:wrap;gap:4px">
     <button id="btnToolFreeze" data-acts="pad" class="grow" title="Hold one instant of this pad's spectrum as a sustained pad">FREEZE PAD</button>
     <button id="btnToolTape" data-acts="pad" class="grow" title="Run this pad to tape — wow, flutter, drift and saturation">RUN TO TAPE</button>

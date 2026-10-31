@@ -451,6 +451,62 @@ export default async function ({ browser, base }) {
         return window.JBH.pad(pad).gain === 0.9 && r.settings.gain != null;
       }), 'gain is part of the result and restored when not kept');
 
+    /* ---- BASS, BUILT RATHER THAN SAMPLED -----------------------------
+       Every bass in this repo was a recording of something else pitched
+       down, which is the mistake AGENTS.md keeps a door knock around to
+       illustrate. bass() is a set of recipes for paint(), and the claim
+       worth testing is not "it makes a sound" but the one thing that
+       decides whether a bass is audible at all: below about 400Hz
+       nothing is reproduced on a phone, so the harmonics in 120Hz-1kHz
+       are what carry it, and every style has to put real energy there. */
+    t.head('BASS BUILDS, AND LANDS WHERE A PHONE CAN HEAR IT');
+    const bs = await page.evaluate(async () => {
+      await window.JBH.clear();
+      const out = {};
+      let pad = 0;
+      for (const style of ['sub', 'reese', 'growl', 'wobble', 'drop']) {
+        const r = await window.JBH.bass({ style, midi: 36, seconds: 1.5, pad: pad++ });
+        const by = {}; (r.shape || []).forEach(b => { by[b.band] = b.rel; });
+        out[style] = { pad: r.pad, phone: r.carriesOnAPhone, peak: r.peak,
+          partials: r.partials, sub: by['60-120'], top: by['8k-16k'],
+          tagged: window.JBH.instPads('bass').length };
+      }
+      let refused = null;
+      try { await window.JBH.bass({ style: 'dubstep' }); }
+      catch (e) { refused = e.message; }
+      /* does CARRIES do anything, or is it a slider wired to nothing */
+      const dull = await window.JBH.bass({ style: 'sub', midi: 36, seconds: 1, bright: 0, pad: 10 });
+      const keen = await window.JBH.bass({ style: 'sub', midi: 36, seconds: 1, bright: 1, pad: 11 });
+      return { out, refused, dull: dull.carriesOnAPhone, keen: keen.carriesOnAPhone };
+    });
+    const styles = Object.keys(bs.out);
+    t.ok('all five styles build a sound',
+      styles.length === 5 && styles.every(k => bs.out[k].peak > 0.5),
+      styles.map(k => k + ' ' + bs.out[k].partials + 'p').join(' · '));
+    t.ok('every one of them puts real energy where a phone can reproduce it',
+      styles.every(k => bs.out[k].phone >= 25 && bs.out[k].phone <= 85),
+      styles.map(k => k + ' ' + bs.out[k].phone + '%').join(' · '));
+    t.ok('and every one is still bass — the bottom beats the top by 40dB+',
+      styles.every(k => bs.out[k].sub - bs.out[k].top > 40),
+      styles.map(k => k + ' ' + (bs.out[k].sub - bs.out[k].top).toFixed(0) + 'dB').join(' · '));
+    /* THE REGRESSION THIS CAUGHT. Written as one partial gliding across
+       the whole buffer, the drop was descending the entire time and only
+       arrived at the note on the last sample — 20-60Hz measured -15dB
+       against -5 for every other style, because the sub is where it spent
+       the least time. A drop with no sub at the bottom is the one thing
+       it must not be. */
+    t.ok('THE DROP HAS A SUB — it falls fast and then sits on the note',
+      Math.abs(bs.out.drop.sub - bs.out.sub.sub) < 6,
+      'drop 60-120 at ' + bs.out.drop.sub.toFixed(1)
+        + 'dB against sub at ' + bs.out.sub.sub.toFixed(1) + 'dB');
+    t.ok('each one is tagged bass, so place() and balance() can see it',
+      bs.out.drop.tagged >= 5, bs.out.drop.tagged + ' pads tagged bass');
+    t.ok('CARRIES changes the measured share — the slider is wired to something',
+      bs.keen > bs.dull, 'bright 0 -> ' + bs.dull + '%, bright 1 -> ' + bs.keen + '%');
+    t.ok('an unknown style is refused, and names the five that exist',
+      bs.refused && /sub/.test(bs.refused) && /wobble/.test(bs.refused),
+      (bs.refused || '(it accepted it)').slice(0, 95));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

@@ -700,6 +700,42 @@ sustained chord sitting on a free pad, and the snare is untouched.</p>
       how far off a block may be before the target is held and stretched
       to wait for a better one, which is what warps the timing.</p>
   </div></details>
+  <!-- BASS, BUILT RATHER THAN SAMPLED. Every bass here used to be a
+       recording of something else pitched down, which AGENTS.md has the
+       cautionary tale for: a door knock pitched down is a loud door knock.
+       A sub is not a recording of anything, it is a frequency, so the
+       honest way to get a clean one is to state it. These are recipes for
+       paint(), which is already additive synthesis.
+       CARRIES is the control that matters and the one nobody would guess:
+       below about 400Hz nothing is reproduced on a phone, so a pure sub is
+       felt on a big speaker and absent on a small one. It lifts the
+       harmonics in 120Hz-1kHz, which is the part a phone can actually
+       reproduce, and the result line reports the measured share. -->
+  <details class="toolbox"><summary>BASS &mdash; build a sub, a wobble or a drop</summary><div>
+    <div class="row" style="gap:4px;flex-wrap:wrap">
+      <select id="bsStyle" class="grow" aria-label="What kind of bass">
+        <option value="sub" selected>SUB &mdash; clean, the one you feel</option>
+        <option value="reese">REESE &mdash; detuned stacks beating</option>
+        <option value="growl">GROWL &mdash; formants moving</option>
+        <option value="wobble">WOBBLE &mdash; mids pump, sub holds</option>
+        <option value="drop">DROP &mdash; falls, then sits on the note</option>
+      </select>
+      <select id="bsNote" aria-label="Which note"></select>
+    </div>
+    <div class="pslider"><span class="lbl">CARRIES</span><input type="range" id="bsBright" min="0" max="1" step="0.05" value="0.5"><span class="val" id="bsBrightV">50%</span></div>
+    <div class="pslider" id="bsWobRow"><span class="lbl">RATE</span><input type="range" id="bsWob" min="0.5" max="12" step="0.1" value="3"><span class="val" id="bsWobV">3.0Hz</span></div>
+    <div class="pslider" id="bsDetRow"><span class="lbl">DETUNE</span><input type="range" id="bsDet" min="0" max="40" step="1" value="12"><span class="val" id="bsDetV">12c</span></div>
+    <div class="pslider" id="bsFallRow"><span class="lbl">FALL</span><input type="range" id="bsFall" min="0.05" max="0.8" step="0.01" value="0.22"><span class="val" id="bsFallV">22%</span></div>
+    <div class="pslider"><span class="lbl">LENGTH</span><input type="range" id="bsSecs" min="0.4" max="6" step="0.1" value="2"><span class="val" id="bsSecsV">2.0s</span></div>
+    <div class="row" style="gap:4px;margin-top:4px">
+      <button id="btnBass" class="grow" title="Build it onto the next empty pad, tagged bass">MAKE BASS</button>
+    </div>
+    <p style="margin:8px 0 0;font-size:10px;color:var(--txt-dim);line-height:1.5">
+      It lands on an empty pad, tagged <b>bass</b>, so place(), balance() and
+      the melodic checks can all see it. WOBBLE leaves the fundamental
+      steady on purpose &mdash; modulating the sub too makes the weight come
+      and go, and the weight is the point.</p>
+  </div></details>
   <div class="row" style="flex-wrap:wrap;gap:4px">
     <button id="btnToolFreeze" data-acts="pad" class="grow" title="Hold one instant of this pad's spectrum as a sustained pad">FREEZE PAD</button>
     <button id="btnToolTape" data-acts="pad" class="grow" title="Run this pad to tape — wow, flutter, drift and saturation">RUN TO TAPE</button>
@@ -8948,7 +8984,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R236 · 2026-10-31 · magenta writes the shape, the rules keep the harmony';
+const BUILD = 'JBH-88 · R237 · 2026-10-31 · bass you build: sub, reese, growl, wobble, drop';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -19949,10 +19985,20 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           const g=Math.min(1, into*(E*dur)/ramp, (1-into)*(E*dur)/ramp);
           env[k]=lv*Math.max(0, Math.min(1, g));
         }
-        parts.push({hz, env, toHz:+q.toHz>0?+q.toHz:0});
+        /* AMPLITUDE MODULATION, because a wobble is one and nothing here
+           could make one. The box envelope above can gate a partial on
+           and off, and six gated boxes a second is a stutter rather than
+           a wobble -- the difference is the shape of the edge. amPhase
+           lets harmonics wobble out of step with each other, which is
+           what stops a stack of them sounding like one tremolo on one
+           sound. Off unless asked: amDepth 0 leaves the maths untouched. */
+        parts.push({hz, env, toHz:+q.toHz>0?+q.toHz:0,
+          amHz:+q.amHz>0?+q.amHz:0,
+          amDepth:clamp(q.amDepth==null?0:+q.amDepth, 0, 1),
+          amPhase:clamp(q.amPhase==null?0:+q.amPhase, 0, 1)});
       }
     } else throw new Error('paint needs rows (a grid of levels, lowest frequency first) '
-      +'or partials ([{hz|midi, at, dur, level, toHz}])');
+      +'or partials ([{hz|midi, at, dur, level, toHz, amHz, amDepth, amPhase}])');
 
     if(!parts.length) throw new Error('nothing to paint — every row was silent');
     if(parts.length>192) throw new Error(parts.length+' partials is past the 192 cap: '
@@ -19977,7 +20023,11 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       for(let i=0;i<n;i++){
         const t=i/(n-1);
         const x=t*(E-1), k=x|0, f=x-k;
-        const a=env[k]*(1-f)+(env[k+1]==null?env[k]:env[k+1])*f;
+        let a=env[k]*(1-f)+(env[k+1]==null?env[k]:env[k+1])*f;
+        if(p.amDepth>0 && p.amHz>0){
+          const ph=2*Math.PI*(p.amHz*(i/sr)+p.amPhase);
+          a*=1-p.amDepth+p.amDepth*(0.5+0.5*Math.sin(ph));
+        }
         if(a>0.0004) out[i]+=a*tab[(phase*TAB)|0];
         phase+=(glide?p.hz*Math.exp(ratio*t):p.hz)/sr;
         if(phase>=1) phase-=(phase|0);
@@ -20011,10 +20061,186 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     return { pad:target, name, seconds:+(n/sr).toFixed(3), partials:parts.length,
       lo:Math.round(lo), hi:Math.round(hi), log:useLog,
       lowest:Math.round(parts[0].hz), highest:Math.round(parts[parts.length-1].hz),
-      shape:rep.shape, peak:rep.peak,
+      shape:rep.shape, peak:rep.peak, bands:rep.bands,
       says:'painted '+parts.length+' partials from '+Math.round(parts[0].hz)+'Hz to '
         +Math.round(parts[parts.length-1].hz)+'Hz onto '+padName(target)
         +'. It is a sample now — pad() it, chop() it, mutate() it like any other.' };
+  },
+
+  /* BASS, DESIGNED RATHER THAN SAMPLED.
+
+     Asked for "really clean heavy bass, dubstep drops and nice sub
+     frequencies". Every bass in this repo until now was a sample of
+     something else pitched down, and that is exactly the wrong tool:
+     AGENTS.md has the door knock pitched down four semitones that a
+     listener called "a strange percussive noise", because processing
+     changes a sound without changing what the sound is OF. A sub is not
+     a recording of anything. It is a frequency, and the honest way to
+     get a clean one is to state it.
+
+     paint() already does additive synthesis, so this is a set of recipes
+     for it rather than a new engine.
+
+     THE ONE THING THAT MAKES OR BREAKS A BASS HERE, and it is already
+     written down two sections up in AGENTS.md: *bass carries by its
+     harmonics*. Below about 400Hz nothing is reproduced on a phone, so a
+     near-pure sine sub is felt on a big speaker and SIMPLY ABSENT on a
+     small one -- which a listener reports as "the bass isn't clear"
+     rather than "the bass is quiet", and which translate() measures.
+     So every style here deliberately puts real energy in 150-800Hz,
+     where a small speaker can actually reproduce it, and the sub sits
+     underneath as the part you feel. That is not a compromise; it is why
+     commercial bass survives a phone.
+
+     At 65Hz (C2) the harmonics land at 131, 196, 262, 327, 392, 458,
+     523, 588 and 654Hz -- so harmonics 3 to 10 ARE the phone band, and
+     weighting them is the whole trick.
+
+     paint() NORMALISES, so only the ratios below mean anything; the
+     absolute numbers are thrown away. AGENTS.md records a whole
+     iteration lost to forgetting that. */
+  async bass(opt){
+    const o=opt||{};
+    const STYLES={
+      /* a clean sub with just enough upper harmonic to be heard at all.
+         Few partials on purpose -- "clean" is a short partial list. */
+      sub:    { says:'a clean sub: the fundamental you feel, with harmonics 3-6 '
+                    +'carrying it on a small speaker',
+                h:[1,0.52,0.30,0.22,0.15,0.09,0.05], am:0 },
+      /* the Reese: detuned copies beating against each other. Not AM --
+         the movement is interference between voices a few cents apart,
+         which is why it needs no modulation to sound alive. */
+      reese:  { says:'a Reese: three stacks a few cents apart, so the movement is '
+                    +'interference rather than an effect',
+                h:[1,0.60,0.44,0.34,0.26,0.20,0.14,0.10], am:0, voices:3 },
+      /* growl: each harmonic modulated at its OWN rate, which reads as
+         the formants moving rather than as one tremolo over everything */
+      growl:  { says:'a growl: every harmonic modulated at its own rate, so the '
+                    +'formants move instead of the whole sound pumping',
+                h:[1,0.58,0.46,0.40,0.34,0.28,0.22,0.16,0.11], am:0.75, spread:true },
+      /* wobble: the SUB STAYS STEADY and the mids pump. Modulating the
+         fundamental too is the beginner's version -- it makes the weight
+         come and go, and the weight is the point. */
+      wobble: { says:'a wobble: the sub holds steady while the mids pump, so the '
+                    +'weight never leaves',
+                h:[1,0.50,0.46,0.42,0.36,0.30,0.24,0.18,0.12], am:0.9, keepSub:true },
+      /* the drop: everything glides down together. toHz on each partial
+         keeps the stack harmonic throughout the glide, which is what
+         makes it read as one sound falling rather than a smear. */
+      drop:   { says:'a drop: the whole stack glides down an octave together, '
+                    +'staying harmonic the whole way',
+                h:[1,0.55,0.40,0.32,0.26,0.20,0.15,0.10], am:0, glide:true }
+    };
+    const style=String(o.style||'sub');
+    const S0=STYLES[style];
+    if(!S0) throw new Error('style must be one of '+Object.keys(STYLES).join(', ')
+      +'. sub is the clean one, wobble and growl move, reese beats against itself, '
+      +'drop glides.');
+
+    const midi=clamp(o.midi==null?36:+o.midi, 12, 60);
+    const secs=clamp(o.seconds==null?2:+o.seconds, 0.2, 8);
+    const hz=440*Math.pow(2,(midi-69)/12);
+    const wob=clamp(o.wobbleHz==null?3:+o.wobbleHz, 0.2, 24);
+    const det=clamp(o.detune==null?12:+o.detune, 0, 60);     /* cents */
+    const bright=clamp(o.bright==null?0.5:+o.bright, 0, 1);
+    const from=clamp(o.fromMidi==null?midi+12:+o.fromMidi, 12, 96);
+    /* how much of the sample the fall occupies; the rest holds the note */
+    const fall=clamp(o.fall==null?0.22:+o.fall, 0.02, 0.9);
+
+    /* THE PHONE BAND, STATED AS A RULE RATHER THAN HOPED FOR. Harmonics
+       whose frequency lands in 150-800Hz get lifted, because that is the
+       band a small speaker reproduces and the band translate() measures
+       the loss in. `bright` moves how much. */
+    const parts=[];
+    const voices=S0.voices||1;
+    S0.h.forEach((lv,k)=>{
+      const n=k+1, f=hz*n;
+      if(f>16000) return;
+      let level=lv;
+      if(f>=150 && f<=800) level*=1+0.9*bright;      /* carries on a phone */
+      else if(f>800)       level*=1-0.45*bright;     /* not where a bass lives */
+      for(let v=0;v<voices;v++){
+        /* cents either side of centre; one voice means no detune at all */
+        const cents=voices===1?0:(v-(voices-1)/2)*det;
+        const vf=f*Math.pow(2,cents/1200);
+        const p={ hz:vf, level:clamp(level/voices,0,1), at:0, dur:1 };
+        if(S0.glide){
+          /* A DROP FALLS FAST AND THEN SITS ON THE NOTE. Written as one
+             partial gliding across the whole sample, it is descending the
+             entire time and only arrives at the bottom on the last
+             sample — measured, that left 20-60Hz at -15dB against -5 for
+             every other style here, because the sub is where it spends
+             the least time. A drop with no sub at the bottom of it is the
+             one thing it must not be.
+             So: a gliding partial over the first `fall` of the buffer,
+             then a steady one holding the note for the rest.
+             paint() applies a glide as hz*(toHz/hz)^t with t running
+             across the WHOLE buffer, not across the partial's own window,
+             so landing on the target at t=fall needs the end point
+             pre-compensated — hz*(target/hz)^(1/fall) raised to fall is
+             exactly the target. Computed here rather than changing
+             paint(), because a windowed glide is the behaviour every
+             existing caller already has. */
+          const top=440*Math.pow(2,(from-69)/12)*n;
+          parts.push({ hz:top, toHz:top*Math.pow(vf/top, 1/fall),
+            level:clamp(level/voices,0,1), at:0, dur:fall });
+          p.hz=vf; p.at=fall; p.dur=1-fall;
+        }
+        if(S0.am>0 && !(S0.keepSub && n<=2)){
+          p.amHz = S0.spread ? wob*(0.7+0.5*n/S0.h.length) : wob;
+          p.amDepth = S0.am*(S0.keepSub ? Math.min(1,(n-2)/3) : 1);
+          p.amPhase = S0.spread ? (n*0.37)%1 : 0;
+        }
+        parts.push(p);
+      }
+    });
+    if(!parts.length) throw new Error('nothing to build — note '+midi+' is too high for a bass');
+
+    const r=await this.paint({ partials:parts, seconds:secs, midi,
+      name:style+' bass '+midiName(midi), pad:o.pad, seed:o.seed,
+      lo:Math.min(...parts.map(p=>p.hz)), hi:Math.max(800, Math.max(...parts.map(p=>p.hz))) });
+
+    /* staged as a BASS, not left on paint()'s defaults: a long sustain so
+       it holds through a note, and tagged so place(), balance(), motif()
+       and counterpoint() can all see it. AGENTS.md: sound() does not tag,
+       and three of the most useful calls here go quiet without a tag. */
+    const pad=r.pad;
+    await window.MVX.pad(pad, { inst:'bass', srcNote:midi, gain:0.9,
+      atk:0.004, dec:0.02, sus:1, rel:S0.glide?0.12:0.06 });
+
+    /* WHAT FRACTION OF IT A PHONE WILL ACTUALLY REPRODUCE, measured from
+       the rendered buffer and not from the partial levels asked for.
+       The first version of this summed the LEVELS IN THE SPEC, which is
+       a prediction wearing a measurement's clothes -- and paint()
+       normalises, so a spec-derived number can be right about the ratios
+       and still describe audio nobody rendered. This repo has lost two
+       iterations of a track to exactly that: "the SOUND matched the SPEC.
+       The spec did not achieve the GOAL, and nothing compared those two
+       things." These are specReport's own bands, off the buffer that
+       went onto the pad. */
+    const phone=(()=>{
+      try{
+        const by={}; (r.bands||[]).forEach(b=>{ by[b.band]=b; });
+        /* bandEnergy reports db as 20log10(rms), so power is 10^(db/10).
+           Written with a chain of guesses at the field name first, which
+           is how a wrong branch survives: only `db` exists. */
+        const e=nm=>{ const b=by[nm];
+          return b && b.db!=null ? Math.pow(10, b.db/10) : 0; };
+        const felt=e('20-60')+e('60-120');
+        const heard=e('120-250')+e('250-500')+e('500-1k');
+        const tot=felt+heard;
+        return tot>0 ? Math.round(100*heard/tot) : null;
+      }catch(e2){ return null; }
+    })();
+
+    return { pad, padName:padName(pad), style, midi, note:midiName(midi),
+      partials:parts.length, seconds:r.seconds, peak:r.peak, shape:r.shape,
+      carriesOnAPhone:phone, measuredFrom:'the rendered buffer',
+      says:S0.says+'. On '+padName(pad)+' at '+midiName(midi)+', tagged bass. '
+        +(phone==null?'Its phone-band share could not be measured':
+          phone+'% of its measured energy is in 120Hz-1kHz, which is the part a '
+          +'phone can reproduce')+' — run translate() on the mix to see what '
+        +'survives, and place() to see whether it owns the bottom.' };
   },
 
   /* MUTATE A SOUND: MAKE VARIATIONS, MEASURE THEM, KEEP THE BEST.
@@ -21910,6 +22136,59 @@ $('btnToolFreeze').addEventListener('click',()=>toolRun('btnToolFreeze','FREEZE'
     'held '+r.partials+' of '+r.found+' partials found, '+r.lowest+'Hz to '+r.highest+'Hz.',
     'The original is untouched. Try a different moment with freeze(pad,{at:0.6}).'];
 }));
+/* BASS. The sliders that do nothing for the chosen style are hidden
+   rather than left sitting there inert: RATE means nothing to a sub,
+   DETUNE means nothing to anything but a reese, and a control that is
+   visible and has no effect is the thing this app keeps apologising for
+   elsewhere in these comments. */
+function drawBassRows(){
+  const st=$('bsStyle'); if(!st) return;
+  const v=st.value;
+  const show=(id,on)=>{ const el=$(id); if(el) el.style.display=on?'':'none'; };
+  show('bsWobRow',  v==='wobble' || v==='growl');
+  show('bsDetRow',  v==='reese');
+  show('bsFallRow', v==='drop');
+}
+if($('bsStyle')){
+  /* the note list, low because this is a bass: C0 up to C4 */
+  const ns=$('bsNote');
+  for(let m=12;m<=60;m++){
+    const o=document.createElement('option');
+    o.value=m; o.textContent=midiName(m);
+    if(m===36) o.selected=true;
+    ns.appendChild(o);
+  }
+  $('bsStyle').addEventListener('change',drawBassRows);
+  drawBassRows();
+  const live=[['bsBright','bsBrightV',v=>Math.round(v*100)+'%'],
+              ['bsWob','bsWobV',v=>(+v).toFixed(1)+'Hz'],
+              ['bsDet','bsDetV',v=>Math.round(v)+'c'],
+              ['bsFall','bsFallV',v=>Math.round(v*100)+'%'],
+              ['bsSecs','bsSecsV',v=>(+v).toFixed(1)+'s']];
+  for(const [id,out,fmt] of live){
+    const el=$(id); if(!el) continue;
+    const upd=()=>{ const o=$(out); if(o) o.textContent=fmt(el.value); };
+    el.addEventListener('input',upd); upd();
+  }
+  $('btnBass').addEventListener('click',()=>toolRun('btnBass','BASS',async()=>{
+    const free=freePadFor();
+    if(free<0) return 'every pad is full — clear one for the bass.';
+    const style=$('bsStyle').value;
+    const r=await window.MVX.bass({ style, pad:free,
+      midi:parseInt($('bsNote').value,10),
+      seconds:+$('bsSecs').value,
+      bright:+$('bsBright').value,
+      wobbleHz:+$('bsWob').value,
+      detune:+$('bsDet').value,
+      fall:+$('bsFall').value });
+    drawPads();
+    return ['BASS '+style.toUpperCase()+' → '+padLabel(r.pad), r.says, '',
+      r.partials+' partials, '+r.seconds+'s, peak '+r.peak+'.',
+      'Measured share in 120Hz-1kHz, the band a phone reproduces: '
+        +r.carriesOnAPhone+'%. CARRIES moves it.',
+      'It is a sample now — note() it for a line, or chop() and mutate() it.'];
+  }));
+}
 $('btnToolTape').addEventListener('click',()=>toolRun('btnToolTape','TAPE',async()=>{
   const i=S.editPad|0;
   if(!S.pads[i] || S.pads[i].bufId<0) return 'this pad has no sample on it.';
