@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R243 · 2026-11-02 · WRITE: phrases that repeat, arcs that go somewhere';
+const BUILD = 'JBH-88 · R244 · 2026-11-02 · WRITE: call and response, and the controls to reach it';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -14252,6 +14252,42 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       return { pairs, rubs:rubs, moves, oblique, parallel };
     };
 
+    /* ---- CALL AND RESPONSE ------------------------------------------
+       "Build phrasing that acts like a conversation — where a lead
+       instrument states a musical sentence, pauses, and a secondary
+       instrument answers it."
+
+       The mechanism was already here: `against` lets a voice see what
+       the others play. What it did with that was avoid clashing, which
+       is politeness rather than conversation — every voice still played
+       continuously, all the way through, all of the time. Measured on
+       the three-voice demo, the melodic voices sounded together through
+       most of the span, which is why it read as a wall rather than as
+       parts.
+
+       A conversation is made of SILENCE as much as notes, and at phrase
+       scale rather than note scale: dodging each other note by note
+       gives two busy parts that interlock, which is a texture. So the
+       melodic voices take turns over two-bar halves — one states, the
+       other answers — while the bass carries on underneath, because a
+       rhythm section that stops talking is not a conversation, it is a
+       gap.
+
+       Implemented with `from` and `bars`, which infill already has, so a
+       turn is a real sub-span rather than notes written and then muted. */
+    const turnsFor=(v, vi)=>{
+      if(!converse || v.role==='bass' || bars<2) return [{from, bars}];
+      const half=Math.max(1, Math.floor(bars/2));
+      /* melodic voices alternate halves; with three of them the third
+         doubles the first's half an octave apart, which is how a horn
+         section answers rather than a third conversation starting */
+      const melodic=written.filter(x=>x.role!=='bass');
+      const idx=melodic.findIndex(x=>x.inst===v.inst);
+      const first=(idx%2===0);
+      return first ? [{from, bars:half}]
+                   : [{from:from+half, bars:bars-half}];
+    };
+
     const buildOne=async(v, against, seed)=>{
       /* FORWARD EVERYTHING THE PANEL SENDS. density and octave were
          dropped here — the UI set them, ensemble() accepted them and
@@ -14259,11 +14295,16 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
          while working in single-voice mode. That is the jbh_resynth
          `jumble` trap exactly: an option forwarded to a function that
          does not read it, and nothing to notice it. */
-      const r=await this.infill(v.inst, { from, bars, n:1, role:v.role,
-        src:o.src||'pat', seed, against, lo:v.lo, hi:v.hi,
-        shape:o.shape, feel:o.feel, density:o.density, octave:o.octave });
-      const c=r.candidates[0];
-      return c.notes.map(([midi,step,vel,beats])=>({midi,step,vel,beats,inst:v.inst}));
+      const out=[];
+      for(const t of turnsFor(v, v.i)){
+        const r=await this.infill(v.inst, { from:t.from, bars:t.bars, n:1, role:v.role,
+          src:o.src||'pat', seed, against, lo:v.lo, hi:v.hi,
+          shape:o.shape, feel:o.feel, density:o.density, octave:o.octave });
+        const c=r.candidates[0];
+        for(const [midi,step,vel,beats,nudge] of c.notes)
+          out.push({midi,step,vel,beats,nudge,inst:v.inst});
+      }
+      return out;
     };
 
     /* ---- CROSS-TEMPO LAYERS -----------------------------------------
@@ -14296,6 +14337,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       wide:  [ null, 1.5,  0.75, 1.75, 1.25 ]
     };
     const polyMode=(POLY_SETS[String(o.poly||'none')]?String(o.poly||'none'):'none');
+    const converse=!!o.converse;
     /* THE SPAN'S CHORDS, READ HERE. The first version of this called
        `info.every(...)` — `info` is a local inside infill(), not in this
        function, so the whole DEMO came back "info is not defined" and
@@ -14406,11 +14448,15 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
          notes, so the chain is replayed from it. */
       let sofar=[];
       for(const v of written){
-        const r=await this.infill(v.inst, { from, bars, role:v.role,
-          src:o.src||'pat', lo:v.lo, hi:v.hi, shape:o.shape, feel:o.feel,
-          density:o.density, octave:o.octave, against:sofar,
-          apply:(chosen.seed ^ (v.inst.length*2246822519) ^ (v.i*40503))>>>0 });
-        wrote+=r.wrote||0;
+        const vseed=(chosen.seed ^ (v.inst.length*2246822519) ^ (v.i*40503))>>>0;
+        /* the SAME turns the candidate was built from, or the written
+           arrangement is not the scored one */
+        for(const t of turnsFor(v, v.i)){
+          const r=await this.infill(v.inst, { from:t.from, bars:t.bars, role:v.role,
+            src:o.src||'pat', lo:v.lo, hi:v.hi, shape:o.shape, feel:o.feel,
+            density:o.density, octave:o.octave, against:sofar, apply:vseed });
+          wrote+=r.wrote||0;
+        }
         sofar=sofar.concat(chosen.parts[v.inst]||[]);
       }
       /* ---- THE SHAPE, APPLIED TO THE RUN OF NOTES ------------------
@@ -22937,8 +22983,9 @@ async function writeSurprise(){
   const bars=Math.min(cap, 4);
   const seed=(Date.now()&0x7fffffff);
   const poly=pick(['none','spread','spread','wide']);   /* usually some */
+  const converse=(vs.length>=3 && Math.random()<0.5);
   const dens=pick(['sparse','normal','normal','busy']);
-  const opts={ from:0, bars, n:5, src:'pat', density:dens, octave:0, poly, seed };
+  const opts={ from:0, bars, n:5, src:'pat', density:dens, octave:0, poly, converse, seed };
 
   let r, how;
   if(vs.length>=2){
@@ -22956,13 +23003,15 @@ async function writeSurprise(){
      press of OFFER is a variation of this rather than a fresh guess */
   const set=(id,v)=>{ const e=$(id); if(e) e.value=String(v); };
   set('mlSpan',bars); set('mlDens',dens); set('mlPoly',poly); set('mlFrom',0);
+  if($('mlConverse')) $('mlConverse').checked=converse;
   if($('mlAll')) $('mlAll').checked = vs.length>=2;
 
   drawSteps(); drawNotes(); drawPoly(); drawPads(); drawMusicalLayer(); dirty();
   const k=window.MVX.key();
   return (k?(k.tonic+' '+k.mode+', '):'')
     +(S.chords[S.pattern]||[]).join(' ')+' over '+bars+' bar'+(bars===1?'':'s')
-    +' · '+dens+(poly==='none'?'':' · cross-tempo '+poly)+' · '+how+'. '
+    +' · '+dens+(poly==='none'?'':' · cross-tempo '+poly)
+    +(converse?' · ask/answer':'')+' · '+how+'. '
     +(r.says||'')+' Press PLAY. Press this again for a different one.';
 }
 if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
@@ -23009,6 +23058,7 @@ if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
           bars:chunk, n:5, src:'pat', feel:$('mlFeel').value,
           density:$('mlDens').value, octave:parseInt($('mlOct').value,10)||0,
           poly:$('mlPoly')?$('mlPoly').value:'none',
+          converse:!!($('mlConverse')&&$('mlConverse').checked),
           seed:(Date.now()&0x7fffffff) };
         mlSpanBars=span; mlChunkBars=chunk; mlEnsemble=vs; mlOpts=opts;
         const r=await window.MVX.ensemble(vs, opts);

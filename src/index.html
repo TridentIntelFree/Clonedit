@@ -1036,6 +1036,29 @@ where they come back into alignment. On a grid that relationship is invisible.</
     <label id="mlAllWrap" style="font-size:10px;display:flex;align-items:center;gap:3px"
       title="Write every tagged instrument at once, each part against the others">
       <input type="checkbox" id="mlAll"> ALL</label>
+    <!-- CALL AND RESPONSE. A conversation is made of silence as much as
+         notes, and at PHRASE scale: dodging note by note gives two busy
+         parts that interlock, which is a texture. The melodic voices take
+         turns over two-bar halves while the bass carries on, because a
+         rhythm section that stops talking is a gap, not an answer. -->
+    <label id="mlConvWrap" style="font-size:10px;display:flex;align-items:center;gap:3px"
+      title="The melodic voices take turns — one states, the other answers">
+      <input type="checkbox" id="mlConverse"> ASK/ANSWER</label>
+    <!-- CROSS-TEMPO LAYERS. Only applies in ALL mode, because it is about
+         the layers' relationship to each other. The bass stays straight:
+         a sub that wanders off the beat takes the weight with it.
+         THIS WAS MISSING FOR SEVERAL BUILDS. The code read $('mlPoly')
+         and fell back to 'none' when it came back null, so cross-tempo
+         lanes were unreachable from the panel while every test passed —
+         because the tests call ensemble() directly. A control referenced
+         by the handler and absent from the markup fails exactly this
+         quietly. -->
+    <select id="mlPoly" aria-label="Cross-tempo layers"
+      title="Give the upper layers their own tempo, so they pull against the beat">
+      <option value="none" selected>in time</option>
+      <option value="spread">cross-tempo 3:4, 5:4</option>
+      <option value="wide">cross-tempo wide</option>
+    </select>
     <select id="mlRole" aria-label="What kind of part">
       <option value="bass">bass</option><option value="lead" selected>lead</option>
       <option value="arp">arp</option><option value="pad">pad</option>

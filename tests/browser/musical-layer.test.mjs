@@ -551,6 +551,42 @@ export default async function ({ browser, base }) {
     t.ok('and unticking ALL returns the panel to the single-voice path',
       allui.backToOne === true, 'picker hidden again: ' + allui.backToOne);
 
+    /* ---- EVERY CONTROL THE HANDLERS REACH FOR MUST EXIST -------------
+       mlPoly was referenced by the OFFER handler for several builds and
+       was not in the markup at all: an edit script threw before writing
+       the file, and `$('mlPoly')?$('mlPoly').value:'none'` reads null and
+       falls back, so cross-tempo lanes were UNREACHABLE from the panel
+       while every test passed — because the tests call ensemble()
+       directly. The feature worked and nobody could get to it.
+
+       That is the third time this session a capability existed and the
+       way in did not. A test on the API cannot see it, so this one looks
+       at the page: every id the write handlers read, present. */
+    t.head('THE PANEL HAS EVERY CONTROL ITS HANDLERS READ');
+    const wired = await page.evaluate(() => {
+      const need = ['mlTonic', 'mlMode', 'mlProgPick', 'mlProgKind', 'mlChords', 'mlSet',
+        'mlInfo', 'mlInst', 'mlRole', 'mlSpan', 'mlFrom', 'mlPtn', 'mlDens', 'mlOct',
+        'mlFeel', 'mlAll', 'mlConverse', 'mlPoly', 'mlOffer', 'mlPick', 'mlApply',
+        'mlDemo', 'mlTagPad', 'mlTagName', 'mlTagGo'];
+      const missing = need.filter(id => !document.getElementById(id));
+      /* a select the handler reads by value must also offer the values
+         the handler branches on, or the branch is dead */
+      const opts = (id) => { const e = document.getElementById(id);
+        return e ? [...e.options].map(o => o.value) : []; };
+      return { missing, poly: opts('mlPoly'), dens: opts('mlDens'),
+        span: opts('mlSpan'), feel: opts('mlFeel') };
+    });
+    t.ok('no control the write handlers read is missing from the page',
+      wired.missing.length === 0, wired.missing.join(', ') || 'all present');
+    t.ok('and the cross-tempo select offers the modes ensemble() implements',
+      wired.poly.includes('spread') && wired.poly.includes('wide') && wired.poly.includes('none'),
+      wired.poly.join(' '));
+    t.ok('density offers the three infill() reads',
+      ['sparse', 'normal', 'busy'].every(v => wired.dens.includes(v)), wired.dens.join(' '));
+    t.ok('and the spans and feels match what the engine accepts',
+      wired.span.includes('16') && wired.feel.includes('3'),
+      wired.span.join(',') + ' · ' + wired.feel.join(','));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

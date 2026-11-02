@@ -227,9 +227,24 @@ not to perturb the material until the refusal goes away.
 
 And when the material itself is the problem, the answer is better
 material, not more constraint satisfaction. `@magenta/music` is
-already installed with 29 reachable checkpoints; `trio_16bar` writes
-melody, bass and drums as one coherent thing in about three seconds on
-CPU. It was sitting unused while all of the above was hand-assembled.
+already installed with 29 reachable checkpoints.
+
+**BUT NOT trio_16bar, AND THE CLAIM THAT USED TO BE HERE IS WRONG.**
+This file said it "writes melody, bass and drums as one coherent thing
+in about three seconds on CPU", which was never measured. Measured:
+16.5 seconds to initialise and **123 seconds to sample two**, and the
+material is worse than what is already in the repo —
+
+```
+sample 1  melody  4% stepwise, 62% repeats, off-norm 28.1
+sample 2  melody 10% stepwise, 69% leaps,   off-norm 28.2
+the baked contour corpus averages off-norm 7.9
+```
+
+Only one of six voices across two samples landed near the norms. An
+unfiltered VAE sample is not better material; it is a lottery ticket
+that takes a minute to print. `chord_pitches_improv` with a filter is
+the route that works here, which is what `src/pure/contours.js` is.
 
 ## A pack named "real" may not be
 
