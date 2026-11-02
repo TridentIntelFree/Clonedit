@@ -1110,16 +1110,16 @@ where they come back into alignment. On a grid that relationship is invisible.</
     </select>
     <button id="mlOffer" title="Offer several ways to play it. Writes nothing.">OFFER</button>
   </div>
-  <!-- A WORKED EXAMPLE, because every control here needs something set up
-       before it does anything, and a panel that needs six decisions before
-       it makes a sound is one people bounce off. This builds the whole
-       thing: three instruments from the CC0 pack, a key, a progression, a
-       64-step pattern, and all three parts written against each other with
-       cross-tempo lanes. Then it says what it did, so it reads as a
-       demonstration rather than as magic. -->
+  <!-- SURPRISE ME. Every control here needs something set up before it
+       does anything, which is six decisions before the first sound. This
+       takes whatever is already on the board — tagging anything untagged,
+       picking a key and a progression if none is declared — and writes
+       every voice against the others. No network, so it works offline, and
+       it demonstrates on the sounds the person chose rather than on
+       someone else's. Different every press. -->
   <div class="row" style="gap:4px">
-    <button id="mlDemo" class="grow needsnet"
-      title="Build a complete four-bar arrangement so you can hear what this does">DEMO &mdash; BUILD ME FOUR BARS</button>
+    <button id="mlDemo" class="grow"
+      title="Write parts for every loaded pad, using whatever is on the board">SURPRISE ME &mdash; WRITE FROM MY PADS</button>
   </div>
   <!-- WITHOUT THIS THE PANEL ABOVE IS A DEAD END. infill() writes for an
        INSTRUMENT, and an instrument is a pad carrying an `inst` tag.
@@ -9059,7 +9059,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R242 · 2026-11-02 · WRITE: cross-tempo layers, and a demo that builds four bars';
+const BUILD = 'JBH-88 · R243 · 2026-11-02 · WRITE: phrases that repeat, arcs that go somewhere';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -17031,12 +17031,58 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       const shp = (useShape && typeof pickContour==='function')
         ? pickContour(seed ^ (bars*2654435761), bars*5) : null;
       let shpI=0;
+      /* which figure each letter of the phrase took, so a repeat restates
+         it rather than rolling again */
+      const letterCell={}, letterSeen={};
+      let phrase=null;
       for(let b=0;b<bars;b++){
         const ch=info[b], next=info[(b+1)%bars];
-        /* no two consecutive bars on the same cell, so the part does
-           not lock to one figure the way a drum machine would */
-        let cell=pick(cells), guard=0;
-        while(bars>1 && out.length && cell===out[out.length-1]._cell && guard++<6) cell=pick(cells);
+        /* ---- A PHRASE, NOT FOUR FRAGMENTS ---------------------------
+           This used to refuse to repeat: "no two consecutive bars on the
+           same cell, so the part does not lock to one figure the way a
+           drum machine would". The intent was right and the effect was
+           the opposite of music. Measured on a four-bar demo, all three
+           voices came out with FOUR DISTINCT RHYTHMS IN FOUR BARS --
+           nothing restated, no phrase, nothing answering anything. The
+           listener's verdict was "very low on musicality", and this is
+           most of why: a tune is a figure coming back.
+
+           So the bars take a SHAPE -- AABA, AABB, ABAC -- and a repeated
+           letter restates that bar's rhythm AND its slice of the melodic
+           contour. The pitches are re-chosen against the new bar's
+           chord, so a restatement is the same idea re-harmonised rather
+           than a copy, which is what a sequence is.
+
+           The old worry is answered by the shapes themselves: none is
+           AAAA, every one has a bar that departs, and the departure
+           lands where phrases put it. */
+        const PHRASES={
+          1:['A'], 2:['AB','AA'], 3:['AAB','ABA'],
+          4:['AABA','AABB','ABAC','AABC','ABAB']
+        };
+        if(b===0){
+          const lib=PHRASES[Math.min(4,bars)]||['A'];
+          phrase=(bars>4)
+            ? Array.from({length:bars},(_,k)=>'ABAC'[k%4])
+            : pick(lib).split('');
+        }
+        const letter=phrase[b%phrase.length]||('X'+b);
+        letterSeen[letter]=(letterSeen[letter]||0)+1;
+        let cell, shpAt;
+        if(letterCell[letter]){
+          cell=letterCell[letter].cell;
+          shpAt=letterCell[letter].shpI;        /* the same contour slice */
+        } else {
+          cell=pick(cells);
+          let guard=0;
+          /* two DIFFERENT letters should not land on the same figure, or
+             the shape is a shape in name only */
+          const used=Object.keys(letterCell).map(x=>letterCell[x].cell);
+          while(used.length && used.indexOf(cell)>=0 && guard++<6) cell=pick(cells);
+          shpAt=shpI;
+          letterCell[letter]={cell, shpI:shpAt};
+        }
+        if(shpAt!=null) shpI=shpAt;
         /* a cross-rhythm is one continuous cycle, so the bar takes the
            slice of it that falls here rather than a figure of its own */
         if(CYCLE_PER) cell=CYCLE_PER[b];
@@ -17204,8 +17250,50 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           if(m==null) m=nearest(pc, (lo+hi)/2);
           if(m==null) continue;
           if(pc===ch.third) stated3=true;
-          const vel=+(0.42+0.30*(strong?1:rnd()*0.6)).toFixed(2);
-          out.push({ midi:m, step:(from+b)*16+st, vel, beats, _cell:cell });
+          /* ---- DYNAMIC CONTOUR, AND A RHYTHM THAT BREATHES ----------
+             Two things that were missing and that both already had a
+             mechanism waiting: velocity per note, and `lk.nudge`, a
+             per-step timing offset in fractions of a step that the
+             scheduler has always applied.
+
+             VELOCITY was 0.42 plus a random 0 to 0.30 — a flat wall with
+             noise on it, and on a velocity-layered instrument that also
+             means one recording, so the TIMBRE never changed either. It
+             now has three terms with musical reasons:
+               - beat 1 of a bar is the accent, beat 3 a lesser one;
+               - the phrase arcs: a restatement sits slightly under its
+                 statement, and the bar that departs is the loudest, so
+                 four bars go somewhere instead of sitting still;
+               - a little noise left on top, because none of this should
+                 be exactly repeatable.
+
+             TIMING: the backbeat lays back and the note before a phrase
+             start pushes. Scaled to the human range this repo measured
+             rather than to taste — the median offset across 1,150
+             performances in the Groove corpus is 0.075 of a sixteenth,
+             so these sit at a few hundredths and never approach the
+             0.30-of-a-step window pulse() calls on-grid. Do not verify
+             this with pulse(): AGENTS.md has a section on why it cannot
+             see humanisation, and a human drummer scores ~100% there
+             too. Measure the deviation directly. */
+          const barPos=st/16;
+          const isRepeat=letterSeen[letter]>1;
+          const isLast=(b===bars-1);
+          let vel=0.50
+            + (st===0?0.16:(st===8?0.07:0))          /* downbeat, then beat 3 */
+            + (isRepeat?-0.06:0)                     /* a restatement sits under */
+            + (isLast?0.08:0)                        /* the departure lifts */
+            + (strong?0.04:0)
+            + rnd()*0.10 - 0.05;
+          vel=+clamp(vel,0.18,1).toFixed(3);
+          /* lay back off the beat, push into the turn of the phrase */
+          let nudge=0;
+          if(st%8===4) nudge+=0.045;                 /* the backbeat breathes */
+          else if(st%4!==0) nudge+=0.02;             /* off-beats a shade late */
+          if(isLast && barPos>0.75) nudge-=0.05;     /* the lead-in pushes */
+          nudge+=(rnd()-0.5)*0.03;
+          nudge=+nudge.toFixed(4);
+          out.push({ midi:m, step:(from+b)*16+st, vel, beats, nudge, _cell:cell });
           prev=m;
         }
       }
@@ -17251,7 +17339,11 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       const notes=build(seed);
       if(!notes.length) continue;
       cands.push({ seed, score:score(notes),
-        notes:notes.map(n=>[n.midi, n.step, n.vel, n.beats]) });
+        /* the fifth slot is the timing nudge. Dropped here, the
+           humanisation would be computed per note and then discarded at
+           the only point that could use it — which is the shape of every
+           "the setting does nothing" bug in this file. */
+        notes:notes.map(n=>[n.midi, n.step, n.vel, n.beats, n.nudge||0]) });
     }
     if(!cands.length) throw new Error('nothing could be written into that span');
     /* rank by: no minor ninths first, then thirds stated, then nearest
@@ -17269,9 +17361,12 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     if(o.apply!=null){
       const seed=o.apply>>>0;
       const chosen=cands.find(c=>c.seed===seed);
-      const notes=chosen?chosen.notes:build(seed).map(n=>[n.midi,n.step,n.vel,n.beats]);
+      const notes=chosen?chosen.notes:build(seed).map(n=>[n.midi,n.step,n.vel,n.beats,n.nudge||0]);
       if(!notes.length) throw new Error('seed '+seed+' writes nothing');
-      const ev=notes.map(([m,st,v,beats])=>['note', inst, m, st, v, {beats}]);
+      /* the nudge rides with the note, or the humanisation is computed
+         and then thrown away at the only point it could be applied */
+      const ev=notes.map(([m,st,v,beats,nudge])=>['note', inst, m, st, v,
+        nudge ? {beats, nudge} : {beats}]);
       const r=await window.MVX.batch(ev);
       return { applied:true, inst, seed, from, bars, wrote:notes.length,
         failed:r.failed||0, chords:prog.slice(),
@@ -20539,6 +20634,41 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         wrote+=r.wrote||0;
         sofar=sofar.concat(chosen.parts[v.inst]||[]);
       }
+      /* ---- THE SHAPE, APPLIED TO THE RUN OF NOTES ------------------
+         phrase() has been in this app the whole time and nothing that
+         writes notes has ever called it. Its own comment is the
+         diagnosis: "Every part written through this API so far had its
+         velocities typed in one at a time, which is why they all came
+         out flat... The shape is the music. A crescendo across four bars
+         is one instruction, not forty." A demo written here came back
+         "very low on musicality" with a loudness range of 1.2 LU.
+
+         A DIFFERENT ARC PER ROLE, because if every voice swells together
+         they are one voice again — which is the same argument
+         counterpoint() makes about motion. The bass arches, the tune
+         grows into the last bar, the top part answers by doing the
+         opposite. Velocity MULTIPLIES what was written, so the accents
+         computed per note survive the contour instead of being replaced
+         by it. On a velocity-layered instrument this also changes which
+         recording sounds, so the arc is a timbre change and not just a
+         level one. */
+      const ARCS={
+        bass:{ vel:'arch' },
+        lead:{ vel:'cresc', swell:1.25 },
+        arp: { vel:[[0,1.05],[0.5,0.82],[1,1.1]] },
+        pad: { vel:'arch', swell:1.2 }
+      };
+      const shaped=[];
+      if(o.shape!=='flat'){
+        for(const v of written){
+          const arc=ARCS[v.role]||{vel:'arch'};
+          try{
+            await window.MVX.phrase(v.inst, from*16, (from+bars)*16-1, arc);
+            shaped.push(v.inst+' '+(typeof arc.vel==='string'?arc.vel:'curve'));
+          }catch(e){}
+        }
+      }
+
       /* THE LANES ARE WRITTEN HERE AND NOT AT OFFER TIME, because OFFER
          writes nothing and poly() is state. The candidate carries the
          plan so what gets written is what was scored and shown. */
@@ -20551,13 +20681,14 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         }catch(e){}
       }
       return { applied:chosen.seed, voices:written.map(v=>v.inst), wrote,
-        score:chosen.score, lanes,
+        score:chosen.score, lanes, shaped,
         says:'wrote '+wrote+' notes across '+written.length+' voices — '
           +written.map(v=>v.inst).join(', ')+' — over bars '+(from+1)+'–'+(from+bars)
           +'. '+chosen.score.rubs+' semitone clashes between voices, '
           +chosen.score.oblique+'% oblique motion against 68% in Palestrina.'
           +(lanes.length?' Cross-tempo lanes on '+lanes.join(', ')
-            +' — each keeps its grid part underneath.':'') };
+            +' — each keeps its grid part underneath.':'')
+          +(shaped.length?' Dynamic arcs: '+shaped.join(', ')+'.':'') };
     }
 
     const best=cands[0];
@@ -20717,8 +20848,16 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        and counterpoint() can all see it. AGENTS.md: sound() does not tag,
        and three of the most useful calls here go quiet without a tag. */
     const pad=r.pad;
+    /* VELOCITY HAS TO CHANGE THE TONE, not only the level. A painted pad
+       has no filter, and velCutCents() returns early without one — so
+       velFlt on its own is a knob wired to nothing. A lowpass parked near
+       the top plus velFlt gives the sound somewhere to open FROM: a ghost
+       note stays dark and warm, an accent opens up two octaves. That is
+       the "machine-gun effect" fix, and on a velocity-layered sampler it
+       compounds with layer crossfading rather than replacing it. */
     await window.MVX.pad(pad, { inst:'bass', srcNote:midi, gain:0.9,
-      atk:0.004, dec:0.02, sus:1, rel:S0.glide?0.12:0.06 });
+      atk:0.004, dec:0.02, sus:1, rel:S0.glide?0.12:0.06,
+      ftype:'lowpass', fcut:0.72, fq:0.5, velFlt:0.55, velEnv:0.5 });
 
     /* WHAT FRACTION OF IT A PHONE WILL ACTUALLY REPRODUCE, measured from
        the rendered buffer and not from the partial levels asked for.
@@ -28928,79 +29067,144 @@ if($('mlTonic')){
     if($('mlOffer')) $('mlOffer').disabled = $('mlAll').checked ? vs.length<2 : !$('mlInst').value;
   });
 
-/* DEMO — A WORKED EXAMPLE OF THE WHOLE PANEL.
+/* SURPRISE ME — WRITE SOMETHING FROM WHAT IS ALREADY LOADED.
 
-   Every control in here needs something set up before it does anything:
-   an instrument tagged, a key declared, chords written, a pattern long
-   enough. That is six decisions before the first sound, and a panel like
-   that is one people bounce off — which is most of what "make write user
-   friendly" means. This does the setup and then uses the panel's own
-   calls, so what it produces is reachable by hand afterwards.
+   The first version of this loaded three instruments of its own from the
+   CC0 pack over the network. Reported as "it didn't do anything in the
+   app", and that is what it would look like: several seconds of silent
+   fetching, with the only feedback the button's own label, while the
+   info line it writes to sits in the panel ABOVE and the notes land on
+   the SEQ grid — two places that are off-screen from the button. A demo
+   whose first act is a network fetch is also a demo that cannot run on a
+   plane.
 
-   It is a DEMONSTRATION, not a preset: it reports every step it took, so
-   the next thing a person does can be to change one of them. */
-async function writeDemo(){
-  const log=[];
-  const say=t=>{ log.push(t); $('mlInfo').textContent=log.join('  '); };
+   "It could be a random button in the app that utilizes already loaded
+   pads." Much better, and it is the right shape for three reasons: it is
+   instant, it works offline, and it writes for the sounds the person
+   actually chose rather than demonstrating on someone else's.
 
-  /* three voices at three registers, from the CC0 pack. Register is what
-     assigns the roles later, so they have to differ. */
-  say('Loading three instruments…');
-  const pack='samples/vcsl-wide.json';
-  await window.MVX.instrument('bass',  {pack, match:'^vc:stein-', lo:28, hi:45, max:6});
-  await window.MVX.instrument('synth', {pack, match:'^vc:stein-', lo:52, hi:69, max:8});
-  await window.MVX.instrument('hi',    {pack, match:'^vc:harp-',  lo:72, hi:86, max:6});
+   So: take what is on the board, tag anything untagged, pick a key and a
+   progression at random if none is declared, and write every voice
+   against the others with cross-tempo lanes. Different every press. */
+async function writeSurprise(){
+  const pads=[];
+  for(let i=0;i<NPADS;i++) if(S.pads[i] && S.pads[i].bufId>=0) pads.push(i);
+  if(!pads.length) throw new Error('nothing is loaded yet — put a sound on a pad '
+    +'first (SMPL, or BASS on the TOOLS tab) and press this again.');
 
-  /* 64 steps, which is four bars — the span the panel is built around */
-  const pr=await window.MVX.pattern(S.pattern, {plen:64, clear:true, select:true});
-  if(pr && pr.warning) throw new Error(pr.warning);
-  window.MVX.key('D','minor');
-  window.MVX.chords(S.pattern, ['Dm','Bb','F','C']);
-  say('D minor, Dm Bb F C over four bars (PTN 64).');
+  /* CHOOSE A FEW VOICES, DO NOT TAKE THE WHOLE BOARD.
 
-  /* the panel's own controls, set so the demo is reproducible by hand */
-  const set=(id,v)=>{ const e=$(id); if(e){ e.value=v;
-    e.dispatchEvent(new Event('change',{bubbles:true})); } };
-  set('mlTonic','D'); set('mlMode','minor');
-  set('mlSpan','4'); set('mlFrom','0'); set('mlDens','normal');
-  set('mlOct','0'); set('mlFeel','straight'); set('mlPoly','spread');
-  if($('mlAll')) $('mlAll').checked=true;
+     The first version tagged every loaded pad and handed the lot to
+     ensemble(), which refused: the boot project has sixteen pads, and
+     ensemble caps at six because "past that they stop being parts and
+     start being a texture" — its own guard, firing on the commonest
+     board there is. The button failed on the default project, which is
+     the only board most people will ever press it from.
 
-  const vs=mlVoices();
-  say('Voices: '+vs.map(v=>v.inst+' as '+v.role).join(', ')+'.');
+     So pick up to four, SPREAD ACROSS THE REGISTER, because register is
+     what makes them separate parts rather than four things in a pile —
+     the same reason the roles are read off register and not asked for.
+     Already-tagged instruments win: those are the person's own grouping
+     and it is better than anything guessed from pad order. */
+  const MAXV=4;
+  const already=mlVoices();
+  let chosen;
+  if(already.length>=2){
+    if(already.length<=MAXV) chosen=already;
+    else {
+      /* evenly spaced through the register order mlVoices already sorted */
+      const step=(already.length-1)/(MAXV-1);
+      chosen=[];
+      for(let k=0;k<MAXV;k++) chosen.push(already[Math.round(k*step)]);
+      chosen=chosen.filter((v,k,arr)=>arr.findIndex(x=>x.inst===v.inst)===k);
+    }
+  } else {
+    /* nothing useful tagged: take loaded pads, spread by sampled pitch,
+       and tag only the ones actually being written for — tagging all
+       sixteen would leave the person's board full of names it invented */
+    const rows=pads.map(i=>({ i, note:S.pads[i].srcNote!=null?S.pads[i].srcNote:60 }))
+      .sort((a,b)=>a.note-b.note || a.i-b.i);
+    const take=[];
+    const n=Math.min(MAXV, rows.length);
+    const step=rows.length<=1?0:(rows.length-1)/Math.max(1,n-1);
+    for(let k=0;k<n;k++) take.push(rows[Math.round(k*step)]);
+    const seen=new Set(); const uniq=take.filter(r=>!seen.has(r.i)&&seen.add(r.i));
+    for(const r of uniq){
+      const p=S.pads[r.i];
+      if(!p.inst) window.MVX.pad(r.i,{inst:padName(r.i), srcNote:r.note});
+      else if(p.srcNote==null) window.MVX.pad(r.i,{srcNote:r.note});
+    }
+    chosen=uniq.map((r,k)=>({ inst:S.pads[r.i].inst,
+      role: k===0 ? 'bass' : (k===uniq.length-1 && uniq.length>2 ? 'arp' : 'lead') }));
+  }
+  const vs=chosen;
+  const tagged=vs.length;
+  if(!vs.length) throw new Error('could not find a pad to write for.');
 
-  const demoSeed=(Date.now()&0x7fffffff);
-  const offer=await window.MVX.ensemble(vs, { from:0, bars:4, n:5, src:'pat',
-    density:'normal', octave:0, poly:'spread', seed:demoSeed });
-  const best=offer.candidates[0];
-  say('Five arrangements offered; best has '+best.score.rubs+' clashes in '
-    +best.score.voicePairs+' voice-pairs and '+best.score.oblique+'% oblique motion.');
+  /* a key and a progression, if the person has not decided one. Random
+     from the shapes the picker offers, so it is a real progression rather
+     than four chords in a row. */
+  const pick=a=>a[Math.floor(Math.random()*a.length)];
+  if(!S.key) window.MVX.key(pick(['D','A','E','G','C','F']), pick(['minor','major']));
+  const cap=Math.max(1, Math.floor(patLen(S.patterns[S.pattern])/16));
+  if(!S.chords[S.pattern] || !S.chords[S.pattern].length){
+    const min=keyIsMinor();
+    const cands=PROGS.filter(q=>q.m==='any' || q.m===(min?'min':'maj'));
+    const shape=pick(cands);
+    const spelled=progChords(shape);
+    if(spelled && spelled.length) window.MVX.chords(S.pattern, spelled.slice(0,Math.max(1,cap)));
+  }
 
-  const done=await window.MVX.ensemble(vs, { from:0, bars:4, src:'pat',
-    density:'normal', octave:0, poly:'spread', seed:offer.seed,
-    apply:best.seed, n:5 });
+  const bars=Math.min(cap, 4);
+  const seed=(Date.now()&0x7fffffff);
+  const poly=pick(['none','spread','spread','wide']);   /* usually some */
+  const dens=pick(['sparse','normal','normal','busy']);
+  const opts={ from:0, bars, n:5, src:'pat', density:dens, octave:0, poly, seed };
 
-  /* the free checks, because they cost nothing and this is a demo of the
-     panel's judgement as much as its writing */
-  let checks='';
-  try{
-    const h=await window.MVX.harmony({src:'pat'});
-    const p2=await window.MVX.pulse({src:'pat'});
-    checks=' harmony: '+((h.minorNinths||[]).length)+' minor ninths, '
-      +((h.barsWithNoThird||[]).length)+' bars with no third.'
-      +(p2 && p2.beat!=null?(' pulse: '+p2.beat+'% on the beat.'):'');
-  }catch(e){}
+  let r, how;
+  if(vs.length>=2){
+    const offer=await window.MVX.ensemble(vs, opts);
+    r=await window.MVX.ensemble(vs, Object.assign({},opts,{seed:offer.seed, apply:offer.candidates[0].seed}));
+    how=vs.length+' voices';
+  } else {
+    const offer=await window.MVX.infill(vs[0].inst, Object.assign({},opts,{role:vs[0].role}));
+    r=await window.MVX.infill(vs[0].inst, Object.assign({},opts,
+      {role:vs[0].role, apply:offer.candidates[0].seed}));
+    how='one voice — tag a second pad and it writes an arrangement';
+  }
 
-  drawSteps(); drawNotes(); drawPoly(); drawMusicalLayer(); dirty();
-  return [done.says, checks,
-    'Everything here is reachable by hand: the controls above are set to '
-    +'what this used, so change one and press OFFER.'].join(' ');
+  /* the panel's controls are left showing what was used, so the next
+     press of OFFER is a variation of this rather than a fresh guess */
+  const set=(id,v)=>{ const e=$(id); if(e) e.value=String(v); };
+  set('mlSpan',bars); set('mlDens',dens); set('mlPoly',poly); set('mlFrom',0);
+  if($('mlAll')) $('mlAll').checked = vs.length>=2;
+
+  drawSteps(); drawNotes(); drawPoly(); drawPads(); drawMusicalLayer(); dirty();
+  const k=window.MVX.key();
+  return (k?(k.tonic+' '+k.mode+', '):'')
+    +(S.chords[S.pattern]||[]).join(' ')+' over '+bars+' bar'+(bars===1?'':'s')
+    +' · '+dens+(poly==='none'?'':' · cross-tempo '+poly)+' · '+how+'. '
+    +(r.says||'')+' Press PLAY. Press this again for a different one.';
 }
 if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
-  const b=$('mlDemo'); b.disabled=true; const was=b.textContent; b.textContent='building…';
-  try{ $('mlInfo').textContent=await writeDemo(); lcd('DEMO: four bars written'); }
-  catch(e){ $('mlInfo').textContent='DEMO failed: '+e.message; lcd('DEMO: '+String(e.message).slice(0,50)); }
-  finally{ b.disabled=false; b.textContent=was; }
+  const b=$('mlDemo'); b.disabled=true; const was=b.textContent; b.textContent='writing…';
+  try{
+    const said=await writeSurprise();
+    $('mlInfo').textContent=said;
+    /* FEEDBACK WHERE THE BUTTON IS. The info line is up in the panel
+       above and the notes land on the grid, so with the button on screen
+       both results are out of view — which is why the first version read
+       as doing nothing. The button says what happened, and the LCD
+       carries it too. */
+    b.textContent='WROTE IT \u2014 AGAIN?';
+    lcd(said.slice(0,70));
+  }catch(e){
+    $('mlInfo').textContent=e.message;
+    b.textContent='\u2014 '+String(e.message).slice(0,28);
+    lcd(String(e.message).slice(0,60));
+  }
+  finally{ b.disabled=false;
+    setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 4000); }
 });
   $('mlOffer').addEventListener('click',async()=>{
     const inst=$('mlInst').value;
