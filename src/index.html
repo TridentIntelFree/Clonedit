@@ -897,6 +897,18 @@ immediately.</p>
     <span id="ptnBpmInfo" style="font-size:10px;color:var(--txt-dim)">each pattern keeps its own BPM</span>
   </div>
   <h3>TRACK <span id="seqPadName" data-padname style="color:var(--amber)"></span></h3>
+  <!-- BANK, HERE TOO. The strip below shows the sixteen pads of the
+       current bank, so from this tab only a quarter of the board could be
+       reached and picking a track in bank C meant going back to PADS,
+       switching, and coming back. Same state as the row on PADS — one
+       setter drives both, because two rows that can disagree about which
+       bank is current is the bug that PTN and LEN had. -->
+  <div class="row" id="seqbankrow" style="gap:4px">
+    <span class="lbl">BANK</span>
+    <button aria-label="Bank A" data-sb="0" class="on">A</button><button aria-label="Bank B" data-sb="1">B</button>
+    <button aria-label="Bank C" data-sb="2">C</button><button aria-label="Bank D" data-sb="3">D</button>
+    <span id="seqBankHint" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
+  </div>
   <div id="seqpadstrip"></div>
   <div class="row">
     <span class="lbl">PTN</span>
@@ -1037,6 +1049,22 @@ where they come back into alignment. On a grid that relationship is invisible.</
          Named "over", never "triplet": 16 steps do not divide by 3, so
          three even hits in a bar cannot be written on this grid at all —
          poly() is the call for that. -->
+    <!-- DENSITY and OCTAVE. The two that change a part most and neither
+         was reachable: every candidate came out at one note-rate in one
+         register, so "the same but busier" or "the same, lower" meant
+         re-rolling and hoping. -->
+    <select id="mlDens" aria-label="How busy the part is">
+      <option value="sparse">sparse</option>
+      <option value="normal" selected>normal</option>
+      <option value="busy">busy</option>
+    </select>
+    <select id="mlOct" aria-label="Which octave to favour">
+      <option value="-2">2 oct down</option>
+      <option value="-1">1 oct down</option>
+      <option value="0" selected>as sampled</option>
+      <option value="1">1 oct up</option>
+      <option value="2">2 oct up</option>
+    </select>
     <select id="mlFeel" aria-label="Rhythmic feel">
       <option value="straight" selected>straight</option>
       <option value="3">3 over 4</option>
@@ -1052,6 +1080,17 @@ where they come back into alignment. On a grid that relationship is invisible.</
          because a 1-bar pattern has one place to start. -->
     <select id="mlFrom" aria-label="Which bar to start writing at">
       <option value="0" selected>from bar 1</option>
+    </select>
+    <!-- PTN, HERE, because every span refusal names it and it lived two
+         panels away on the SEQ tab. Worse, it sits next to a control
+         called LEN that does something else entirely — LEN shortens one
+         TRACK for polymeter — so "set LEN to 64" sent people to the wrong
+         knob. Same select, same state, reachable from where the refusal
+         appears. -->
+    <select id="mlPtn" aria-label="Pattern length in steps"
+      title="How long this pattern is. A bar is 16 steps, so 64 is four bars.">
+      <option value="16">PTN 16</option><option value="32">PTN 32</option>
+      <option value="48">PTN 48</option><option value="64">PTN 64</option>
     </select>
     <button id="mlOffer" title="Offer several ways to play it. Writes nothing.">OFFER</button>
   </div>

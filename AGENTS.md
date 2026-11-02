@@ -429,6 +429,26 @@ voices in the same octave fight however correct their intervals are, so
 each voice keeps its instrument's own sampled range. That is what
 `place()` says about a mix, one layer up.
 
+**AND THAT SENTENCE WAS FALSE WHEN IT WAS WRITTEN, for the commonest
+case.** `TAG IT` tags the SELECTED pad, so the ordinary way to work
+gives instruments of exactly ONE pad; `infill()` then had `lo === hi`,
+its `hi>lo` guard fired, and it substituted a fixed 48–72 for every such
+instrument. Measured: pads sampled at 36, 48 and 60 all reported range
+48–72, and the one at 36 was written pitches 50–57 — a bass transposed
+up a minor seventh. Three tagged pads therefore wrote three parts in one
+octave off the same cell library, reported as "it wrote the identical
+hits for each thing, did not create song or melody".
+
+The range is centred on the pad's own note now, a fifth either way —
+not an octave, because the pitch comes from resampling one recording and
+a sample dragged further than that stops sounding like the instrument.
+
+Every test in the infill suite used `instrument()`, which lays down a
+pad per note and so never has `lo === hi`. **The common path was the
+untested one, for the second time in two sessions** — the span
+regression on a fresh board was the same shape. When a convenience
+exists for setting up a test, check what configuration it is hiding.
+
 On the WRITE panel it is the **ALL** tick next to the instrument. Roles
 are not asked for — an instrument sampled at the bottom of the keyboard
 is the bass whatever it is called, so they come from each instrument's

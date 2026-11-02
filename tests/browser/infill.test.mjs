@@ -367,6 +367,70 @@ export default async function ({ browser, base }) {
     t.ok('and seven voices are refused as a texture rather than parts',
       ens.refusedSeven && /six/.test(ens.refusedSeven), (ens.refusedSeven || '').slice(0, 70));
 
+    /* ---- A ONE-PAD INSTRUMENT IS THE ORDINARY CASE -------------------
+       Reported as: "the write function did write to everything I had
+       tagged but it wrote the identical hits for each thing, did not
+       create song or melody."
+
+       TAG IT tags the SELECTED pad, so working the ordinary way gives
+       instruments of exactly ONE pad. roots is then [thatNote], lo equals
+       hi, the `hi>lo` guard fires, and every such instrument silently got
+       a fixed 48-72 — three tagged pads wrote three parts in the same
+       octave off the same cell library, which is three versions of one
+       part. Measured before the fix: pads sampled at 36, 48 and 60 ALL
+       reported range 48-72, and the one at 36 was written pitches 50-57.
+
+       Every test above this uses instrument(), which lays down many pads
+       and so never has lo equal hi. The common path was the untested one,
+       again — the same shape as the span regression on a fresh board. */
+    t.head('EACH TAGGED PAD WRITES IN ITS OWN REGISTER');
+    const solo = await page.evaluate(async () => {
+      await window.JBH.clear();
+      /* three single pads, tagged by hand — no instrument() anywhere */
+      await window.JBH.bass({ style: 'sub', midi: 36, seconds: 0.4, pad: 0 });
+      await window.JBH.bass({ style: 'reese', midi: 48, seconds: 0.4, pad: 1 });
+      await window.JBH.bass({ style: 'growl', midi: 60, seconds: 0.4, pad: 2 });
+      window.JBH.pad(0, { inst: 'lo', srcNote: 36 });
+      window.JBH.pad(1, { inst: 'mid', srcNote: 48 });
+      window.JBH.pad(2, { inst: 'hi', srcNote: 60 });
+      window.JBH.key('D', 'minor');
+      window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+      window.JBH.chords(0, ['Dm', 'Bb', 'F', 'C']);
+      const out = {};
+      for (const [n, role] of [['lo', 'bass'], ['mid', 'lead'], ['hi', 'arp']]) {
+        const q = await window.JBH.infill(n,
+          { from: 0, bars: 4, n: 1, role, src: 'pat', seed: 31 });
+        const ps = q.candidates[0].notes.map(x => x[0]);
+        out[n] = { pads: window.JBH.instPads(n).length, sampled: window.JBH.instPads(n)[0].note,
+          range: [q.range.lo, q.range.hi], lo: Math.min(...ps), hi: Math.max(...ps),
+          steps: q.candidates[0].notes.map(x => x[1]).join(',') };
+      }
+      return out;
+    });
+    t.ok('each one really is a single pad — the case this is about',
+      solo.lo.pads === 1 && solo.mid.pads === 1 && solo.hi.pads === 1,
+      [solo.lo.pads, solo.mid.pads, solo.hi.pads].join(', ') + ' pads');
+    t.ok('THEY DO NOT ALL GET THE SAME RANGE any more',
+      new Set([solo.lo.range.join('-'), solo.mid.range.join('-'), solo.hi.range.join('-')]).size === 3,
+      ['lo', 'mid', 'hi'].map(k => k + ' ' + solo[k].range.join('-')).join(' · '));
+    t.ok('and each range is centred on the pad it was sampled at',
+      ['lo', 'mid', 'hi'].every(k =>
+        solo[k].range[0] <= solo[k].sampled && solo[k].sampled <= solo[k].range[1]),
+      ['lo', 'mid', 'hi'].map(k => solo[k].sampled + ' in ' + solo[k].range.join('-')).join(' · '));
+    /* the fault as the listener heard it: a bass written an octave up */
+    t.ok('so the low pad is written LOW, not transposed into the middle',
+      solo.lo.hi < 48, 'highest note written for the pad sampled at 36 was ' + solo.lo.hi);
+    t.ok('and the three parts are not the same part three times',
+      new Set([solo.lo.steps, solo.mid.steps, solo.hi.steps]).size === 3,
+      'distinct step patterns: '
+        + new Set([solo.lo.steps, solo.mid.steps, solo.hi.steps]).size + ' of 3');
+    /* a sample is resampled to reach a pitch, so the window is deliberately
+       a fifth either way and not an octave — further than that and it
+       stops sounding like the instrument */
+    t.ok('the window stays within a fifth either way of the sample',
+      ['lo', 'mid', 'hi'].every(k => solo[k].range[1] - solo[k].range[0] <= 15),
+      ['lo', 'mid', 'hi'].map(k => (solo[k].range[1] - solo[k].range[0]) + 'st').join(' · '));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

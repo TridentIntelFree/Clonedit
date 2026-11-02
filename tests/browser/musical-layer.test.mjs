@@ -365,7 +365,7 @@ export default async function ({ browser, base }) {
        infill() has always taken a `from` and no control reached it, so
        every part the panel wrote began at bar 1 and writing a different
        ending meant dropping to the API. The options are built from the
-       pattern's own LEN, because a stale "from bar 4" on a pattern that
+       pattern's own PTN length, because a stale "from bar 4" on a pattern that
        is now one bar long is a refusal whose cause is invisible. */
     t.head('A PART CAN START PART-WAY THROUGH THE PATTERN');
     const from = await page.evaluate(async () => {
@@ -408,7 +408,7 @@ export default async function ({ browser, base }) {
     t.ok('a one-bar pattern offers one place to start, and says so by disabling',
       from.at1.opts.length === 1 && from.at1.disabled === true,
       from.at1.opts.join(' / ') + ' disabled=' + from.at1.disabled);
-    t.ok('a four-bar pattern offers four, rebuilt when LEN changes',
+    t.ok('a four-bar pattern offers four, rebuilt when PTN changes',
       from.at4.opts.length === 4 && from.at4.disabled === false, from.at4.opts.join(' / '));
     t.ok('writing from bar 3 of 4 puts every note in the second half',
       from.half.lo >= 32 && from.half.hi <= 63,
@@ -474,9 +474,15 @@ export default async function ({ browser, base }) {
     t.ok('the span control selects a span THAT FITS, not one that cannot',
       (virgin.spans.find(o => o.sel) || {}).v === '1',
       'selected ' + JSON.stringify((virgin.spans.find(o => o.sel) || {}).text));
-    t.ok('and an impossible span is disabled, naming the LEN that would buy it',
+    /* PTN, NOT LEN. These messages said LEN for months and LEN is a
+       different control — it shortens one TRACK for polymeter — sitting
+       in the same row as PTN, which is the pattern length a span needs.
+       So "set LEN to 64" sent people to the knob that cannot fix it;
+       asked "where can I find LEN?", the honest answer was that the app
+       was naming the wrong one. */
+    t.ok('and an impossible span is disabled, naming the PTN that would buy it',
       virgin.spans.filter(o => o.off).length === 4
-        && /needs LEN 64/.test((virgin.spans.find(o => o.v === '4') || {}).text || ''),
+        && /needs PTN 64/.test((virgin.spans.find(o => o.v === '4') || {}).text || ''),
       virgin.spans.map(o => o.text + (o.off ? '(off)' : '')).join(' | '));
     t.ok('OFFER OFFERS rather than refusing',
       /ways to play/.test(virgin.offered) && virgin.nOpts >= 2,

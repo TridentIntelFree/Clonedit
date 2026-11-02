@@ -913,6 +913,18 @@ immediately.</p>
     <span id="ptnBpmInfo" style="font-size:10px;color:var(--txt-dim)">each pattern keeps its own BPM</span>
   </div>
   <h3>TRACK <span id="seqPadName" data-padname style="color:var(--amber)"></span></h3>
+  <!-- BANK, HERE TOO. The strip below shows the sixteen pads of the
+       current bank, so from this tab only a quarter of the board could be
+       reached and picking a track in bank C meant going back to PADS,
+       switching, and coming back. Same state as the row on PADS — one
+       setter drives both, because two rows that can disagree about which
+       bank is current is the bug that PTN and LEN had. -->
+  <div class="row" id="seqbankrow" style="gap:4px">
+    <span class="lbl">BANK</span>
+    <button aria-label="Bank A" data-sb="0" class="on">A</button><button aria-label="Bank B" data-sb="1">B</button>
+    <button aria-label="Bank C" data-sb="2">C</button><button aria-label="Bank D" data-sb="3">D</button>
+    <span id="seqBankHint" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
+  </div>
   <div id="seqpadstrip"></div>
   <div class="row">
     <span class="lbl">PTN</span>
@@ -1053,6 +1065,22 @@ where they come back into alignment. On a grid that relationship is invisible.</
          Named "over", never "triplet": 16 steps do not divide by 3, so
          three even hits in a bar cannot be written on this grid at all —
          poly() is the call for that. -->
+    <!-- DENSITY and OCTAVE. The two that change a part most and neither
+         was reachable: every candidate came out at one note-rate in one
+         register, so "the same but busier" or "the same, lower" meant
+         re-rolling and hoping. -->
+    <select id="mlDens" aria-label="How busy the part is">
+      <option value="sparse">sparse</option>
+      <option value="normal" selected>normal</option>
+      <option value="busy">busy</option>
+    </select>
+    <select id="mlOct" aria-label="Which octave to favour">
+      <option value="-2">2 oct down</option>
+      <option value="-1">1 oct down</option>
+      <option value="0" selected>as sampled</option>
+      <option value="1">1 oct up</option>
+      <option value="2">2 oct up</option>
+    </select>
     <select id="mlFeel" aria-label="Rhythmic feel">
       <option value="straight" selected>straight</option>
       <option value="3">3 over 4</option>
@@ -1068,6 +1096,17 @@ where they come back into alignment. On a grid that relationship is invisible.</
          because a 1-bar pattern has one place to start. -->
     <select id="mlFrom" aria-label="Which bar to start writing at">
       <option value="0" selected>from bar 1</option>
+    </select>
+    <!-- PTN, HERE, because every span refusal names it and it lived two
+         panels away on the SEQ tab. Worse, it sits next to a control
+         called LEN that does something else entirely — LEN shortens one
+         TRACK for polymeter — so "set LEN to 64" sent people to the wrong
+         knob. Same select, same state, reachable from where the refusal
+         appears. -->
+    <select id="mlPtn" aria-label="Pattern length in steps"
+      title="How long this pattern is. A bar is 16 steps, so 64 is four bars.">
+      <option value="16">PTN 16</option><option value="32">PTN 32</option>
+      <option value="48">PTN 48</option><option value="64">PTN 64</option>
     </select>
     <button id="mlOffer" title="Offer several ways to play it. Writes nothing.">OFFER</button>
   </div>
@@ -9009,7 +9048,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R240 · 2026-10-31 · ALL LAYERS: every voice written against the others';
+const BUILD = 'JBH-88 · R241 · 2026-11-02 · a tagged pad writes in its own register';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -12393,12 +12432,33 @@ $('mxScRel').addEventListener('input',e=>{ S.scRel=parseFloat(e.target.value); $
 $('epLearn').addEventListener('click',()=>{ noteLearnPad=S.editPad; lcd('NOTE LEARN: play a MIDI note for '+padName(S.editPad)); });
 
 $('btnEdit').addEventListener('click',()=>{ S.edit=!S.edit; $('btnEdit').classList.toggle('on',S.edit); $('editpanel').style.display=S.edit?'block':'none'; drawPads(); drawEdit(); });
-document.querySelectorAll('#bankrow [data-b]').forEach(b=>b.addEventListener('click',()=>{
+/* ONE SETTER FOR THE BANK, because there are two rows of buttons now —
+   one on PADS and one on SEQ — and a second row that kept its own idea of
+   which bank is current is exactly the failure PTN and LEN had sitting
+   next to each other. Both rows are repainted from S.bank, never from the
+   click, so whichever one was pressed they agree afterwards. */
+function setBank(n){
   repStopAll();   // a roll can't survive its pad scrolling off-screen
-  S.bank=parseInt(b.dataset.b,10);
-  document.querySelectorAll('#bankrow [data-b]').forEach(x=>x.classList.toggle('on',x===b));
+  S.bank=clamp(n|0, 0, Math.floor(NPADS/16)-1);
+  for(const sel of ['#bankrow [data-b]','#seqbankrow [data-sb]']){
+    document.querySelectorAll(sel).forEach(x=>{
+      const v=parseInt(x.dataset.b!=null?x.dataset.b:x.dataset.sb,10);
+      x.classList.toggle('on', v===S.bank);
+    });
+  }
+  const h=$('seqBankHint');
+  if(h){
+    let n2=0;
+    for(let i=S.bank*16;i<S.bank*16+16;i++) if(S.pads[i] && S.pads[i].bufId>=0) n2++;
+    h.textContent=n2? (n2+' of 16 loaded') : 'nothing loaded in this bank';
+  }
   drawPads();
-}));
+  try{ drawSeq(); }catch(e){}
+}
+document.querySelectorAll('#bankrow [data-b]').forEach(b=>b.addEventListener('click',
+  ()=>setBank(parseInt(b.dataset.b,10))));
+document.querySelectorAll('#seqbankrow [data-sb]').forEach(b=>b.addEventListener('click',
+  ()=>setBank(parseInt(b.dataset.sb,10))));
 
 
 /* ---------------- PATTERN MORPH — melt pattern A into pattern B ----------------
@@ -16753,7 +16813,44 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        bass part is not written above what the pads can play. */
     const roots=pads.map(p=>p.note).filter(n=>n!=null).sort((a,b)=>a-b);
     let lo=o.lo!=null?o.lo|0:roots[0], hi=o.hi!=null?o.hi|0:roots[roots.length-1];
-    if(!(hi>lo)){ lo=48; hi=72; }
+    /* A ONE-PAD INSTRUMENT HAS NO RANGE, AND THE FALLBACK WAS A FIXED
+       C3-C5 FOR EVERY ONE OF THEM. This is the bug behind "the write
+       function did write to everything I had tagged but it wrote the
+       identical hits for each thing, did not create song or melody".
+
+       TAG IT tags the SELECTED pad, so the ordinary way to work produces
+       instruments of exactly one pad. roots is then [thatNote], lo equals
+       hi, `hi>lo` is false, and every such instrument silently got
+       48-72 — so three tagged pads wrote three parts in the same octave
+       with the same cell library, which is three versions of one part.
+       Measured: pads sampled at 36, 48 and 60 all reported range 48-72,
+       and the one at 36 was written pitches 50 to 57, a bass transposed
+       up a minor seventh.
+
+       Centre it on the pad's own note instead. Plus or minus a fifth,
+       not an octave: the pitch comes from resampling one recording, and
+       a sample dragged much further than that stops sounding like the
+       instrument — which is the same argument the found-sound section
+       makes about pitching a door knock. */
+    if(!(hi>lo)){
+      const centre=roots.length?roots[0]:60;
+      lo=clamp(centre-7, 0, 120); hi=clamp(centre+7, 7, 127);
+    }
+    /* OCTAVE: "the same part, lower". Applied by narrowing the window
+       INSIDE the sampled span, never by shifting it outside: an
+       instrument has the notes it has, and moving the range past them
+       leaves nearest() with nothing to return and the part silently
+       loses notes. So a request to go down takes the bottom half and a
+       request to go up takes the top, and asking for two octaves on an
+       instrument that spans one gets as much as exists — which it says,
+       rather than pretending. */
+    const octWant=clamp(o.octave==null?0:o.octave|0, -3, 3);
+    if(octWant && hi-lo>12){
+      const span=hi-lo, keep=Math.max(12, Math.round(span/2));
+      if(octWant<0) hi=Math.max(lo+12, Math.min(hi, lo+keep+12*(octWant+1)));
+      else          lo=Math.min(hi-12, Math.max(lo, hi-keep-12*(1-octWant)));
+      if(hi-lo<12){ if(octWant<0) hi=lo+12; else lo=hi-12; }
+    }
 
     /* THE SCALE THE PASSING NOTES COME FROM. The declared key when there
        is one; otherwise the union of the progression's own chord tones,
@@ -16839,7 +16936,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       throw new Error('pattern '+(S.pattern+1)+' is '+CAP+' steps, which is '
         +Math.floor(CAP/16)+' bar'+(Math.floor(CAP/16)===1?'':'s')+', so '
         +(from?'from bar '+(from+1)+' there is room for ':'it holds ')+fits
-        +' not '+bars+'. Set the pattern longer (LEN, up to '+MAXSTEPS
+        +' not '+bars+'. Set the pattern longer (PTN on the SEQ tab, up to '+MAXSTEPS
         +'), or write the next patterns and chain them — a span longer than '
         +'one pattern has to be written one pattern at a time.');
     }
@@ -16853,6 +16950,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     /* on by default because it measures better on the app's own norms;
        {shape:false} is the old chord-and-scale chooser, kept so the two
        can be compared rather than taken on trust */
+    const dens=(['sparse','normal','busy'].indexOf(String(o.density||'normal'))>=0)
+      ? String(o.density||'normal') : 'normal';
     const useShape = o.shape !== false && role !== 'pad';
 
     /* ---- THE OTHER VOICES, IF THERE ARE ANY -------------------------
@@ -16932,7 +17031,29 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         if(CYCLE_PER) cell=CYCLE_PER[b];
         const want3 = role!=='pad';      /* state the third: 94.6% of Bach's sonorities do */
         let stated3=false;
-        const slots=cell.slice();
+        /* DENSITY. The cells are a fixed library, so "busier" used to mean
+           re-rolling until a denser one came up. Thinning keeps the
+           downbeat and drops weak slots; thickening splits a slot in two
+           and halves its length, so the extra note has a real position
+           and a real duration rather than being dealt onto a step —
+           which is the mistake that gave HOLLOWAY its stumble. */
+        let slots=cell.slice();
+        if(dens==='sparse' && slots.length>1){
+          slots=slots.filter((sl,k)=>k===0 || sl[0]===0 || sl[0]===8 || rnd()<0.45);
+          if(!slots.length) slots=[cell[0]];
+        } else if(dens==='busy'){
+          const extra=[];
+          for(let k=0;k<slots.length;k++){
+            const [st,bt]=slots[k];
+            const next=slots[k+1] ? slots[k+1][0] : 16;
+            const mid=st+Math.max(1, Math.round((next-st)/2));
+            if(mid<next && mid<16 && bt>0.4 && rnd()<0.7){
+              extra.push([st, +(bt/2).toFixed(3)]);
+              extra.push([mid, +(bt/2).toFixed(3)]);
+            } else extra.push([st,bt]);
+          }
+          slots=extra;
+        }
         for(let si=0; si<slots.length; si++){
           const [st, beats]=slots[si];
           const strong = st===0 || st===8;
@@ -17158,6 +17279,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
 
     const best=cands[0];
     return { inst, from, bars, role, chords:prog.slice(),
+      range:{ lo, hi, note:midiName(lo)+'–'+midiName(hi), density:dens, octave:octWant },
       key:S.key?Object.assign({},S.key):null,
       candidates:cands, applied:false,
       says:cands.length+' way'+(cands.length===1?'':'s')+' to play '+inst+' over '
@@ -20246,9 +20368,15 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     };
 
     const buildOne=async(v, against, seed)=>{
+      /* FORWARD EVERYTHING THE PANEL SENDS. density and octave were
+         dropped here — the UI set them, ensemble() accepted them and
+         never passed them on, so two controls did nothing in ALL mode
+         while working in single-voice mode. That is the jbh_resynth
+         `jumble` trap exactly: an option forwarded to a function that
+         does not read it, and nothing to notice it. */
       const r=await this.infill(v.inst, { from, bars, n:1, role:v.role,
         src:o.src||'pat', seed, against, lo:v.lo, hi:v.hi,
-        shape:o.shape, feel:o.feel });
+        shape:o.shape, feel:o.feel, density:o.density, octave:o.octave });
       const c=r.candidates[0];
       return c.notes.map(([midi,step,vel,beats])=>({midi,step,vel,beats,inst:v.inst}));
     };
@@ -20294,7 +20422,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       for(const v of written){
         const r=await this.infill(v.inst, { from, bars, role:v.role,
           src:o.src||'pat', lo:v.lo, hi:v.hi, shape:o.shape, feel:o.feel,
-          against:sofar,
+          density:o.density, octave:o.octave, against:sofar,
           apply:(chosen.seed ^ (v.inst.length*2246822519) ^ (v.i*40503))>>>0 });
         wrote+=r.wrote||0;
         sofar=sofar.concat(chosen.parts[v.inst]||[]);
@@ -23531,14 +23659,37 @@ function circleTap(clientX,clientY){
   const sx=base.w/r.width, sy=base.h/r.height;
   const x=(clientX-r.left)*sx-CIRC.cx, y=(clientY-r.top)*sy-CIRC.cy;
   const rad=Math.hypot(x,y);
-  const ring=CIRC.rings.find(g=>rad>=g.r0-2 && rad<=g.r1+2);
-  if(!ring) return;
-  if(ring.p!==S.seqPad){          // tapping an inner ring selects that track
-    S.seqPad=ring.p; S.editPad=ring.p; manualPad=true;
-    seqSelStep=-1; drawSeq(); drawPads(); drawCircle();
-    lcd('TRACK '+padName(ring.p)+' selected — it moves to the outer ring.');
+  /* ONLY THE SELECTED TRACK'S RING TAKES A TAP.
+
+     Reported as "the outermost ring aka the pad that's selected needs to
+     be the only one that's clickable, too many times I clicked the wrong
+     part", and the old behaviour explains it exactly: an inner ring
+     SELECTED that track. So a tap meant for a step on the outer ring,
+     landing a few pixels in, silently changed which track you were
+     editing — and because the newly selected track then moves to the
+     outside, the ring under your finger was replaced by a different
+     one. The worst kind of mis-tap: it looks like nothing happened until
+     the next tap writes to the wrong part.
+
+     The outer ring is also the one being aimed at, so a near-miss
+     OUTWARD — past the edge of the rings, where there is nothing else to
+     hit — counts as the outer ring rather than missing entirely. That is
+     the half of this that actually reduces mis-taps; refusing the inner
+     rings only stops them doing damage.
+
+     Switching track has the pad strip above the circle, which now has
+     its own bank row, so nothing is unreachable. */
+  const mine=CIRC.rings.find(g=>g.p===S.seqPad);
+  if(mine && rad>=mine.r0-6){
+    /* the selected ring, or anywhere beyond it */
+  } else {
+    const other=CIRC.rings.find(g=>rad>=g.r0-2 && rad<=g.r1+2);
+    if(other && other.p!==S.seqPad)
+      lcd('THAT IS '+padName(other.p)+"'S RING — only the outer ring is editable. "
+        +'Pick a track on the strip above.');
     return;
   }
+  const ring=mine;
   let ang=Math.atan2(y,x)+Math.PI/2;            // 0 at top, clockwise
   if(ang<0) ang+=Math.PI*2;
   const i=Math.floor(ang/(Math.PI*2)*ring.len)%ring.len;
@@ -28345,12 +28496,23 @@ function drawFromPicker(){
   sel.disabled = cap<2;
 }
 
-/* THE SPANS THIS PATTERN CAN ACTUALLY TAKE.
+/* PTN IS THE PATTERN LENGTH. LEN IS THE TRACK LENGTH. They sit next to
+   each other in the same row on the SEQ tab and they are not the same
+   control: PTN is 16/32/48/64 and sets how long the PATTERN is, which is
+   what a span needs; LEN is the minus/plus beside it and shortens ONE
+   TRACK against the others, which is polymeter.
+
+   Every message here said "LEN" for months, so a person told to "set LEN
+   to 64" by a span refusal went to the control named LEN, which cannot
+   fix it. Asked "where can I find LEN?" — the honest answer was that the
+   app was naming the wrong one. Say PTN, and say where it is.
+
+   THE SPANS THIS PATTERN CAN ACTUALLY TAKE.
    THIS IS A REGRESSION FIX AND THE REGRESSION WAS MINE. A fresh board
    is one pattern of 16 steps — one bar — and the span control defaults
    to 4, so once a span had to fit the pattern, OFFER refused on every
    untouched project: load an instrument, set a key, pick a
-   progression, press OFFER, get "set LEN to 64" and no music. Reported
+   progression, press OFFER, get "set PTN to 64" and no music. Reported
    as "it's not working. I do the same stuff click offer and all that
    and it doesn't write", which is exactly what it did.
 
@@ -28374,7 +28536,7 @@ function drawSpanPicker(){
     const base=span+(span===1?' bar':' bars');
     o.disabled=!ok;
     o.textContent = ok ? base
-      : base+' · needs LEN '+(PATLENS.find(L=>L>=chunk*16)||MAXSTEPS);
+      : base+' · needs PTN '+(PATLENS.find(L=>L>=chunk*16)||MAXSTEPS);
     if(ok) widest=o.value;
   });
   const cur=sel.options[sel.selectedIndex];
@@ -28416,6 +28578,11 @@ function drawMusicalLayer(){
   if(k) $('mlMode').value = k.mode;
   $('mlBarsLbl').textContent = bars+(bars===1?' BAR':' BARS');
   drawFromPicker(); drawSpanPicker();
+  /* PTN mirrors patLenSel on the SEQ tab — the same state, reachable from
+     where the refusals that name it appear */
+  const pn=$('mlPtn');
+  if(pn){ const L=patLen(S.patterns[S.pattern]);
+    if(PATLENS.indexOf(L)>=0) pn.value=String(L); }
   /* what fits the key, so "what could go here" is answerable without
      the person having to know — suggestion, never a constraint */
   if(k && typeof keyChords==='function'){
@@ -28471,6 +28638,20 @@ function drawMusicalLayer(){
     if(tp && ti){
       const ei=S.editPad|0, ep=S.pads[ei];
       tp.textContent=padName(ei);
+      /* THE DEFAULT TAG IS THE PAD'S NUMBER, and the placeholder has to
+         follow the SELECTED pad. Set inside the "untagged" branch only,
+         it never ran for a pad that already had a tag — so it kept
+         whatever the pad selected at boot had been, and the box offered
+         A08 while the row above it said A10. Worse, the stale value was
+         cached in a data attribute that TAG IT used, so tagging pad A10
+         with an empty box created an instrument called "A08", and every
+         pad tagged that way would have collapsed into one instrument —
+         the same symptom as the range bug, by a different route.
+         Set unconditionally, and TAG IT recomputes it at click time
+         rather than trusting anything cached here. */
+      const ni=$('mlTagName');
+      if(ni && document.activeElement!==ni)
+        ni.placeholder=padName(ei)+'  (tap TAG IT to use)';
       if(!ep || ep.bufId<0){
         ti.textContent='Select a pad with a sound on it, over on PADS, and it can be tagged here.';
       } else if(ep.inst){
@@ -28480,6 +28661,20 @@ function drawMusicalLayer(){
         ti.textContent=padName(ei)+' ('+(ep.name||'a sound')+') is not tagged, so nothing can write '
           +'a part for it. Tagging keeps the sound and gives it a name, and OFFER can then write '
           +'notes for it, pitched from middle C.';
+        /* THE DEFAULT TAG IS THE PAD'S NUMBER. Asked for plainly: "the
+           default tag name should just be whatever the pad is numbered
+           unless user chooses otherwise."
+
+           The first version of this derived a name from the SAMPLE —
+           stripping the pack prefix, the note name and the velocity
+           layer out of "vc:stein-JHPiano_NoSus_Close_A#0_vl2_rr1" to
+           reach "JHPiano NoSus". Cleverer and worse: the result depends
+           on the naming scheme of whichever library the sound came from,
+           so it is unpredictable, and two pads from the same instrument
+           would land on the SAME tag and silently become one instrument.
+           A pad number is unique, already on screen, and is what the
+           person is looking at. Typing over it is still one tap. */
+
       }
     }
   }
@@ -28559,7 +28754,11 @@ if($('mlTonic')){
      stated rather than assumed silently. */
   $('mlTagGo').addEventListener('click',()=>{
     const i=S.editPad|0, p=S.pads[i];
-    const name=($('mlTagName').value||'').trim().slice(0,16);
+    /* empty box means "name it after the pad", computed HERE from the pad
+       being tagged. The first version read a value cached by the last
+       redraw, which is how a tag for A10 came out as "A08". */
+    const ni=$('mlTagName');
+    const name=((ni.value||'').trim() || padName(S.editPad|0)).slice(0,16);
     if(!p || p.bufId<0){ lcd('PAD '+padName(i)+' HAS NO SOUND ON IT — load one first.'); return; }
     if(!name){ lcd('NAME IT FIRST — "bass", "lead", whatever you will recognise.'); return; }
     p.inst=name;
@@ -28572,6 +28771,19 @@ if($('mlTonic')){
   let mlCands=null, mlOpts=null, mlSpanBars=4, mlChunkBars=4, mlEnsemble=null;
   /* how many whole bars the SELECTED pattern can still hold */
   const mlBarsCapacity=()=>Math.max(1, Math.floor(patLen(S.patterns[S.pattern])/16));
+  if($('mlPtn')) $('mlPtn').addEventListener('change',async()=>{
+    const want=parseInt($('mlPtn').value,10);
+    try{
+      const r=await window.MVX.pattern(S.pattern,{plen:want,select:true});
+      if(r && r.warning) throw new Error(r.warning);
+      drawSteps(); drawNotes(); drawMusicalLayer(); dirty();
+      $('mlInfo').textContent='Pattern '+(S.pattern+1)+' is now '+want+' steps — '
+        +(want/16)+' bar'+(want/16===1?'':'s')+'. Spans up to that now fit.';
+      /* the length the SEQ tab shows has to follow, or two controls on one
+         pattern disagree */
+      const ps=$('patLenSel'); if(ps) ps.value=String(want);
+    }catch(e){ $('mlInfo').textContent=e.message; }
+  });
   if($('mlAll')) $('mlAll').addEventListener('change',()=>{
     mlEnsemble=null; mlCands=null; $('mlPickRow').hidden=true;
     const vs=mlVoices();
@@ -28602,9 +28814,10 @@ if($('mlTonic')){
         const cap=mlBarsCapacity();
         if(chunk>cap) throw new Error('pattern '+(S.pattern+1)+' is '+cap+' bar'
           +(cap===1?'':'s')+' and this wants '+chunk
-          +'. Set LEN longer, or choose a shorter span.');
+          +'. Set PTN longer (the row above the grid), or choose a shorter span.');
         const opts={ from:Math.max(0,Math.min(cap-1,parseInt($('mlFrom').value,10)||0)),
           bars:chunk, n:5, src:'pat', feel:$('mlFeel').value,
+          density:$('mlDens').value, octave:parseInt($('mlOct').value,10)||0,
           seed:(Date.now()&0x7fffffff) };
         mlSpanBars=span; mlChunkBars=chunk; mlEnsemble=vs; mlOpts=opts;
         const r=await window.MVX.ensemble(vs, opts);
@@ -28669,7 +28882,7 @@ if($('mlTonic')){
         throw new Error('pattern '+(S.pattern+1)+' is '
           +patLen(S.patterns[S.pattern])+' steps, which is '+cap+' bar'
           +(cap===1?'':'s')+', and '+span+' bars is written in chunks of '
-          +chunk+'. Set LEN to '+need+', then '+span+' bar'+(span===1?'':'s')
+          +chunk+'. Set PTN to '+need+', then '+span+' bar'+(span===1?'':'s')
           +' fills pattern'+(pats>1?'s '+(S.pattern+1)+'–'+(S.pattern+pats):' '+(S.pattern+1))
           +'. Or choose a span of '+cap+' bar'+(cap===1?'':'s')+'.');
       }
@@ -28688,7 +28901,9 @@ if($('mlTonic')){
           +'mean anything. Start from bar 1 for a span this long, or keep '
           +'the span inside this pattern.');
       const opts={ from:from, bars:chunk, n:5, role:$('mlRole').value,
-        feel:$('mlFeel').value, src:'pat', seed:(Date.now()&0x7fffffff) };
+        feel:$('mlFeel').value, src:'pat',
+        density:$('mlDens').value, octave:parseInt($('mlOct').value,10)||0,
+        seed:(Date.now()&0x7fffffff) };
       mlSpanBars=span; mlChunkBars=chunk;
       const r=await window.MVX.infill(inst,opts);
       mlCands=r.candidates; mlOpts=opts;
