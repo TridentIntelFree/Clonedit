@@ -1094,6 +1094,17 @@ where they come back into alignment. On a grid that relationship is invisible.</
     </select>
     <button id="mlOffer" title="Offer several ways to play it. Writes nothing.">OFFER</button>
   </div>
+  <!-- A WORKED EXAMPLE, because every control here needs something set up
+       before it does anything, and a panel that needs six decisions before
+       it makes a sound is one people bounce off. This builds the whole
+       thing: three instruments from the CC0 pack, a key, a progression, a
+       64-step pattern, and all three parts written against each other with
+       cross-tempo lanes. Then it says what it did, so it reads as a
+       demonstration rather than as magic. -->
+  <div class="row" style="gap:4px">
+    <button id="mlDemo" class="grow needsnet"
+      title="Build a complete four-bar arrangement so you can hear what this does">DEMO &mdash; BUILD ME FOUR BARS</button>
+  </div>
   <!-- WITHOUT THIS THE PANEL ABOVE IS A DEAD END. infill() writes for an
        INSTRUMENT, and an instrument is a pad carrying an `inst` tag.
        instrument() sets one; sound(), the kits and every sample loaded by

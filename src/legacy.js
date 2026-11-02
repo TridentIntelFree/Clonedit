@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R241 · 2026-11-02 · a tagged pad writes in its own register';
+const BUILD = 'JBH-88 · R242 · 2026-11-02 · WRITE: cross-tempo layers, and a demo that builds four bars';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -14171,9 +14171,97 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       return c.notes.map(([midi,step,vel,beats])=>({midi,step,vel,beats,inst:v.inst}));
     };
 
+    /* ---- CROSS-TEMPO LAYERS -----------------------------------------
+       "Where it can even effect polyrhythms of separate layers."
+
+       poly() gives a PAD its own BPM, counted in its own hits, so a pad
+       at three quarters of the project tempo is three hits against four
+       beats. The lane is separate from the grid row, so a voice keeps
+       the part written for it AND gains a figure at another tempo — the
+       two sound together, which is the whole point.
+
+       THE PITCHES CANNOT BE CHOSEN PER BAR. A lane at 3:4 does not line
+       up with the bar, so by construction it drifts across the
+       progression and meets every chord in it. A figure harmonised
+       against bar 1 is wrong by bar 2. So the notes come from the pitch
+       classes that are safe against EVERY chord in the span — no
+       semitone above any chord tone anywhere — which is a smaller set
+       and the only one that stays right while the figure moves.
+       Verified that a poly cell carries a pitch at all before building
+       on it: a three-cell lane with locks of 0, 5 and 7 semitones
+       scheduled midi 36, 41 and 43 at 0.87s apart. AGENTS.md had that
+       path down as unverified.
+
+       THE FOUNDATION DOES NOT DRIFT. The bass keeps the project tempo;
+       a sub that wanders off the beat takes the weight with it, which is
+       the same reason WOBBLE leaves the fundamental steady. */
+    const POLY_SETS={
+      none:  [],
+      spread:[ null, 0.75, 1.25, 1.5, 0.5 ],       /* bass straight, then 3:4, 5:4, 3:2 */
+      wide:  [ null, 1.5,  0.75, 1.75, 1.25 ]
+    };
+    const polyMode=(POLY_SETS[String(o.poly||'none')]?String(o.poly||'none'):'none');
+    /* THE SPAN'S CHORDS, READ HERE. The first version of this called
+       `info.every(...)` — `info` is a local inside infill(), not in this
+       function, so the whole DEMO came back "info is not defined" and
+       wrote nothing. A reference that happens to name a variable from the
+       function you copied the idea out of. */
+    const polyInfo=(()=>{
+      try{
+        const pr=window.MVX.progression({src:o.src||'pat'});
+        const out=[];
+        for(let b2=0;b2<bars;b2++){
+          const sym=pr.chords[(from+b2) % Math.max(1,pr.chords.length)];
+          const ci=(sym && typeof chordInfo==='function')?chordInfo(sym):null;
+          if(ci) out.push(ci);
+        }
+        return out;
+      }catch(e){ return []; }
+    })();
+    /* pitch classes consonant with every chord in the span */
+    const safeEverywhere=(()=>{
+      const out=[];
+      for(let pc=0;pc<12;pc++){
+        if(polyInfo.length && polyInfo.every(ch=>!ch.pcs.some(t=>(((pc-t)%12)+12)%12===1)))
+          out.push(pc);
+      }
+      return out;
+    })();
+    const planPoly=(voice, mul, seed)=>{
+      if(!mul) return null;
+      const pads=window.MVX.instPads(voice.inst);
+      if(!pads.length) return null;
+      let rs=(seed>>>0)||7;
+      const rnd=()=>{ rs^=rs<<13; rs^=rs>>>17; rs^=rs<<5; return ((rs>>>0)/4294967296); };
+      /* cells from the ratio: 3:4 wants three, 5:4 five — the numerator,
+         so one cycle of the figure is one cycle of the cross-rhythm */
+      const cells=clamp(Math.round(mul*4), 2, 9);
+      const base=mainBpmOf(polyBar());
+      /* one pad carries the lane. A multi-pad instrument would need every
+         pad on the same clock to stay one voice, and a lane per note is a
+         different feature; the pad nearest the middle of the instrument
+         is the one that sounds most like it. */
+      const mid=pads[Math.floor(pads.length/2)];
+      const root=mid.note!=null?mid.note:60;
+      const pcs=safeEverywhere.length?safeEverywhere:[0];
+      const row=[];
+      for(let c=0;c<cells;c++){
+        /* the first cell is the steadiest thing available, so the figure
+           has somewhere to come back to */
+        const pc=c===0 ? pcs[0] : pcs[Math.floor(rnd()*pcs.length)%pcs.length];
+        let off=((pc-(root%12))%12+12)%12;
+        if(off>6) off-=12;                      /* nearest, not always up */
+        row.push([c, +(0.55+rnd()*0.3).toFixed(2), {pitch:off}]);
+      }
+      return { pad:mid.pad, inst:voice.inst, cells, mul,
+        bpm:Math.round(base*mul), row,
+        ratio:cells+':4' };
+    };
+
+    const baseSeed=((o.seed|0) || 0x51ED)>>>0;
     const cands=[];
     for(let k=0;k<want;k++){
-      const seed=((o.seed|0) || 0x51ED) ^ (k*2654435761);
+      const seed=baseSeed ^ (k*2654435761);
       const parts={}; let all=[];
       for(const v of written){
         const notes=await buildOne(v, all, (seed ^ (v.inst.length*2246822519) ^ (v.i*40503))>>>0);
@@ -14189,7 +14277,15 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       }
       const rubPct=pairs?100*rubs/pairs:0;
       const obqPct=moves?100*oblique/moves:0;
-      cands.push({ seed:seed>>>0, parts, notes:all.length,
+      const plan=[];
+      if(polyMode!=='none'){
+        const muls=POLY_SETS[polyMode];
+        written.forEach((v,vi)=>{
+          const q=planPoly(v, muls[vi%muls.length], (seed^(vi*2654435761))>>>0);
+          if(q) plan.push(q);
+        });
+      }
+      cands.push({ seed:seed>>>0, parts, poly:plan, notes:all.length,
         score:{ voicePairs:pairs, rubs, rubPct:+rubPct.toFixed(2),
           oblique:+obqPct.toFixed(1), parallel:moves?+(100*parallel/moves).toFixed(1):0 },
         /* ranked by FAULT: a clash between voices first, then distance
@@ -14199,7 +14295,12 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     cands.sort((a,b)=>a.fault-b.fault);
 
     if(o.apply!=null){
-      const chosen=cands.find(c=>c.seed===(o.apply>>>0)) || cands[0];
+      const chosen=cands.find(c=>c.seed===(o.apply>>>0));
+      if(!chosen) throw new Error('that arrangement is not in this set — apply '
+        +'needs the same `seed` the offer was made with, and this one rebuilt a '
+        +'different five. Pass back the `seed` the offer returned. (Silently '
+        +'writing the nearest one is how a scored arrangement becomes an '
+        +'unscored one.)');
       let wrote=0;
       /* THE AGAINST-CHAIN HAS TO BE REBUILT, NOT SKIPPED. Written with
          `against:[]` here, every voice would be written as though it were
@@ -14217,16 +14318,36 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         wrote+=r.wrote||0;
         sofar=sofar.concat(chosen.parts[v.inst]||[]);
       }
+      /* THE LANES ARE WRITTEN HERE AND NOT AT OFFER TIME, because OFFER
+         writes nothing and poly() is state. The candidate carries the
+         plan so what gets written is what was scored and shown. */
+      const lanes=[];
+      for(const q of (chosen.poly||[])){
+        try{
+          await window.MVX.poly(q.pad, { on:true, bpm:q.bpm, cells:q.cells,
+            lock:true, trig:'free', row:q.row });
+          lanes.push(q.inst+' '+q.ratio+' @'+q.bpm);
+        }catch(e){}
+      }
       return { applied:chosen.seed, voices:written.map(v=>v.inst), wrote,
-        score:chosen.score,
+        score:chosen.score, lanes,
         says:'wrote '+wrote+' notes across '+written.length+' voices — '
           +written.map(v=>v.inst).join(', ')+' — over bars '+(from+1)+'–'+(from+bars)
           +'. '+chosen.score.rubs+' semitone clashes between voices, '
-          +chosen.score.oblique+'% oblique motion against 68% in Palestrina.' };
+          +chosen.score.oblique+'% oblique motion against 68% in Palestrina.'
+          +(lanes.length?' Cross-tempo lanes on '+lanes.join(', ')
+            +' — each keeps its grid part underneath.':'') };
     }
 
     const best=cands[0];
-    return { voices:written.map(v=>({inst:v.inst, role:v.role})), bars, from,
+    /* THE BASE SEED, RETURNED, because apply regenerates the candidates
+       from it and has to regenerate the SAME ones. The demo passed a
+       field that did not exist, so apply fell back to 0x51ED, rebuilt a
+       different five, failed to find the chosen seed among them and
+       wrote cands[0] of the new set — scoring one arrangement and
+       writing another, which is the mismatch this file keeps catching.
+       A caller cannot get it right if the value is not handed back. */
+    return { seed:baseSeed, voices:written.map(v=>({inst:v.inst, role:v.role})), bars, from,
       candidates:cands.map(c=>({ seed:c.seed, notes:c.notes, score:c.score, fault:c.fault })),
       says:cands.length+' arrangement'+(cands.length===1?'':'s')+' for '
         +written.map(v=>v.inst).join(' + ')+', written foundation-first so each '
@@ -22585,6 +22706,81 @@ if($('mlTonic')){
       : '';
     if($('mlOffer')) $('mlOffer').disabled = $('mlAll').checked ? vs.length<2 : !$('mlInst').value;
   });
+
+/* DEMO — A WORKED EXAMPLE OF THE WHOLE PANEL.
+
+   Every control in here needs something set up before it does anything:
+   an instrument tagged, a key declared, chords written, a pattern long
+   enough. That is six decisions before the first sound, and a panel like
+   that is one people bounce off — which is most of what "make write user
+   friendly" means. This does the setup and then uses the panel's own
+   calls, so what it produces is reachable by hand afterwards.
+
+   It is a DEMONSTRATION, not a preset: it reports every step it took, so
+   the next thing a person does can be to change one of them. */
+async function writeDemo(){
+  const log=[];
+  const say=t=>{ log.push(t); $('mlInfo').textContent=log.join('  '); };
+
+  /* three voices at three registers, from the CC0 pack. Register is what
+     assigns the roles later, so they have to differ. */
+  say('Loading three instruments…');
+  const pack='samples/vcsl-wide.json';
+  await window.MVX.instrument('bass',  {pack, match:'^vc:stein-', lo:28, hi:45, max:6});
+  await window.MVX.instrument('synth', {pack, match:'^vc:stein-', lo:52, hi:69, max:8});
+  await window.MVX.instrument('hi',    {pack, match:'^vc:harp-',  lo:72, hi:86, max:6});
+
+  /* 64 steps, which is four bars — the span the panel is built around */
+  const pr=await window.MVX.pattern(S.pattern, {plen:64, clear:true, select:true});
+  if(pr && pr.warning) throw new Error(pr.warning);
+  window.MVX.key('D','minor');
+  window.MVX.chords(S.pattern, ['Dm','Bb','F','C']);
+  say('D minor, Dm Bb F C over four bars (PTN 64).');
+
+  /* the panel's own controls, set so the demo is reproducible by hand */
+  const set=(id,v)=>{ const e=$(id); if(e){ e.value=v;
+    e.dispatchEvent(new Event('change',{bubbles:true})); } };
+  set('mlTonic','D'); set('mlMode','minor');
+  set('mlSpan','4'); set('mlFrom','0'); set('mlDens','normal');
+  set('mlOct','0'); set('mlFeel','straight'); set('mlPoly','spread');
+  if($('mlAll')) $('mlAll').checked=true;
+
+  const vs=mlVoices();
+  say('Voices: '+vs.map(v=>v.inst+' as '+v.role).join(', ')+'.');
+
+  const demoSeed=(Date.now()&0x7fffffff);
+  const offer=await window.MVX.ensemble(vs, { from:0, bars:4, n:5, src:'pat',
+    density:'normal', octave:0, poly:'spread', seed:demoSeed });
+  const best=offer.candidates[0];
+  say('Five arrangements offered; best has '+best.score.rubs+' clashes in '
+    +best.score.voicePairs+' voice-pairs and '+best.score.oblique+'% oblique motion.');
+
+  const done=await window.MVX.ensemble(vs, { from:0, bars:4, src:'pat',
+    density:'normal', octave:0, poly:'spread', seed:offer.seed,
+    apply:best.seed, n:5 });
+
+  /* the free checks, because they cost nothing and this is a demo of the
+     panel's judgement as much as its writing */
+  let checks='';
+  try{
+    const h=await window.MVX.harmony({src:'pat'});
+    const p2=await window.MVX.pulse({src:'pat'});
+    checks=' harmony: '+((h.minorNinths||[]).length)+' minor ninths, '
+      +((h.barsWithNoThird||[]).length)+' bars with no third.'
+      +(p2 && p2.beat!=null?(' pulse: '+p2.beat+'% on the beat.'):'');
+  }catch(e){}
+
+  drawSteps(); drawNotes(); drawPoly(); drawMusicalLayer(); dirty();
+  return [done.says, checks,
+    'Everything here is reachable by hand: the controls above are set to '
+    +'what this used, so change one and press OFFER.'].join(' ');
+}
+if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
+  const b=$('mlDemo'); b.disabled=true; const was=b.textContent; b.textContent='building…';
+  try{ $('mlInfo').textContent=await writeDemo(); lcd('DEMO: four bars written'); }
+  catch(e){ $('mlInfo').textContent='DEMO failed: '+e.message; lcd('DEMO: '+String(e.message).slice(0,50)); }
+  finally{ b.disabled=false; b.textContent=was; }
+});
   $('mlOffer').addEventListener('click',async()=>{
     const inst=$('mlInst').value;
     const allOn=!!($('mlAll') && $('mlAll').checked);
@@ -22608,6 +22804,7 @@ if($('mlTonic')){
         const opts={ from:Math.max(0,Math.min(cap-1,parseInt($('mlFrom').value,10)||0)),
           bars:chunk, n:5, src:'pat', feel:$('mlFeel').value,
           density:$('mlDens').value, octave:parseInt($('mlOct').value,10)||0,
+          poly:$('mlPoly')?$('mlPoly').value:'none',
           seed:(Date.now()&0x7fffffff) };
         mlSpanBars=span; mlChunkBars=chunk; mlEnsemble=vs; mlOpts=opts;
         const r=await window.MVX.ensemble(vs, opts);

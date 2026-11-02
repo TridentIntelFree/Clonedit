@@ -431,6 +431,87 @@ export default async function ({ browser, base }) {
       ['lo', 'mid', 'hi'].every(k => solo[k].range[1] - solo[k].range[0] <= 15),
       ['lo', 'mid', 'hi'].map(k => (solo[k].range[1] - solo[k].range[0]) + 'st').join(' · '));
 
+    /* ---- CROSS-TEMPO LAYERS, AND THE SEED CONTRACT -------------------
+       "Where it can even effect polyrhythms of separate layers."
+
+       poly() gives a PAD its own BPM and its lane is separate from the
+       grid row, so a voice keeps the part written for it AND gains a
+       figure at another tempo. Two things had to be true before building
+       on it, and the second was recorded in AGENTS.md as unverified:
+       a poly cell carries a pitch (locks of 0, 5 and 7 semitones
+       scheduled midi 36, 41, 43), and the lane is additive rather than a
+       replacement.
+
+       THE PITCHES CANNOT BE PER BAR. A 3:4 lane does not line up with
+       the bar, so it drifts across the progression and meets every chord
+       in it — a figure harmonised against bar 1 is wrong by bar 2. The
+       notes come from the pitch classes safe against EVERY chord in the
+       span, which is the only set that stays right while it moves. */
+    t.head('CROSS-TEMPO LANES ON SEPARATE LAYERS');
+    const xt = await page.evaluate(async () => {
+      await window.JBH.clear();
+      for (const [n, m, pad] of [['bass', 36, 0], ['mid', 55, 1], ['top', 72, 2]]) {
+        await window.JBH.bass({ style: 'sub', midi: m, seconds: 0.4, pad });
+        window.JBH.pad(pad, { inst: n, srcNote: m });
+      }
+      window.JBH.key('D', 'minor');
+      window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+      window.JBH.chords(0, ['Dm', 'Bb', 'F', 'C']);
+      const vs = [{ inst: 'bass', role: 'bass' }, { inst: 'mid', role: 'lead' },
+        { inst: 'top', role: 'arp' }];
+      const o = { from: 0, bars: 4, n: 4, src: 'pat', poly: 'spread', seed: 987654 };
+      const offer = await window.JBH.ensemble(vs, o);
+      const beforeGrid = S.patterns[0].steps.map(r => r.filter(v => v > 0).length).slice(0, 3);
+      /* candidate 3, not the best, to prove apply honours the choice */
+      const want = offer.candidates[2];
+      const done = await window.JBH.ensemble(vs, Object.assign({}, o, { apply: want.seed }));
+      const lanes = [];
+      for (let i = 0; i < 8; i++) { const q = window.JBH.poly(i);
+        if (q && q.on) lanes.push({ pad: i, bpm: q.bpm, cells: q.cells, hits: q.hits, trig: q.trig }); }
+      /* every cell pitch must be safe against all four chords */
+      const bad = [];
+      for (const L of lanes) {
+        for (let c = 0; c < L.cells; c++) {
+          const lk = S.patterns[0].locks[LK(L.pad, c, true)];
+          const midi = (S.pads[L.pad].srcNote || 0) + ((lk && lk.pitch) || 0);
+          for (const sym of ['Dm', 'Bb', 'F', 'C']) {
+            const ci = chordInfo(sym);
+            if (ci.pcs.some(t => (((midi % 12) - t) % 12 + 12) % 12 === 1)) bad.push(sym + '/' + midi);
+          }
+        }
+      }
+      let refused = null;
+      try { await window.JBH.ensemble(vs, Object.assign({}, o, { seed: 111, apply: want.seed })); }
+      catch (e) { refused = e.message; }
+      const afterGrid = S.patterns[0].steps.map(r => r.filter(v => v > 0).length).slice(0, 3);
+      return { seed: offer.seed, asked: o.seed, lanes, bad, refused,
+        wanted: want.notes, wrote: done.wrote,
+        sameScore: JSON.stringify(want.score) === JSON.stringify(done.score),
+        beforeGrid, afterGrid, says: done.says };
+    });
+    t.ok('the upper layers get their own tempo and the bass does not',
+      xt.lanes.length >= 1 && !xt.lanes.some(l => l.pad === 0),
+      xt.lanes.map(l => 'pad ' + l.pad + ' @' + l.bpm + ' ' + l.cells + 'c').join(' · ') || '(none)');
+    t.ok('each lane runs on its own clock, so it pulls against the grid',
+      xt.lanes.every(l => l.trig === 'free' && l.hits > 0),
+      xt.lanes.map(l => l.trig + '/' + l.hits).join(' '));
+    /* the one that makes it music rather than noise */
+    t.ok('EVERY CELL PITCH IS SAFE AGAINST ALL FOUR CHORDS, because it drifts',
+      xt.bad.length === 0, xt.bad.length ? 'clashes: ' + xt.bad.join(', ') : 'none in any bar');
+    t.ok('and the lane is additive — the grid part is still there',
+      xt.afterGrid.every((n, i) => n >= xt.beforeGrid[i]) && xt.afterGrid.some(n => n > 0),
+      'grid hits ' + xt.beforeGrid.join(',') + ' -> ' + xt.afterGrid.join(','));
+    /* the seed contract: apply regenerates the candidates, so it needs the
+       base seed back or it rebuilds a different set and writes the wrong
+       one. The demo passed a field that did not exist and did exactly that. */
+    t.ok('the offer hands back the seed it used',
+      xt.seed === xt.asked, xt.seed + ' vs ' + xt.asked);
+    t.ok('APPLYING A CANDIDATE WRITES THAT ONE, not the best one',
+      xt.wrote === xt.wanted && xt.sameScore,
+      'asked for ' + xt.wanted + ' notes, wrote ' + xt.wrote + ', scores match: ' + xt.sameScore);
+    t.ok('and a seed that cannot reproduce the set is refused, not substituted',
+      xt.refused && /same `seed`/.test(xt.refused), (xt.refused || '(it substituted)').slice(0, 80));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

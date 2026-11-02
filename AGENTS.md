@@ -562,23 +562,61 @@ at 75 against a project at 100 is three hits per bar against four
 beats — true 3-against-4, re-anchored every bar with LOCK TO BAR on,
 phasing with it off. No arithmetic needs inventing.
 
-What a true-poly WRITE needs, and why it was not done in the session
-that added FEEL:
+**THIS IS DONE NOW, and the unverified part was the easy part.** The
+cell pitch lock works: a three-cell lane with locks of 0, 5 and 7
+semitones on a pad sampled at 36 scheduled midi 36, 41 and 43, 0.87s
+apart, at 69 against a project 92. `polyFire` has always read `lk.pitch`
+and `lk.pitches` and passed them to `triggerPad`; nobody had checked.
 
-- a part is written across one pad PER PITCH, and a poly lane belongs
-  to a pad, so the whole instrument's pads need the same `bpm`,
-  `cells` and `lock` or the voices come apart;
-- the pitch of a cell lives in a LOCK — `pat.locks[LK(pad,cell,true)]`
-  — and that path was not verified, which is the actual reason this
-  stopped here rather than any difficulty in the idea;
-- it collides with FEEL in the UI. One moves the part off the grid onto
-  its own tempo, the other keeps it on the grid and lets it drift, and
-  offering both in one list without saying which is which would be
-  worse than offering neither.
+So `ensemble()` takes a `poly` option — *in time*, *cross-tempo
+spread*, *cross-tempo wide* — and the WRITE panel has it beside ALL.
+Each upper voice gets a lane at a ratio while keeping the grid part
+written for it, which is what makes the timings conflict instead of
+replacing one another.
 
-So: one control, labelled so the two cannot be confused, and the cell
-pitch-lock path checked in the browser before anything is written
-against it.
+**THE PITCHES CANNOT BE CHOSEN PER BAR, and that is the whole design.**
+A lane at 3:4 does not line up with the bar, so by construction it
+drifts across the progression and meets every chord in it — a figure
+harmonised against bar 1 is wrong by bar 2. The notes come from the
+pitch classes safe against EVERY chord in the span: no semitone above
+any chord tone anywhere. A smaller set, and the only one that stays
+right while the figure moves. Asserted per cell against all four
+chords.
+
+**The foundation does not drift.** The bass keeps the project tempo; a
+sub that wanders off the beat takes the weight with it, which is the
+same reason WOBBLE leaves the fundamental steady.
+
+One pad carries the lane — the one nearest the middle of the
+instrument. A lane per sampled note would be a different feature and
+the pads would need one clock between them to stay one voice.
+
+### DEMO — one tap builds four bars
+
+Every control in the WRITE panel needs something set up before it does
+anything: an instrument tagged, a key, chords, a pattern long enough.
+That is six decisions before the first sound, which is most of what
+"make write user friendly" means. **DEMO** does the setup and then uses
+the panel's own calls, so the result is reachable by hand afterwards,
+and it reports every step so it reads as a demonstration rather than a
+preset. Measured output at PTN 64:
+
+```
+bass   16 events  midi 29-40   straight
+synth  33 events  midi 52-65   cross-tempo 5:4 @115
+hi     33 events  midi 74-86   cross-tempo 3:4 @69
+0 clashes in 80-odd voice-pairs · 62-68% oblique · 0 minor ninths
+```
+
+**AND THE DEMO SHIPPED WITH THE MISMATCH THIS FILE KEEPS CATCHING.** It
+passed `seed: offer.seedUsed` — a field that does not exist — so apply
+fell back to the default base seed, rebuilt a different five
+candidates, failed to find the chosen one among them, and wrote
+`cands[0]` of the new set. Scored one arrangement, wrote another.
+`ensemble()` returns its `seed` now, and an `apply` whose seed is not in
+the regenerated set is REFUSED rather than quietly substituted — a
+caller cannot get it right if the value is not handed back, and the
+nearest match is not the one that was chosen.
 
 ## Check while you build, not after
 
