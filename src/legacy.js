@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R250 · 2026-11-03 · velocity opens the filter, so an uploaded sound has expression';
+const BUILD = 'JBH-88 · R251 · 2026-11-03 · the reference library has a control, so it can grow';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -16705,6 +16705,136 @@ $('btnToolReview').addEventListener('click',()=>toolRun('btnToolReview','REVIEW'
   }
   return out;
 }));
+
+/* ---- THE REFERENCE LIBRARY, REACHABLE WITHOUT A TERMINAL -----------
+   `compare()`, `balance()` and `audit()` all need a reference, and with
+   none loaded they do not run — about a quarter of the analysis, silent.
+   The MIX TOOLS help has always said "load a finished mix with
+   reference() first", which is an API call the interface never offered,
+   so in practice it was never loaded and nothing said so.
+
+   The measuring was never the bottleneck. `reference()` has decoded
+   audio into a nine-band profile all along, and a profile is NINE
+   NUMBERS AND TWO SCALARS — a description of a shape, not the music —
+   which is why it can be kept, shared and committed when the recording
+   cannot. What was missing was a file picker and somewhere to put the
+   result.
+
+   This matters more than one more profile in the repo, because the
+   repo's two are both compromised: one is AI-generated and the other is
+   a bounce from this app, which is the circularity the notes warn
+   about. An outside reference has to come from someone with a record
+   collection, and that is the person using it, not the session writing
+   it. */
+const REF_KEY='mvx.refs.v1';
+const REF_BUILTIN=[
+  ['samples/ref-ambient-hall.json','ambient hall'],
+  ['samples/ref-solo-piano.json','solo piano']
+];
+function refSaved(){
+  try{ const j=JSON.parse(localStorage.getItem(REF_KEY)||'{}');
+    return (j && typeof j==='object') ? j : {}; }catch(e){ return {}; }
+}
+function refSaveProfile(name, prof){
+  const all=refSaved(); all[name]=prof;
+  try{ localStorage.setItem(REF_KEY, JSON.stringify(all)); }
+  catch(e){ logErr('reference save: '+(e&&e.message?e.message:e)); }
+}
+function drawRefPicker(){
+  const sel=$('refSel'); if(!sel) return;
+  const keep=sel.value;
+  sel.innerHTML='';
+  const add=(v,t)=>{ const o=document.createElement('option');
+    o.value=v; o.textContent=t; sel.appendChild(o); };
+  add('','no reference — tonal balance is NOT checked');
+  for(const [url,label] of REF_BUILTIN) add('builtin:'+url, label+'  (in the app)');
+  for(const k of Object.keys(refSaved())) add('saved:'+k, k+'  (yours)');
+  if(keep) sel.value=keep;
+}
+/* TAKES THE SPEC, RATHER THAN READING IT. `refSpec` is `let` at line
+   26363 and this wiring runs long before that, so `typeof refSpec`
+   THREW — `typeof` is safe on an undeclared name and NOT safe on a
+   declared-but-uninitialised one, which is the only case it throws.
+   The whole status line came up blank on boot and the reason was in
+   errLog because the catch around it reports instead of swallowing:
+   "reference picker: Cannot access 'refSpec' before initialization".
+   Second temporal dead zone in this file; the first silently wrote no
+   notes for every genre.
+
+   Nothing loads a reference automatically, so at boot the answer is
+   always "none" and no read is needed. */
+function refSay(r){
+  const el=$('refNow'); if(!el) return;
+  if(!r){ el.innerHTML='<b style="color:var(--amber)">No reference loaded.</b> '
+    +'compare(), balance() and audit() cannot run, and REVIEW will not judge '
+    +'tonal balance — it says so under what it could not reach.'; return; }
+  el.textContent='Loaded: '+(r.name||'(profile)')
+    +(r.lufs!=null?('  ·  '+r.lufs+' LUFS'):'')
+    +(r.crestDb!=null?('  ·  crest '+r.crestDb):'')
+    +(r.seconds!=null?('  ·  measured over '+r.seconds+'s'):'');
+}
+/* nine bands and two scalars — the same shape samples/ref-*.json carry,
+   so one measured here can be committed there and vice versa */
+function refLoaded(){
+  try{ return window.MVX.reference()||null; }catch(e){ return null; }
+}
+function refToProfile(r, name){
+  return { name:name||r.name||'(profile)',
+    shape:(r.shape||r.bands||[]).map(b=>({band:b.band, lo:b.lo, hi:b.hi,
+      rel:+( (b.rel!=null?b.rel:b.db) ).toFixed(2)})),
+    lufs:r.lufs==null?null:+r.lufs, crestDb:r.crestDb==null?null:+r.crestDb,
+    seconds:r.seconds==null?null:+r.seconds,
+    note:'Nine-band spectrum relative to the whole. A description of a shape, '
+      +'not audio. Load it with reference(profile), then compare() or balance().',
+    madeWith:'measured in the app from a track the user chose' };
+}
+if($('refSel')) $('refSel').addEventListener('change',async()=>{
+  const v=$('refSel').value;
+  try{
+    if(!v){ await window.MVX.reference(null); refSay(null); lcd('REFERENCE CLEARED'); return; }
+    if(v.indexOf('builtin:')===0){
+      const r=await fetch(v.slice(8));
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      refSay(await window.MVX.reference(await r.json()));
+    } else {
+      const prof=refSaved()[v.slice(6)];
+      if(!prof) throw new Error('that profile is no longer saved');
+      refSay(await window.MVX.reference(prof));
+    }
+    lcd('REFERENCE LOADED');
+  }catch(e){ refSay(null); lcd('REFERENCE FAILED'); logErr('reference load: '+e.message); }
+});
+if($('btnRefAdd')) $('btnRefAdd').addEventListener('click',()=>{
+  $('refIn').value=''; $('refIn').click(); });
+if($('refIn')) $('refIn').addEventListener('change',async e=>{
+  const f=e.target.files && e.target.files[0]; if(!f) return;
+  const b=$('btnRefAdd'), was=b?b.textContent:''; if(b){ b.disabled=true; b.textContent='measuring…'; }
+  try{
+    const buf=await f.arrayBuffer();
+    let bin=''; const by=new Uint8Array(buf);
+    for(let i=0;i<by.length;i+=0x8000)
+      bin+=String.fromCharCode.apply(null, by.subarray(i,i+0x8000));
+    const nm=f.name.replace(/\.[^.]+$/,'');
+    /* 120s is plenty for a spectrum and keeps a long file from being slow */
+    const r=await window.MVX.reference({base64:btoa(bin), name:nm}, {seconds:120});
+    refSaveProfile(nm, refToProfile(r, nm));
+    drawRefPicker(); $('refSel').value='saved:'+nm; refSay(r);
+    lcd('REFERENCE MEASURED');
+  }catch(err){ lcd('COULD NOT MEASURE THAT FILE');
+    logErr('reference measure: '+(err&&err.message?err.message:err)); }
+  finally{ if(b){ b.disabled=false; b.textContent=was; } }
+});
+if($('btnRefExport')) $('btnRefExport').addEventListener('click',()=>{
+  const r=refLoaded();
+  if(!r){ lcd('NOTHING TO EXPORT — LOAD ONE FIRST'); return; }
+  const prof=refToProfile(r);
+  const nm=(prof.name||'ref').replace(/[^a-z0-9]+/gi,'-').toLowerCase();
+  download(new Blob([JSON.stringify(prof,null,2)],{type:'application/json'}),
+    'ref-'+nm+'.json');
+  lcd('PROFILE EXPORTED');
+});
+try{ drawRefPicker(); refSay(null); }
+catch(e){ logErr('reference picker: '+(e&&e.message?e.message:e)); }
 
 $('btnToolBalance').addEventListener('click',()=>toolRun('btnToolBalance','BALANCE',async()=>{
   const r=await window.MVX.balance({src:'pat'});

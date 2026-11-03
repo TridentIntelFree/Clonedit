@@ -2109,6 +2109,22 @@ the habit that separates fast mixes from long ones.</p>
        other solves the instrument group levels against a loaded reference.
        They were on PROJ, three tabs from the mixer. -->
   <h3>MIX TOOLS <span style="color:var(--txt-dim);letter-spacing:0;font-weight:400;font-size:10px">&mdash; measure the whole mix, and solve it</span></h3>
+  <!-- THE REFERENCE, WHICH HAD NO CONTROL AT ALL. The help below this
+       says "Load a finished mix with reference() first" — an API call
+       the interface never offered, so three analysers (compare, balance,
+       audit) could only be reached from a terminal and in practice never
+       ran. The measuring was never the bottleneck; reference() has
+       decoded audio into a nine-band profile all along. There was just
+       no button. -->
+  <div class="row" style="gap:4px;align-items:center">
+    <select id="refSel" class="grow" aria-label="Which reference to compare against"></select>
+    <button id="btnRefAdd" title="Measure a finished track you like the sound of. Only nine numbers are kept, never the audio.">MEASURE A TRACK</button>
+  </div>
+  <div class="row" style="gap:4px">
+    <button id="btnRefExport" class="grow" title="Save the loaded profile as .json so it can be kept or shared">EXPORT PROFILE .JSON</button>
+  </div>
+  <input type="file" id="refIn" accept="audio/*" style="display:none">
+  <div id="refNow" style="font-size:10px;color:var(--txt-dim);margin:2px 0 6px;line-height:1.5"></div>
   <div class="row" style="flex-wrap:wrap;gap:4px">
     <button id="btnToolReview" class="grow" title="Run every analyser and list what is wrong, worst first">REVIEW MIX</button>
     <button id="btnToolBalance" class="grow" title="Solve the group levels against the loaded reference">BALANCE</button>

@@ -207,6 +207,93 @@ export default async function ({ browser, base }) {
     t.ok('nor one turned down to 2%', !sh.turnedDown);
     t.ok('and this is the gate the scheduler actually uses', sh.inSource);
 
+    /* ---- THE REFERENCE LIBRARY HAD NO CONTROL AT ALL -----------------
+       `compare()`, `balance()` and `audit()` all need a reference and do
+       not run without one — about a quarter of the analysis, silent. The
+       MIX TOOLS help has always said "load a finished mix with
+       reference() first", which is an API call the interface never
+       offered, so in practice it was never loaded and nothing said so.
+
+       The measuring was never the bottleneck: reference() has decoded
+       audio into a nine-band profile all along, and a profile is nine
+       numbers and two scalars — a shape, not the music — which is why it
+       can be kept and shared when the recording cannot. What was missing
+       was a file picker and somewhere to put the result. That matters
+       more than one more profile in the repo, because both of the repo's
+       are compromised: one is AI-generated and the other is a bounce
+       from this app, the circularity the notes warn about. An outside
+       reference has to come from someone with a record collection. */
+    t.head('A REFERENCE CAN BE LOADED AND MADE WITHOUT A TERMINAL');
+    const refUi = await page.evaluate(() => {
+      const sel = document.getElementById('refSel');
+      return { opts: [...sel.options].map(o => o.value),
+        boot: (document.getElementById('refNow').textContent || '') };
+    });
+    /* THE SILENCE HAS TO BE AUDIBLE. With nothing loaded the old app ran
+       REVIEW, reported "nothing serious", and had not judged tonal
+       balance at all. */
+    t.ok('with nothing loaded it SAYS the tonal checks are not running',
+      /no reference loaded/i.test(refUi.boot) && /cannot run/i.test(refUi.boot),
+      refUi.boot.slice(0, 80));
+    t.ok('and it offers the profiles that ship with the app',
+      refUi.opts.filter(v => v.indexOf('builtin:') === 0).length >= 2,
+      refUi.opts.join(' | '));
+    const refLoad = await page.evaluate(async () => {
+      const sel = document.getElementById('refSel');
+      sel.value = 'builtin:samples/ref-ambient-hall.json';
+      sel.dispatchEvent(new Event('change'));
+      for (let i = 0; i < 60; i++) { await new Promise(r => setTimeout(r, 50));
+        if (/Loaded:/.test(document.getElementById('refNow').textContent)) break; }
+      let ran = false, why = '';
+      try {
+        await window.JBH.clear();
+        await window.JBH.bass({ style: 'sub', midi: 48, seconds: 0.4, pad: 0 });
+        await window.JBH.pattern(0, { plen: 16, clear: true, select: true });
+        window.JBH.step(0, 0, 0.9);
+        await window.JBH.compare({ src: 'pat' });
+        ran = true;
+      } catch (e) { why = e.message; }
+      return { now: document.getElementById('refNow').textContent, ran, why };
+    });
+    t.ok('picking one loads it and names what was measured',
+      /Loaded:/.test(refLoad.now) && /LUFS/.test(refLoad.now),
+      refLoad.now.slice(0, 90));
+    t.ok('AND compare() RUNS once it is loaded, where it could not before',
+      refLoad.ran === true, refLoad.ran ? 'ran' : refLoad.why);
+
+    /* and a track the person picks becomes a profile they keep. The file
+       is real audio bounced by the app itself for the test, which is the
+       one place that circularity does not matter: what is under test is
+       the measuring path, not the taste of the reference. */
+    const wav = await page.evaluate(async () => {
+      await window.JBH.clear();
+      await window.JBH.bass({ style: 'growl', midi: 48, seconds: 0.5, pad: 0 });
+      await window.JBH.pattern(0, { plen: 16, clear: true, select: true });
+      for (let i = 0; i < 16; i += 4) window.JBH.step(0, i, 0.8);
+      const r = await window.JBH.render({ src: 'pat', loops: 2, wav: true });
+      return r.wavBase64;
+    });
+    await page.setInputFiles('#refIn', { name: 'my-favourite-record.wav',
+      mimeType: 'audio/wav', buffer: Buffer.from(wav, 'base64') });
+    const made = await page.evaluate(async () => {
+      for (let i = 0; i < 120; i++) { await new Promise(r => setTimeout(r, 50));
+        if (/my-favourite-record/.test(document.getElementById('refSel').value)) break; }
+      const sel = document.getElementById('refSel');
+      let saved = {};
+      try { saved = JSON.parse(localStorage.getItem('mvx.refs.v1') || '{}'); } catch (e) {}
+      const k = Object.keys(saved)[0];
+      return { value: sel.value, keys: Object.keys(saved),
+        bands: k ? (saved[k].shape || []).length : 0,
+        lufs: k ? saved[k].lufs : null,
+        now: document.getElementById('refNow').textContent };
+    });
+    t.ok('measuring a file the person picks saves a nine-band profile',
+      made.bands === 9 && made.lufs != null,
+      made.bands + ' bands · ' + made.lufs + ' LUFS · saved as ' + made.keys.join(','));
+    t.ok('it survives in storage, so the library grows between sessions',
+      made.keys.length >= 1 && /saved:/.test(made.value),
+      'picker now on ' + made.value);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } catch (e) {
