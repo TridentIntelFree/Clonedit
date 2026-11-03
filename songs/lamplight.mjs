@@ -57,7 +57,7 @@ import { findBrowser, serve, boot } from '/home/user/Clonedit/tests/browser/harn
 import { writeFileSync } from 'node:fs';
 
 const OUT='/home/user/Clonedit/lamplight.wav';
-const TARGET_LUFS=-10.5;
+const TARGET_LUFS=-12.0;
 
 const exe=await findBrowser(); const srv=await serve();
 const args=['--no-sandbox']; if(process.env.HTTPS_PROXY) args.push('--proxy-server='+process.env.HTTPS_PROXY);
@@ -92,10 +92,21 @@ const board=await page.evaluate(async () => {
      disk and sources in this repo differ by up to 35dB. */
   await J.pack('samples/vcsl-wide.json');
   const stage=(peakDb)=>Math.min(2, Math.pow(10,(-12-peakDb)/20));
-  const pi=await J.instrument('piano',{match:'upright', max:6});
+  /* ---- REGISTER IS PART OF THE SAMPLE CHOICE ----------------------
+     The first run loaded 6 roots across the WHOLE library and reported
+     `worstBend 10 st`. Ten semitones of resampling is not an upright
+     piano any more, and it showed in the writing too: ensemble() takes
+     each voice's span from its instrument's sampled range, so a library
+     spread thin over five octaves let the piano line cover 25 semitones
+     and the zither 31, against a norm of about 12, with the piano's
+     leaps at 26.2% against 13.1%. One cause, three findings.
+     So each instrument is loaded over the register it is going to play,
+     densely. Two octaves of piano at 9 roots is a bend of about 1.5
+     semitones, and it bounds the line as a side effect. */
+  const pi=await J.instrument('piano',{match:'upright', lo:52, hi:76, max:9});
   for(const x of await J.instPads('piano'))
     J.pad(x.pad,{gain:+stage(-12.3).toFixed(2), att:0.004, dec:0.9, sus:0.75, rel:0.35});
-  const zi=await J.instrument('zither',{match:'dantranh', max:5});
+  const zi=await J.instrument('zither',{match:'dantranh', lo:67, hi:86, max:7});
   for(const x of await J.instPads('zither'))
     J.pad(x.pad,{gain:+stage(-17.0).toFixed(2), att:0.006, dec:0.7, sus:0.6, rel:0.30});
   L.push('piano: '+(await J.instPads('piano')).length+' pads, worstBend '
@@ -158,8 +169,13 @@ const checks=await page.evaluate(async () => {
     }catch(e){ L.push(pair.join('/')+': '+e.message); }
   }
   try{ const h=await J.harmony({src:'song'});
-    L.push('harmony: '+(h.findings&&h.findings.length?h.findings.length+' findings — '
-      +h.findings[0]:'clean')+'  ('+h.carriedConsonant+' notes ring into a chord they belong to)');
+    /* harmony()'s findings are OBJECTS, not strings. The first run
+       printed "2 findings — [object Object]", which is a report that
+       hides exactly what it was asked to show. */
+    const fs=(h.findings||[]).map(f=>typeof f==='string'?f:(f.says||JSON.stringify(f)));
+    L.push('harmony: '+(fs.length?fs.length+' findings':'clean')
+      +'  ('+h.carriedConsonant+' notes ring into a chord they belong to)');
+    for(const f of fs) L.push('   '+String(f).slice(0,220));
   }catch(e){ L.push('harmony: '+e.message); }
   return L;
 });
