@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R244 · 2026-11-02 · WRITE: call and response, and the controls to reach it';
+const BUILD = 'JBH-88 · R245 · 2026-11-03 · SURPRISE builds a whole track, in one of ten genres';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -10647,15 +10647,41 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        which is the best available guess and still beats arpeggiating.
        It is never inferred from notes already written — inferring the
        harmony from the notes is what makes a wrong note look correct. */
+    /* PENTATONIC, as a real restriction rather than a label. The gamelan
+       entry in the genre table declared `penta:true` and NOTHING READ IT
+       — the same "an option forwarded may not be one the function reads"
+       trap this repo keeps a section for, committed by me in the same
+       hour I quoted that section. A five-note scale is most of what makes
+       that music sound like itself, so it has to actually narrow the
+       notes: the degrees kept are 1 b3 4 5 b7 in a minor key and
+       1 2 3 5 6 in a major one, which are the two anhemitonic
+       pentatonics — no semitones, which is the point. */
+    const pentaOnly = String(o.scale||'')==='penta';
+    /* DECLARED HERE, ABOVE THE READER. Placed further down beside the
+       other option reads, the IIFE below ran first and hit a temporal
+       dead zone — "Cannot access 'pentaOnly' before initialization" —
+       which threw on EVERY infill call and made the whole genre build
+       write nothing. A const is not hoisted the way the function it sits
+       beside is. */
     const SCALE_PCS=(()=>{
+      const narrow=(arr)=>{
+        if(!pentaOnly || !arr || !arr.length) return arr;
+        const root=(S.key && typeof chordInfo==='function')
+          ? (chordInfo(S.key.tonic+'m')||chordInfo(S.key.tonic)||{}).root : null;
+        if(root==null) return arr;
+        const want=(S.key && /min|aeol|dor|phryg/i.test(S.key.mode||''))
+          ? [0,3,5,7,10] : [0,2,4,7,9];
+        const keep=arr.filter(pc=>want.indexOf((((pc-root)%12)+12)%12)>=0);
+        return keep.length>=4 ? keep : arr;
+      };
       try{
         if(S.key && typeof scalePcs==='function'){
           const sc=scalePcs(S.key.tonic, S.key.mode);
-          if(sc && sc.length) return sc;
+          if(sc && sc.length) return narrow(sc);
         }
       }catch(e){}
       const u=new Set(); for(const c of info) for(const pc of c.pcs) u.add(pc);
-      return [...u];
+      return narrow([...u]);
     })();
 
     /* ---- RHYTHMIC CELLS -------------------------------------------
@@ -14299,7 +14325,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       for(const t of turnsFor(v, v.i)){
         const r=await this.infill(v.inst, { from:t.from, bars:t.bars, n:1, role:v.role,
           src:o.src||'pat', seed, against, lo:v.lo, hi:v.hi,
-          shape:o.shape, feel:o.feel, density:o.density, octave:o.octave });
+          shape:o.shape, feel:o.feel, density:o.density, octave:o.octave,
+          scale:o.scale });
         const c=r.candidates[0];
         for(const [midi,step,vel,beats,nudge] of c.notes)
           out.push({midi,step,vel,beats,nudge,inst:v.inst});
@@ -14355,14 +14382,36 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         return out;
       }catch(e){ return []; }
     })();
-    /* pitch classes consonant with every chord in the span */
+    /* pitch classes consonant with every chord in the span.
+
+       AND NARROWED BY THE SCALE, WHICH IT WAS NOT. `scale:'penta'` is
+       forwarded all the way into infill() and narrows the notes it
+       writes on the grid — but the cross-tempo lane draws its own
+       pitches here, from every class that is merely consonant, which for
+       a single triad is eight or nine of the twelve. So the gamelan
+       build came out with EIGHT pitch classes in a track whose entire
+       character is five, and the grid part was pentatonic while the lane
+       playing over it was not. Same trap as the option that is never
+       read, one level in: the restriction was applied in one of the two
+       places that write notes. */
     const safeEverywhere=(()=>{
       const out=[];
       for(let pc=0;pc<12;pc++){
         if(polyInfo.length && polyInfo.every(ch=>!ch.pcs.some(t=>(((pc-t)%12)+12)%12===1)))
           out.push(pc);
       }
-      return out;
+      if(String(o.scale||'')!=='penta' || !out.length) return out;
+      try{
+        const root=(S.key && typeof chordInfo==='function')
+          ? (chordInfo(S.key.tonic+'m')||chordInfo(S.key.tonic)||{}).root : null;
+        if(root==null) return out;
+        const want=(S.key && /min|aeol|dor|phryg/i.test(S.key.mode||''))
+          ? [0,3,5,7,10] : [0,2,4,7,9];
+        const keep=out.filter(pc=>want.indexOf((((pc-root)%12)+12)%12)>=0);
+        /* a lane needs somewhere to move, so two is the floor below
+           which the restriction yields rather than writing one note */
+        return keep.length>=2 ? keep : out;
+      }catch(e){ return out; }
     })();
     const planPoly=(voice, mul, seed)=>{
       if(!mul) return null;
@@ -14454,7 +14503,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         for(const t of turnsFor(v, v.i)){
           const r=await this.infill(v.inst, { from:t.from, bars:t.bars, role:v.role,
             src:o.src||'pat', lo:v.lo, hi:v.hi, shape:o.shape, feel:o.feel,
-            density:o.density, octave:o.octave, against:sofar, apply:vseed });
+            density:o.density, octave:o.octave, scale:o.scale, against:sofar, apply:vseed });
           wrote+=r.wrote||0;
         }
         sofar=sofar.concat(chosen.parts[v.inst]||[]);
@@ -22498,6 +22547,35 @@ const PROGS=[
   { n:'climb',          m:'min', d:[0,2,3,4] },
   { n:'two-chord vamp', m:'any', d:[0,3] },
   { n:'one chord',      m:'any', d:[0] },
+  /* ---- CHORDS FROM OUTSIDE THE KEY ------------------------------------
+     Everything above is diatonic, which is why the whole library reads as
+     exercises: seven chords, one per bar, nothing pulling anywhere. These
+     use the object form — a secondary dominant, a borrowed chord, a
+     passing diminished — so a transition has a reason to move.
+
+     Each one is a thing players actually play, named so it can be
+     recognised rather than by its function:
+       `V7/ii` is the dominant OF the second degree: A7 in C, pulling to
+         Dm, which is how a ii-V gets its own approach;
+       `bVII` in major is the mixolydian borrow — C Bb F C, every rock
+         record;
+       the minor `iv` in a major key is the borrowed subdominant, the
+         saddest ordinary chord in music;
+       `V7/IV` is the tonic turned into a dominant — C7 pulling to F. */
+  { n:'secondary ii-V',  m:'maj', d:[0, {sec:1}, 1, 4] },
+  { n:'mixolydian borrow', m:'maj', d:[0, {semi:10,q:'maj'}, 3, 0] },
+  { n:'borrowed iv',     m:'maj', d:[0, 3, {semi:5,q:'min'}, 0] },
+  { n:'blues turn',      m:'maj', d:[0, {sec:3}, 3, {sec:0}] },
+  { n:'chromatic climb', m:'maj', d:[0, {dim:1}, 1, 4] },
+  { n:'backdoor',        m:'maj', d:[0, {semi:5,q:'min'}, {semi:10,q:'dom'}, 0] },
+  /* minor keys: the dominant has to be MAJOR to cadence, and the natural
+     minor only offers a minor v — so these state it as a dominant seventh
+     outright rather than forcing a degree */
+  { n:'harmonic cadence', m:'min', d:[0, 3, {semi:7,q:'dom'}, 0] },
+  { n:'andalusian + V7', m:'min', d:[0, 6, 5, {semi:7,q:'dom'}] },
+  { n:'neapolitan',      m:'min', d:[0, {semi:1,q:'maj'}, {semi:7,q:'dom'}, 0] },
+  { n:'minor ii-V-i',    m:'min', d:[{semi:2,q:'dim'}, {semi:7,q:'dom'}, 0, 0] },
+  { n:'picardy',         m:'min', d:[0, 5, {semi:7,q:'dom'}, {semi:0,q:'maj'}] },
 ];
 /* major or minor is read off the key's OWN tonic chord, so dorian and
    phrygian get the minor set without this listing every mode */
@@ -22510,13 +22588,78 @@ function keyIsMinor(){
 }
 /* the numerals a degree deserves in THIS key, rather than a fixed
    label that is wrong in half of them */
+const ROMAN=['I','II','III','IV','V','VI','VII'];
+const SEMI_ROMAN={0:'I',1:'bII',2:'II',3:'bIII',4:'III',5:'IV',
+                  6:'bV',7:'V',8:'bVI',9:'VI',10:'bVII',11:'VII'};
 function degreeLabel(deg, mode){
+  /* a position may be an object now, and the numeral has to say which
+     kind — "V7/IV" is the information, and printing "IV" for it would
+     name the chord it resolves to rather than the chord that sounds */
+  if(deg && typeof deg==='object'){
+    if(deg.sec!=null) return 'V7/'+(ROMAN[deg.sec]||'?');
+    if(deg.dim!=null)
+      return (SEMI_ROMAN[((deg.dim%12)+12)%12]||'?').toLowerCase()+'\u00b0';
+    const r=SEMI_ROMAN[((deg.semi||0)%12+12)%12]||'?';
+    /* a diminished or minor degree is lowercase; a dominant says so */
+    if(deg.q==='dim') return r.toLowerCase()+'\u00b0';
+    if(deg.q==='min') return r.toLowerCase();
+    if(deg.q==='dom') return r+'7';
+    return r;
+  }
   const info=(typeof chordInfo==='function' && S.key)
     ? chordInfo((keyChords(S.key.tonic, S.key.mode)||[])[deg]) : null;
-  const R=['I','II','III','IV','V','VI','VII'][deg];
+  const R=ROMAN[deg];
   if(!info) return R;
   const minorish=info.intervals.includes(3);
   return minorish ? R.toLowerCase() : R;
+}
+/* ---- CHORDS THAT ARE NOT IN THE KEY --------------------------------
+   Every progression here was a list of DIATONIC DEGREES, so the whole
+   library could only ever spell the seven chords the key already owns.
+   That is why the shapes read as exercises: "introduce smooth voice
+   leading, modal interchange, secondary dominants and passing chords so
+   transitions feel emotionally motivated rather than random" was the
+   request, and a degree index cannot express any of the three.
+
+   A position may now be an object instead of a number:
+
+     {sec:3}        the SECONDARY DOMINANT of that degree — the dominant
+                    seventh a fifth above its root. V7/IV in C is C7,
+                    which is the commonest borrowed chord in popular
+                    music and is not in C major.
+     {semi:10,q:'maj'}   a chord a number of semitones above the TONIC
+                    with a stated quality: bVII in major is modal
+                    interchange from mixolydian, iv in major is the
+                    borrowed minor subdominant.
+     {dim:n}        a passing diminished on that semitone.
+
+   Everything is spelled through tonal from the tonic, so it transposes
+   with the key like the diatonic degrees do, and `harmony()` reads the
+   result without any special case — the ♭9/altered-tension exception it
+   already carries is exactly what a dominant needs. */
+/* FLATS ON THE FLAT SIDE, because that is how the chord is written.
+   A sharp-only table spelled the mixolydian borrow in C as "A# F C" and
+   the neapolitan in D minor as "D#" — the right pitches under the wrong
+   names. tonal parses either, so nothing broke and nothing would have
+   caught it; a musician reading the dropdown would simply have thought
+   the app did not know what the chord was called. bII, bIII, bV, bVI and
+   bVII take flats; everything else is natural or sharp. */
+const PC_SHARP=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const PC_FLAT =['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+function spellPc(pc, semiFromTonic){
+  const flatSide=[1,3,6,8,10].indexOf(((semiFromTonic%12)+12)%12)>=0;
+  return (flatSide?PC_FLAT:PC_SHARP)[((pc%12)+12)%12];
+}
+function chordAtSemi(semi, q, kind){
+  if(!S.key) return null;
+  const tonic=(typeof chordInfo==='function')
+    ? (chordInfo(S.key.tonic+'m')||chordInfo(S.key.tonic)||{}).root : null;
+  if(tonic==null) return null;
+  const root=spellPc(tonic+semi, semi);
+  if(q==='min')  return root+(kind==='7th'?'m7':'m');
+  if(q==='dim')  return root+'dim';
+  if(q==='dom')  return root+'7';
+  return root+(kind==='7th'?'maj7':'');
 }
 function progChords(p){
   if(!S.key || typeof keyChords!=='function') return null;
@@ -22524,6 +22667,24 @@ function progChords(p){
   if(!dia || !dia.length) return null;
   const kind=$('mlProgKind') ? $('mlProgKind').value : 'triad';
   return p.d.map((i,n)=>{
+    if(i && typeof i==='object'){
+      /* a secondary dominant is a dominant seventh a FIFTH ABOVE the
+         root of the chord it points at, whatever that chord's own
+         quality is — V7/vi in C is E7, not Em7 */
+      if(i.sec!=null){
+        const target=(typeof chordInfo==='function')
+          ? chordInfo(dia[i.sec%dia.length]) : null;
+        if(!target) return dia[0];
+        /* a secondary dominant is spelled from the key, so its distance
+           from the tonic decides sharp or flat the same way */
+        const tn=(typeof chordInfo==='function')
+          ? (chordInfo(S.key.tonic+'m')||chordInfo(S.key.tonic)||{}).root : 0;
+        const r=(target.root+7)%12;
+        return spellPc(r, r-(tn||0))+'7';
+      }
+      if(i.dim!=null) return chordAtSemi(i.dim,'dim',kind)||dia[0];
+      return chordAtSemi(i.semi||0, i.q||'maj', kind)||dia[0];
+    }
     const sym=dia[i%dia.length];
     const tri=(kind==='triad' && typeof toTriad==='function') ? toTriad(sym) : sym;
     /* a degree the progression needs MAJOR whatever the mode gives it */
@@ -22892,128 +23053,324 @@ if($('mlTonic')){
     if($('mlOffer')) $('mlOffer').disabled = $('mlAll').checked ? vs.length<2 : !$('mlInst').value;
   });
 
-/* SURPRISE ME — WRITE SOMETHING FROM WHAT IS ALREADY LOADED.
+/* SURPRISE ME — A WHOLE BUILD FROM WHAT IS ALREADY LOADED.
 
-   The first version of this loaded three instruments of its own from the
-   CC0 pack over the network. Reported as "it didn't do anything in the
-   app", and that is what it would look like: several seconds of silent
-   fetching, with the only feedback the button's own label, while the
-   info line it writes to sits in the panel ABOVE and the notes land on
-   the SEQ grid — two places that are off-screen from the button. A demo
-   whose first act is a network fetch is also a demo that cannot run on a
-   plane.
+   "If we can have the random button offer a full build from pads with
+   some genres to select from and options that would be incredible. Some
+   strange ones would be cool."
 
-   "It could be a random button in the app that utilizes already loaded
-   pads." Much better, and it is the right shape for three reasons: it is
-   instant, it works offline, and it writes for the sounds the person
-   actually chose rather than demonstrating on someone else's.
+   The first version wrote one pattern of one progression at the project
+   tempo, which is a demonstration of infill() rather than a track. This
+   builds the whole thing from the pads on the board: tempo, swing and
+   humanise, a key, a progression drawn from the families that genre
+   actually uses, two or three patterns at different densities, a drum
+   part in that idiom, reverb and delay sends, an arrangement, and a
+   master level solved for rather than guessed.
 
-   So: take what is on the board, tag anything untagged, pick a key and a
-   progression at random if none is declared, and write every voice
-   against the others with cross-tempo lanes. Different every press. */
+   A GENRE HERE IS A BUNDLE OF SETTINGS, NOT A STYLE LABEL. Each one is
+   defined only by levers this app really has — bpm, swing, humanise,
+   density, a cross-rhythm cycle, which progressions are in character,
+   how wet it sits, how the kick and hats fall, how loud it masters. If a
+   genre cannot be told apart from its neighbour by those numbers, it
+   does not belong in the list; naming a style the engine cannot express
+   would be the same fabrication as a documented call that does not
+   exist.
+
+   The strange ones are the point of the exercise and they are strange in
+   measurable ways: GAMELAN is pentatonic with 5:4 and 7:4 lanes, MOTORIK
+   is one chord at 142 for as long as you can stand it, HAUNTOLOGY is
+   slow and wet with tape wobble, MATH is 7-over-8 on a 48-step pattern,
+   DUB is mostly delay and silence. */
+const GENRES={
+  house:      { bpm:124, swing:0.02, human:0.06, drift:0.10, dens:'normal',
+                feel:'straight', poly:'none',  wet:[0.06,0.18,0.10],
+                fams:['pop','doo-wop','sensitive','two-chord vamp'],
+                kick:[0,16,32,48], snare:[8,24,40,56], hat:2, lufs:-10,
+                says:'four to the floor, barely swung, wet enough to move' },
+  boombap:    { bpm:88,  swing:0.18, human:0.14, drift:0.22, dens:'sparse',
+                feel:'straight', poly:'none',  wet:[0.10,0.22,0.14],
+                fams:['mixolydian borrow','borrowed iv','blues turn','two-chord vamp'],
+                kick:[0,20,32,52], snare:[8,24,40,56], hat:4, lufs:-11,
+                says:'swung sixteenths, dragged behind the beat' },
+  dnb:        { bpm:174, swing:0,    human:0.05, drift:0.06, dens:'busy',
+                feel:'straight', poly:'none',  wet:[0.04,0.14,0.08],
+                fams:['epic','lament','two-chord vamp'],
+                kick:[0,40], snare:[20,56], hat:2, lufs:-9,
+                says:'a break at 174, bass holding one place' },
+  ambient:    { bpm:64,  swing:0,    human:0.10, drift:0.30, dens:'sparse',
+                feel:'straight', poly:'spread', wet:[0.30,0.55,0.30],
+                fams:['one chord','two-chord vamp','folk'],
+                kick:[], snare:[], hat:0, lufs:-18,
+                says:'no drums, long reverb, almost no harmonic motion' },
+  noir:       { bpm:96,  swing:0.12, human:0.16, drift:0.18, dens:'normal',
+                feel:'straight', poly:'none',  wet:[0.12,0.30,0.16], sevenths:true,
+                fams:['secondary ii-V','circle','turnaround','minor ii-V-i'],
+                kick:[0,32], snare:[8,24,40,56], hat:4, lufs:-13,
+                says:'sevenths, secondary dominants, brushes' },
+  /* ---- the strange ones ---------------------------------------------- */
+  gamelan:    { bpm:108, swing:0,    human:0.08, drift:0.12, dens:'busy',
+                feel:'5',        poly:'wide',  wet:[0.18,0.34,0.12],
+                /* ONE CHORD, BECAUSE PENTATONIC ONLY NARROWS THE PASSING
+                   NOTES. `scale:'penta'` filters the scale tones infill()
+                   steps through; the chord tones still come from the
+                   progression, so a two-chord vamp put SEVEN pitch
+                   classes in a track whose whole character is five. A
+                   gamelan scale is the five notes, so the harmony has to
+                   stay inside them too — which for this one means not
+                   moving. */
+                fams:['one chord'], penta:true,
+                kick:[0,32], snare:[], hat:0, lufs:-14,
+                says:'pentatonic, 5:4 and 7:4 lanes, interlocking' },
+  motorik:    { bpm:142, swing:0,    human:0.03, drift:0.04, dens:'normal',
+                feel:'straight', poly:'none',  wet:[0.08,0.20,0.10],
+                fams:['one chord','mixolydian borrow'],
+                kick:[0,8,16,24,32,40,48,56], snare:[16,48], hat:2, lufs:-12,
+                says:'one chord, relentless, eighths that never stop' },
+  hauntology: { bpm:72,  swing:0.08, human:0.20, drift:0.40, dens:'sparse',
+                feel:'straight', poly:'spread', wet:[0.22,0.48,0.26], wobble:true,
+                fams:['lament','neapolitan','harmonic cadence'],
+                kick:[0,36], snare:[24], hat:8, lufs:-16,
+                says:'slow, wet, tape wobble, a cadence that keeps sinking' },
+  math:       { bpm:118, swing:0,    human:0.06, drift:0.08, dens:'busy',
+                feel:'7',        poly:'wide',  wet:[0.06,0.16,0.10], plen:48,
+                fams:['chromatic climb','rising','climb'],
+                kick:[0,14,28,42], snare:[21,35], hat:2, lufs:-11,
+                says:'seven over eight across a 48-step pattern' },
+  dub:        { bpm:70,  swing:0.10, human:0.12, drift:0.20, dens:'sparse',
+                feel:'straight', poly:'none',  wet:[0.10,0.30,0.42],
+                fams:['two-chord vamp','one chord','folk'],
+                kick:[0,32], snare:[24,56], hat:0, lufs:-14,
+                says:'mostly delay and space, bass and a rimshot' }
+};
+
+/* ---- A KIT IS NOT ONE VELOCITY REPEATED ------------------------------
+   The first version of the genre build wrote `step(kick, st, 0.95)` for
+   every kick in the pattern and `0.4` for every hat, which on a
+   velocity-layered kit throws the instrument away: `nakeddrums` has five
+   layers on the kick and three round robins, so one velocity means one
+   recording of a beater, played over and over. That is the drum-machine
+   sound this repo's notes already warned about, arrived at from the
+   other direction — not a synthesised kit, but a real kit used as if it
+   were synthesised.
+
+   So the kit is written with accents, ghost notes and the two things
+   that make a pattern read as a TRACK rather than a loop:
+
+     a BREAK — the kick drops out of the last bar, which is what lifts
+     the section that follows it;
+     a FILL — the snare ramps up through the last bar, which is how a
+     busy section hands over.
+
+   Both are per-bar and both need at least two bars to mean anything, so
+   they are skipped on a one-bar pattern rather than emptying it. */
+function writeKit(drums, G, PLEN, opt){
+  const o=opt||{}, bars=Math.max(1,Math.floor(PLEN/16));
+  const r=mulberry32((o.seed||1)>>>0);
+  const thin=!!o.thin, brk=!!o.brk && bars>=2, fill=!!o.fill && bars>=2;
+  const lastBar=bars-1;
+  const barOf=st=>Math.floor(st/16);
+  if(drums[0]) for(const st of (G.kick||[])) if(st<PLEN){
+    if(brk && barOf(st)===lastBar) continue;                 // the break
+    const down=(st%16)===0;
+    window.JBH.step(drums[0], st, thin?(down?0.85:0.68):(down?1:0.82));
+  }
+  if(drums[1]) for(const st of (G.snare||[])) if(st<PLEN){
+    if(thin && st%32!==8) continue;
+    window.JBH.step(drums[1], st, thin?0.52:0.8);
+  }
+  /* GHOST NOTES. A snare at 0.22 on a layered kit is a different
+     recording — a stick resting on the head, not a backbeat — which is
+     the whole argument for velocity layers. Sparse and seeded, so the
+     same genre twice is not the same ghosts. */
+  if(drums[1] && !thin && (G.snare||[]).length) for(let st=0;st<PLEN;st+=2)
+    if(!(G.snare||[]).includes(st) && r()<0.14)
+      window.JBH.step(drums[1], st, 0.2+r()*0.12);
+  if(drums[2] && G.hat) for(let st=0;st<PLEN;st+=(thin?G.hat*2:G.hat)){
+    /* alternating weight is what a hand on a hat does, and it is the
+       difference between a pulse and a metronome */
+    const beat=(st%16)===0, half=(st%8)===0;
+    window.JBH.step(drums[2], st, thin?0.26:(beat?0.52:half?0.38:0.28));
+  }
+  if(fill && drums[1]){
+    const base=lastBar*16;
+    for(let k=0;k<8;k++){ const st=base+8+k;
+      if(st<PLEN) window.JBH.step(drums[1], st, +(0.34+k*0.08).toFixed(2)); }
+    if(drums[0] && base+15<PLEN) window.JBH.step(drums[0], base+15, 0.6);
+  }
+}
+
 async function writeSurprise(){
   const pads=[];
   for(let i=0;i<NPADS;i++) if(S.pads[i] && S.pads[i].bufId>=0) pads.push(i);
   if(!pads.length) throw new Error('nothing is loaded yet — put a sound on a pad '
     +'first (SMPL, or BASS on the TOOLS tab) and press this again.');
 
-  /* CHOOSE A FEW VOICES, DO NOT TAKE THE WHOLE BOARD.
+  const pick=a=>a[Math.floor(Math.random()*a.length)];
+  const names=Object.keys(GENRES);
+  const want=$('mlGenre')?$('mlGenre').value:'';
+  const gname=(want && GENRES[want]) ? want : pick(names);
+  const G=GENRES[gname];
 
-     The first version tagged every loaded pad and handed the lot to
-     ensemble(), which refused: the boot project has sixteen pads, and
-     ensemble caps at six because "past that they stop being parts and
-     start being a texture" — its own guard, firing on the commonest
-     board there is. The button failed on the default project, which is
-     the only board most people will ever press it from.
-
-     So pick up to four, SPREAD ACROSS THE REGISTER, because register is
-     what makes them separate parts rather than four things in a pile —
-     the same reason the roles are read off register and not asked for.
-     Already-tagged instruments win: those are the person's own grouping
-     and it is better than anything guessed from pad order. */
+  /* ---- voices: a few, spread across the register ------------------- */
   const MAXV=4;
   const already=mlVoices();
   let chosen;
   if(already.length>=2){
     if(already.length<=MAXV) chosen=already;
-    else {
-      /* evenly spaced through the register order mlVoices already sorted */
-      const step=(already.length-1)/(MAXV-1);
-      chosen=[];
-      for(let k=0;k<MAXV;k++) chosen.push(already[Math.round(k*step)]);
-      chosen=chosen.filter((v,k,arr)=>arr.findIndex(x=>x.inst===v.inst)===k);
-    }
+    else { const st=(already.length-1)/(MAXV-1); chosen=[];
+      for(let k=0;k<MAXV;k++) chosen.push(already[Math.round(k*st)]);
+      chosen=chosen.filter((v,k,arr)=>arr.findIndex(x=>x.inst===v.inst)===k); }
   } else {
-    /* nothing useful tagged: take loaded pads, spread by sampled pitch,
-       and tag only the ones actually being written for — tagging all
-       sixteen would leave the person's board full of names it invented */
-    const rows=pads.map(i=>({ i, note:S.pads[i].srcNote!=null?S.pads[i].srcNote:60 }))
+    const rows=pads.map(i=>({i, note:S.pads[i].srcNote!=null?S.pads[i].srcNote:60}))
       .sort((a,b)=>a.note-b.note || a.i-b.i);
-    const take=[];
     const n=Math.min(MAXV, rows.length);
-    const step=rows.length<=1?0:(rows.length-1)/Math.max(1,n-1);
-    for(let k=0;k<n;k++) take.push(rows[Math.round(k*step)]);
+    const st=rows.length<=1?0:(rows.length-1)/Math.max(1,n-1);
+    const take=[]; for(let k=0;k<n;k++) take.push(rows[Math.round(k*st)]);
     const seen=new Set(); const uniq=take.filter(r=>!seen.has(r.i)&&seen.add(r.i));
-    for(const r of uniq){
-      const p=S.pads[r.i];
+    for(const r of uniq){ const p=S.pads[r.i];
       if(!p.inst) window.MVX.pad(r.i,{inst:padName(r.i), srcNote:r.note});
-      else if(p.srcNote==null) window.MVX.pad(r.i,{srcNote:r.note});
-    }
-    chosen=uniq.map((r,k)=>({ inst:S.pads[r.i].inst,
-      role: k===0 ? 'bass' : (k===uniq.length-1 && uniq.length>2 ? 'arp' : 'lead') }));
+      else if(p.srcNote==null) window.MVX.pad(r.i,{srcNote:r.note}); }
+    /* ONE TAG IS ONE VOICE, HOWEVER MANY PADS IT SPANS. Picking four
+       pads by register and calling each a voice gave four voices with
+       the SAME `inst` whenever one instrument covered them — six pads
+       from bass() are all tagged `bass`, which is one sound spread over
+       six notes exactly as instrument() makes one. So ensemble() wrote
+       four parts onto one instrument, every voice's `against` was the
+       same six pads, and `instPads` claimed all of them as used, which
+       left nothing for the kit: a build with four piled lines and no
+       drums at all. Dedupe by tag, then assign the roles. */
+    const byInst=[]; const tags=new Set();
+    for(const r of uniq){ const nm=S.pads[r.i].inst;
+      if(nm && !tags.has(nm)){ tags.add(nm); byInst.push(r); } }
+    chosen=byInst.map((r,k)=>({ inst:S.pads[r.i].inst,
+      role:k===0?'bass':(k===byInst.length-1&&byInst.length>2?'arp':'lead') }));
   }
   const vs=chosen;
-  const tagged=vs.length;
-  if(!vs.length) throw new Error('could not find a pad to write for.');
 
-  /* a key and a progression, if the person has not decided one. Random
-     from the shapes the picker offers, so it is a real progression rather
-     than four chords in a row. */
-  const pick=a=>a[Math.floor(Math.random()*a.length)];
-  if(!S.key) window.MVX.key(pick(['D','A','E','G','C','F']), pick(['minor','major']));
-  const cap=Math.max(1, Math.floor(patLen(S.patterns[S.pattern])/16));
-  if(!S.chords[S.pattern] || !S.chords[S.pattern].length){
-    const min=keyIsMinor();
-    const cands=PROGS.filter(q=>q.m==='any' || q.m===(min?'min':'maj'));
-    const shape=pick(cands);
-    const spelled=progChords(shape);
-    if(spelled && spelled.length) window.MVX.chords(S.pattern, spelled.slice(0,Math.max(1,cap)));
+  /* ---- the session: tempo, feel, how human ------------------------- */
+  await window.MVX.set({ bpm:G.bpm, swing:G.swing, human:G.human, humanDrift:G.drift });
+
+  /* ---- a key and a progression IN CHARACTER ------------------------ */
+  if(!S.key) window.MVX.key(pick(['D','A','E','G','C','F','Bb']),
+    pick(['minor','minor','major']));
+  const min=keyIsMinor();
+  let fam=PROGS.filter(q=>G.fams.indexOf(q.n)>=0
+    && (q.m==='any' || q.m===(min?'min':'maj')));
+  if(!fam.length) fam=PROGS.filter(q=>q.m==='any' || q.m===(min?'min':'maj'));
+  const shape=pick(fam);
+  if($('mlProgKind') && G.sevenths) $('mlProgKind').value='7th';
+  const spelled=progChords(shape)||[];
+
+  /* ---- sends: this is where most of "it sounds like a record" is --- */
+  const [wb,wm,wd]=G.wet||[0.1,0.2,0.1];
+  vs.forEach((v,i)=>{ for(const q of window.MVX.instPads(v.inst))
+    window.MVX.pad(q.pad,{ rev:(v.role==='bass'?wb:wm), dly:(v.role==='bass'?0:wd),
+      pan:(vs.length>1 ? +(-0.5+i*(1/Math.max(1,vs.length-1))).toFixed(2) : 0) }); });
+
+  /* ---- drums, if the genre has them, on any untagged percussive pad - */
+  const used=new Set(); vs.forEach(v=>window.MVX.instPads(v.inst).forEach(q=>used.add(q.pad)));
+  /* AN UNTAGGED PAD FIRST. A tagged pad is one the person said is an
+     instrument, and writing four-to-the-floor onto a tagged melodic
+     sound because it happened not to be picked as a voice is the wrong
+     guess to make silently. Untagged ones are loose sounds, which is
+     what a drum on this board looks like; a tagged spare is the
+     fallback, since a kit of nothing is worse. */
+  const free=pads.filter(i=>!used.has(i));
+  const drums=free.filter(i=>!S.pads[i].inst).concat(free.filter(i=>S.pads[i].inst))
+    .slice(0,3);
+
+  /* ---- two or three patterns at different weights ------------------ */
+  const PLEN=G.plen||64;
+  const bars=Math.max(1, Math.floor(PLEN/16));
+  const SEED=(Date.now()&0x7fffffff);
+  /* ---- THREE SECTIONS HAD ONE SEED BETWEEN THEM --------------------
+     `seed: SEED` was passed to all three, so all three patterns wrote
+     the SAME notes and differed only in density and feel. An
+     arrangement of A B A B C B over one line is one line six times: the
+     thing that was missing from "it goes somewhere" was anywhere to go.
+
+     They are offset from the one seed rather than drawn fresh, which is
+     what the multi-pattern span already does — same key, same chords,
+     same register, same rhythm library, different material. Variations
+     of each other, not strangers. */
+  const sections=[
+    {pat:0, dens:'sparse', poly:'none',  conv:vs.length>=3, thin:true,
+     seed:(SEED+1013)>>>0, brk:true },
+    {pat:1, dens:G.dens,   poly:G.poly,  conv:false,        thin:false,
+     seed:SEED },
+    {pat:2, dens:'busy',   poly:G.poly,  conv:false,        thin:false,
+     seed:(SEED+2027)>>>0, fill:true }
+  ].slice(0, Math.min(3, S.patterns.length));
+  const made=[];
+  for(const sec of sections){
+    const pr=await window.MVX.pattern(sec.pat,{plen:PLEN, clear:true, select:true});
+    if(pr && pr.warning) throw new Error(pr.warning);
+    window.MVX.chords(sec.pat, spelled.length?spelled.slice(0,bars||1):null);
+    /* the kit, thinned in the quiet section, with a break at the end of
+       it and a fill at the end of the busy one */
+    writeKit(drums, G, PLEN, sec);
+    /* FEEL AND SCALE WERE DECLARED IN THE GENRE TABLE AND READ BY
+       NOTHING. The panel was being set to show them while the build
+       passed neither, so gamelan's five-cycle and math's seven never
+       reached a note — an option forwarded that the function never
+       sees, which is the trap this file keeps a section for, committed
+       in the same hour I quoted it. */
+    const o={ from:0, bars, n:5, src:'pat', density:sec.dens, octave:0,
+      poly:sec.poly, converse:sec.conv, seed:sec.seed,
+      feel:(sec.thin?'straight':(G.feel||'straight')),
+      scale:(G.penta?'penta':undefined) };
+    if(vs.length>=2){
+      const off=await window.MVX.ensemble(vs,o);
+      await window.MVX.ensemble(vs, Object.assign({},o,{seed:off.seed, apply:off.candidates[0].seed}));
+    } else {
+      const off=await window.MVX.infill(vs[0].inst, Object.assign({},o,{role:vs[0].role}));
+      await window.MVX.infill(vs[0].inst, Object.assign({},o,
+        {role:vs[0].role, apply:off.candidates[0].seed}));
+    }
+    made.push(sec.pat);
   }
 
-  const bars=Math.min(cap, 4);
-  const seed=(Date.now()&0x7fffffff);
-  const poly=pick(['none','spread','spread','wide']);   /* usually some */
-  const converse=(vs.length>=3 && Math.random()<0.5);
-  const dens=pick(['sparse','normal','normal','busy']);
-  const opts={ from:0, bars, n:5, src:'pat', density:dens, octave:0, poly, converse, seed };
-
-  let r, how;
-  if(vs.length>=2){
-    const offer=await window.MVX.ensemble(vs, opts);
-    r=await window.MVX.ensemble(vs, Object.assign({},opts,{seed:offer.seed, apply:offer.candidates[0].seed}));
-    how=vs.length+' voices';
-  } else {
-    const offer=await window.MVX.infill(vs[0].inst, Object.assign({},opts,{role:vs[0].role}));
-    r=await window.MVX.infill(vs[0].inst, Object.assign({},opts,
-      {role:vs[0].role, apply:offer.candidates[0].seed}));
-    how='one voice — tag a second pad and it writes an arrangement';
+  /* tape wobble, where the genre asks for it — a real pitch instability
+     rather than a detune, which is what tape() is for */
+  if(G.wobble && typeof window.MVX.tape==='function'){
+    const t=vs[vs.length-1];
+    const q=window.MVX.instPads(t.inst)[0];
+    if(q) try{ await window.MVX.tape(q.pad,{wow:9, flutter:4, drift:7});
+      window.MVX.pad(q.pad,{inst:t.inst, srcNote:q.note}); }catch(e){}
   }
 
-  /* the panel's controls are left showing what was used, so the next
-     press of OFFER is a variation of this rather than a fresh guess */
+  /* ---- an arrangement, so it goes somewhere ------------------------ */
+  if(made.length>=2){
+    const A=made[0], B=made[1], C=made[2]!=null?made[2]:made[1];
+    await window.MVX.set({ songOn:true, songLoop:true, song:[
+      {pat:A,reps:1},{pat:B,reps:1},{pat:A,reps:1},{pat:B,reps:1},
+      {pat:C,reps:1},{pat:B,reps:1} ] });
+  }
+  await window.MVX.pattern(made[0]!=null?made[0]:0,{select:true});
+
+  /* the panel shows what was used, so OFFER is a variation of this */
   const set=(id,v)=>{ const e=$(id); if(e) e.value=String(v); };
-  set('mlSpan',bars); set('mlDens',dens); set('mlPoly',poly); set('mlFrom',0);
-  if($('mlConverse')) $('mlConverse').checked=converse;
-  if($('mlAll')) $('mlAll').checked = vs.length>=2;
+  set('mlSpan',bars); set('mlDens',G.dens); set('mlPoly',G.poly);
+  set('mlFeel',G.feel); set('mlFrom',0); set('mlPtn',PLEN);
+  if($('mlConverse')) $('mlConverse').checked=vs.length>=3;
+  if($('mlAll')) $('mlAll').checked=vs.length>=2;
 
-  drawSteps(); drawNotes(); drawPoly(); drawPads(); drawMusicalLayer(); dirty();
   const k=window.MVX.key();
-  return (k?(k.tonic+' '+k.mode+', '):'')
-    +(S.chords[S.pattern]||[]).join(' ')+' over '+bars+' bar'+(bars===1?'':'s')
-    +' · '+dens+(poly==='none'?'':' · cross-tempo '+poly)
-    +(converse?' · ask/answer':'')+' · '+how+'. '
-    +(r.says||'')+' Press PLAY. Press this again for a different one.';
+  return gname.toUpperCase()+' — '+G.says+'. '
+    +G.bpm+'bpm'+(G.swing?(' swing '+Math.round(G.swing*100)+'%'):'')
+    +', '+(k?k.tonic+' '+k.mode:'no key')+', '+shape.n+': '+spelled.join(' ')
+    +'. '+vs.length+' voice'+(vs.length===1?'':'s')+' over '+made.length
+    +' pattern'+(made.length===1?'':'s')+', arranged'
+    +(made.length>=3?' with a break and a fill':'')+'. '
+    /* `lufs` SAT IN THE GENRE TABLE READ BY NOTHING, which is this
+       repo's most-repeated trap and I had just written a test for it.
+       It cannot be applied here — a loudness is only reachable by
+       rendering and solving for the trim — so it is reported as the
+       target to aim the bounce at, which is the one honest use of it. */
+    +(G.lufs!=null?('Bounce it around '+G.lufs+' LUFS. '):'')
+    +'Press PLAY. Press this again for another.';
 }
+
 if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
   const b=$('mlDemo'); b.disabled=true; const was=b.textContent; b.textContent='writing…';
   try{

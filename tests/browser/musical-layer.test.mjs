@@ -587,6 +587,196 @@ export default async function ({ browser, base }) {
       wired.span.includes('16') && wired.feel.includes('3'),
       wired.span.join(',') + ' · ' + wired.feel.join(','));
 
+    /* ---- A GENRE IS A BUNDLE OF SETTINGS, OR IT IS A LABEL -----------
+       "If we can have the random button offer a full build from pads with
+       some genres to select from... Some strange ones would be cool."
+
+       Each entry is defined only by levers the engine really has, so the
+       test is that two genres cannot come out the same: if house and
+       gamelan produce the same tempo, the same scale width and the same
+       lanes, one of them is a name rather than a kind of music.
+
+       It also pins the two faults found building it. `feel` and `penta`
+       were declared in the genre table and READ BY NOTHING — the panel
+       was set to show them while the build passed neither, which is the
+       "an option forwarded may not be one the function reads" trap,
+       committed in the same hour that section was quoted. And `pentaOnly`
+       was declared BELOW the IIFE that reads it, so every infill call hit
+       a temporal dead zone and the whole build silently wrote nothing. */
+    t.head('EACH GENRE BUILDS A MEASURABLY DIFFERENT TRACK');
+    const gen = await page.evaluate(async () => {
+      const build = async (g) => {
+        await window.JBH.clear();
+        window.JBH.key(null);
+        /* TAGGED ONE BY ONE, as TAG IT does. bass() names everything it
+           makes `bass`, so six calls are ONE instrument over six notes,
+           and a build has no second voice and no pad left for a kit. */
+        for (let i = 0; i < 6; i++) {
+          await window.JBH.bass({ style: 'sub', midi: 34 + i * 7, seconds: 0.4, pad: i });
+          window.JBH.pad(i, { inst: 'v' + i, srcNote: 34 + i * 7 });
+        }
+        document.getElementById('mlGenre').value = g;
+        const b = document.getElementById('mlDemo');
+        b.click();
+        for (let i = 0; i < 400; i++) { await new Promise(r => setTimeout(r, 100));
+          if (!b.disabled) break; }
+        /* poly config is PER PATTERN and poly() reads the selected one */
+        const lanes = []; const sel = S.pattern;
+        for (let pi = 0; pi < S.patterns.length; pi++) {
+          await window.JBH.pattern(pi, { select: true });
+          for (let i = 0; i < 16; i++) { const q = window.JBH.poly(i);
+            if (q && q.on) lanes.push(q.cells); }
+        }
+        await window.JBH.pattern(sel, { select: true });
+        const sc = await window.JBH.schedule({ src: 'pat', full: true });
+        const pcs = new Set((sc.events || []).map(e => e.midi % 12));
+        /* the whole arrangement, which is where there are enough notes
+           for a pitch-class count to mean anything.
+
+           COUNTED OVER THE MELODIC PADS ONLY. Every pad here is tagged,
+           the kit included, and the kit fires its pad's own srcNote — so
+           counting tagged pads put the two drum sounds' pitches into a
+           scale measurement and read SIX classes on a pentatonic track.
+           A drum pad plays one pitch; a written line moves. */
+        const so = await window.JBH.schedule({ src: 'song', full: true });
+        const perPad = new Map();
+        for (const e of (so.events || [])) {
+          if (!perPad.has(e.pad)) perPad.set(e.pad, new Set());
+          perPad.get(e.pad).add(e.midi);
+        }
+        const songPcs = new Set((so.events || [])
+          .filter(e => (perPad.get(e.pad) || new Set()).size >= 2)
+          .map(e => e.midi % 12));
+        let pats = 0;
+        for (let i = 0; i < S.patterns.length; i++) {
+          let h = 0;
+          for (let q = 0; q < 16; q++) for (let st = 0; st < 64; st++)
+            if (S.patterns[i].steps[q][st] > 0) h++;
+          if (h) pats++;
+        }
+        return { bpm: S.bpm, swing: S.swing, drift: S.humanDrift, pats,
+          plen: S.patterns[0].plen || 16, lanes: lanes.length, pcs: pcs.size,
+          sections: (S.song || []).length, songPcs: songPcs.size,
+          notes: (sc.events || []).length,
+          info: document.getElementById('mlDemo').textContent };
+      };
+      return { house: await build('house'), gamelan: await build('gamelan'),
+        math: await build('math'), ambient: await build('ambient') };
+    });
+    const ks = ['house', 'gamelan', 'math', 'ambient'];
+    t.ok('every genre writes notes, patterns and an arrangement',
+      ks.every(k => gen[k].notes > 0 && gen[k].pats >= 2 && gen[k].sections >= 2),
+      ks.map(k => k + ' ' + gen[k].notes + 'n/' + gen[k].pats + 'p/' + gen[k].sections + 's').join(' · '));
+    t.ok('and each sets its own tempo and humanise',
+      new Set(ks.map(k => gen[k].bpm)).size === 4,
+      ks.map(k => k + ' ' + gen[k].bpm + 'bpm').join(' · '));
+    /* THE TWO FAULTS. penta has to narrow the notes and feel has to
+       reach the writing, or they are labels in a table. */
+    /* MEASURED AGAINST FIVE, NOT AGAINST ANOTHER GENRE. The first version
+       of this compared gamelan's pitch-class count to house's, and the
+       two disagreed between runs — house drew a two-chord vamp in one
+       key and used five classes, gamelan drew a seventh and used six, so
+       a true property was tested by a comparison that is noise. A
+       pentatonic scale has five classes; count them. */
+    t.ok('PENTATONIC REALLY NARROWS THE SCALE — gamelan uses five classes',
+      gen.gamelan.songPcs > 0 && gen.gamelan.songPcs <= 5,
+      'gamelan ' + gen.gamelan.songPcs + ' pitch classes over the whole song'
+        + ' (house ' + gen.house.songPcs + ')');
+    t.ok('and house, which is not pentatonic, uses more than five',
+      gen.house.songPcs > 5,
+      'house ' + gen.house.songPcs + ' pitch classes');
+    t.ok('and a cross-rhythm genre really gets cross-tempo lanes',
+      gen.gamelan.lanes > 0 && gen.math.lanes > 0 && gen.house.lanes === 0,
+      'gamelan ' + gen.gamelan.lanes + ' · math ' + gen.math.lanes + ' · house ' + gen.house.lanes);
+    t.ok('math gets its 48-step pattern, which the others do not',
+      gen.math.plen === 48 && gen.house.plen === 64,
+      'math PTN' + gen.math.plen + ' · house PTN' + gen.house.plen);
+    t.ok('and the button says what it built, where the button is',
+      /WROTE|AGAIN/i.test(gen.house.info || ''), (gen.house.info || '').slice(0, 40));
+
+    /* ---- A KIT IS NOT ONE VELOCITY REPEATED --------------------------
+       The first genre build wrote every kick at 0.95 and every hat at
+       0.4, which on a velocity-layered kit plays ONE recording over and
+       over — the drum-machine sound, reached by using a real kit as if
+       it were a synthesised one. And all three sections were passed the
+       same seed, so an arrangement of A B A B C B was one line six
+       times.
+
+       These assert the three things that fixed it, because each is the
+       kind of fault that leaves every other check green: distinct
+       velocities on the kit, a kick that drops out of the quiet
+       section's last bar, and three patterns whose notes differ. */
+    t.head('THE KIT AND THE SECTIONS ARE NOT ONE THING REPEATED');
+    const kit = await page.evaluate(async () => {
+      await window.JBH.clear();
+      window.JBH.key(null);
+      for (let i = 0; i < 6; i++) {
+        await window.JBH.bass({ style: 'sub', midi: 30 + i * 7, seconds: 0.3, pad: i });
+        window.JBH.pad(i, { inst: 'v' + i, srcNote: 30 + i * 7 });
+      }
+      document.getElementById('mlGenre').value = 'house';
+      const b = document.getElementById('mlDemo');
+      b.click();
+      for (let i = 0; i < 400; i++) { await new Promise(r => setTimeout(r, 100));
+        if (!b.disabled) break; }
+      const pats = [];
+      for (let pi = 0; pi < 3; pi++) {
+        const st = S.patterns[pi].steps, rows = [];
+        for (let q = 0; q < 16; q++) {
+          const hits = [];
+          for (let k = 0; k < (S.patterns[pi].plen || 16); k++)
+            if (st[q][k] > 0) hits.push(k + ':' + st[q][k].toFixed(2));
+          if (hits.length) rows.push({ pad: q, hits });
+        }
+        pats.push(rows);
+      }
+      const untagged = [];
+      for (let q = 0; q < 16; q++)
+        if (S.pads[q] && S.pads[q].bufId >= 0 && !S.pads[q].inst) untagged.push(q);
+      return { pats, untagged, plen: S.patterns[0].plen || 16,
+        song: (S.song || []).length };
+    });
+    const vels = (rows) => {
+      const v = new Set();
+      for (const r of rows) for (const h of r.hits) v.add(h.split(':')[1]);
+      return v;
+    };
+    t.ok('the busy section uses many distinct velocities, not one or two',
+      vels(kit.pats[2]).size >= 6,
+      vels(kit.pats[2]).size + ' distinct velocities across ' +
+        kit.pats[2].reduce((n, r) => n + r.hits.length, 0) + ' hits');
+    /* THE BREAK. House kicks on 0,16,32,48; the quiet section drops the
+       one in its last bar, so a 64-step pattern keeps three of four.
+
+       The kit has to be identified by what the build DID, not guessed
+       from the hits: the first version looked for a row starting at step
+       0 with few hits and picked a bass line, then reported the break
+       missing on a pattern that has one. writeSurprise() tags its
+       voices with an `inst` and leaves the kit untagged — but every pad
+       on this board is tagged, because bass() names what it makes, so
+       the kit is found by the step set the genre asked for: house kicks
+       on 0, 16, 32 and 48 and nothing else does. */
+    const kicks = (rows) => {
+      const want = [0, 16, 32];
+      const r = rows.find(x => {
+        const st = x.hits.map(h => +h.split(':')[0]);
+        return want.every(w => st.includes(w)) && st.length <= 4;
+      });
+      return r ? r.hits.map(h => +h.split(':')[0]) : [];
+    };
+    const kq = kicks(kit.pats[0]), kb = kicks(kit.pats[1]);
+    t.ok('the kick drops out of the quiet section\'s LAST bar — the break',
+      kq.length > 0 && kb.length > 0 &&
+      !kq.some(st => st >= kit.plen - 16) && kb.some(st => st >= kit.plen - 16),
+      'quiet kicks ' + kq.join(',') + ' · full kicks ' + kb.join(','));
+    /* THE SEEDS. Same chords and register, different notes. */
+    const sig = (rows) => rows.map(r => r.pad + '=' + r.hits.join(',')).join('|');
+    t.ok('and the three patterns are variations, not three copies',
+      sig(kit.pats[0]) !== sig(kit.pats[1]) &&
+      sig(kit.pats[1]) !== sig(kit.pats[2]) &&
+      sig(kit.pats[0]) !== sig(kit.pats[2]),
+      'three distinct patterns across ' + kit.song + ' sections');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

@@ -633,6 +633,83 @@ the regenerated set is REFUSED rather than quietly substituted — a
 caller cannot get it right if the value is not handed back, and the
 nearest match is not the one that was chosen.
 
+### SURPRISE builds a whole track, in one of ten genres
+
+"If we can have the random button offer a full build from pads with some
+genres to select from and options that would be incredible. Some strange
+ones would be cool."
+
+A genre here is a bundle of levers the engine really has — tempo, swing,
+`human`, `humanDrift`, pattern length, density, the cross-rhythm feel,
+the poly mode, the send amounts, the kick/snare/hat step sets, which
+`PROGS` families are in character, and whether the scale is pentatonic.
+Ten of them: house, boombap, dnb, ambient, noir, and the strange five,
+gamelan, motorik, hauntology, math and dub. It uses the WRITE panel's
+own calls on the pads already loaded, so everything it does is reachable
+by hand afterwards, and it leaves the panel set to what it used — OFFER
+is then a variation of what you just heard rather than a fresh start.
+
+**The faults it shipped with are all the same fault**, and it is the one
+this file keeps a section for. Four options were declared in the genre
+table and read by nothing:
+
+- `feel` and `penta` reached the panel and not the writing, so gamelan's
+  five-cycle and math's seven never touched a note.
+- `scale:'penta'` then turned out to narrow only ONE of the two places
+  that write pitches. `infill()` honours it on the grid; the cross-tempo
+  lane draws its own notes from every class merely consonant with the
+  chord, which for a single triad is nine of the twelve. So the gamelan
+  build measured EIGHT pitch classes in a track whose whole character is
+  five, with the grid part pentatonic and the lane over it not.
+- `lufs` cannot be applied at all — a loudness is only reachable by
+  rendering and solving for the trim — so it is reported as the target
+  to aim the bounce at, which is the one honest use of a number you
+  cannot set.
+
+And one thing pentatonic cannot fix by itself: a two-chord vamp supplies
+chord tones from outside the five whatever the scale says, so a genre
+whose character IS the five notes has to stop the harmony moving too.
+Gamelan takes the one-chord family for that reason.
+
+**Three sections had one seed between them.** `seed: SEED` went to all
+three patterns, so A, B and C wrote the same notes and differed only in
+density and feel — an arrangement of A B A B C B over one line is that
+line six times, and "it goes somewhere" had nowhere to go. They are
+offset from the one seed now rather than drawn fresh: same key, same
+chords, same register, same rhythm library, different material.
+Variations of each other, not strangers.
+
+**A kit is not one velocity repeated.** The first version wrote every
+kick at 0.95 and every hat at 0.4, which on a velocity-layered kit plays
+ONE recording over and over — the drum-machine sound reached from the
+other direction, a real kit used as if it were synthesised. It writes
+accents, ghost notes at 0.2 (a different recording on a layered kit: a
+stick resting on the head, not a backbeat), and the two things that make
+a pattern read as a track rather than a loop: a BREAK, where the kick
+drops out of the quiet section's last bar, and a FILL, where the snare
+ramps through the busy one's. Both need two bars to mean anything and
+are skipped on a one-bar pattern rather than emptying it.
+
+**ONE TAG IS ONE VOICE, HOWEVER MANY PADS IT SPANS**, and getting that
+wrong cost the kit entirely. Picking four pads by register and calling
+each a voice gives four voices with the SAME `inst` whenever one
+instrument covers them — six `bass()` calls are all tagged `bass`, which
+is one sound over six notes exactly as `instrument()` makes one. So
+`ensemble()` wrote four parts onto one instrument, every voice's
+`against` was the same six pads, `instPads` claimed all of them as used,
+and `drums` came out empty: four piled lines and no drums at all, on a
+board with six sounds on it. The voices are deduped by tag now, and the
+kit prefers an UNTAGGED pad, because a tagged pad is one the person said
+is an instrument and writing four-to-the-floor onto it is the wrong
+guess to make silently.
+
+**The test fixture hid the last two of those.** It made its pads with
+`bass()` and never tagged them, so every genre test ran against one
+instrument — the configuration where the voice dedupe is needed and the
+kit cannot exist. That is the same lesson as the `instrument()` fixture
+two sections up, and the third time in this file: *when a convenience
+exists for setting up a test, check what configuration it is hiding.*
+
 ## Check while you build, not after
 
 Everything in this file was being run once, at the end, on a finished

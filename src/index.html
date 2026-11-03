@@ -1124,9 +1124,32 @@ where they come back into alignment. On a grid that relationship is invisible.</
        every voice against the others. No network, so it works offline, and
        it demonstrates on the sounds the person chose rather than on
        someone else's. Different every press. -->
+  <!-- A FULL BUILD FROM THE PADS. A genre here is a bundle of settings the
+       engine really has — tempo, swing, humanise, density, a cross-rhythm
+       cycle, which progressions are in character, how wet it sits, where
+       the kick falls, how loud it masters — and not a style label. If two
+       entries cannot be told apart by those numbers, one of them should
+       not be in the list. The strange ones are strange measurably:
+       gamelan is pentatonic with 5:4 and 7:4 lanes, motorik is one chord
+       at 142, math is seven-over-eight on a 48-step pattern. -->
+  <div class="row" style="gap:4px">
+    <select id="mlGenre" class="grow" aria-label="Which kind of track to build">
+      <option value="">surprise me &mdash; any genre</option>
+      <option value="house">house &mdash; four to the floor, barely swung</option>
+      <option value="boombap">boom bap &mdash; swung 16ths, behind the beat</option>
+      <option value="dnb">drum &amp; bass &mdash; 174, a break</option>
+      <option value="noir">noir &mdash; sevenths, secondary dominants</option>
+      <option value="ambient">ambient &mdash; no drums, long reverb</option>
+      <option value="gamelan">gamelan &mdash; pentatonic, 5:4 and 7:4 lanes</option>
+      <option value="motorik">motorik &mdash; one chord at 142, relentless</option>
+      <option value="hauntology">hauntology &mdash; slow, wet, tape wobble</option>
+      <option value="math">math &mdash; 7 over 8, 48-step pattern</option>
+      <option value="dub">dub &mdash; mostly delay and space</option>
+    </select>
+  </div>
   <div class="row" style="gap:4px">
     <button id="mlDemo" class="grow"
-      title="Write parts for every loaded pad, using whatever is on the board">SURPRISE ME &mdash; WRITE FROM MY PADS</button>
+      title="Build a whole track from the pads on the board: tempo, key, progression, parts, drums, sends and an arrangement">BUILD ME A TRACK FROM MY PADS</button>
   </div>
   <!-- WITHOUT THIS THE PANEL ABOVE IS A DEAD END. infill() writes for an
        INSTRUMENT, and an instrument is a pad carrying an `inst` tag.
