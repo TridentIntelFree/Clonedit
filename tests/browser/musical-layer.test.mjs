@@ -894,6 +894,77 @@ export default async function ({ browser, base }) {
       knob.before[0] === 48 && knob.after[0] === 43,
       'srcNote 48 reads ' + knob.before[0] + ', at pitch -5 reads ' + knob.after[0]);
 
+    /* ---- A SOUND THAT STARTS LATE IS A SOUND THAT DOES NOT PLAY ------
+       A pad's `start` is a fraction of the file and it stays at 0 for
+       anything a person uploads, so a file with 150ms of head before the
+       hit opens its gate on silence and, on a short decay, shuts before
+       the sound arrives. This repo already had it costing real work —
+       a sample peaking at 0.0dBFS on disk measuring -70dB in the mix,
+       "it was never quiet, it was never playing" — but the fix was only
+       ever wired to packs carrying an `onset` field in a manifest, and
+       an uploaded file has no manifest.
+
+       The fixture is the same audio twice, once with 180ms of silence
+       welded on the front, so the only difference between the two pads
+       is the thing being measured. */
+    t.head('THE BUILD SKIPS LEADING SILENCE ON AN UPLOADED SOUND');
+    const lead = await page.evaluate(async () => {
+      const J = window.JBH, out = {};
+      await J.clear(); J.key('C', 'minor');
+      for (let i = 0; i < 3; i++) {
+        await J.bass({ style: 'sub', midi: 36 + i * 12, seconds: 0.5, pad: i });
+        J.pad(i, { inst: 'v' + i, srcNote: 36 + i * 12 });
+      }
+      await J.bass({ style: 'sub', midi: 48, seconds: 0.35, pad: 5 });
+      await J.bass({ style: 'sub', midi: 48, seconds: 0.35, pad: 6 });
+      J.pad(5, { inst: null }); J.pad(6, { inst: null });
+      /* MADE AND INDEXED AFTER BOTH bass() CALLS. Pushed before them,
+         S.buffers.length-1 names the buffer bass() has just appended and
+         the pad holds a perfectly normal sound — the trim then correctly
+         finds nothing, which reads exactly like broken wiring. */
+      const src = S.buffers[S.pads[5].bufId];
+      const sr = src.sampleRate, head = Math.floor(sr * 0.18);
+      const late = AC.createBuffer(1, head + src.length, sr);
+      late.getChannelData(0).set(src.getChannelData(0), head);
+      S.buffers.push(late);
+      S.pads[6].bufId = S.buffers.length - 1; S.pads[6].start = 0;
+      const probe = async () => {
+        await J.pattern(0, { plen: 16, clear: true, select: true });
+        J.step(5, 0, 0.9); J.step(6, 0, 0.9);
+        J.pad(5, { dec: 0.17, sus: 0, rel: 0.05 });
+        J.pad(6, { dec: 0.17, sus: 0, rel: 0.05 });
+        const a = await J.render({ only: [5], src: 'pat' });
+        const b = await J.render({ only: [6], src: 'pat' });
+        const db = (x) => +(20 * Math.log10(Math.max(x, 1e-6))).toFixed(1);
+        return { normal: db(a.peak), late: db(b.peak) };
+      };
+      out.before = await probe();
+      document.getElementById('mlGenre').value = 'noir';
+      const btn = document.getElementById('mlDemo'); btn.click();
+      for (let i = 0; i < 900; i++) { await new Promise(r => setTimeout(r, 100));
+        if (!btn.disabled) break; }
+      out.says = (document.getElementById('mlInfo') || btn).textContent;
+      out.starts = [+S.pads[5].start.toFixed(3), +S.pads[6].start.toFixed(3)];
+      out.after = await probe();
+      return out;
+    });
+    t.ok('the fixture really is broken before the fix — 180ms of head is silent',
+      lead.before.late < -60 && lead.before.normal > -20,
+      'clean ' + lead.before.normal + 'dB · late ' + lead.before.late + 'dB');
+    t.ok('AND THE BUILD RECOVERS IT to within a decibel of the same audio',
+      lead.after.late > -20 && Math.abs(lead.after.late - lead.after.normal) < 2,
+      'clean ' + lead.after.normal + 'dB · late ' + lead.after.late
+        + 'dB (was ' + lead.before.late + ')');
+    t.ok('by setting start on that pad and leaving the clean one alone',
+      lead.starts[0] === 0 && lead.starts[1] > 0.2,
+      'clean start ' + lead.starts[0] + ' · late start ' + lead.starts[1]);
+    /* AND IT SAYS SO. A trim nobody mentioned is indistinguishable from
+       a sample that was always fine, and the person needs to know their
+       upload had a fifth of a second of nothing on the front. */
+    t.ok('and it reports the trim rather than doing it silently',
+      /leading silence/i.test(lead.says || ''),
+      (lead.says || '').slice(-80));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

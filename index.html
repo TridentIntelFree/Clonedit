@@ -9105,7 +9105,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R246 · 2026-11-03 · a swell shorter than its own release no longer drops the tick';
+const BUILD = 'JBH-88 · R247 · 2026-11-03 · an uploaded sound that starts late now plays';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -28845,6 +28845,42 @@ const KIT_PIECES=[
   {id:'RIDE', len:1.05, semi:10,  filt:['bandpass',5400,0.8],att:0.002, dec:0.80},
   {id:'FX',   len:0.85, semi:-9,  filt:['bandpass',720,1.2], att:0.06,  dec:0.62, rev:true},
 ];
+/* ---- LEADING SILENCE, WHICH NOTHING TRIMMED ON AN UPLOAD ------------
+   A pad's `start` is a fraction of the file, and it stays at 0 for
+   anything a person uploads. So a file with 150ms of head before the
+   hit opens its gate on silence and, with a short decay, shuts before
+   the sound arrives. AGENTS.md has this costing real work — "It was
+   never quiet. It was never playing", a sample peaking at 0.0dBFS on
+   disk measuring -70dB in the mix — but the fix was only ever wired to
+   packs carrying an `onset` field in their manifest. An uploaded file
+   has no manifest.
+
+   THIS IS NOT AN ONSET DETECTOR AND MUST NOT BECOME ONE. That
+   distinction is the whole reason this is safe: `loudestOffset` below
+   finds the LOUDEST window, which on a sound that swells is a second
+   in, and trimming to there would cut the attack off a pad. This asks
+   only "where does the file stop being silent", at -45dB against its
+   own peak, and reports 0 unless that point is past 25ms — so a sound
+   that starts immediately is left exactly alone, and the claim it
+   makes is narrow enough to be true of anything.
+
+   Returns seconds, 0 when there is nothing to trim. */
+function leadSilence(buf){
+  const d=buf.getChannelData(0), sr=buf.sampleRate;
+  let pk=0; for(let i=0;i<d.length;i+=7){ const a=Math.abs(d[i]); if(a>pk) pk=a; }
+  if(!(pk>1e-5)) return 0;                      /* a silent buffer, not a late one */
+  const thr=pk*0.0056;                          /* -45dB against its own peak */
+  const win=Math.max(1,Math.floor(sr*0.002));
+  for(let o=0;o+win<d.length;o+=win){
+    let e=0; for(let i=o;i<o+win;i++) e=Math.max(e,Math.abs(d[i]));
+    if(e>thr){
+      const t=Math.max(0,(o-Math.floor(sr*0.003))/sr);   /* keep the attack */
+      return t>0.025 ? t : 0;
+    }
+  }
+  return 0;
+}
+
 function loudestOffset(buf){   // the strongest onset — the most useful attack material
   const d=buf.getChannelData(0), sr=buf.sampleRate, win=Math.max(1,Math.floor(sr*0.01));
   let best=0,bi=0;
@@ -29739,6 +29775,25 @@ async function writeSurprise(){
   }
   const vs=chosen;
 
+  /* ---- A SOUND THAT STARTS LATE IS A SOUND THAT DOES NOT PLAY ------
+     Checked on every pad the build is about to use, voices and kit
+     alike, because an uploaded file carries no manifest and so nothing
+     has set its `start`. Reported rather than done silently: a pad
+     whose audio begins a fifth of a second in is worth knowing about,
+     and a trim nobody mentioned is indistinguishable from a sample
+     that was always fine. */
+  const trimmed=[];
+  for(let i=0;i<NPADS;i++){
+    const p=S.pads[i];
+    if(!p || p.bufId<0 || p.start>0) continue;
+    const buf=S.buffers[p.bufId];
+    if(!buf || !buf.duration) continue;
+    const lead=leadSilence(buf);
+    if(lead<=0) continue;
+    window.MVX.pad(i,{ start:+(lead/buf.duration).toFixed(4) });
+    trimmed.push(padName(i)+' '+Math.round(lead*1000)+'ms');
+  }
+
   /* ---- the session: tempo, feel, how human ------------------------- */
   await window.MVX.set({ bpm:G.bpm, swing:G.swing, human:G.human, humanDrift:G.drift });
 
@@ -29910,6 +29965,7 @@ async function writeSurprise(){
        rendering and solving for the trim — so it is reported as the
        target to aim the bounce at, which is the one honest use of it. */
     +(G.lufs!=null?('Bounce it around '+G.lufs+' LUFS. '):'')
+    +(trimmed.length?('Skipped leading silence on '+trimmed.join(', ')+'. '):'')
     +'Press PLAY. Press this again for another.';
 }
 

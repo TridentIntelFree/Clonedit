@@ -1448,6 +1448,47 @@ manifest's `cat`, and all twelve found sounds declare `DRUMS`, so it
 reports one row for the pack and tells you nothing about any sample in
 it. Measure these per file.
 
+### And an UPLOADED file has no manifest at all
+
+Everything above is wired to the `onset` field in a pack manifest, so
+none of it reached the commonest case there is: a person uploading their
+own sounds. `start` stays 0, and a file with 150ms of head before the
+hit opens its gate on silence exactly as `fk:type` did.
+
+Measured on the same audio twice, once with 180ms of silence welded on
+the front, so the only difference between the two pads is the thing
+being measured:
+
+```
+before   clean  -10.1 dBFS     late  -120 dBFS   (silent)
+after    clean  -10.3 dBFS     late   -10.8 dBFS
+         clean start 0 (untouched)  ·  late start 0.334
+```
+
+`leadSilence(buf)` is what the build now runs on every pad it claims,
+voices and kit alike, and it **reports the trim** — a trim nobody
+mentioned is indistinguishable from a sample that was always fine.
+
+**IT IS NOT AN ONSET DETECTOR AND MUST NOT BECOME ONE.** That is the
+whole reason it is safe to run unasked. `loudestOffset()` beside it
+finds the LOUDEST window, which on a sound that swells is a second in,
+and trimming to there would cut the attack off a pad. This asks only
+"where does the file stop being silent", at −45dB against the file's own
+peak, and returns 0 unless that point is past 25ms — so a sound that
+starts immediately is left byte-identical, and the claim it makes is
+narrow enough to be true of anything.
+
+**Two fixture mistakes, and the first one nearly read as a broken fix.**
+The test buffer was pushed to `S.buffers` BEFORE the `bass()` call that
+set up the pad, so `S.buffers.length-1` named the buffer `bass()` had
+just appended; the pad held a perfectly normal sound, the trim correctly
+found nothing, and `start` stayed 0 — which looks identical to wiring
+that never ran. `leadSilence()` was then checked in isolation first (0
+on the clean buffer, 0.177 on the late one, first non-zero sample at
+0.180) and the fault was in the test. **Verify the unit before
+debugging the integration**, and build the known-bad case so that the
+only difference between the two sides is the thing being measured.
+
 ## tape() silently de-registers an instrument
 
 `instPads(name)` finds a pad by three things at once:
