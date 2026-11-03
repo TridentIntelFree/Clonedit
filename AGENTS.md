@@ -710,6 +710,134 @@ kit cannot exist. That is the same lesson as the `instrument()` fixture
 two sections up, and the third time in this file: *when a convenience
 exists for setting up a test, check what configuration it is hiding.*
 
+### Two voices moving into the same perfect interval FUSE
+
+The inter-voice filter was about ONE interval, the semitone, and it was
+blind to MOTION. Measured on four genre builds against the 70 Palestrina
+scores these norms come from:
+
+```
+parallel fifths   2.9%, 1.92%   against 0.235%
+parallel octaves  2.38%, 7.5%   against 0.111%
+```
+
+Ten to seventy times the rate of the practice the rule comes from, in
+every genre, because nothing was looking. This is not a taste rule: the
+upper voice stops being heard as a part and becomes a timbre on the
+lower, which is the one thing a multi-voice write exists to avoid.
+
+It is **filtered, not scored**, which is the opposite of what this file
+says to do with a number and is deliberate. Oblique motion measured
+77–98% against the 68% norm on the same builds and is LEFT ALONE: voices
+on their own rhythmic cells rarely move together, and that is structure,
+not a wrong note. A parallel fifth is a wrong note by the rule the corpus
+measured, so it is removed rather than discouraged.
+
+**Three things cost real time and all three are the same mistake —
+comparing against the wrong moment.**
+
+*The reference point is the last time EITHER voice moved*, which is what
+`counterpoint()` measures: it walks the union of both voices' onsets and
+asks what each was doing at the step before. Written against the writing
+voice's own previous note, the filter cleared every parallel fifth and
+left the octaves almost untouched — 2.33% where the norm is 0.111% —
+because whenever the other voice had an onset BETWEEN my two notes, the
+interval I compared against was not the interval the measure compared
+against. A filter and a measure that disagree about when two notes are
+adjacent do not meet in the middle; one has to be rewritten, and the
+measure is the one with a corpus behind it.
+
+*Every sounding pair, not one of them.* `prevSounding.find(x =>
+x.inst === n.inst)` takes the FIRST note of that voice sounding a moment
+ago, and a voice can have two at once — a long note still ringing under a
+new onset. One real parallel octave survived in one voice-pair of
+twenty-four that way, v0 and v2 both rising two semitones three octaves
+apart, reported at 4.76% while the filter said there was nothing there.
+It was found by dumping both voices and working out the interval by hand.
+An unexplained residue in a filter written an hour ago is usually a class
+of cases, not a rounding error.
+
+*And the escape has to be wider than the choice was.* A strong beat
+narrows the pitch classes to one, so with only that class and its octaves
+to try there was often nowhere to go — an octave shift keeps the pitch
+class, and a parallel OCTAVE is a pitch-class relationship. The escapes,
+in order of what they cost the line: another allowed class near the
+contour, a scale tone a step from where the line is, any chord tone that
+passes the same semitone tests, the same class an octave away, and
+finally **staying put** — a voice that does not move is oblique by
+definition, and a repeated note is 21.1% of the Essen melodies.
+
+**AND THE ESCAPE HAS A PRICE. Ranked on contour distance alone it reached
+for a chord tone, and chord tones are a third apart by construction**, so
+buying zero parallel octaves cost 8.6 points of stepwise motion — 46.53%
+down to 37.92% against the Essen norm of 46.9%. That is this file's
+longest warning arriving by the back door: a real fault fixed by quietly
+degrading a measure nobody was watching. Scoring a one-or-two-semitone
+move 1.5 better, and offering the key's scale tones as escapes, recovers
+most of it. Measured over 36 voice-pairs at a fixed key:
+
+| | before | after | norm |
+|---|---|---|---|
+| parallel fifths | 0 | 0 | 0.235% |
+| parallel octaves | **2.88%**, in 14 of 36 pairs | **0**, in none | 0.111% |
+| stepwise | 46.53 | 41.23 | 46.9 |
+| repeated | 18.04 | 22.09 | 21.1 |
+| leaps turned back from | 34.05 | 40.66 | 56.1 |
+
+Two of those are still off the norm and are left off it. Leap recovery
+has never reached 56% here and pushing it would be the same mistake
+again.
+
+**Pin the tempo and the humanisation before measuring any of this.**
+`clear()` does not reset them, and `counterpoint()` walks onset TIMES —
+so run after a build that left 64bpm and 30% drift behind, six seeds
+reported a parallel octave that the same six seeds in a fresh page did
+not. A pitch rule measured through a timing effect is not measured.
+
+### A drum has a pitch, and the pad's pitch knob was invisible
+
+`harmony()` found the generated kit clashing on two of four genre builds,
+worst case 48 notes of "E over Ebm" — a tuned kick a semitone above the
+minor third of the chord, the one interval this repo measured as rare in
+Bach and the one that actually beats. The other two builds passed only
+because the key happened to contain the kick's pitch.
+
+Producers tune a kick to the root for exactly this reason, but **the
+tonic is not unconditionally safe**: it is the natural 11 over the
+dominant, a semitone above that chord's major third, which is the one
+tension this file says stays flagged. So the class is chosen the way the
+cross-tempo lane chooses its notes — the classes safe against EVERY
+chord in the progression, preferring the tonic, then the nearest — and
+shifted by at most a tritone, because a kick dragged further stops
+sounding like the kick the person chose.
+
+The first version left the third drum pad alone, reasoning that a cymbal
+has no pitch worth tuning. Written without checking, and the next run
+disagreed: the untuned third pad was the single worst thing in the
+boombap build, 48 notes of "E over Ebm", because it is the one the hat
+pattern fires on every second or fourth step. A noise-like sound loses
+nothing to a few semitones and a pitched one gains the whole fix.
+
+**AND THE FIX READ AS DOING NOTHING, because the measurement could not
+see it.** `schedule()` reported `midi` as `srcNote` plus the per-step
+pitch lock, and left out `p.pitch` — the semitone transpose on the EDIT
+panel, applied for real through `pitchRatio` at every trigger. So every
+analyser that reads the schedule — `harmony`, `melody`, `motif`,
+`counterpoint`, `pulse` — measured a different note from the one coming
+out of the speaker, for any pad the person had transposed. Pitch a bass
+down an octave, which is an ordinary thing to do, and `harmony()` checks
+the octave above.
+
+That is the trap in the `paint()` section with the sign reversed. There,
+two identical measurements looked like a weak effect and were no effect.
+Here they looked like no effect and were no measurement. Both times the
+rule is the same: **before concluding an edit failed, check that the
+instrument you are reading can see the thing you changed.**
+
+With the kit tuned and the knob counted, `harmony()` passes clean on
+three of four genre builds and the fourth has one voice-pair semitone in
+the whole arrangement.
+
 ## Check while you build, not after
 
 Everything in this file was being run once, at the end, on a finished

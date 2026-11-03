@@ -11054,6 +11054,147 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           let m=nearest(pc, role==='bass' ? lo+((anchor-lo)%12) : anchor);
           if(m==null) m=nearest(pc, (lo+hi)/2);
           if(m==null) continue;
+          /* ---- NO PARALLEL FIFTHS OR OCTAVES ---------------------------
+             The inter-voice filter above is about one interval, the
+             semitone, and it is blind to MOTION. Measured on four genre
+             builds against the 70 Palestrina scores this repo's norms
+             come from:
+
+               parallel fifths   2.9%, 1.92%   against 0.235%
+               parallel octaves  2.38%         against 0.111%
+
+             Ten to twenty times the rate in the practice the rule comes
+             from, in every genre, because nothing was looking. And this
+             is not a taste rule: two voices moving in the same direction
+             into the same perfect interval FUSE — the upper one stops
+             being heard as a part and becomes a timbre on the lower.
+             That is the one thing a multi-voice write is for.
+
+             The test is the strict one: the same interval before and
+             after, and both voices moving the same way. A voice that
+             holds is oblique and fine; contrary motion into a fifth is
+             fine; arriving at a fifth from a third is fine.
+
+             NOT SCORED — FILTERED, which is the opposite of what this
+             file says to do with a number, and deliberately. Oblique
+             motion measured 77-98% against a 68% norm on the same
+             builds and is left alone, because voices on their own
+             rhythmic cells rarely move together and that is structure,
+             not a wrong note. A parallel fifth is a wrong note by the
+             rule the corpus measured, so it is removed rather than
+             discouraged. */
+          /* THE REFERENCE POINT IS THE LAST TIME EITHER VOICE MOVED, not
+             my own previous note, because that is what counterpoint()
+             measures: it walks the UNION of both voices' onsets and asks
+             what each was doing at the step before. Written against my
+             previous note the filter cleared every parallel fifth and
+             left the octaves almost untouched — 2.33% where the norm is
+             0.111% — because whenever the other voice had an onset
+             BETWEEN my two notes, the interval I compared against was
+             not the interval the measure compared against. A filter and
+             a measure that disagree about when two notes are adjacent do
+             not meet in the middle; one of them has to be rewritten, and
+             the measure is the one with a corpus behind it. */
+          const curStep=(from+b)*16+st;
+          let refStep=out.length?out[out.length-1].step:null;
+          if(refStep!=null) for(const n of AGAINST)
+            if(n.step<curStep && n.step>refStep) refStep=n.step;
+          const prevSounding=(refStep!=null && AGAINST.length)?soundingAt(refStep):[];
+          const isParallel=(cand)=>{
+            if(prev==null || !nowSounding.length || !prevSounding.length) return false;
+            const myDir=Math.sign(cand-prev);
+            if(!myDir) return false;                    /* I held: oblique */
+            /* EVERY PAIR, NOT ONE OF THEM. This took `prevSounding.find`
+               — the first note of that voice sounding a moment ago — and
+               a voice can have two notes sounding at once: a long one
+               still ringing under a new onset. Picking whichever came
+               first in the list compared the candidate against the wrong
+               one, and a real parallel octave survived in one voice-pair
+               of twenty-four: v0 and v2 both moving up two semitones
+               three octaves apart, which counterpoint() reported at
+               4.76% against a 0.111% norm while the filter said there
+               was nothing there. Found by dumping the two voices and
+               working out the interval by hand, because an unexplained
+               residue in a filter written an hour ago is usually a class
+               of cases, not a rounding error. */
+            for(const n of nowSounding){
+              for(const before of prevSounding){
+                if(before.inst!==n.inst || before.midi===n.midi) continue;
+                if(Math.sign(n.midi-before.midi)!==myDir) continue;
+                const iv=(((cand-n.midi)%12)+12)%12;
+                const was=(((prev-before.midi)%12)+12)%12;
+                if(iv===was && (iv===0 || iv===7)) return true;
+              }
+            }
+            return false;
+          };
+          if(isParallel(m)){
+            /* THE ESCAPE HAS TO BE WIDER THAN THE CHOICE WAS. A strong
+               beat narrows pcChoices to a single class, so with only
+               that class and its octaves to try there was often nothing
+               to move to: an octave shift keeps the pitch class, and a
+               parallel OCTAVE is a pitch-class relationship, so it
+               survives the shift. Measured over 36 voice-pairs at a
+               fixed key, the first version took parallel octaves from
+               2.88% to 1.69% and stopped there, with nine pairs still
+               carrying one. Three escapes, in order of how little they
+               cost the line. */
+            const semiOk=(cand)=>{
+              const q=(((cand%12)+12)%12);
+              if(ch.pcs.some(t=>((q-t)%12+12)%12===1)) return false;
+              return !nowSounding.some(n=>((q-(n.midi%12))%12+12)%12===1);
+            };
+            /* AND IT HAS TO PREFER A STEP. Ranked on contour distance
+               alone, the escape reached for a chord tone, and chord
+               tones are a third apart by construction — so buying zero
+               parallel octaves cost 8.6 points of stepwise motion,
+               46.53% down to 37.92% against the Essen norm of 46.9%.
+               That is the trade this file warns about arriving by the
+               back door: a real fault fixed by quietly degrading a
+               measure nobody was looking at. A move of one or two
+               semitones is scored 1.5 better, and the key's scale tones
+               are offered as escapes too, which is where steps come
+               from. */
+            const cost=(mm, base)=>Math.abs(mm-anchor) + base
+              - ((prev!=null && Math.abs(mm-prev)>=1 && Math.abs(mm-prev)<=2) ? 1.5 : 0);
+            const alts=[];
+            for(const c of pcChoices){
+              const mm=nearest(c, anchor);
+              if(mm!=null) alts.push([cost(mm,0), mm]);
+            }
+            /* a scale tone a step from where the line is — a passing
+               note, which is what a melody does between chord tones */
+            if(prev!=null) for(const c of SCALE_PCS){
+              for(const d of [-2,-1,1,2]){ const mm=prev+d;
+                if(mm<lo || mm>hi) continue;
+                if((((mm%12)+12)%12)!==c) continue;
+                if(semiOk(mm)) alts.push([cost(mm,0.5), mm]);
+              }
+            }
+            /* every chord tone that passes the same semitone tests, not
+               just the one the beat asked for — a fifth instead of a
+               third is a smaller price than two voices fusing */
+            for(const c of ch.pcs){
+              const mm=nearest(c, anchor);
+              if(mm!=null && semiOk(mm)) alts.push([cost(mm,1), mm]);
+            }
+            /* the same class an octave away: useless against an octave
+               parallel, which is why it is not alone, but it breaks a
+               fifth without touching the harmony */
+            for(const d of [12,-12]){ const mm=m+d;
+              if(mm>=lo && mm<=hi) alts.push([cost(mm,2), mm]); }
+            /* AND STAYING PUT, which is the real answer when nothing else
+               fits: a voice that does not move is OBLIQUE by definition,
+               and oblique is 68% of Palestrina. A repeated note is 21.1%
+               of the Essen melodies, so this is inside the norms rather
+               than a hack — but it must still be a note the harmony
+               allows, since the chord may have changed underneath it. */
+            if(prev!=null && semiOk(prev)) alts.push([Math.abs(prev-anchor)+3, prev]);
+            /* a repeat is not stepwise, so it must not take the bonus */
+            alts.sort((a,b)=>a[0]-b[0]);
+            const ok=alts.find(q=>q[1]!==m && !isParallel(q[1]));
+            if(ok){ m=ok[1]; pc=(((m%12)+12)%12); }
+          }
           if(pc===ch.third) stated3=true;
           /* ---- DYNAMIC CONTOUR, AND A RHYTHM THAT BREATHES ----------
              Two things that were missing and that both already had a
@@ -11358,8 +11499,28 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     if(!r) return null;
     const notes=r.schedule.map(e=>{
       const p=S.pads[e.p], root=(p&&p.srcNote!=null)?p.srcNote:null;
+      /* THE PAD'S OWN PITCH KNOB COUNTS, AND IT WAS NOT COUNTED. `midi`
+         was srcNote plus the per-step pitch lock, and `p.pitch` — the
+         semitone transpose on the EDIT panel, applied for real through
+         pitchRatio at every trigger — was left out of it. So every
+         analyser that reads the schedule (harmony, melody, motif,
+         counterpoint, pulse) measured a different note from the one
+         coming out of the speaker, for any pad the person had
+         transposed. Pitch a bass down an octave, which is an ordinary
+         thing to do, and harmony() checks the octave above.
+
+         Found while tuning the generated kit to the key: the shift was
+         applied, the sound moved, and harmony() went on reporting the
+         untuned pitch — which read as "the fix did nothing" when the
+         truth was "the measurement cannot see it". Two identical
+         measurements are not a weak effect; here they were no
+         measurement.
+
+         Rounded, because `fine` is cents and a detune does not change
+         which note a note is. */
+      const knob=p?Math.round((p.pitch||0)):0;
       return { t:+e.when.toFixed(4), pad:e.p, name:(p&&p.name)||'', vel:+e.v.toFixed(3),
-        pitch:e.pitch||0, midi:root==null?null:root+(e.pitch||0), chord:!!e.chord,
+        pitch:e.pitch||0, midi:root==null?null:root+(e.pitch||0)+knob, chord:!!e.chord,
         /* how long it is held, when the step says so; absent means "as long
            as the sample runs", which is the default and usually right for
            anything percussive */
@@ -23278,6 +23439,56 @@ async function writeSurprise(){
   const free=pads.filter(i=>!used.has(i));
   const drums=free.filter(i=>!S.pads[i].inst).concat(free.filter(i=>S.pads[i].inst))
     .slice(0,3);
+
+  /* ---- TUNE THE KIT TO THE KEY ---------------------------------------
+     A drum sample has a pitch and nothing here was looking at it.
+     harmony() found it on two of four genre builds, worst case 48 notes
+     of "E over Cm" — a tuned kick sitting a semitone above the minor
+     third of the chord, which is the one interval this repo measured as
+     rare in Bach and the one that actually beats. The other two builds
+     passed only because the key happened to contain the kick's pitch.
+
+     Producers tune a kick to the root for exactly this reason, so the
+     target is the tonic — but the tonic is not unconditionally safe: it
+     is the natural 11 over the dominant, a semitone above that chord's
+     major third, which is the one tension AGENTS.md says stays flagged.
+     So the class is chosen the way the cross-tempo lane chooses its
+     notes: the classes safe against EVERY chord in the progression,
+     preferring the tonic, and only then the nearest.
+
+     Shifted by at most a tritone, because a kick dragged further than
+     that stops sounding like the kick the person chose.
+
+     ALL THREE, NOT TWO. The first version left the third pad alone on
+     the reasoning that a cymbal has no pitch worth tuning — written
+     without checking, and the measurement disagreed in the next run:
+     the untuned third pad was the single worst thing in the boombap
+     build, 48 notes of "E over Ebm", because it is the one the hat
+     pattern fires on every second or fourth step. A noise-like sound
+     loses nothing to a few semitones and a pitched one gains the whole
+     fix, so the reason not to was worth less than the fault it left. */
+  if(drums.length && spelled.length && typeof chordInfo==='function'){
+    const chs=spelled.map(c=>chordInfo(c)).filter(Boolean);
+    const safe=[];
+    for(let pc=0;pc<12;pc++)
+      if(chs.length && chs.every(c=>!c.pcs.some(t=>(((pc-t)%12)+12)%12===1))) safe.push(pc);
+    const kk=window.MVX.key();
+    const tonic=(kk && chordInfo(kk.tonic+'m')) ? chordInfo(kk.tonic+'m').root : null;
+    if(safe.length){
+      const want=(tonic!=null && safe.indexOf(tonic)>=0) ? tonic : null;
+      for(const i of drums){
+        const p=S.pads[i];
+        const at=(((p.srcNote!=null?p.srcNote:60)+(p.pitch||0))%12+12)%12;
+        let best=null, bd=99;
+        for(const pc of (want!=null?[want]:safe)){
+          let d=((pc-at)%12+12)%12; if(d>6) d-=12;
+          if(Math.abs(d)<bd){ bd=Math.abs(d); best=d; }
+        }
+        if(best!=null && best!==0 && Math.abs(best)<=6)
+          window.MVX.pad(i,{ pitch:+((p.pitch||0)+best).toFixed(2) });
+      }
+    }
+  }
 
   /* ---- two or three patterns at different weights ------------------ */
   const PLEN=G.plen||64;

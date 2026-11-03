@@ -777,6 +777,123 @@ export default async function ({ browser, base }) {
       sig(kit.pats[0]) !== sig(kit.pats[2]),
       'three distinct patterns across ' + kit.song + ' sections');
 
+    /* ---- TWO VOICES MOVING INTO THE SAME PERFECT INTERVAL FUSE -------
+       The inter-voice filter was about ONE interval, the semitone, and
+       was blind to motion. Measured on four genre builds against the 70
+       Palestrina scores these norms come from:
+
+         parallel fifths   2.9%, 1.92%   against 0.235%
+         parallel octaves  2.38%, 7.5%   against 0.111%
+
+       Ten to seventy times the rate of the practice the rule comes from,
+       in every genre, because nothing was looking. It is not a taste
+       rule: the upper voice stops being heard as a part and becomes a
+       timbre on the lower, which is the one thing a multi-voice write
+       exists to avoid.
+
+       Fixed at a known key, progression and seed, because the first read
+       of this was off random genre builds and the numbers moved more
+       between runs than the fix moved them — a filter judged against
+       noise. */
+    t.head('NO PARALLEL FIFTHS OR OCTAVES BETWEEN VOICES');
+    const par = await page.evaluate(async () => {
+      const J = window.JBH, rows = [];
+      /* TEMPO AND HUMANISATION PINNED, and clear() does not reset them.
+         counterpoint() walks the UNION of both voices' onset TIMES, so
+         humanDrift changes which notes it treats as adjacent — run after
+         the ambient genre build above, which leaves 64bpm and 30% drift
+         behind, these six seeds reported a parallel octave that the same
+         six seeds in a fresh page did not. A pitch rule measured through
+         a timing effect is not measured. */
+      await J.set({ bpm: 100, swing: 0, human: 0, humanDrift: 0 });
+      for (let k = 0; k < 8; k++) {
+        await J.clear();
+        await J.set({ bpm: 100, swing: 0, human: 0, humanDrift: 0 });
+        J.key('C', 'minor');
+        const midis = [36, 48, 60];
+        for (let i = 0; i < 3; i++) {
+          await J.bass({ style: 'sub', midi: midis[i], seconds: 0.5, pad: i });
+          J.pad(i, { inst: 'v' + i, srcNote: midis[i] });
+        }
+        await J.pattern(0, { plen: 64, clear: true, select: true });
+        J.chords(0, ['Cm', 'Fm', 'G7', 'Cm']);
+        const vs = [{ inst: 'v0', role: 'bass' }, { inst: 'v1', role: 'lead' },
+          { inst: 'v2', role: 'arp' }];
+        const o = { from: 0, bars: 4, n: 1, src: 'pat', density: 'normal',
+          octave: 0, poly: 'none', converse: false, feel: 'straight',
+          seed: (1000 + k * 7919) >>> 0 };
+        const off = await J.ensemble(vs, o);
+        await J.ensemble(vs, Object.assign({}, o, { seed: off.seed,
+          apply: off.candidates[0].seed }));
+        for (const pair of [['v0', 'v1'], ['v1', 'v2'], ['v0', 'v2']]) {
+          const c = await J.counterpoint(pair, { src: 'pat' });
+          if (c && c.motion) rows.push({ pair: pair.join('/'),
+            par5: c.motion.par5, par8: c.motion.par8 });
+        }
+        /* the melodic norms, which the escape must not quietly spend.
+           ALL THREE VOICES, not just the lead: a bass walks and a lead
+           leaps, so one voice's step count is its role rather than the
+           engine's, and v1 alone reads 24% where the three together
+           read 41%. */
+        for (const t2 of ['v0', 'v1', 'v2']) {
+          const mel = await J.melody(t2, { src: 'pat' });
+          if (mel && mel.got) rows.push({ mel: mel.got });
+        }
+      }
+      return rows;
+    });
+    const cp = par.filter(r => r.pair);
+    const bad5 = cp.filter(r => r.par5 > 0), bad8 = cp.filter(r => r.par8 > 0);
+    t.ok('no parallel fifths in any voice-pair', bad5.length === 0,
+      cp.length + ' pairs measured, ' + bad5.length + ' with a parallel fifth');
+    t.ok('and no parallel octaves — two voices in octaves are one voice',
+      bad8.length === 0,
+      cp.length + ' pairs measured, ' + bad8.length + ' with a parallel octave'
+        + (bad8.length ? ' (worst ' + Math.max(...bad8.map(r => r.par8)) + '%)' : ''));
+    /* THE ESCAPE HAS A PRICE AND THE TEST SAYS WHAT IT IS. Ranked on
+       contour alone the escape reached for a chord tone, and chord tones
+       are a third apart by construction, so stepwise motion fell from
+       46.53% to 37.92% against the Essen norm of 46.9% — a real fault
+       fixed by degrading a measure nobody was watching, which is the
+       trade this repo's longest section is about. Preferring a stepwise
+       escape recovers most of it. This asserts the band, not a target. */
+    const mels = par.filter(r => r.mel).map(r => r.mel);
+    const avg = (f) => +(mels.reduce((n, m) => n + (m[f] || 0), 0) / mels.length).toFixed(2);
+    t.ok('and the escape did not spend the melodic norms to buy it',
+      mels.length > 0 && avg('step') >= 32 && avg('repeat') <= 32,
+      'step ' + avg('step') + '% (norm 46.9, was 37.92 before the stepwise '
+        + 'preference) · repeat ' + avg('repeat') + '% (norm 21.1)');
+
+    /* ---- THE PAD'S OWN PITCH KNOB IS PART OF THE NOTE ----------------
+       `midi` was srcNote plus the per-step pitch lock, and `p.pitch` —
+       the semitone transpose on the EDIT panel, applied for real through
+       pitchRatio at every trigger — was left out. So every analyser that
+       reads the schedule measured a different note from the one coming
+       out of the speaker, for any pad the person had transposed.
+
+       Found while tuning the generated kit to the key: the shift was
+       applied, the sound moved, and harmony() went on reporting the
+       untuned pitch, which reads as "the fix did nothing" when the truth
+       is "the measurement cannot see it". */
+    t.head('A TRANSPOSED PAD IS MEASURED AT THE PITCH IT SOUNDS');
+    const knob = await page.evaluate(async () => {
+      const J = window.JBH;
+      await J.clear();
+      await J.bass({ style: 'sub', midi: 48, seconds: 0.4, pad: 0 });
+      J.pad(0, { inst: 'k', srcNote: 48, pitch: 0 });
+      await J.pattern(0, { plen: 16, clear: true, select: true });
+      J.step(0, 0, 0.9);
+      const before = (await J.schedule({ src: 'pat', full: true })).events
+        .filter(e => e.pad === 0).map(e => e.midi);
+      J.pad(0, { pitch: -5 });
+      const after = (await J.schedule({ src: 'pat', full: true })).events
+        .filter(e => e.pad === 0).map(e => e.midi);
+      return { before, after };
+    });
+    t.ok('transposing a pad moves the note every analyser reads',
+      knob.before[0] === 48 && knob.after[0] === 43,
+      'srcNote 48 reads ' + knob.before[0] + ', at pitch -5 reads ' + knob.after[0]);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
