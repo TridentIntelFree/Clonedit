@@ -624,6 +624,82 @@ export default async function ({ browser, base }) {
     t.ok('and warming stays inside a deliberate button press',
       kt.longWarmMs < 900, kt.longWarmMs + 'ms for ' + kt.longWarmCount + ' stretches');
 
+    /* ---- A SWELL SHORTER THAN ITS OWN RELEASE ------------------------
+       From a DIAG off a real device:
+
+         errors: NotSupportedError: Events are overlapping @10567  (x8 in 1s)
+
+       `setValueAtTime` throws when it lands inside a scheduled
+       `setValueCurveAtTime` span, and the swell's gate tested
+       `outDur-att` while the curve really occupies `relStart-attEnd`,
+       which is `outDur-relT-att` — THE RELEASE WAS NOT IN THE GUARD. A
+       note shorter than its own release therefore passed, `span` was
+       clamped up to the 0.02 floor the API needs, and the release event
+       landed inside the curve.
+
+       The throw mattered far more than the envelope did: the source is
+       connected and started AFTER that line, and the exception escaped
+       `chord.forEach`, so the remaining pads in that step never fired
+       and the step the sequencer was drawing never finished. The report
+       was "it glitched hard visually and audibly", which is what a
+       dropped tick looks like, not what a wrong envelope sounds like.
+
+       It takes a fast tempo to show: at 174bpm a sixteenth is 86ms and
+       any ordinary release is longer than that. So this drives the real
+       sequencer at 174 with a long release and a swell on every step. */
+    t.head('A SWELL ON A SHORT STEP DOES NOT DROP THE TICK');
+    const sw = await page.evaluate(async () => {
+      const J = window.JBH;
+      await J.clear();
+      await J.bass({ style: 'sub', midi: 48, seconds: 1.2, pad: 0 });
+      await J.bass({ style: 'sub', midi: 55, seconds: 1.2, pad: 1 });
+      /* a release far longer than a sixteenth at 174bpm (86ms), which is
+         the configuration the guard did not cover */
+      J.pad(0, { att: 0.004, dec: 0.12, sus: 1, rel: 0.45, layMode: 'vel' });
+      J.pad(1, { att: 0.004, dec: 0.12, sus: 1, rel: 0.45 });
+      await J.set({ bpm: 174, swing: 0, human: 0, humanDrift: 0 });
+      await J.pattern(0, { plen: 16, clear: true, select: true });
+      const pat = S.patterns[0];
+      for (let st = 0; st < 16; st++) {
+        J.step(0, st, 0.35); J.step(1, st, 0.35);
+        /* the swell lock: this note is told to arrive somewhere else */
+        /* `len` IS THE INGREDIENT THE FIRST VERSION OF THIS TEST MISSED,
+           and without it the test passed against known-bad code — which
+           makes it not a regression test at all. `outDur` is the slice
+           divided by the rate, capped by this lock: with a 1.2s sample
+           and no cap it is 1.2s, there is room for any release, and the
+           fault cannot happen. It is `lk.len` that makes a note shorter
+           than its own release, and `infill()` writes one on every note
+           it generates as `beats` — which is why a generated dnb part
+           at 174bpm hit this and a hand-drawn pattern did not. */
+        const L = { swell: 0.95, len: 0.17 };   /* ~a half-beat at 174 */
+        pat.locks[LK(0, st)] = Object.assign(pat.locks[LK(0, st)] || {}, L);
+        pat.locks[LK(1, st)] = Object.assign(pat.locks[LK(1, st)] || {}, L);
+      }
+      bumpLocks();
+      const before = firedBad;
+      /* JBH.play(), and the transport state read back from state().
+         The first version clicked #btnPlay and read S.playing — which
+         does not exist; `playing` is a bare top-level binding — so it
+         came back undefined, the pattern never rolled, and the two
+         assertions underneath passed on a sequencer that had not
+         started. A check that did not run reads exactly like a check
+         that passed, which is why the transport is asserted first. */
+      JBH.play();
+      await new Promise(r => setTimeout(r, 1600));
+      const rolling = JBH.state().playing;
+      JBH.stop();
+      await new Promise(r => setTimeout(r, 120));
+      return { dropped: firedBad - before, playing: rolling,
+        errs: errLog.filter(x => /overlap/i.test(x)).length };
+    });
+    t.ok('the sequencer really ran at 174bpm with a swell on every step',
+      sw.playing === true, 'playing while the pattern rolled');
+    t.ok('NO OVERLAPPING-EVENTS ERROR — the guard counts the release now',
+      sw.errs === 0, sw.errs + ' overlap errors in errLog');
+    t.ok('and not one voice was dropped, so no step lost its other pads',
+      sw.dropped === 0, sw.dropped + ' voices dropped');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.join(' | '));
   } finally {

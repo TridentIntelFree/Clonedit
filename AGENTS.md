@@ -1228,6 +1228,78 @@ narrowed until it caught every real case and none of those. It carries
 it, because a checker nobody has run against a known-bad input is not a
 checker.
 
+## A thrown note is a silent note; a thrown TICK is a broken app
+
+From a DIAG off a real device, eight times in one second:
+
+```
+errors: NotSupportedError: Events are overlapping @10567
+```
+
+`setValueAtTime` throws when it lands inside a scheduled
+`setValueCurveAtTime` span. The swell's gate tested `outDur-att`, and the
+span the curve really occupies is `relStart-attEnd`, which is
+`outDur-relT-att` — **the release was not in the guard.** A note shorter
+than its own release passed the test, `span` was clamped up to the 0.02
+floor the API needs, the curve then ended AFTER `relStart`, and the
+release event landed inside it.
+
+**The throw mattered far more than the envelope did.** The source is
+connected and started AFTER that line, and the exception escaped
+`chord.forEach` in the sequencer tick — so the remaining pads in that
+step never fired and the step being drawn never finished. The report was
+"it glitched hard visually and audibly", which is what a dropped tick
+looks like and not what a wrong envelope sounds like. One bad note took
+out everything scheduled behind it.
+
+So there are two layers now, and they do different jobs:
+
+- the **gate** is the fix: `swSpan = relStart-attEnd` and the swell only
+  runs when there is more than 0.05s of it.
+- `fireSafe()` is the **guarantee**: `triggerPad()` throwing is
+  survivable, the tick abandoning its step is not. It wraps the two live
+  sequencer call sites and the offline render loop, where a throw
+  otherwise loses the whole bounce twenty minutes in for one bad note.
+
+**Both report. Neither swallows.** A bare `catch(e){}` on the release
+pair would have hidden the exact fault it was added for, and `firedBad`
+is in DIAG so the next fault of this shape is visible rather than
+inferred from a stutter.
+
+### It takes `lk.len` to reproduce, and the first test did not have one
+
+The regression test drove the real sequencer at 174bpm with a swell on
+every step and a 0.45s release, and **it passed against known-bad
+code** — which makes it not a regression test.
+
+`outDur` is `sliceDur/rate` capped by `lk.len`. With a 1.2s sample and no
+cap, `outDur` is 1.2s, there is room for any release, and the fault
+cannot happen. It is the note-length lock that makes a note shorter than
+its own release — and `infill()` writes one on every note it generates,
+as `beats`. That is why a generated dnb part at 174bpm hit this and a
+hand-drawn pattern never did: a sixteenth is 86ms at that tempo and the
+generated note lengths are shorter still.
+
+With `len:0.17` in the lock the test reports **8 overlap errors against
+known-bad code — the same count as the device DIAG — and 0 against the
+fix.** Run a new check against a known-bad input before trusting it;
+this is the third time in this file that advice has paid.
+
+And the test asserted the transport first for the same reason: the first
+draft read `S.playing`, which does not exist (`playing` is a bare
+top-level binding), got `undefined`, and the two assertions underneath
+passed on a sequencer that had never started.
+
+### The same shape is in the bow path
+
+`nenv.gain.setValueAtTime(lvl2, when+dur)` sits inside the slur's
+up-curve `[when, when+xf]` whenever a note is shorter than the slur, and
+a throw there loses that voice's connect and start exactly as the amp
+envelope did. Clamped to the end of the curve and wrapped. **Suspect this
+shape anywhere a curve is scheduled and a discrete event follows it** —
+the two places found here were written months apart and neither knew
+about the other.
+
 ## The traps
 
 These are the ones that cost real work here. None are guessable from the

@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R245 · 2026-11-03 · SURPRISE builds a whole track, in one of ten genres';
+const BUILD = 'JBH-88 · R246 · 2026-11-03 · a swell shorter than its own release no longer drops the tick';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -4010,8 +4010,15 @@ function triggerBow(ctx, g, idx, vel, when, pitchOff, lk){
     try{ nenv.gain.setValueCurveAtTime(up, when, xf); }
     catch(e){ try{ nenv.gain.setValueAtTime(0.0001,when);
       nenv.gain.linearRampToValueAtTime(Math.max(0.0001,lvl2),when+xf); }catch(e2){} }
-    nenv.gain.setValueAtTime(Math.max(0.0001,lvl2), when+dur);
-    nenv.gain.linearRampToValueAtTime(0.0001, when+dur+relT);
+    /* THE SAME SHAPE AGAIN: a note shorter than the slur puts `when+dur`
+       inside the up-curve's [when, when+xf] and throws, which here would
+       lose the connect and the start below it just as it did in the amp
+       envelope. Placed no earlier than the curve ends, and wrapped. */
+    const bowRel=Math.max(when+dur, when+xf);
+    try{ nenv.gain.setValueAtTime(Math.max(0.0001,lvl2), bowRel); }
+    catch(e){ logErr('bow hold: '+(e&&e.message?e.message:e)); }
+    try{ nenv.gain.linearRampToValueAtTime(0.0001, bowRel+relT); }
+    catch(e){ logErr('bow release: '+(e&&e.message?e.message:e)); }
     nsrc.connect(nenv); nenv.connect(g.pads[idx].in);
     if(change) bowAttackHit(ctx,g,idx,p,when+xf*0.42,nsrc.playbackRate.value,vel);
     nsrc.start(when, entry);
@@ -4256,8 +4263,30 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
      note told to change dynamic is given attack, the move, and release.
      The 'in' voice of a crossfade pair starts effectively silent, since
      its whole job is to arrive. */
-  const swOn = !!swShape && (outDur-att)>0.12;
-  let holdLvl=v;
+  /* ---- THE SWELL NEEDS ROOM THAT THIS GUARD DID NOT MEASURE ---------
+     This tested `outDur-att`, and the span the curve actually occupies
+     is `relStart-attEnd` — which is `outDur-relT-att`. THE RELEASE WAS
+     NOT IN THE GUARD. So a note shorter than its own release passed the
+     test, `span` below got clamped up to the 0.02 floor
+     setValueCurveAtTime needs, the curve then covered a stretch of time
+     that ENDED AFTER relStart, and the `setValueAtTime(holdLvl,
+     relStart)` below landed inside it:
+
+       NotSupportedError: Events are overlapping
+
+     Eight of them in a second on a real device, because the source is
+     connected and started AFTER that line — so the throw did not just
+     lose the note, it aborted the rest of the scheduling tick. That is
+     what "it glitched hard visually and audibly" was: notes dropped and
+     the step the sequencer was drawing never finished.
+
+     It needs a fast tempo to show. At 174bpm a sixteenth is 86ms and
+     any ordinary release is longer than that, so on the dnb genre
+     essentially every swelled note hit it. Gated on the span that
+     really exists now, with margin over the floor. */
+  const swSpan = relStart-attEnd;
+  const swOn = !!swShape && swSpan>0.05;
+  let holdLvl=v, curveEnd=0;
   if(swOn){
     const startLvl = swShape.role==='in' ? Math.max(0.0001, v*0.02) : v;
     const endLvl   = swShape.role==='in' ? v
@@ -4265,7 +4294,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
                    : Math.max(0.0001, v*clamp(swShape.ratio,0.05,8));
     env.gain.linearRampToValueAtTime(startLvl, attEnd);
     holdLvl=startLvl;
-    const span=Math.max(0.02, relStart-attEnd), n=33, arr=new Float32Array(n);
+    const span=swSpan, n=33, arr=new Float32Array(n);
     for(let i=0;i<n;i++){
       const t=i/(n-1);
       const frac = swShape.role==='out' ? (1-Math.cos(t*Math.PI/2))
@@ -4275,7 +4304,8 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
     /* setValueCurveAtTime throws across browsers if it so much as touches
        another scheduled event, and a thrown note is a silent one, so the
        shape degrades to a straight line rather than taking the voice out. */
-    try{ env.gain.setValueCurveAtTime(arr, attEnd, span); holdLvl=arr[n-1]; }
+    try{ env.gain.setValueCurveAtTime(arr, attEnd, span); holdLvl=arr[n-1];
+      curveEnd=attEnd+span; }
     catch(e){
       try{ env.gain.linearRampToValueAtTime(endLvl, attEnd+span); holdLvl=endLvl; }catch(e2){}
     }
@@ -4297,8 +4327,23 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
     }
   }
   }
-  env.gain.setValueAtTime(holdLvl,relStart);
-  env.gain.linearRampToValueAtTime(0.0001,relStart+relT);
+  /* AND A BELT AS WELL AS BRACES. The gate above is the fix; this is
+     the guarantee. A discrete event inside a scheduled curve throws, a
+     throw here loses the connect and the start below, and losing those
+     is worse than any envelope being slightly wrong — so the release is
+     placed no earlier than the end of whatever curve was scheduled, and
+     both calls are wrapped. `curveEnd` stays 0 when no curve was used,
+     which is the common case and changes nothing. */
+  const relAt=Math.max(relStart, curveEnd);
+  /* AND THEY REPORT. Swallowed silently, this pair would hide the exact
+     fault it was added for: the guard above stops the overlap, and if a
+     later change reintroduces one, a bare `catch(e){}` means the note is
+     quietly wrong and the regression test sees nothing. A check that did
+     not run reads exactly like a check that passed. */
+  try{ env.gain.setValueAtTime(holdLvl,relAt); }
+  catch(e){ logErr('env hold: '+(e&&e.message?e.message:e)); }
+  try{ env.gain.linearRampToValueAtTime(0.0001,relAt+relT); }
+  catch(e){ logErr('env release: '+(e&&e.message?e.message:e)); }
   src.connect(env); env.connect(g.pads[idx].in);
   scheduleFilterEnv(ctx, g.pads[idx], p, when, outDur, clamp(vel,0,1));
   let ltg=null;
@@ -4998,6 +5043,23 @@ function startMeter(){ if(!meterRAF) meterRAF=requestAnimationFrame(meterLoop); 
 /* surface runtime errors on-device — no console on iPhone */
 const errLog=[];
 function logErr(m){ errLog.push(new Date().toTimeString().slice(0,8)+' '+m); if(errLog.length>8) errLog.shift(); }
+/* ---- ONE BAD NOTE MUST NOT TAKE OUT THE STEP ------------------------
+   triggerPad() throwing is survivable; the sequencer tick abandoning
+   the rest of its step is not. A swell whose curve overlapped its own
+   release threw eight times in a second on a real device, and because
+   the throw escaped `chord.forEach` the pads after it in that step never
+   fired and the step the sequencer was drawing never finished — which
+   reads as the whole app glitching rather than as one wrong envelope.
+
+   It REPORTS rather than swallowing. A note that silently did not play
+   looks exactly like a note that played, which is the failure mode this
+   repo keeps a section about; `firedBad` lands in DIAG so the next fault
+   of this shape is visible instead of inferred from a stutter. */
+let firedBad=0;
+function fireSafe(fn){
+  try{ fn(); }
+  catch(e){ firedBad++; logErr('voice dropped: '+(e&&e.message?e.message:e)); }
+}
 const gainLog=[];   // who wrote a pad's channel gain, when, to what — the ch:0 forensics
 function logGain(idx,v,src){ gainLog.push(new Date().toTimeString().slice(0,8)+' '+padName(idx)+'='+(+v).toFixed(2)+' by '+src); if(gainLog.length>10) gainLog.shift(); }
 window.onerror=function(msg,src,line){ logErr(msg+' @'+line); lcd('ERR: '+msg+' @'+line); try{plog('ERR: '+msg+' line '+line);}catch(e){} };
@@ -17718,8 +17780,9 @@ function polyFire(pat, p, idx, v, when, pd, fired){
   const creg=chord.length>1?null:chokeLive;
   applyStepLocks(LIVE, pat, p, lk, when);
   chord.forEach(pitchOff=>{
-    if(rat>1){ const rd=pd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, hv, when+r*rd, creg, pitchOff, false, null, lk); }
-    else triggerPad(AC, LIVE, p, hv, when, creg, pitchOff, false, null, lk);
+    if(rat>1){ const rd=pd/rat; for(let r=0;r<rat;r++)
+      fireSafe(()=>triggerPad(AC, LIVE, p, hv, when+r*rd, creg, pitchOff, false, null, lk)); }
+    else fireSafe(()=>triggerPad(AC, LIVE, p, hv, when, creg, pitchOff, false, null, lk));
   });
   if(S.notesOut && midiOutDev){
     const baseNote=(S.pads[p].note>=0?S.pads[p].note:36+p);
@@ -17823,8 +17886,9 @@ function schedStep(barStep, absStep, t){
     const creg=chord.length>1?null:chokeLive;                    // chord voices must not choke each other
     applyStepLocks(LIVE, pat, p, lk, when);
     chord.forEach(pitchOff=>{
-      if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++) triggerPad(AC, LIVE, p, hv, when+r*rd, creg, pitchOff, false, null, lk); }
-      else triggerPad(AC, LIVE, p, hv, when, creg, pitchOff, false, null, lk);
+      if(rat>1){ const rd=sd/rat; for(let r=0;r<rat;r++)
+        fireSafe(()=>triggerPad(AC, LIVE, p, hv, when+r*rd, creg, pitchOff, false, null, lk)); }
+      else fireSafe(()=>triggerPad(AC, LIVE, p, hv, when, creg, pitchOff, false, null, lk));
     });
     if(S.notesOut && midiOutDev){   // mirror the step (whole chord) to hardware
       const baseNote=(S.pads[p].note>=0?S.pads[p].note:36+p);
@@ -26551,7 +26615,9 @@ async function renderMixInner(padSet, traxSet, opt){
        time, or a bounce is the pattern without its sound design — which is the
        one way a sequencer can lie about what it played. */
     applyStepLocks(g, ev.pat, ev.p, ev.lk, ev.when);
-    triggerPad(oc, g, ev.p, ev.v, ev.when, ev.chord?null:chokeOff, ev.pitch, false, null, ev.lk);   // chord voices don't choke each other
+    // chord voices don't choke each other. Wrapped because a throw here
+    // loses the whole BOUNCE, twenty minutes in, for one bad note.
+    fireSafe(()=>triggerPad(oc, g, ev.p, ev.v, ev.when, ev.chord?null:chokeOff, ev.pitch, false, null, ev.lk));
   }
   for(const x of trax){ const w=wireTrack(oc,g,x.tr,x.b,0.05,x.tr.gain); if(x.tr.loop) w.src.stop(t); }
   return await oc.startRendering();
@@ -27045,6 +27111,7 @@ function diagDump(tag){
       'padGains: '+S.pads.map((pd,i)=>pd.bufId>=0?padName(i)+':'+pd.gain.toFixed(2)+'/'+(LIVE&&LIVE.pads[i]?g(LIVE.pads[i].ch):'-'):null).filter(Boolean).join(' '),
       'ccMaps: '+(Object.keys(S.ccMaps).length?JSON.stringify(S.ccMaps):'none')+' · midiIn:'+(midiAccess?'on':'off'),
       'gainWrites: '+(gainLog.length?gainLog.join(' | '):'none'),
+      'voices dropped: '+(firedBad||'none'),
       'errors: '+(errLog.length?errLog.join(' | '):'none'),
     ];
     lines.forEach(l=>plog(l));
