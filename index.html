@@ -1112,6 +1112,21 @@ where they come back into alignment. On a grid that relationship is invisible.</
       <option value="7">7 over 8</option>
       <option value="9">9 over 8</option>
     </select>
+    <!-- HOW LONG A NOTE IS HELD. `gate` scales the rhythmic cell's own
+         length, and it reached the engine through the GENRES table only
+         — so across the sixteen recipes articulation spans 0.28 beats
+         (footwork) to 2.18 (doom), and a person writing by hand got one
+         fixed value with no way to change it. The same shape as mlPoly,
+         which existed with no control for several builds. A dub bass
+         that should hang over the bar and a footwork stab that should
+         not are the same note otherwise. -->
+    <select id="mlGate" aria-label="How long each note is held">
+      <option value="0.45">clipped</option>
+      <option value="0.7">short</option>
+      <option value="1" selected>as written</option>
+      <option value="1.5">long</option>
+      <option value="2.2">held</option>
+    </select>
     <!-- WHERE IN THE PATTERN TO WRITE. infill() has always taken a
          `from` and nothing in the panel reached it, so every part was
          written from bar 1 and writing a different ending meant using
@@ -9126,7 +9141,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R253 · 2026-11-03 · a long span fills every pattern it promised';
+const BUILD = 'JBH-88 · R254 · 2026-11-03 · one voice is written against the others';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -17405,14 +17420,73 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
              with everything else here rather than overriding it. */
           const nowSounding = AGAINST.length ? soundingAt((from+b)*16+st) : [];
           if(nowSounding.length){
-            const keep=pcChoices.filter(pc=>!nowSounding.some(n=>{
-              const d=((pc-(n.midi%12))%12+12)%12;
-              return d===1;
-            }));
-            /* only if something survives: a rule that empties the list
-               has to yield, or the fallback writes the clash it just
-               removed everything else for */
+            const clear=pc=>!nowSounding.some(n=>
+              ((pc-(n.midi%12))%12+12)%12 === 1);
+            const keep=pcChoices.filter(clear);
             if(keep.length) pcChoices=keep;
+            else {
+              /* AND THE ESCAPE HAS TO BE WIDER THAN THE CHOICE WAS.
+                 Yielding here was wrong and it was measured wrong: a
+                 strong beat, or the last weak slot of a bar that has
+                 not stated its third, narrows pcChoices to ONE class —
+                 `pcChoices=[ch.third]` — and when that one class is the
+                 semitone above a sounding voice the filter emptied the
+                 list and handed back the clash it had just removed
+                 everything else for.
+
+                 It is the same shape as the fallback two blocks down,
+                 which used to fall back to the root and on a major
+                 seventh the root IS the clash. Measured on a held F#
+                 under Em, where G is both the chord's third and the
+                 semitone: seven of eleven lead notes landed on G with
+                 `against` passed, so the wiring looked broken when the
+                 ladder was what was missing.
+
+                 In order of what it costs the line: another chord tone,
+                 then any scale tone, then HOLDING — a voice that does
+                 not move cannot move into a clash, and a repeated note
+                 is 21.1% of the Essen melodies. Only if even holding
+                 clashes is the narrowed choice kept, which means the
+                 voice is boxed in and the honest answer is the note. */
+              const chordSafe=ch.pcs.filter(clear);
+              const scaleSafe=SCALE_PCS.filter(clear);
+              /* STEPWISE FIRST, AND THE ORDER IS THE WHOLE FIX. Reaching
+                 for a chord tone first is the mistake the parallel-octave
+                 escape already paid for and this file already measured:
+                 chord tones are a third apart by construction, so they
+                 are the expensive escape, not the cheap one. Measured on
+                 a voice holding the 9th through all four bars, which
+                 bans the chord's third everywhere:
+
+                   chord tones first   step 0-21%   rep 36-100%  pcs {4,11}
+                   stepwise first      step 31-50%  rep 18-36%
+
+                 Both write zero false relations. The first one bought
+                 them by collapsing the line onto the root and the fifth,
+                 which is this file's longest warning arriving through a
+                 fix for a real fault. */
+              const stepSafe=scaleSafe.filter(pc=>{
+                const m2=nearest(pc, prev);
+                return m2!=null && m2!==prev && Math.abs(m2-prev)<=2;
+              });
+              const holdPc=prev!=null?(((prev%12)+12)%12):null;
+              /* ORDERED, NOT NARROWED, and that distinction cost a
+                 parallel fifth. Setting pcChoices to the stepwise
+                 classes ALONE gave the best melodic numbers here and
+                 shrank the pool that the parallel fifth/octave filter
+                 below escapes into — 1 of 24 voice-pairs came back with
+                 a parallel fifth where there had been none. "The escape
+                 has to be wider than the choice was" applies to the
+                 filter underneath this one too. So the pool keeps every
+                 safe class and merely PREFERS the stepwise ones, which
+                 the contour chooser then picks anyway because a stepwise
+                 class is the nearest one to the anchor by definition. */
+              const pool=[];
+              for(const list of [stepSafe, scaleSafe, chordSafe])
+                for(const pc of list) if(pool.indexOf(pc)<0) pool.push(pc);
+              if(pool.length) pcChoices=pool;
+              else if(holdPc!=null && clear(holdPc)) pcChoices=[holdPc];
+            }
           }
           /* THE FALLBACK USED TO BE THE ROOT, AND ON A MAJOR SEVENTH THE
              ROOT IS THE CLASH. Gmaj7 is G B D F#, and G sits a semitone
@@ -29576,6 +29650,60 @@ function mlVoices(){
     role: i===0 ? 'bass' : (i===rows.length-1 && rows.length>2 ? 'arp' : 'lead') }));
 }
 
+/* WHAT IS ALREADY ON THE GRID, for infill() to write against.
+
+   `infill()` has read `o.against` all along, and it is what switches on
+   BOTH of its inter-voice filters: the semitone/minor-9th test against
+   notes sounding at the same moment, and the parallel fifth/octave test
+   against what each voice was doing when either last moved. Nothing in
+   the panel ever passed it. Only `ensemble()`'s internal chain did — so
+   the commonest real edit, "keep everything and rewrite the lead", was
+   written as though the voice were alone in the pattern. It could put a
+   minor ninth against a bass already on the grid, or move in parallel
+   octaves with it, and the only way to find out was `harmony()` or
+   `counterpoint()` afterwards.
+
+   Read off the PATTERN rather than schedule(), because schedule() reports
+   a TIME and `against` wants an absolute STEP: converting back through
+   swing, humanisation and the poly lanes would put a filter and a measure
+   into disagreement about when two notes are adjacent, which is the fault
+   the parallel-interval section of AGENTS.md spent a session on.
+
+   `lk.len` is seconds — `(60/bpm) * beats` where it was written — so the
+   inverse is exact rather than estimated. A step with no length lock is
+   assumed to be a beat, which is what infill() assumes of its own notes.
+
+   A pad with no `srcNote` is skipped: its `note` is a MIDI map slot and
+   not a pitch, so it has no interval to clash on. A preset drum loaded
+   at a note DOES have one, and is included — the tuned kick clashing with
+   the keys is a real finding this repo has already measured. */
+function mlAgainst(skipInst, from, bars){
+  const pat=S.patterns[S.pattern];
+  if(!pat || !pat.steps) return [];
+  const spb=60/Math.max(1,Math.abs(S.bpm||120));
+  const loSt=Math.max(0,(from|0))*16, hiSt=loSt+Math.max(1,(bars|0))*16;
+  const out=[];
+  for(let p=0;p<S.pads.length;p++){
+    const sp=S.pads[p];
+    if(!sp || sp.bufId<0 || sp.srcNote==null) continue;
+    if(skipInst && sp.inst===skipInst) continue;   /* the voice being rewritten */
+    const row=pat.steps[p]; if(!row) continue;
+    const root=sp.srcNote+Math.round(sp.pitch||0);
+    for(let st=loSt; st<hiSt && st<row.length; st++){
+      if(!(row[st]>0)) continue;
+      const lk=pat.locks && pat.locks[p+':'+st];
+      const beats=(lk && lk.len>0) ? (lk.len/spb) : 1;
+      /* a chord lock sounds every one of its pitches, so every one of
+         them is a note the new voice has to not clash with */
+      const offs=(lk && lk.pitches && lk.pitches.length) ? lk.pitches
+        : [(lk && lk.pitch) || 0];
+      for(const q of offs)
+        out.push({ inst: sp.inst || ('pad'+(p+1)), midi: root+q, step: st, beats });
+    }
+  }
+  return out;
+}
+
 function drawMusicalLayer(){
   if(!$('mlTonic')) return;
   const k=S.key, bars=mlBars();
@@ -30283,6 +30411,18 @@ async function writeSurprise(){
   const set=(id,v)=>{ const e=$(id); if(e) e.value=String(v); };
   set('mlSpan',bars); set('mlDens',G.dens); set('mlPoly',G.poly);
   set('mlFeel',G.feel); set('mlFrom',0); set('mlPtn',PLEN);
+  /* SNAPPED, because the recipes use real numbers and the control offers
+     five. Assigning 1.9 to a select with no 1.9 in it leaves the control
+     showing whatever it showed before, which reads as "the build did not
+     set this" and is how the panel would start disagreeing with the
+     track it just made. */
+  if($('mlGate')){
+    const want=+(G.gate||1);
+    const opts=[...$('mlGate').options].map(o=>+o.value);
+    let near=opts[0];
+    for(const v of opts) if(Math.abs(v-want)<Math.abs(near-want)) near=v;
+    $('mlGate').value=String(near);
+  }
   if($('mlConverse')) $('mlConverse').checked=vs.length>=3;
   if($('mlAll')) $('mlAll').checked=vs.length>=2;
 
@@ -30357,6 +30497,8 @@ if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
           +'. Set PTN longer (the row above the grid), or choose a shorter span.');
         const opts={ from:Math.max(0,Math.min(cap-1,parseInt($('mlFrom').value,10)||0)),
           bars:chunk, n:5, src:'pat', feel:$('mlFeel').value,
+          /* ARTICULATION, from the control rather than the genre table */
+          gate:parseFloat($('mlGate')?$('mlGate').value:1)||1,
           density:$('mlDens').value, octave:parseInt($('mlOct').value,10)||0,
           poly:$('mlPoly')?$('mlPoly').value:'none',
           converse:!!($('mlConverse')&&$('mlConverse').checked),
@@ -30454,6 +30596,11 @@ if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
       const opts={ from:from, bars:chunk, n:5, role:$('mlRole').value,
         feel:$('mlFeel').value, src:'pat',
         density:$('mlDens').value, octave:parseInt($('mlOct').value,10)||0,
+        /* WRITE AGAINST WHAT IS ALREADY THERE. One option list, so the
+           apply cannot be scored with this and written without it — that
+           drift is what `ensemble()` had between its two literals. */
+        against:mlAgainst(inst, from, chunk),
+        gate:parseFloat($('mlGate')?$('mlGate').value:1)||1,
         seed:(Date.now()&0x7fffffff) };
       mlSpanBars=span; mlChunkBars=chunk;
       const r=await window.MVX.infill(inst,opts);
@@ -30575,8 +30722,15 @@ if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
           if(pr && pr.warning) throw new Error(pr.warning);
           if(!S.chords[target] && src) window.MVX.chords(target, src);
         }
+        /* RECOMPUTED PER CHUNK, because each chunk lands in a DIFFERENT
+           pattern and has to fit what is on that one. Carrying pattern
+           1's notes forward would check chunk 3 against music that is
+           not playing underneath it. The offer was scored against the
+           first pattern's content, which is what "OFFER scores the first
+           chunk only" has always meant. */
         r=await window.MVX.infill(inst,
-          Object.assign({},mlOpts,{apply:(seed+k*2654435761)>>>0}));
+          Object.assign({},mlOpts,{ apply:(seed+k*2654435761)>>>0,
+            against: k===0 ? mlOpts.against : mlAgainst(inst, mlOpts.from, mlChunkBars) }));
         wrote.push(target+1);
       }
       if(chunks>1){ await window.MVX.pattern(startPat,{select:true}); }

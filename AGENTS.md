@@ -534,6 +534,92 @@ two paths agree. That is the third time in this file that *the common
 path was the untested one*, and the second time a fixture convenient for
 every case tested one configuration.
 
+### One voice has to see the others, and the panel never let it
+
+`infill()` has read `o.against` from the start, and it is what switches
+on BOTH of its inter-voice filters — the semitone/minor-9th test against
+what is sounding, and the parallel fifth/octave test against what each
+voice was doing when either last moved. **Nothing in the panel ever
+passed it.** Only `ensemble()`'s internal chain did. So the commonest
+real edit there is — *keep everything, rewrite the lead* — was written as
+though the voice were alone in the pattern, and the only way to find out
+was `harmony()` or `counterpoint()` afterwards.
+
+The fixture that shows it is the part worth keeping, because the obvious
+one proves nothing. A semitone above a CHORD tone was already refused, so
+a clash can only appear where another voice sounds something the chord
+symbol does not contain. Hold **F♯ under Em** — the 9th, an ordinary
+colour note — and the lead is free to play **G**, which is Em's own minor
+third and so the one pitch the chord filter is most certain about:
+
+```
+written blind    8  8  9  6  6  7     false relations, six seeds
+with against     0  0  0  0  0  0
+```
+
+`mlAgainst()` reads the PATTERN, not `schedule()`, because schedule
+reports a TIME and `against` wants an absolute STEP — converting back
+through swing, humanisation and the poly lanes would put the filter and
+the measure into disagreement about when two notes are adjacent, which is
+the fault the parallel-interval section above spent a session on.
+`lk.len` is seconds, `(60/bpm)*beats` where it was written, so the
+inverse is exact. It is recomputed PER CHUNK on a multi-pattern span,
+since each chunk lands in a different pattern and has to fit what is on
+that one.
+
+**AND THE WIRING LOOKED BROKEN WHEN THE ESCAPE WAS WHAT WAS MISSING.**
+With `against` passed, seven of eleven lead notes still landed on G. The
+filter was reached every time and yielded every time, because a strong
+beat — or the last weak slot of a bar that has not stated its third —
+narrows the classes to ONE, `pcChoices=[ch.third]`, and `[G]` filtered by
+"not a semitone above F♯" is empty. The old code said *a rule that
+empties the list has to yield*, so it handed back the clash it had just
+removed everything else for. That is the same shape as the fallback two
+blocks down, which used to fall back to the root, and on a major seventh
+the root IS the clash.
+
+So the semitone filter has a ladder now, like the parallel one. **And the
+order of that ladder is not obvious — all three attempts wrote zero
+clashes and only the third was acceptable:**
+
+| escape | stepwise | repeats | parallel 5ths |
+|---|---|---|---|
+| chord tones first | 0–21% | 36–100%, classes `{root, 5th}` | 0 |
+| stepwise classes only | 57–80% | 10–29% | **1 of 24 pairs** |
+| every safe class, stepwise preferred | 14–55% | 18–73% | 0 |
+
+Reaching for a chord tone first is the mistake this file already paid
+for: chord tones are a third apart by construction, so they are the
+expensive escape, not the cheap one. But narrowing to the stepwise
+classes *alone* shrank the pool the parallel filter underneath escapes
+into and bought a parallel fifth — **"the escape has to be wider than the
+choice was" applies to the filter below this one too.** The pool keeps
+every safe class and merely prefers the stepwise ones, which the contour
+chooser picks anyway because a stepwise class is the nearest to the
+anchor by definition.
+
+Two costs left in deliberately. In that fixture every bar reports **no
+third**, which is structural — Em's third is G and G is banned for the
+whole span — and one seed in six goes static, because a filter that fires
+on every note replaces the strong-beat and third-stating narrowing each
+time and the line loses its shape logic. On real material the escape
+fires occasionally and the genre builds measure **44.5% stepwise against
+the 46.9 norm** with all of this in place. Tuning either further would be
+writing a target for a number.
+
+### `gate` existed and had no control
+
+Articulation spans **0.28 beats (footwork) to 2.18 (doom)** across the
+sixteen recipes, it is audible, and it reached the engine through the
+`GENRES` table only — so a person writing by hand got one fixed note
+length with no way to change it. The same shape as `mlPoly`, which
+existed with no control for several builds, and as `from`, which
+`infill()` took and no control reached. There is a `#mlGate` now, read by
+both OFFER paths, and `writeSurprise()` snaps it to the nearest option
+when it leaves the panel set to what it used — assigning 1.9 to a select
+with no 1.9 in it leaves the control showing whatever it showed before,
+which reads as "the build did not set this".
+
 ### A part does not have to start at bar 1
 
 `infill()` has always taken a `from`, and until now no control in the

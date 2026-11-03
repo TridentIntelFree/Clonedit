@@ -633,6 +633,156 @@ export default async function ({ browser, base }) {
       'disabled from ptn1 [' + chunked.seen[1] + '] ptn6 [' + chunked.seen[6] +
       '] ptn8 [' + chunked.seen[8] + ']');
 
+    /* ---- ONE VOICE HAS TO SEE THE OTHERS ----------------------------
+       `infill()` has read `o.against` all along and it is what switches
+       on BOTH inter-voice filters — the semitone/minor-9th test against
+       what is sounding, and the parallel fifth/octave test against what
+       each voice was doing when either last moved. The panel never
+       passed it; only ensemble()'s internal chain did. So the commonest
+       real edit, "keep everything and rewrite the lead", wrote as though
+       the voice were alone in the pattern.
+
+       THE FIXTURE IS THE WHOLE POINT and it took a try to get right. A
+       semitone above a CHORD tone was already refused, so a clash can
+       only appear where the other voice sounds something the chord
+       symbol does not contain. Here `held` sustains G through every bar
+       — the 9th of Fm, a legal and ordinary colour note — and the lead
+       is free to play Ab, which is Fm's own minor third and so the one
+       pitch the chord filter is most sure about. G against Ab is the
+       interval Bach uses in 1.08% of 179,005 voice-pairs, and nothing
+       in the old path could see it. */
+    t.head('A SINGLE VOICE IS WRITTEN AGAINST WHAT IS ALREADY ON THE GRID');
+    const ag = await page.evaluate(async () => {
+      const w = ms => new Promise(r => setTimeout(r, ms));
+      const g = id => document.getElementById(id);
+      const SEEDS = [11, 2029, 30011, 404017, 5000011, 60000049];
+
+      /* rebuilt from scratch each time, so the only difference between
+         the two sides is whether `against` was passed */
+      /* THE PITCHES ARE READ, NOT ASSUMED. A one-semitone window found no
+         sample in the pack at all ("no pitched samples match"), and a
+         fixed pair of notes cannot guarantee the held note is reachable
+         by the lead — whose range is its own pad note a fifth either
+         way. So: take whatever pad the pack gives, then choose the CHORD
+         so that the held note is its 9th, which makes the clash the lead
+         can walk into exactly the chord's own minor third. */
+      const PC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+      let heldNote = null, chord = null;
+      const fixture = async () => {
+        await window.JBH.clear();
+        await window.JBH.instrument('held', { pack: 'samples/salamander.json',
+          match: '^sal:', lo: 54, hi: 58, max: 1 });
+        heldNote = window.JBH.instPads('held')[0].note;
+        /* the lead's pad sits at or just above it, so heldNote+1 is always
+           inside the lead's own sampled range and the clash is available */
+        await window.JBH.instrument('lead', { pack: 'samples/salamander.json',
+          match: '^sal:', lo: heldNote, hi: heldNote + 5, max: 1 });
+        chord = PC[((heldNote - 2) % 12 + 12) % 12] + 'm';
+        window.JBH.key(PC[((heldNote - 2) % 12 + 12) % 12], 'dorian');
+        window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+        window.JBH.chords(0, [chord, chord, chord, chord]);
+        /* the 9th, held for a whole bar, four times */
+        for (const st of [0, 16, 32, 48])
+          await window.JBH.note('held', heldNote, st, 0.8, { beats: 4 });
+      };
+      const clashes = async () => {
+        const h = await window.JBH.harmony({ src: 'pat' });
+        const f = (h.findings || []).find(x => x.kind === 'false-relation');
+        return f ? f.count : 0;
+      };
+      /* the melodic norms are watched on both sides, because the first
+         version of the escape bought zero clashes by collapsing the line
+         onto the root and the fifth — 0-21% stepwise against a 46.9
+         norm, repeats up to 100% against 21.1. A fix for a real fault
+         that quietly degrades a measure nobody is reading is this
+         repo's longest-standing warning. */
+      const run = async (useAgainst) => {
+        const hits = [];
+        for (const seed of SEEDS) {
+          await fixture();
+          const o = { from: 0, bars: 4, n: 1, src: 'pat', role: 'lead', seed };
+          if (useAgainst) o.against = mlAgainst('lead', 0, 4);
+          await window.JBH.infill('lead', Object.assign({}, o,
+            { apply: (await window.JBH.infill('lead', o)).candidates[0].seed }));
+          const m = await window.JBH.melody('lead', { src: 'pat' });
+          const lp = window.JBH.instPads('lead')[0];
+          const row = S.patterns[0].steps[lp.pad] || [];
+          const pcs = new Set();
+          for (let i = 0; i < row.length; i++) if (row[i] > 0) {
+            const lk = S.patterns[0].locks[lp.pad + ':' + i];
+            pcs.add((((lp.note + ((lk && lk.pitch) || 0)) % 12) + 12) % 12);
+          }
+          hits.push({ rub: await clashes(), pcs: pcs.size,
+            step: m.got ? m.got.step : null, rep: m.got ? m.got.repeat : null });
+        }
+        return hits;
+      };
+      const blind = await run(false);
+      const seeing = await run(true);
+
+      /* AND THROUGH THE CONTROLS, which is what actually shipped broken */
+      await fixture();
+      document.querySelector('#tabs button[data-v="seq"]').click(); await w(120);
+      drawSteps(); await w(120);
+      const all = g('mlAll'); all.checked = false;
+      all.dispatchEvent(new Event('change', { bubbles: true })); await w(150);
+      g('mlInst').value = 'lead';
+      g('mlInst').dispatchEvent(new Event('change', { bubbles: true })); await w(120);
+      const sp = g('mlSpan'); sp.value = '4';
+      sp.dispatchEvent(new Event('change', { bubbles: true })); await w(120);
+      const wait = async (id) => { for (let i = 0; i < 600; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (!g(id).disabled) return; } };
+      g('mlOffer').click(); await wait('mlOffer');
+      g('mlPick').selectedIndex = 0;
+      g('mlPick').dispatchEvent(new Event('change', { bubbles: true })); await w(90);
+      g('mlApply').click(); await wait('mlApply');
+      const panel = await clashes();
+      const wroteAny = (await window.JBH.melody('lead', { src: 'pat' })).notes;
+      return { blind, seeing, panel, wroteAny, heldNote, chord,
+        held: (await window.JBH.melody('held', { src: 'pat' })).notes };
+    });
+    t.ok('the fixture is real — held G and a lead free to play Ab are both there',
+      ag.held === 4 && ag.wroteAny > 0,
+      ag.held + ' held notes at midi ' + ag.heldNote + ' (the 9th of ' + ag.chord +
+      '), ' + ag.wroteAny + ' lead notes');
+    t.ok('WRITTEN BLIND it clashes with the held note, as it always did',
+      ag.blind.every(x => x.rub > 0),
+      'false relations per seed: ' + ag.blind.map(x => x.rub).join(', '));
+    t.ok('and passing `against` removes every one of them',
+      ag.seeing.every(x => x.rub === 0),
+      'with against: ' + ag.seeing.map(x => x.rub).join(', ') +
+      '  (blind: ' + ag.blind.map(x => x.rub).join(', ') + ')');
+    /* ASSERTED AGAINST THE COLLAPSE, NOT AGAINST A NORM. The first
+       escape ordering reached for a chord tone first and the line fell
+       onto two pitch classes — root and fifth — with repeats up to 100%
+       and 0% stepwise. That is the fault worth a test. Pinning the
+       stepwise percentage instead would be writing a target for a
+       number, which is what the longest section of AGENTS.md is about,
+       and the two escapes here genuinely pull against each other:
+       narrowing to the stepwise classes gave the best melodic figures
+       and cost a parallel fifth, because it shrank the pool the
+       interval filter underneath escapes into.
+
+       ONE SEED IN SIX STILL GOES STATIC HERE and that is left in rather
+       than tuned out. This fixture bans a chord tone for the WHOLE span,
+       so the semitone filter fires on every note and replaces the
+       strong-beat and third-stating narrowing each time, which costs the
+       line its shape logic; the spread is printed so the next session
+       sees it. On real material the escape fires occasionally, and the
+       genre builds above measure 44.5% stepwise against the 46.9 norm
+       with this in place. */
+    t.ok('AND IT DOES NOT BUY THAT BY COLLAPSING THE LINE ONTO TWO NOTES',
+      ag.seeing.filter(x => x.pcs >= 3).length >= ag.seeing.length - 1 &&
+      ag.seeing.every(x => x.rep <= 80),
+      'pitch classes ' + ag.seeing.map(x => x.pcs).join('/') +
+      ' · stepwise ' + ag.seeing.map(x => x.step).join('/') + ' (blind ' +
+      ag.blind.map(x => x.step).join('/') + ', norm 46.9) · repeats ' +
+      ag.seeing.map(x => x.rep).join('/') + ' (blind ' +
+      ag.blind.map(x => x.rep).join('/') + ', norm 21.1)');
+    t.ok('THE PANEL PASSES IT TOO — OFFER and WRITE IT, not just the API',
+      ag.panel === 0, ag.panel + ' false relations after WRITE IT');
+
     /* ---- EVERY CONTROL THE HANDLERS REACH FOR MUST EXIST -------------
        mlPoly was referenced by the OFFER handler for several builds and
        was not in the markup at all: an edit script threw before writing
@@ -648,15 +798,15 @@ export default async function ({ browser, base }) {
     const wired = await page.evaluate(() => {
       const need = ['mlTonic', 'mlMode', 'mlProgPick', 'mlProgKind', 'mlChords', 'mlSet',
         'mlInfo', 'mlInst', 'mlRole', 'mlSpan', 'mlFrom', 'mlPtn', 'mlDens', 'mlOct',
-        'mlFeel', 'mlAll', 'mlConverse', 'mlPoly', 'mlOffer', 'mlPick', 'mlApply',
-        'mlDemo', 'mlTagPad', 'mlTagName', 'mlTagGo'];
+        'mlFeel', 'mlGate', 'mlAll', 'mlConverse', 'mlPoly', 'mlOffer', 'mlPick',
+        'mlApply', 'mlDemo', 'mlTagPad', 'mlTagName', 'mlTagGo'];
       const missing = need.filter(id => !document.getElementById(id));
       /* a select the handler reads by value must also offer the values
          the handler branches on, or the branch is dead */
       const opts = (id) => { const e = document.getElementById(id);
         return e ? [...e.options].map(o => o.value) : []; };
       return { missing, poly: opts('mlPoly'), dens: opts('mlDens'),
-        span: opts('mlSpan'), feel: opts('mlFeel') };
+        span: opts('mlSpan'), feel: opts('mlFeel'), gate: opts('mlGate') };
     });
     t.ok('no control the write handlers read is missing from the page',
       wired.missing.length === 0, wired.missing.join(', ') || 'all present');

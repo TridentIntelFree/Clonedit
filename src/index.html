@@ -1096,6 +1096,21 @@ where they come back into alignment. On a grid that relationship is invisible.</
       <option value="7">7 over 8</option>
       <option value="9">9 over 8</option>
     </select>
+    <!-- HOW LONG A NOTE IS HELD. `gate` scales the rhythmic cell's own
+         length, and it reached the engine through the GENRES table only
+         — so across the sixteen recipes articulation spans 0.28 beats
+         (footwork) to 2.18 (doom), and a person writing by hand got one
+         fixed value with no way to change it. The same shape as mlPoly,
+         which existed with no control for several builds. A dub bass
+         that should hang over the bar and a footwork stab that should
+         not are the same note otherwise. -->
+    <select id="mlGate" aria-label="How long each note is held">
+      <option value="0.45">clipped</option>
+      <option value="0.7">short</option>
+      <option value="1" selected>as written</option>
+      <option value="1.5">long</option>
+      <option value="2.2">held</option>
+    </select>
     <!-- WHERE IN THE PATTERN TO WRITE. infill() has always taken a
          `from` and nothing in the panel reached it, so every part was
          written from bar 1 and writing a different ending meant using
