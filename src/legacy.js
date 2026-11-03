@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R252 · 2026-11-03 · the snare uses its round robins';
+const BUILD = 'JBH-88 · R253 · 2026-11-03 · a long span fills every pattern it promised';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -23246,11 +23246,21 @@ function drawSpanPicker(){
   [...sel.options].forEach(o=>{
     const span=Math.max(1, parseInt(o.value,10)||1);
     const chunk=Math.min(span, perPat);
-    const ok=chunk<=cap;
+    const fits=chunk<=cap;
+    /* AND THERE HAS TO BE SOMEWHERE TO PUT THE CHUNKS. The cap above is
+       about one pattern's LEN; a span past four bars also needs that many
+       CONSECUTIVE patterns ahead of this one, and there are eight in all.
+       Tested only for LEN, the picker offered 16 bars on pattern 8 and
+       the write refused afterwards — the same "explains itself after the
+       fact" this function was written to end, one axis over. */
+    const need=Math.ceil(span/chunk);
+    const room=S.patterns.length-S.pattern;
+    const ok=fits && need<=room;
     const base=span+(span===1?' bar':' bars');
     o.disabled=!ok;
     o.textContent = ok ? base
-      : base+' · needs PTN '+(PATLENS.find(L=>L>=chunk*16)||MAXSTEPS);
+      : !fits ? base+' · needs PTN '+(PATLENS.find(L=>L>=chunk*16)||MAXSTEPS)
+      : base+' · needs '+need+' patterns, '+room+' left from here';
     if(ok) widest=o.value;
   });
   const cur=sel.options[sel.selectedIndex];
@@ -24076,7 +24086,16 @@ if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
           pick.appendChild(o);
         });
         $('mlPickRow').hidden=false;
-        $('mlInfo').textContent=r.says;
+        /* SAY THAT ONLY THE FIRST CHUNK IS SCORED. The single-voice offer
+           has said so all along; this one did not, so a person choosing
+           between five sixteen-bar arrangements was choosing between five
+           four-bar ones and had no way to know. */
+        $('mlInfo').textContent=r.says
+          + (span>chunk
+            ? '  These are the first '+chunk+' bars; WRITE IT fills '+span
+              +' bars across '+Math.ceil(span/chunk)+' patterns from this one, '
+              +'each with its own variation of the same idea.'
+            : '');
         return;
       }
       /* A SPAN LONGER THAN A PATTERN IS WRITTEN ACROSS PATTERNS.
@@ -24181,10 +24200,57 @@ if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
     const b=$('mlApply'); b.disabled=true;
     try{
       if(mlEnsemble){
-        const r=await window.MVX.ensemble(mlEnsemble,
-          Object.assign({}, mlOpts, {apply:seed}));
+        /* A MULTI-PATTERN SPAN HAS TO CHUNK HERE TOO, and for a long time
+           it did not. This branch called ensemble() once and returned,
+           three lines above the loop that exists for exactly this — so
+           with ALL ticked, a sixteen-bar span wrote FOUR bars into one
+           pattern and dropped the other twelve without a word. The span
+           control offered 8 and 16 at PTN 64 and enabled them, which is
+           "a control must not offer what cannot work" with the write
+           path, rather than the pattern length, as the thing that cannot.
+           Found by asking for 16 and reading the answer: "over bars 1-4". */
+        const chunks=Math.max(1, Math.ceil(mlSpanBars/mlChunkBars));
+        const startPat=S.pattern;
+        /* the same forward-only rule as the single-voice path: chunks are
+           consecutive patterns or the span is not a span */
+        if(startPat+chunks > S.patterns.length)
+          throw new Error(mlSpanBars+' bars is '+chunks+' patterns and there '
+            +'are only '+S.patterns.length+', so from pattern '+(startPat+1)
+            +' there is room for '+(S.patterns.length-startPat)*mlChunkBars
+            +'. Select pattern '+(S.patterns.length-chunks+1)+' or earlier.');
+        const src=S.chords[startPat] ? S.chords[startPat].slice() : null;
+        const wrote=[];
+        let r=null;
+        for(let k=0;k<chunks;k++){
+          const target=startPat+k;
+          if(k>0){
+            const pr=await window.MVX.pattern(target,{select:true,
+              plen:Math.max(patLen(S.patterns[target]), mlChunkBars*16)});
+            if(pr && pr.warning) throw new Error(pr.warning);
+            if(!S.chords[target] && src) window.MVX.chords(target, src);
+          }
+          /* CHUNK 0 WRITES THE ARRANGEMENT THAT WAS SCORED, by the seed
+             the person picked. A later chunk was scored by nothing, so it
+             is regenerated from an offset base and applied by that base —
+             which ensemble() always has in its set, since its candidate
+             seeds are `base ^ (k*2654435761)` and k=0 is the base itself.
+             Inventing a seed instead gets the apply REFUSED, correctly,
+             and taking the nearest one is how a scored arrangement
+             becomes an unscored one. The info line says which is which. */
+          const o = k===0 ? mlOpts
+            : Object.assign({}, mlOpts, {seed:(mlOpts.seed+k*2654435761)>>>0});
+          r=await window.MVX.ensemble(mlEnsemble,
+            Object.assign({}, o, {apply: k===0 ? seed : o.seed}));
+          wrote.push(target+1);
+        }
+        if(chunks>1){ await window.MVX.pattern(startPat,{select:true}); }
         drawSteps(); drawNotes(); drawMusicalLayer(); dirty();
-        $('mlInfo').textContent=r.says+' Press OFFER again for another set, or undo.';
+        $('mlInfo').textContent=(chunks>1
+          ? ('Wrote '+mlSpanBars+' bars across pattern'+(wrote.length>1?'s ':' ')
+             +wrote.join(', ')+' — pattern '+wrote[0]+' is the arrangement you '
+             +'chose; the others are variations of it on their own seeds, which '
+             +'nothing ranked. ')
+          : '') + r.says+' Press OFFER again for another set, or undo.';
         lcd('WROTE '+r.wrote+' NOTES across '+r.voices.length+' voices');
         return;
       }

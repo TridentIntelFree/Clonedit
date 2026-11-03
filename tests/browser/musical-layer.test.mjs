@@ -551,6 +551,88 @@ export default async function ({ browser, base }) {
     t.ok('and unticking ALL returns the panel to the single-voice path',
       allui.backToOne === true, 'picker hidden again: ' + allui.backToOne);
 
+    /* ---- THE SPAN HAS TO CHUNK ON THIS PATH TOO ----------------------
+       The single-voice WRITE IT has cut a long span into four-bar chunks
+       across consecutive patterns from the start. The ALL branch called
+       ensemble() once and RETURNED, three lines above that loop — so a
+       sixteen-bar span wrote four bars into one pattern and dropped the
+       other twelve in silence, while the span control offered 16 and
+       enabled it. Every test here asked for four bars or fewer, which is
+       the one span where the two paths agree: the common case was the
+       untested one, for the third time in this file.
+
+       Found by driving the panel and reading the answer — asked for 16
+       bars, told "over bars 1-4". Verified against known-bad code by
+       restoring the early return: patterns 2, 3 and 4 come back empty
+       and the first two assertions below fail. */
+    t.head('A SIXTEEN-BAR SPAN WITH ALL TICKED FILLS FOUR PATTERNS');
+    const chunked = await page.evaluate(async () => {
+      await window.JBH.clear();
+      for (const [n, lo, hi] of [['low', 28, 48], ['mid', 52, 72], ['top', 74, 88]])
+        await window.JBH.instrument(n, { pack: 'samples/salamander.json',
+          match: '^sal:', lo, hi, max: 8 });
+      const wait = async (id) => { for (let i = 0; i < 600; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (!document.getElementById(id).disabled) return; } };
+      window.JBH.key('D', 'minor');
+      window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+      window.JBH.chords(0, ['Dm', 'Bb', 'F', 'C']);
+      drawSteps();
+      const all = document.getElementById('mlAll');
+      all.checked = true; all.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 180));
+      const sp = document.getElementById('mlSpan');
+      sp.value = '16'; sp.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 120));
+      document.getElementById('mlOffer').click();
+      await wait('mlOffer');
+      const offered = document.getElementById('mlInfo').textContent;
+      document.getElementById('mlApply').click();
+      await wait('mlApply');
+      /* READ IT NOW. Captured at the end instead, this came back "No
+         chords on pattern 8" — selecting a pattern redraws the panel and
+         the info line is the panel's, so a sentence read three actions
+         later is a different sentence. */
+      const said = document.getElementById('mlInfo').textContent;
+      const hits = S.patterns.map(p => {
+        let n = 0;
+        for (const row of Object.values(p.steps || {})) for (const v of (row || [])) if (v > 0) n++;
+        return n;
+      });
+      /* AND THE PICKER MUST NOT OFFER WHAT HAS NOWHERE TO GO. Sixteen
+         bars is four patterns; from the last one there is room for one,
+         and the LEN test alone said yes. */
+      const seen = {};
+      for (const sel of [0, 5, 7]) {
+        await window.JBH.pattern(sel, { select: true, plen: 64 });
+        await new Promise(r => setTimeout(r, 180));
+        seen[sel + 1] = [...document.getElementById('mlSpan').options]
+          .filter(o => o.disabled).map(o => o.value);
+      }
+      return { hits, offered, seen, said, selected: S.pattern + 1 };
+    });
+    t.ok('the first four patterns all get a part',
+      chunked.hits.slice(0, 4).every(h => h > 0),
+      'hits per pattern: ' + chunked.hits.join(', '));
+    t.ok('and the fifth is left alone — the span stops where it ends',
+      chunked.hits[4] === 0, 'pattern 5 has ' + chunked.hits[4] + ' hits');
+    t.ok('they are VARIATIONS, not four copies of one chunk',
+      new Set(chunked.hits.slice(0, 4)).size >= 3,
+      'hits: ' + chunked.hits.slice(0, 4).join(', '));
+    t.ok('OFFER says only the first chunk was scored',
+      /first 4 bars/.test(chunked.offered) && /across 4 patterns/.test(chunked.offered),
+      chunked.offered.slice(-130));
+    t.ok('WRITE IT names the patterns it filled',
+      /16 bars across patterns 1, 2, 3, 4/.test(chunked.said),
+      chunked.said.slice(0, 120));
+    t.ok('and it hands the selection back to where it started',
+      chunked.hits.length === 8, 'patterns: ' + chunked.hits.length);
+    t.ok('16 bars is offered from pattern 1 and refused from patterns 6 and 8',
+      chunked.seen[1].indexOf('16') < 0 && chunked.seen[6].indexOf('16') >= 0 &&
+      chunked.seen[8].indexOf('16') >= 0 && chunked.seen[8].indexOf('8') >= 0,
+      'disabled from ptn1 [' + chunked.seen[1] + '] ptn6 [' + chunked.seen[6] +
+      '] ptn8 [' + chunked.seen[8] + ']');
+
     /* ---- EVERY CONTROL THE HANDLERS REACH FOR MUST EXIST -------------
        mlPoly was referenced by the OFFER handler for several builds and
        was not in the markup at all: an edit script threw before writing

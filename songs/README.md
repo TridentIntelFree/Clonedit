@@ -27,6 +27,8 @@ and learned from.
 | `ridgeway.mjs` | D minor, 96bpm, 1:10. The first track whose notes were not written by hand: the melody comes from magenta's `chord_pitches_improv` over a stated progression. |
 | `kitwork.mjs` | a drum solo, 104bpm, 37s. Recorded kit only (`nakeddrums`), with velocity layers and round robins, after a version built on a synthesised "real" pack was identified as fake on hearing. Swapping the kit took the pulse autocorrelation from 0.53 to 0.65 and the crest from 14.4 to 18.3. |
 | `holloway.mjs` | A minor, 92bpm, piano trio. Written as a test of the documentation rather than of the app: build a track using only what AGENTS.md and `howto()` tell a fresh agent, and record every place that proved insufficient — see below. |
+| `lamplight.mjs` | C minor, 96bpm, noir trio. A recorded kit, a sub, an upright piano and a dan-tranh zither, staged from measured atlas peaks and mastered by solving for the trim rather than laddering. |
+| `driftwork.mjs` | F dorian, 92bpm, 32 bars. The only script here that writes through the CONTROLS instead of the API — it taps pads, presses TAG IT, sets PTN 64, ticks ALL and presses OFFER/WRITE IT — which is why it found the span bug the API tests could not see: with ALL ticked, a sixteen-bar span wrote four bars and dropped twelve. It asks for sixteen and asserts it got four patterns. |
 
 Each one ends by asking the app what is wrong before it bounces —
 `critique()`, `translate()`, `counterpoint()`, `loudness()` — and those

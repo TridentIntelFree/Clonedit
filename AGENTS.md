@@ -497,6 +497,43 @@ first chunk only — the candidates are what the first four bars sound
 like — which the info line says out loud, because scoring one thing
 and writing another is the sort of quiet mismatch this file is full of.
 
+**AND ALL OF THAT WAS TRUE OF ONE OF THE TWO WRITE PATHS.** The
+paragraph above describes the single-voice WRITE IT. With **ALL** ticked
+the apply handler called `ensemble()` once and `return`ed — three lines
+above the chunk loop written for exactly this — so a sixteen-bar span
+wrote **four bars into one pattern and dropped the other twelve in
+silence**. Measured by driving the panel and reading the answer:
+
+```
+SPAN offers 1 2 4 8 16        nothing disabled at PTN 64
+OFFER  ... ranked by fault, not by worth
+WRITE  wrote 88 notes ... over bars 1–4
+       ptn1 hits63   ptn2 ·   ptn3 ·   ptn4 ·
+```
+
+Three faults, one root. The span control **offered 16 and enabled it**,
+which is *A CONTROL MUST NOT OFFER WHAT CANNOT WORK* with the write path
+rather than the pattern length as the thing that cannot. The ensemble
+OFFER never added the "these are the first 4 bars" sentence the single
+path has always added, so a person choosing between five sixteen-bar
+arrangements was choosing between five four-bar ones with no way to
+know. And the span was silently truncated rather than refused.
+
+It chunks now, by the same rule: consecutive patterns, the progression
+carried forward where the target has none, the selection handed back.
+**A later chunk has to be applied by a seed `ensemble()` really has in
+its set** — the candidate seeds are `base ^ (k*2654435761)`, so the base
+itself is always the k=0 one; inventing a seed gets the apply refused,
+correctly, and taking the nearest is how a scored arrangement becomes an
+unscored one. Chunk 1 is the arrangement that was picked; the rest are
+variations on their own seeds that nothing ranked, and the info line says
+which is which.
+
+**Every test here asked for four bars or fewer** — the one span where the
+two paths agree. That is the third time in this file that *the common
+path was the untested one*, and the second time a fixture convenient for
+every case tested one configuration.
+
 ### A part does not have to start at bar 1
 
 `infill()` has always taken a `from`, and until now no control in the
@@ -941,6 +978,40 @@ instrument you are reading can see the thing you changed.**
 With the kit tuned and the knob counted, `harmony()` passes clean on
 three of four genre builds and the fourth has one voice-pair semitone in
 the whole arrangement.
+
+## Driving the controls is the only way to find these, and it misleads
+
+Every fault in the two sections above was found by working the panel the
+way a person does rather than by calling the API, and that is now the
+third feature in a row where the API tests were green and the control
+was broken. It is worth doing. But a probe that drives the DOM reports
+its own mistakes as app faults, and in one walkthrough here **three
+"bugs" were printed and all three were mine**:
+
+- **A pad listens on `mousedown`, not `click`.** `padPress()` is what
+  sets `S.editPad`, `S.seqPad` and `manualPad`, so `el.click()` on a pad
+  cell selects nothing and every later step operates on whatever was
+  selected before. This printed as *"TAG IT left the pad with no inst"*
+  four times over, from a board where tagging worked perfectly.
+- **A pad cell is BANK-RELATIVE.** `#padgrid .pad` holds sixteen cells
+  and cell *i* is pad `S.bank*16+i`. Asserting against `S.pads[i]` after
+  tapping cell *i* reads four empty pads on a board that opened on bank
+  B. Record `S.editPad` after the tap and read *that* — the index you
+  aimed at is not the index you got, and the app is the one that knows.
+- **The analysers return NESTED shapes.** It is `m.got.{repeat, step,
+  third, leap, range}`, `pu.onGrid.beat`, `pu.pulseStrength`,
+  `c.motion.{oblique, contrary, par5, par8}`, `mo.pitchRecurrence` and
+  `mo.norm.pitch`. Flat names come back `undefined`, which prints as a
+  dash and reads exactly like a check that declined to measure.
+
+And one that is not a mistake but looks like three: `S.patterns[n].len`
+is **an array, one LEN per pad** (polymeter), not a number. `patLen()`
+is the scalar.
+
+So: tap with a real `MouseEvent('mousedown')`, read back what the app
+selected instead of what you asked for, and **before reporting a fault,
+reproduce it from the other direction** — the failing walkthrough above
+had every genuine finding sitting underneath three phantom ones.
 
 ## Check while you build, not after
 
