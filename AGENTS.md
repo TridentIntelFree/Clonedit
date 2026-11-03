@@ -1057,6 +1057,43 @@ phrase and is not how continuous music marks one, and it reported "one
 phrase, 120 bars" on a dense track before the periodicity pass was
 added.
 
+**AND THE FIRST THING IT FOUND WAS NOT A FORM FAULT.** Run on three
+genre builds it reported the identical range — `F1-A#2`, seventeen
+semitones — for noir, house and dnb. **A span that does not vary with
+the material is not a measurement of the material**, and the fault was
+upstream of the script: `exportMidi()` wrote `pad.note`, which is the
+MIDI-IN mapping and on a fresh board is just `36+index`. Four voices
+sampled at 36, 48, 60 and 72 exported as 36, 37, 38, 39 — four octaves
+crushed into four semitones. Anyone opening the .mid in a DAW got the
+rhythm and not the music, and the export had no test at all.
+
+It was corrupting the form analysis it was feeding:
+
+| | with pad numbers | with real pitches |
+|---|---|---|
+| range | F1-A#2 | F1-G5 |
+| noir repeating unit | *none found — through-composed* | **8 bars ×2** |
+| dnb phrases | 1, length [24] | **10, 4 distinct lengths** |
+| dnb harmonic rhythm | 100% | 87% |
+
+A pitched pad exports its sampled note plus the transpose knob, which
+is what the speaker plays and what every analyser reads. A pad with no
+`srcNote` is a drum and keeps `pad.note`, because a drum track's note
+number is a MAP SLOT rather than a pitch — adding the kit tuning there
+would move the kick to a different instrument in the DAW.
+
+This is the `schedule()` pitch-knob bug one level over, found the same
+week: the pitch computed from the wrong source, everything downstream
+faithfully wrong. **When a measurement comes out the same for inputs
+that differ, suspect the measurement's input before its conclusion.**
+
+Two things it reported that are NOT faults, recorded so the next
+session does not fix them. House reads as one 24-bar phrase with no
+internal boundary — house is relentless by design and the detector is
+correctly reporting that there is no break. And harmonic rhythm sits at
+87-100%, a chord change almost every bar. Both are legitimate choices,
+and turning either into a target is this file's longest warning.
+
 Measured from the same chorales, off the fermatas that mark their
 phrase ends (`scripts/study-harmony.py` reports it):
 

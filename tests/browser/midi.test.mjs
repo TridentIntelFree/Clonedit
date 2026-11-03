@@ -378,6 +378,68 @@ export default async function ({ browser, base }) {
     t.ok('all-notes-off (CC 123) is sent', panic.has123, JSON.stringify(panic.all));
     t.ok('all-sound-off (CC 120) is sent too', panic.has120);
 
+    /* ---- THE EXPORT WROTE PAD NUMBERS, NOT PITCHES ------------------
+       `pad.note` is the MIDI-IN mapping — the note that triggers this
+       pad from a keyboard — and on a fresh board it is just 36+index.
+       exportMidi() used it as the note to WRITE, so a four-voice track
+       sampled at 36, 48, 60 and 72 came out as 36, 37, 38, 39: four
+       octaves crushed into four semitones. Anyone opening the .mid in a
+       DAW got the rhythm and not the music.
+
+       It surfaced from outside the app. scripts/midi-structure.mjs
+       reported the identical range, F1-A#2, for noir, house and dnb —
+       and a span that does not vary with the material is not a
+       measurement of the material. It had also been corrupting that
+       script's form analysis: with real pitches, noir's 8-bar repeating
+       unit becomes visible and dnb reads as 10 phrases rather than one
+       24-bar one.
+
+       A pitched pad is its sampled note plus the transpose knob. A pad
+       with no srcNote is a drum, where `pad.note` is correct — a drum
+       track's note number is a MAP SLOT, not a pitch, so adding the kit
+       tuning would move the kick to another instrument in the DAW. */
+    t.head('THE MIDI EXPORT CARRIES THE PITCHES THAT SOUND');
+    const mid = await page.evaluate(async () => {
+      const J = window.JBH;
+      await J.clear();
+      const roots = [36, 48, 60, 72];
+      for (let i = 0; i < 4; i++) {
+        await J.bass({ style: 'sub', midi: roots[i], seconds: 0.4, pad: i });
+        J.pad(i, { inst: 'v' + i, srcNote: roots[i] });
+      }
+      /* a drum: no srcNote, so it must keep its pad note */
+      await J.bass({ style: 'sub', midi: 40, seconds: 0.2, pad: 8 });
+      J.pad(8, { inst: null, srcNote: null });
+      const drumNote = S.pads[8].note;
+      await J.pattern(0, { plen: 16, clear: true, select: true });
+      for (let i = 0; i < 4; i++) J.step(i, i * 4, 0.8);
+      J.step(8, 0, 0.9);
+      document.getElementById('bSrc').value = 'pat';
+      /* capture the blob instead of downloading it */
+      const real = URL.createObjectURL; let blob = null;
+      URL.createObjectURL = (b) => { blob = b; return 'blob:test'; };
+      document.getElementById('btnMidi').click();
+      URL.createObjectURL = real;
+      if (!blob) return { err: 'no blob' };
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      /* every note-on in the file: status 0x90, velocity > 0 */
+      const notes = [];
+      for (let i = 0; i + 2 < buf.length; i++)
+        if (buf[i] === 0x90 && buf[i + 2] > 0 && buf[i + 2] < 128) notes.push(buf[i + 1]);
+      return { notes: [...new Set(notes)].sort((a, b) => a - b),
+        roots, drumNote, padNotes: [0,1,2,3].map(i => S.pads[i].note) };
+    });
+    t.ok('the four voices export at the notes they are SAMPLED at',
+      mid.roots.every(n => (mid.notes || []).includes(n)),
+      'wrote ' + (mid.notes || []).join(',') + ' · sampled at ' + (mid.roots || []).join(','));
+    t.ok('NOT at their pad numbers, which is what it used to write',
+      !(mid.padNotes || []).slice(1).every(n => (mid.notes || []).includes(n)),
+      'pad notes are ' + (mid.padNotes || []).join(',')
+        + ' — four octaves would have come out as four semitones');
+    t.ok('and a drum, having no sampled pitch, keeps its pad note',
+      (mid.notes || []).includes(mid.drumNote),
+      'drum pad note ' + mid.drumNote + ' present');
+
     t.head('JS ERRORS');
     t.ok('none during the whole MIDI run', errors.length === 0, errors.join(' | '));
   } finally {

@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R247 · 2026-11-03 · an uploaded sound that starts late now plays';
+const BUILD = 'JBH-88 · R248 · 2026-11-03 · the MIDI export carries the pitches that sound';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -26397,7 +26397,32 @@ function exportMidi(){
         const L=trackLen(pat,p), idx=(absStepExp+st)%L;
         const v=pat.steps[p][idx]; if(!(v>0)) continue;
         const lk=pat.locks&&pat.locks[p+':'+idx];
-        const baseNote=(S.pads[p].note>=0?S.pads[p].note:36);
+        /* ---- THE EXPORT WROTE PAD NUMBERS, NOT PITCHES ---------------
+           `pad.note` is the MIDI-IN mapping — the note that triggers
+           this pad from a keyboard — and on a fresh board it is just
+           36+index. So a four-voice track sampled at 36, 48, 60 and 72,
+           four octaves apart, exported as 36, 37, 38, 39: four
+           semitones. Every generated track measured `F1-A#2` whatever
+           its registers were, which is how this surfaced —
+           scripts/midi-structure.mjs reported the same 17-semitone span
+           for noir, house and dnb, and a span that does not vary with
+           the material is not a measurement of the material.
+
+           Anyone opening the .mid in a DAW got the rhythm and not the
+           music. Same shape as the schedule() pitch-knob bug one level
+           over: the pitch was computed from the wrong source, so
+           everything downstream was faithfully wrong.
+
+           A PITCHED pad is its sampled note plus the transpose knob,
+           which is what the speaker plays and what every analyser now
+           reads. A pad with no srcNote is a drum, and there `pad.note`
+           is right: a drum track's note number is a MAP SLOT, not a
+           pitch, so adding the kit tuning to it would move the kick to
+           a different instrument in the DAW. */
+        const sp=S.pads[p];
+        const baseNote=(sp.srcNote!=null)
+          ? sp.srcNote+Math.round(sp.pitch||0)
+          : (sp.note>=0?sp.note:36);
         const chord=(lk&&lk.pitches&&lk.pitches.length)?lk.pitches:[(lk&&lk.pitch)||0];   // export the whole chord
         const vel=clamp(Math.round(v*127),1,127);
         let tick=stTick+((lk&&lk.nudge)?Math.round(lk.nudge*TPS):0); if(tick<0) tick=0;
