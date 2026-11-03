@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R249 · 2026-11-03 · sixteen recipes, and note length is one of the levers';
+const BUILD = 'JBH-88 · R250 · 2026-11-03 · velocity opens the filter, so an uploaded sound has expression';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -23642,6 +23642,45 @@ async function writeSurprise(){
   if($('mlProgKind') && G.sevenths) $('mlProgKind').value='7th';
   const spelled=progChords(shape)||[];
 
+  /* ---- VELOCITY HAS TO CHANGE THE TIMBRE, NOT JUST THE LEVEL -------
+     The generator writes a velocity arc per note and a kit with ghost
+     notes and accents, and on a VELOCITY-LAYERED instrument that picks
+     a different recording — which is the whole argument for layers. On
+     a single-sample pad, which is what an uploaded sound is, velocity
+     moved the gain and nothing else. A volume knob, not expression.
+
+     `velFlt` is the routing for it and has been in the app the whole
+     time: velFlt x velocity x 2400 cents of cutoff lift. But it takes
+     TWO settings to do anything, and both default to the wrong one:
+
+       velFlt 0.45, ftype 'off'       quiet -1.9   loud -1.9   0.00dB
+       ftype 'lowpass', velFlt 0      quiet -21.8  loud -21.8  0.00dB
+       ftype 'lowpass', velFlt 0.45   quiet -18.6  loud -10.1  8.50dB
+
+     (2k-4k against 250-500 on a bright painted source, limiter kept
+     out of it at mTrim -20. Measured on a BASS first, where 2k-4k sits
+     34dB down and every row read 0.00dB however well the routing
+     worked — the wrong instrument for the question, twice.)
+
+     So the filter is enabled with it. Gently, and graded by role: a
+     loud bass note is a touch brighter, a hard arp note a lot. And
+     ONLY on a pad whose filter is still 'off' — a filter the person
+     dialled themselves is a decision, and overriding it to add
+     expression would be taking more than was asked for. */
+  const BRIGHT={ bass:{fcut:0.80, velFlt:0.30},
+                 lead:{fcut:0.70, velFlt:0.45},
+                 arp: {fcut:0.65, velFlt:0.55} };
+  const brightened=[];
+  for(const v of vs){
+    const b=BRIGHT[v.role]||BRIGHT.lead;
+    for(const q of window.MVX.instPads(v.inst)){
+      if(S.pads[q.pad].ftype!=='off') continue;      /* their choice stands */
+      window.MVX.pad(q.pad,{ ftype:'lowpass', fcut:b.fcut, fres:0.9,
+        velFlt:b.velFlt });
+      if(brightened.indexOf(v.inst)<0) brightened.push(v.inst);
+    }
+  }
+
   /* ---- sends: this is where most of "it sounds like a record" is --- */
   const [wb,wm,wd]=G.wet||[0.1,0.2,0.1];
   vs.forEach((v,i)=>{ for(const q of window.MVX.instPads(v.inst))
@@ -23801,6 +23840,7 @@ async function writeSurprise(){
        target to aim the bounce at, which is the one honest use of it. */
     +(G.lufs!=null?('Bounce it around '+G.lufs+' LUFS. '):'')
     +(trimmed.length?('Skipped leading silence on '+trimmed.join(', ')+'. '):'')
+    +(brightened.length?('Velocity opens the filter on '+brightened.join(', ')+'. '):'')
     +'Press PLAY. Press this again for another.';
 }
 

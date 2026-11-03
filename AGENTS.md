@@ -770,6 +770,50 @@ deciding where a new helper goes, and **do not wrap the call in a bare
 `catch(e){}`**: both of these were invisible until the catches were made
 to report.
 
+### Velocity has to change the TIMBRE, not just the level
+
+The generator writes a velocity arc per note and a kit with ghost notes
+and accents, and on a velocity-layered instrument that picks a different
+recording — the whole argument for layers. On a SINGLE-SAMPLE pad, which
+is what an uploaded sound is, velocity moved the gain and nothing else.
+A volume knob, not expression.
+
+`velFlt` is the routing and has been in the app all along: velFlt ×
+velocity × 2400 cents of cutoff lift. **It takes TWO settings and both
+default to the wrong one** — `ftype:'off'` means there is no filter to
+move, and `velFlt:0` means no amount to move it by:
+
+```
+velFlt 0.45, ftype 'off'        quiet -1.9   loud -1.9    0.00dB
+ftype 'lowpass', velFlt 0       quiet -21.8  loud -21.8   0.00dB
+ftype 'lowpass', velFlt 0.45    quiet -18.6  loud -10.1   8.50dB
+```
+
+So the build enables the filter with it, graded by role — bass 0.80/0.30,
+lead 0.70/0.45, arp 0.65/0.55 — and **only on a pad whose filter is still
+`off`**. A filter the person dialled is a decision, and overriding it to
+add expression takes more than was asked for. It reports which sounds it
+touched.
+
+**The wrong instrument for the question, twice.** The first two attempts
+measured on a BASS, where 2k-4k sits 34dB below 250-500: lifting a cutoff
+reveals nothing up there and every row read 0.00dB however well the
+routing worked. One of them read −0.90dB, *backwards*, because the louder
+note pushed the limiter. Measure a brightness change on a bright source,
+with `mTrim` low enough that the limiter is nowhere near it. (`paint()`
+takes `partials` as OBJECTS, `{hz, level}`; an array-of-arrays paints
+silence and says so.)
+
+**AND bass() IS NOT A STAND-IN FOR AN UPLOADED SOUND.** Every `bass()`
+style already sets `lowpass / fcut 0.72 / velFlt 0.55`, so a `bass()`
+fixture is the one case this feature correctly skips — and testing
+against it hid the feature completely: the pads came back changed, by
+`bass()`, while the build reported touching nothing. That is the **third**
+time in this file that a `bass()` fixture has concealed the thing under
+test. An uploaded pad is `ftype:'off', fcut:1, velFlt:0`; set that
+explicitly in the fixture or you are testing a different configuration
+from the one every person is in.
+
 ### Two voices moving into the same perfect interval FUSE
 
 The inter-voice filter was about ONE interval, the semitone, and it was

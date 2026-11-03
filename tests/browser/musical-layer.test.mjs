@@ -1051,6 +1051,89 @@ export default async function ({ browser, base }) {
         .every(n => opts.values.includes(n)),
       'footwork doom afro baroque minimal gospel');
 
+    /* ---- VELOCITY HAS TO CHANGE THE TIMBRE, NOT JUST THE LEVEL ------
+       The generator writes a velocity arc and a kit with ghosts and
+       accents, and on a VELOCITY-LAYERED instrument that picks a
+       different recording. On a single-sample pad — which is what an
+       uploaded sound is — velocity moved the gain and nothing else.
+
+       `velFlt` is the routing and has been in the app all along, but it
+       takes TWO settings and both default to the wrong one: there must
+       be a filter to move, and a non-zero amount to move it by. This is
+       the 2x2 that proves it needs both, measured on a BRIGHT source,
+       because the first two attempts used a bass — where 2k-4k sits
+       34dB down, so every row read 0.00dB however well the routing
+       worked. The wrong instrument for the question, twice. */
+    t.head('VELOCITY OPENS THE FILTER, AND IT TAKES TWO SETTINGS');
+    const vel = await page.evaluate(async () => {
+      const J = window.JBH;
+      const tilt = async (velFlt, ftype, v) => {
+        await J.clear();
+        await J.set({ bpm: 100, swing: 0, human: 0, humanDrift: 0, mTrim: -20 });
+        await J.paint({ pad: 0, seconds: 1.0, partials: [
+          { hz: 220, level: 1 }, { hz: 440, level: 0.85 }, { hz: 880, level: 0.8 },
+          { hz: 1760, level: 0.75 }, { hz: 3520, level: 0.7 }, { hz: 7040, level: 0.6 }] });
+        J.pad(0, { inst: 'k', srcNote: 48, velFlt, ftype, fcut: 0.45, fres: 1.0,
+          att: 0.004, dec: 0.6, sus: 0.85, rel: 0.2, gain: 0.9 });
+        await J.pattern(0, { plen: 16, clear: true, select: true });
+        J.step(0, 0, v);
+        const sp = await J.spectrum({ src: 'pat' });
+        const g = (n) => { const r = (sp.bands || []).find(x => x.band === n);
+          return r ? r.db : null; };
+        return +(g('2k-4k') - g('250-500')).toFixed(2);
+      };
+      const d = async (vf, ft) => +((await tilt(vf, ft, 0.95)) - (await tilt(vf, ft, 0.25))).toFixed(2);
+      return { noFilter: await d(0.45, 'off'), noAmount: await d(0, 'lowpass'),
+        both: await d(0.45, 'lowpass') };
+    });
+    t.ok('with no filter to move, the amount does nothing',
+      Math.abs(vel.noFilter) < 1, vel.noFilter + 'dB between a soft and a hard note');
+    t.ok('and a filter on its own does nothing either',
+      Math.abs(vel.noAmount) < 1, vel.noAmount + 'dB');
+    t.ok('TOGETHER a hard note is audibly brighter than a soft one',
+      vel.both > 4,
+      vel.both + 'dB  (no filter ' + vel.noFilter + ' · no amount ' + vel.noAmount + ')');
+
+    /* and the build has to set BOTH, per role, without overriding a
+       filter the person dialled themselves */
+    t.head('THE BUILD GIVES AN UPLOADED SOUND THAT EXPRESSION');
+    const vb = await page.evaluate(async () => {
+      const J = window.JBH;
+      await J.clear(); J.key('C', 'minor');
+      for (let i = 0; i < 3; i++) {
+        await J.bass({ style: 'growl', midi: 36 + i * 14, seconds: 0.6, pad: i });
+        /* AS AN UPLOAD ARRIVES. bass() sets lowpass/0.72/velFlt 0.55
+           itself, so a bass() fixture is the one case the feature
+           correctly skips — and testing against it hid the feature
+           completely. Third time a bass() fixture has done that. */
+        J.pad(i, { inst: 'v' + i, srcNote: 36 + i * 14, ftype: 'off', fcut: 1, velFlt: 0 });
+      }
+      J.pad(2, { ftype: 'highpass', fcut: 0.33, velFlt: 0 });   /* their choice */
+      for (let i = 0; i < 3; i++) {
+        await J.bass({ style: 'sub', midi: 40, seconds: 0.25, pad: 4 + i });
+        J.pad(4 + i, { inst: null });
+      }
+      document.getElementById('mlGenre').value = 'gospel';
+      const btn = document.getElementById('mlDemo'); btn.click();
+      for (let i = 0; i < 900; i++) { await new Promise(r => setTimeout(r, 100));
+        if (!btn.disabled) break; }
+      return { pads: [0, 1, 2].map(i => ({ ftype: S.pads[i].ftype,
+        fcut: +S.pads[i].fcut.toFixed(2), velFlt: +S.pads[i].velFlt.toFixed(2) })),
+        says: (document.getElementById('mlInfo') || btn).textContent };
+    });
+    t.ok('the bass gets a gentle amount and the lead more',
+      vb.pads[0].ftype === 'lowpass' && vb.pads[1].ftype === 'lowpass' &&
+      vb.pads[0].velFlt > 0 && vb.pads[1].velFlt > vb.pads[0].velFlt,
+      'bass fcut ' + vb.pads[0].fcut + '/vel ' + vb.pads[0].velFlt +
+      ' · lead ' + vb.pads[1].fcut + '/' + vb.pads[1].velFlt);
+    t.ok('AND A FILTER THE PERSON SET IS LEFT ALONE',
+      vb.pads[2].ftype === 'highpass' && vb.pads[2].fcut === 0.33 &&
+      vb.pads[2].velFlt === 0,
+      'still ' + vb.pads[2].ftype + ' at ' + vb.pads[2].fcut);
+    t.ok('and it says which sounds it touched',
+      /velocity opens the filter/i.test(vb.says || ''),
+      (vb.says || '').slice(-90));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
