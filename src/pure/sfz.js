@@ -331,3 +331,47 @@ export function sfzMacros(text) {
   return { text: out, defs };
 }
 
+
+/* ---- WHICH LAYER MODE A SAMPLED NOTE SHOULD USE ----------------------
+   A pack can carry two different things in its samples for one note, and
+   they are not interchangeable:
+
+     DYNAMICS   recordings at different velocities. Velocity should
+                choose between them — that is what makes a ghost note a
+                different recording from an accent.
+     ALTERNATES round robins: several takes of the SAME dynamic, so a
+                repeated hit is not the same waveform twice.
+
+   The modes already existed. What was wrong was the decision. It asked
+   `rr>1 && n>=rr*2` — "is there more than one velocity band here" — and
+   when the answer was no it fell back to `vel`, which splits the
+   velocity range across whatever samples are there. For one dynamic's
+   worth of alternates that means velocity switches WHICH TAKE instead of
+   how hard, and every repeat at the same velocity plays the identical
+   recording.
+
+   Measured on `nakeddrums`, the kit this repo recommends. Its snare is
+   three samples all recorded at velocity 0.504 — three round robins of
+   one dynamic — so it failed `n>=rr*2` and got `vel`:
+
+     kick, hats, ride, tom   velrr   same velocity x8 -> 3,4,5,3,4,5,3,4
+     snare                   vel     same velocity x8 -> 2,2,2,2,2,2,2,2
+
+   which is exactly what pickLayerIdx's own comment says velrr exists to
+   prevent. Four of five drums got it; the snare, the loudest thing in a
+   backbeat, did not.
+
+   So count the BANDS rather than testing a threshold. Two or more and
+   the velocity really does mean dynamics; exactly one and the samples
+   are alternates, which is what plain `rr` is for — it cycles and
+   ignores velocity, because there is no dynamic information in them to
+   read. No alternates at all and it is `vel`, which is the case every
+   multi-dynamic library without round robins is in, and the one this
+   must not break. */
+export function layerModeFor(sampleCount, rr){
+  const n = Math.max(0, sampleCount|0), r = Math.max(1, rr|0);
+  if(n < 2) return 'vel';                  /* nothing to choose between */
+  if(r > 1 && Math.floor(n / r) >= 2) return 'velrr';
+  if(r > 1) return 'rr';                   /* one dynamic, several takes */
+  return 'vel';
+}

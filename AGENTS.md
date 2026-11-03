@@ -1679,6 +1679,57 @@ pad's buffer — `freeze()`, `paint()`, `resynth()`, `mutate()` — since
 they all end by loading a new buffer onto a pad. Only `tape()` has
 been checked.
 
+## One dynamic's worth of alternates is not dynamics
+
+AGENTS.md has said from the start that `nakeddrums` is "five velocity
+layers on the kick, three round robins" and to load it with
+`instrument()`. **Four of its five drums got that and the snare did
+not**, for a reason that was in the mode DECISION rather than the layer
+picker, which worked throughout.
+
+A pack can carry two different things per note and they are not
+interchangeable. DYNAMICS are recordings at different velocities and
+velocity should choose between them. ALTERNATES are round robins — takes
+of the SAME dynamic — so a repeat is not the same waveform twice. The
+decision asked `rr>1 && n>=rr*2`, meaning "is there more than one
+velocity band here", and fell back to `vel` when the answer was no.
+`vel` splits the velocity range across whatever samples exist, so for
+one dynamic's worth of alternates velocity switches WHICH TAKE instead
+of how hard, and every repeat at one velocity is identical.
+
+Measured, by firing `pickLayerIdx` eight times at a fixed velocity:
+
+```
+kick, hats, ride, tom   velrr   3,4,5,3,4,5,3,4
+snare                   vel     2,2,2,2,2,2,2,2      <- all three samples
+                                                        recorded at vel 0.504
+```
+
+That is exactly what `pickLayerIdx`'s own comment says `velrr` exists to
+prevent — "a hi-hat struck sixteen times in a bar was sixteen identical
+waveforms" — happening to the loudest thing in a backbeat.
+
+Count the BANDS, not a threshold: `floor(n/rr) >= 2` and the velocity
+really does mean dynamics; exactly one band and the samples are
+alternates, which is what plain `rr` is for, cycling and ignoring
+velocity because there is no dynamic information in them to read. The
+snare reads `0,1,2,0,1,2,0,1` now.
+
+**The regression to protect is the opposite case**: a sampled piano has
+dynamics and no round robins and must keep selecting by velocity.
+`layerModeFor()` is in `src/pure/sfz.js` with that case tested, because
+**this pack is fetched over HTTP and no browser test ever loaded it** —
+the kit this file recommends was itself unverified, which is how the
+snare went unnoticed through every bounce.
+
+**And my own probe perturbed the thing it measured.** Reading the
+velocity sweep for a `velrr` pad gave `2,0,4,5,3`, non-monotonic, which
+looks like a scrambled velocity map and is not: `pickLayerIdx` advances
+the round-robin counter on every call, so sweeping velocities through it
+also advances the take. The snare result stands because `vel` has no
+counter to advance. If a chooser has state, a probe that calls it
+repeatedly is changing the answer.
+
 **And tape() is the wrong call on a velocity-layered kit anyway.** It
 reads ONE buffer off the pad and writes one back. `nakeddrums`' kick
 pad is five velocity layers by three round robins — fifteen separate

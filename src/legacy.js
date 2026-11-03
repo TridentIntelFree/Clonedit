@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R251 · 2026-11-03 · the reference library has a control, so it can grow';
+const BUILD = 'JBH-88 · R252 · 2026-11-03 · the snare uses its round robins';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -10378,10 +10378,42 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       for(let k=1;k<use.length;k++) await window.MVX.layer(pad, use[k].s.id);
       if(use.length>1){
         /* A pack carrying alternates gets both: the velocity band chooses
-           the dynamic, the round robin chooses which take of it. */
+           the dynamic, the round robin chooses which take of it.
+
+           ---- AND ONE DYNAMIC'S WORTH OF ALTERNATES IS NOT DYNAMICS ----
+           The old guard was `rr>1 && use.length>=rr*2`, which asks "is
+           there more than one velocity band here" and then fell back to
+           `vel` when the answer was no. For a drum with ONE dynamic and
+           three alternates that is the wrong conclusion: `vel` splits the
+           velocity range across the three takes, so velocity switches
+           WHICH TAKE rather than how hard, and every repeat at the same
+           velocity plays the identical recording.
+
+           Measured on nakeddrums, which is the kit this repo recommends.
+           Its snare is 3 samples and they are all recorded at velocity
+           0.504 — three round robins of one dynamic — so it failed the
+           `>=rr*2` test and got `vel`:
+
+             kick, hats, ride, tom   velrr   same velocity x8 -> 3,4,5,3,4,5,3,4
+             snare                   vel     same velocity x8 -> 2,2,2,2,2,2,2,2
+
+           Which is precisely what the velrr comment in pickLayerIdx says
+           that mode exists to prevent: "a hi-hat struck sixteen times in
+           a bar was sixteen identical waveforms". Four of five drums got
+           it and the snare — the loudest thing in a backbeat — did not.
+
+           So the number of BANDS decides, not a threshold: two or more
+           and the velocity means dynamics, exactly one and the samples
+           are alternates of a single dynamic, which is what plain `rr`
+           is for. It cycles and ignores velocity, because there is no
+           dynamic information in them to read. */
         const rr=Math.max(1, (o.rr!=null?o.rr|0:(packManifest&&packManifest.rr)|0)||1);
-        if(rr>1 && use.length>=rr*2){ S.pads[pad].layMode='velrr'; S.pads[pad].layRR=rr; }
-        else S.pads[pad].layMode='vel';
+        /* the rule is in src/pure/sfz.js so it can be unit-tested without
+           a browser or the network — this pack is fetched over HTTP and
+           no test loaded it, which is how the snare went unnoticed */
+        const lm=layerModeFor(use.length, rr);
+        S.pads[pad].layMode=lm;
+        if(lm==='velrr') S.pads[pad].layRR=rr;
         if(o.xfade!==false) S.pads[pad].layXf=(o.xfade==null?0.3:+o.xfade);
         layered++;
       }
