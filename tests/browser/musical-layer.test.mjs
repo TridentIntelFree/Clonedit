@@ -965,6 +965,92 @@ export default async function ({ browser, base }) {
       /leading silence/i.test(lead.says || ''),
       (lead.says || '').slice(-80));
 
+    /* ---- ONE OPTION LIST, BECAUSE THERE WERE TWO --------------------
+       ensemble() calls infill() twice — once per candidate while
+       OFFERING and once per voice while APPLYING — and each call wrote
+       its own object literal, three hundred lines apart. `gate`, a new
+       note-length lever, was added to the offering list and missed on
+       the applying one, so the offer was scored WITH it and the
+       arrangement written WITHOUT it.
+
+       Measured, before the fix, through ensemble: 1.09, 1.01, 0.95,
+       0.95 beats for gates of 0.5, 1, 2 and 3 — no effect, and slightly
+       backwards. The same gates through infill() directly: 0.61, 1.13,
+       2.25, 2.92. A lever that works on one path and not the other is
+       how "scored one thing, wrote another" looks from outside.
+
+       This asserts the WRITTEN notes through the ensemble path, which
+       is the one that was broken, and it is a monotone check rather
+       than a target: longer gate, longer notes, with the four-beat cap
+       binding at the top. */
+    t.head('NOTE LENGTH IS A LEVER, ON THE PATH THAT WRITES');
+    const gate = await page.evaluate(async () => {
+      const J = window.JBH, rows = [];
+      for (const g of [0.5, 1, 2, 3]) {
+        await J.clear();
+        await J.set({ bpm: 100, swing: 0, human: 0, humanDrift: 0 });
+        J.key('C', 'minor');
+        for (let i = 0; i < 3; i++) {
+          await J.bass({ style: 'sub', midi: 36 + i * 12, seconds: 2.0, pad: i });
+          J.pad(i, { inst: 'v' + i, srcNote: 36 + i * 12 });
+        }
+        await J.pattern(0, { plen: 64, clear: true, select: true });
+        J.chords(0, ['Cm', 'Fm', 'G7', 'Cm']);
+        const vs = [{ inst: 'v0', role: 'bass' }, { inst: 'v1', role: 'lead' },
+          { inst: 'v2', role: 'arp' }];
+        const oo = { from: 0, bars: 4, n: 1, src: 'pat', density: 'sparse',
+          poly: 'none', converse: false, feel: 'straight', seed: 4242, gate: g };
+        const off = await J.ensemble(vs, oo);
+        await J.ensemble(vs, Object.assign({}, oo,
+          { seed: off.seed, apply: off.candidates[0].seed }));
+        const sc = await J.schedule({ src: 'pat', full: true });
+        const lens = (sc.events || [])
+          .filter(e => S.pads[e.pad] && S.pads[e.pad].inst)
+          .map(e => e.len).filter(x => x > 0);
+        const mean = lens.length ? lens.reduce((a, b) => a + b, 0) / lens.length : 0;
+        rows.push({ g, beats: +(mean * 100 / 60).toFixed(2), n: lens.length });
+      }
+      return rows;
+    });
+    const gb = gate.map(r => r.beats);
+    t.ok('a shorter gate really writes shorter notes through ensemble',
+      gb[0] < gb[1] * 0.75,
+      'gate 0.5 -> ' + gb[0] + ' beats vs gate 1 -> ' + gb[1]);
+    t.ok('AND A LONGER ONE WRITES LONGER — the half that was missing',
+      gb[2] > gb[1] * 1.5 && gb[3] >= gb[2],
+      gate.map(r => 'gate ' + r.g + ' ' + r.beats + 'b').join(' · '));
+
+    /* ---- THE DROPDOWN IS THE TABLE, NOT A COPY OF IT -----------------
+       The option list was written out in the markup, so adding six
+       recipes to the engine left the control offering ten: they existed
+       and were unreachable. It is built from GENRES now, and this is
+       what stops the two drifting again.
+
+       It also pins where the builder has to LIVE. legacy.js is not one
+       flat scope — everything after `if($('mlTonic')){` is inside that
+       block — so the first version of the picker sat outside it, could
+       not see GENRES, threw "GENRES is not defined" into a try/catch,
+       and left the control empty. Emptier than the duplication it was
+       fixing. `typeof X` from the page tells you which side of that
+       boundary a name is on. */
+    t.head('EVERY RECIPE THE ENGINE HAS IS REACHABLE FROM THE CONTROL');
+    const opts = await page.evaluate(() => {
+      const sel = document.getElementById('mlGenre');
+      return { values: [...sel.options].map(o => o.value).filter(Boolean),
+        labelled: [...sel.options].filter(o => o.value && /—/.test(o.textContent)).length,
+        blank: [...sel.options].filter(o => !o.value).length };
+    });
+    t.ok('the control offers sixteen recipes and a surprise-me',
+      opts.values.length >= 16 && opts.blank === 1,
+      opts.values.length + ' recipes: ' + opts.values.join(' '));
+    t.ok('and every one carries its own one-line description',
+      opts.labelled === opts.values.length,
+      opts.labelled + ' of ' + opts.values.length + ' labelled from the table');
+    t.ok('including the six that the hardcoded list did not have',
+      ['footwork', 'doom', 'afro', 'baroque', 'minimal', 'gospel']
+        .every(n => opts.values.includes(n)),
+      'footwork doom afro baroque minimal gospel');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

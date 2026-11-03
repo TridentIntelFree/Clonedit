@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R248 · 2026-11-03 · the MIDI export carries the pitches that sound';
+const BUILD = 'JBH-88 · R249 · 2026-11-03 · sixteen recipes, and note length is one of the levers';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -10719,6 +10719,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        1 2 3 5 6 in a major one, which are the two anhemitonic
        pentatonics — no semitones, which is the point. */
     const pentaOnly = String(o.scale||'')==='penta';
+    /* 1 is the cell library as written; a recipe moves it either way */
+    const GATE = clamp(o.gate==null?1:+o.gate, 0.25, 3);
     /* DECLARED HERE, ABOVE THE READER. Placed further down beside the
        other option reads, the IIFE below ran first and hit a temporal
        dead zone — "Cannot access 'pentaOnly' before initialization" —
@@ -10979,7 +10981,21 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           slots=extra;
         }
         for(let si=0; si<slots.length; si++){
-          const [st, beats]=slots[si];
+          /* ---- HOW LONG A NOTE IS HELD IS PART OF THE STYLE ----------
+             The cell library fixes a length per slot, so every recipe
+             got the same articulation however different its tempo and
+             harmony were — a dub bass that should hang over the bar and
+             a footwork stab that should not were the same note with
+             different drums under them. `gate` scales it: below 1 is
+             staccato, above 1 is legato and notes ring into each other.
+
+             Clamped to a quarter-step floor so a stab is still a note,
+             and to four beats so a held one cannot outlast the bar it
+             was written for and arrive under a chord that was never
+             checked against it — which is the ringing-note problem this
+             repo already has a long section about. */
+          const [st, rawBeats]=slots[si];
+          const beats=+clamp(rawBeats*GATE, 0.25, 4).toFixed(3);
           const strong = st===0 || st===8;
           const last = si===slots.length-1;
           let pcChoices;
@@ -14537,6 +14553,27 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
                    : [{from:from+half, bars:bars-half}];
     };
 
+    /* ---- ONE OPTION LIST, BECAUSE THERE WERE TWO -------------------
+       This function calls infill() twice — once per candidate while
+       OFFERING, and once per voice while APPLYING — and each call wrote
+       its own object literal. So an option added to one and not the
+       other is scored and not written, which is this file's "quietly
+       scoring one thing and writing another" with the two sites three
+       hundred lines apart.
+
+       It happened immediately. `gate` was added to the offering list
+       and missed on the applying one, and measured through ensemble the
+       lever did nothing: 1.09, 1.01, 0.95, 0.95 beats for gates of 0.5,
+       1, 2 and 3, while the same gates through infill() directly gave
+       0.61, 1.13, 2.25 and 2.92. The offer was scored with the gate and
+       the arrangement written without it.
+
+       Built once now. A third option cannot drift because there is
+       nowhere for it to drift to. */
+    const voiceOpts=(v,t)=>({ from:t.from, bars:t.bars, role:v.role,
+      src:o.src||'pat', lo:v.lo, hi:v.hi, shape:o.shape, feel:o.feel,
+      density:o.density, octave:o.octave, scale:o.scale, gate:o.gate });
+
     const buildOne=async(v, against, seed)=>{
       /* FORWARD EVERYTHING THE PANEL SENDS. density and octave were
          dropped here — the UI set them, ensemble() accepted them and
@@ -14546,10 +14583,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
          does not read it, and nothing to notice it. */
       const out=[];
       for(const t of turnsFor(v, v.i)){
-        const r=await this.infill(v.inst, { from:t.from, bars:t.bars, n:1, role:v.role,
-          src:o.src||'pat', seed, against, lo:v.lo, hi:v.hi,
-          shape:o.shape, feel:o.feel, density:o.density, octave:o.octave,
-          scale:o.scale });
+        const r=await this.infill(v.inst,
+          Object.assign(voiceOpts(v,t), { n:1, seed, against }));
         const c=r.candidates[0];
         for(const [midi,step,vel,beats,nudge] of c.notes)
           out.push({midi,step,vel,beats,nudge,inst:v.inst});
@@ -14724,9 +14759,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         /* the SAME turns the candidate was built from, or the written
            arrangement is not the scored one */
         for(const t of turnsFor(v, v.i)){
-          const r=await this.infill(v.inst, { from:t.from, bars:t.bars, role:v.role,
-            src:o.src||'pat', lo:v.lo, hi:v.hi, shape:o.shape, feel:o.feel,
-            density:o.density, octave:o.octave, scale:o.scale, against:sofar, apply:vseed });
+          const r=await this.infill(v.inst,
+            Object.assign(voiceOpts(v,t), { against:sofar, apply:vseed }));
           wrote+=r.wrote||0;
         }
         sofar=sofar.concat(chosen.parts[v.inst]||[]);
@@ -23095,6 +23129,12 @@ function drawMusicalLayer(){
      until they finish it. */
   if(k) $('mlMode').value = k.mode;
   $('mlBarsLbl').textContent = bars+(bars===1?' BAR':' BARS');
+  /* NOT drawGenrePicker() — it lives inside the `if($('mlTonic')){`
+     block further down and this function does not, so calling it from
+     here threw "drawGenrePicker is not defined" on EVERY redraw and
+     took the rest of drawMusicalLayer() with it: 19 failures in one
+     suite from one misplaced call. The list is static anyway, so it is
+     built once at wire-up and never needs refreshing. */
   drawFromPicker(); drawSpanPicker();
   /* PTN mirrors patLenSel on the SEQ tab — the same state, reachable from
      where the refusals that name it appear */
@@ -23398,10 +23438,51 @@ const GENRES={
                 kick:[0,14,28,42], snare:[21,35], hat:2, lufs:-11,
                 says:'seven over eight across a 48-step pattern' },
   dub:        { bpm:70,  swing:0.10, human:0.12, drift:0.20, dens:'sparse',
-                feel:'straight', poly:'none',  wet:[0.10,0.30,0.42],
+                feel:'straight', poly:'none',  wet:[0.10,0.30,0.42], gate:1.9,
                 fams:['two-chord vamp','one chord','folk'],
                 kick:[0,32], snare:[24,56], hat:0, lufs:-14,
-                says:'mostly delay and space, bass and a rimshot' }
+                says:'mostly delay and space, bass that hangs over the bar' },
+  /* ---- SIX MORE, AND EACH HAD TO EARN ITS ROW --------------------------
+     A recipe is only a recipe if it moves levers the engine really has.
+     The test beside these asserts no two come out the same, because a
+     row that differs only in its name is a name. The ones below fill
+     real gaps in what the first ten could reach: nothing above 142 but
+     dnb, nothing under 64, nothing without a kit at all, and — until
+     `gate` — no way at all to say how long a note is held. */
+  footwork:   { bpm:160, swing:0,    human:0.04, drift:0.05, dens:'busy',
+                feel:'3',        poly:'none',  wet:[0.04,0.12,0.18], gate:0.45,
+                fams:['one chord','two-chord vamp'],
+                kick:[0,3,6,16,19,22,32,35,38,48,51,54], snare:[12,28,44,60],
+                hat:4, lufs:-9,
+                says:'160, rolling threes, everything clipped short' },
+  doom:       { bpm:52,  swing:0,    human:0.18, drift:0.26, dens:'sparse',
+                feel:'straight', poly:'none',  wet:[0.34,0.60,0.30], gate:2.6,
+                fams:['lament','neapolitan','one chord'],
+                kick:[0,32], snare:[16,48], hat:0, lufs:-13,
+                says:'52bpm, notes held until they fall over' },
+  afro:       { bpm:112, swing:0.04, human:0.09, drift:0.10, dens:'busy',
+                feel:'straight', poly:'spread', wet:[0.08,0.22,0.14], gate:0.7,
+                fams:['two-chord vamp','mixolydian borrow','folk'],
+                kick:[0,10,16,26,32,42,48,58], snare:[12,28,44,60], hat:2,
+                lufs:-11,
+                says:'interlocking 3+3+2, cross-tempo upper parts' },
+  baroque:    { bpm:104, swing:0,    human:0.05, drift:0.06, dens:'busy',
+                feel:'straight', poly:'none',  wet:[0.14,0.26,0.06], gate:1.25,
+                sevenths:true, converse:true,
+                fams:['circle','secondary ii-V','harmonic cadence','turnaround'],
+                kick:[], snare:[], hat:0, lufs:-16,
+                says:'no kit at all — three voices answering each other' },
+  minimal:    { bpm:128, swing:0,    human:0.02, drift:0.04, dens:'sparse',
+                feel:'straight', poly:'none',  wet:[0.05,0.14,0.22], gate:1.5,
+                fams:['one chord'],
+                kick:[0,16,32,48], snare:[], hat:8, lufs:-12,
+                says:'one chord, almost nothing, and it does not stop' },
+  gospel:     { bpm:76,  swing:0.16, human:0.15, drift:0.14, dens:'normal',
+                feel:'straight', poly:'none',  wet:[0.14,0.32,0.12], gate:1.3,
+                sevenths:true,
+                fams:['circle','secondary ii-V','turnaround','sensitive'],
+                kick:[0,20,32,52], snare:[16,48], hat:4, lufs:-12,
+                says:'swung sevenths, backbeat and ghosts, warm' }
 };
 
 /* ---- A KIT IS NOT ONE VELOCITY REPEATED ------------------------------
@@ -23458,6 +23539,26 @@ function writeKit(drums, G, PLEN, opt){
       if(st<PLEN) window.JBH.step(drums[1], st, +(0.34+k*0.08).toFixed(2)); }
     if(drums[0] && base+15<PLEN) window.JBH.step(drums[0], base+15, 0.6);
   }
+}
+
+/* ---- THE DROPDOWN IS THE TABLE, not a copy of it --------------------
+   Each row's own `says` is the label, so a recipe cannot be added to the
+   engine and left out of the control, and the two cannot disagree about
+   what a genre is called. Rebuilt in place so the person's current
+   choice survives a redraw. */
+function drawGenrePicker(){
+  const sel=$('mlGenre'); if(!sel) return;
+  const names=Object.keys(GENRES);
+  if(sel.options.length===names.length+1) return;      /* already built */
+  const keep=sel.value;
+  while(sel.options.length>1) sel.remove(1);
+  for(const n of names){
+    const o=document.createElement('option');
+    o.value=n;
+    o.textContent=n+' — '+(GENRES[n].says||'');
+    sel.appendChild(o);
+  }
+  if(keep && GENRES[keep]) sel.value=keep;
 }
 
 async function writeSurprise(){
@@ -23646,7 +23747,8 @@ async function writeSurprise(){
        sees, which is the trap this file keeps a section for, committed
        in the same hour I quoted it. */
     const o={ from:0, bars, n:5, src:'pat', density:sec.dens, octave:0,
-      poly:sec.poly, converse:sec.conv, seed:sec.seed,
+      poly:sec.poly, converse:sec.conv||!!G.converse, seed:sec.seed,
+      gate:G.gate,
       feel:(sec.thin?'straight':(G.feel||'straight')),
       scale:(G.penta?'penta':undefined) };
     if(vs.length>=2){
@@ -23702,6 +23804,17 @@ async function writeSurprise(){
     +'Press PLAY. Press this again for another.';
 }
 
+/* FILLED AT WIRE-UP, not only on a panel redraw. The first version
+   called drawGenrePicker() from drawMusicalLayer() alone, which runs
+   inside drawSteps() — so the control was EMPTY until the step grid
+   happened to be drawn, and a probe that read it before that saw zero
+   options. Replacing a hardcoded list with one that is sometimes not
+   there is worse than the duplication it was fixing; the redraw stays
+   as a refresh, this is the guarantee. */
+/* NOT swallowed. A bare catch here would have hidden exactly the fault
+   that cost 19 tests, and an empty control is not obviously empty. */
+try{ drawGenrePicker(); }
+catch(e){ logErr('genre picker: '+(e&&e.message?e.message:e)); }
 if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
   const b=$('mlDemo'); b.disabled=true; const was=b.textContent; b.textContent='writing…';
   try{

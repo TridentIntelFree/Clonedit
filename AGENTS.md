@@ -710,6 +710,66 @@ kit cannot exist. That is the same lesson as the `instrument()` fixture
 two sections up, and the third time in this file: *when a convenience
 exists for setting up a test, check what configuration it is hiding.*
 
+### Sixteen recipes, and legacy.js is not one flat scope
+
+Six more: footwork (160, rolling threes), doom (52, held), afro
+(interlocking 3+3+2), baroque (no kit, three voices answering), minimal
+(one chord at 128) and gospel (swung sevenths). They fill real gaps —
+nothing was above 142 but dnb, nothing under 64, and nothing without a
+kit at all.
+
+**The new lever is note length.** The cell library fixed articulation,
+so every recipe got the same one however different its tempo and
+harmony: a dub bass that should hang over the bar and a footwork stab
+that should not were the same note with different drums under them.
+`gate` scales the cell's own length, clamped to a quarter-step floor and
+a four-beat ceiling — a held note must not outlast the bar it was
+checked against, which is the ringing-note problem this file already
+has a section on. Across the sixteen, articulation spans **0.28 beats
+(footwork) to 2.18 (doom)**, and it tracks the recipe rather than the
+tempo.
+
+**ensemble() HAD TWO OPTION LISTS**, and that is the finding worth
+keeping. It calls `infill()` once per candidate while OFFERING and once
+per voice while APPLYING, three hundred lines apart, each with its own
+object literal. `gate` went into the first and not the second, so the
+offer was scored WITH it and the arrangement written WITHOUT:
+
+```
+through ensemble   1.09  1.01  0.95  0.95   gates 0.5 1 2 3 — no effect
+through infill     0.61  1.13  2.25  2.92   the same gates, working
+```
+
+That is "quietly scoring one thing and writing another" from the DEMO
+section, in a second place. It was nearly shipped: the genre table read
+plausibly in SECONDS, because a faster tempo shortens notes on its own,
+and only converting to BEATS showed every gate at or above 1 landing on
+the same number. **When a lever has no effect, convert to the unit the
+lever is in before believing it.** Built from one `voiceOpts()` now, so
+a third option has nowhere to drift to.
+
+**And the dropdown was a second copy of the table.** Six recipes were
+added to the engine and the control went on offering ten: they existed
+and were unreachable. It is generated from `GENRES`, each row's own
+`says` as its label.
+
+**legacy.js IS NOT ONE FLAT SCOPE, which cost two rounds.** Everything
+after `if($('mlTonic')){` — the whole key/chords/WRITE region, `GENRES`,
+`writeSurprise` — is inside that block. A helper placed just outside it
+cannot see the table inside it: the first picker threw "GENRES is not
+defined" into a `try/catch` and left the control EMPTY, which is worse
+than the duplication it was fixing. Moving it inside then broke the call
+from `drawMusicalLayer()`, which is outside: **19 failures in one suite
+from one misplaced call**, because the throw took the rest of the redraw
+with it.
+
+`typeof X` evaluated in the page tells you which side of that boundary a
+name is on — `drawSpanPicker` and `leadSilence` come back `function`,
+`GENRES` and `writeSurprise` come back `undefined`. Check that before
+deciding where a new helper goes, and **do not wrap the call in a bare
+`catch(e){}`**: both of these were invisible until the catches were made
+to report.
+
 ### Two voices moving into the same perfect interval FUSE
 
 The inter-voice filter was about ONE interval, the semitone, and it was
