@@ -66,6 +66,35 @@ import { envelopeRms } from './timbre.js';
                 because it drags the timing median around. 30ms is
                 faster than anyone plays and slow enough to coalesce
                 the ragged edge of one hit. */
+/* THE ONSET-STRENGTH ENVELOPE, exported because tempo wants it.
+ *
+ * `onsets()` computed this and threw it away, returning only the times
+ * it picked. But picked times are the wrong input for finding a TEMPO:
+ * thresholding discards how strongly each frame rose, and an
+ * autocorrelation over a continuous strength curve finds a period that
+ * a list of accepted peaks can miss entirely -- a quiet ghost note that
+ * failed the threshold still carries the beat.
+ *
+ * So the rise in log energy is a function of its own now, and
+ * `onsets()` is the thresholding step on top of it. One computation,
+ * two questions. */
+export function onsetStrength(data, sampleRate, opt) {
+  const o = opt || {};
+  const win = o.win || 0.005;
+  const env = envelopeRms(data, sampleRate, win);
+  if (env.length < 3) return { flux: [], winSec: win, peak: 0 };
+  let peak = 0;
+  for (const v of env) if (v > peak) peak = v;
+  if (peak <= 0) return { flux: [], winSec: win, peak: 0 };
+  const eps = peak * 1e-4;
+  const flux = new Array(env.length).fill(0);
+  for (let i = 1; i < env.length; i++) {
+    const d = Math.log(env[i] + eps) - Math.log(env[i - 1] + eps);
+    flux[i] = d > 0 ? d : 0;
+  }
+  return { flux, env, winSec: win, peak };
+}
+
 export function onsets(data, sampleRate, opt) {
   const o = opt || {};
   const win = o.win || 0.005;

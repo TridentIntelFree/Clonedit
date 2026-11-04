@@ -31,6 +31,10 @@ export * from './take.js';
    corpora, could only ever read steps the sequencer scheduled. This is
    the bridge from audio to notes, and it is monophonic and says so. */
 export * from './pitch.js';
+/* HOW FAST IS THIS. Nothing here could answer that: pulse() measures
+   whether a beat can be found at a tempo the app already set, and says
+   nothing about a recording that arrived with a tempo of its own. */
+export * from './tempo.js';
 /* recipes: slots with a measurable brief, and a seeded generator */
 export * from './recipes.js';
 /* the measured drum figures the recipes draw from. Exported rather than

@@ -21,7 +21,7 @@ export default async function ({ browser, base }) {
     t.head('EVERY CONTROL IS ACTUALLY IN THE MARKUP');
     const present = await page.evaluate(() => {
       const ids = ['mlRecipe', 'mlFit', 'mlSlots', 'btnTimbre', 'timbreInfo',
-        'btnTakeMeasure', 'takeInfo'];
+        'btnTempo', 'btnTakeMeasure', 'takeInfo'];
       const out = {};
       for (const id of ids) {
         const el = document.getElementById(id);
@@ -29,7 +29,7 @@ export default async function ({ browser, base }) {
       }
       return out;
     });
-    t.ok('all seven exist',
+    t.ok('all eight exist',
       Object.values(present).every(v => v !== 'MISSING'), JSON.stringify(present));
     t.ok('AND CHECK MY SOUNDS STARTS DISABLED, because fit() refuses with no recipe',
       present.mlFit === 'present (disabled)', 'mlFit is ' + present.mlFit);
@@ -111,6 +111,37 @@ export default async function ({ browser, base }) {
     t.ok('it answers with attack, ring and the gap it needs',
       /speaks in \d+ms/.test(tb) && /rings \d+ms/.test(tb) && /sixteenths|sixteenth/.test(tb),
       tb.slice(0, 170));
+
+    t.head('HOW FAST IS THIS LOOP');
+    const tp = await page.evaluate(async () => {
+      /* a 12s loop at a known 128bpm, dropped onto the selected pad */
+      const SR = AC.sampleRate, bpm = 128, beat = 60 / bpm, secs = 12;
+      const buf = AC.createBuffer(1, Math.round(SR * secs), SR);
+      const d = buf.getChannelData(0);
+      for (let k = 0; k * beat < secs; k++) {
+        const s = Math.round(k * beat * SR);
+        for (let i = 0; i < SR * 0.3 && s + i < d.length; i++) {
+          const t2 = i / SR;
+          d[s + i] += 0.9 * Math.exp(-t2 / 0.06) * Math.sin(2 * Math.PI * 55 * t2);
+          if (k % 2) d[s + i] += 0.5 * Math.exp(-t2 / 0.05) * (Math.random() * 2 - 1);
+        }
+      }
+      S.buffers.push(buf);
+      const pad = S.pads.findIndex(p => p.bufId < 0);
+      S.pads[pad].bufId = S.buffers.length - 1;
+      S.editPad = pad;
+      document.getElementById('btnTempo').click();
+      for (let i = 0; i < 160; i++) {
+        await new Promise(r => setTimeout(r, 50));
+        if (/bpm/.test(document.getElementById('timbreInfo').textContent)) break;
+      }
+      return document.getElementById('timbreInfo').textContent;
+    });
+    t.ok('it finds the tempo of a loop the person loaded',
+      /12[6-9](\.\d)?bpm|128bpm/.test(tp), tp.slice(0, 150));
+    t.ok('AND NAMES THE HALF OR DOUBLE, since nothing in the audio settles it',
+      /half or twice as fast/.test(tp) && /min and max/.test(tp),
+      tp.slice(0, 220));
 
     t.head('HOW DID THAT TAKE SIT');
     const take = await page.evaluate(async () => {

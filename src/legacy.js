@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R263 · 2026-11-04 · it starts on a Mac and a PC now';
+const BUILD = 'JBH-88 · R264 · 2026-11-04 · it can tell how fast your loop is';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -16112,6 +16112,15 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        SCHEDULE, which the app knows exactly. A take is audio off the
        mic bus and none of them can see it. */
     producing: [
+      'tempo(pad) is how fast a sound somebody brought with them actually is, and '
+        + 'the one measurement that makes building around their own loop possible: it '
+        + 'could be played, chopped and pitched and never lined up, because nothing '
+        + 'here could ask. pulse() measures a beat against the tempo the sequencer SET, '
+        + 'which is a different question. It also gives where the first beat falls, '
+        + 'which matters as much as the period for alignment. It NAMES THE HALF AND THE '
+        + 'DOUBLE every time, because nothing in the audio settles which a person would '
+        + 'tap and no confidence threshold separates the right readings from the wrong '
+        + 'ones; pass min and max if you know the range and it is exact.',
       'events({since}) is what the person just did — a take landing, the transport '
         + 'starting or stopping — with the numbers already attached. Poll it with the '
         + 'seq you last saw instead of asking them whether they recorded something. The '
@@ -17120,6 +17129,42 @@ window.MVX.take=function(which, opt){
   const bpm=o.bpm!=null?Math.abs(+o.bpm):Math.abs(S.bpm||120);
   const m=measureTake(buf.getChannelData(0), buf.sampleRate, bpm, o);
   return Object.assign({track:i+1, name:trk.name||('take'+(i+1)), bpm}, m);
+};
+/* HOW FAST IS THE SOUND ON THIS PAD.
+
+   The one thing needed to build around something somebody brought with
+   them. An uploaded loop could already be played, chopped and pitched
+   and never lined up with anything, because the app had no way to ask
+   its tempo -- pulse() measures a beat against a tempo the sequencer
+   SET, which is a different question.
+
+   It reports the half and the double every time, because nothing in the
+   audio settles which a person would tap and a measurement here found
+   no confidence threshold that separates the right answers from the
+   wrong ones. Pass min and max if you know the range and it is exact. */
+window.MVX.tempo=function(which, opt){
+  const o=opt||{};
+  const i=(which==null)?S.editPad:(+which|0);
+  const pd=S.pads[i];
+  if(!pd || pd.bufId<0) throw new Error('pad '+(i+1)+' is empty. Load a sound '
+    +'on it first \u2014 this measures audio, it does not guess.');
+  const buf=S.buffers[pd.bufId];
+  if(!buf) throw new Error('pad '+(i+1)+' points at a buffer that is gone.');
+  const r=tempo(buf.getChannelData(0), buf.sampleRate, o);
+  /* WHAT IT WOULD MEAN FOR THIS PROJECT, which is the actual question
+     behind asking: does it match what the sequencer is set to, and if
+     not, by how much. */
+  const mine=Math.abs(S.bpm||120);
+  const rel=r.bpm ? +(r.bpm/mine).toFixed(3) : null;
+  return Object.assign({pad:i+1, projectBpm:mine, ratio:rel}, r,
+    { says: r.says + (r.bpm
+      ? (' The project is at '+mine+'bpm, so this is '
+        +(Math.abs(rel-1)<0.02 ? 'already in step.'
+          : Math.abs(rel-2)<0.05 ? 'twice the project tempo.'
+            : Math.abs(rel-0.5)<0.03 ? 'half the project tempo.'
+              : (rel>1?'faster':'slower')+' by a factor of '
+                +(rel>1?rel:1/rel).toFixed(2)+'.'))
+      : '') });
 };
 window.MVX.events=function(opt){
   const o=opt||{};
@@ -19760,6 +19805,23 @@ if($('btnTakeMeasure')) $('btnTakeMeasure').addEventListener('click',async()=>{
    from a tool, so WRITE could refuse a figure because a sample is too
    slow and the person had no way to ask WHY, or to check before
    choosing. */
+if($('btnTempo')) $('btnTempo').addEventListener('click',async()=>{
+  const b=$('btnTempo'); b.disabled=true; const was=b.textContent;
+  b.textContent='\u2026';
+  const info=$('timbreInfo');
+  try{
+    const r=await window.MVX.tempo(S.editPad);
+    if(info) info.textContent='PAD '+r.pad+': '+r.says;
+    lcd(('PAD '+r.pad+' '+(r.bpm?r.bpm+'bpm':'no tempo')).slice(0,70));
+    b.textContent=r.bpm?(r.bpm+' BPM'):'NO TEMPO';
+  }catch(e){
+    if(info) info.textContent=e.message;
+    lcd(String(e.message).slice(0,60));
+    b.textContent='\u2014 '+String(e.message).slice(0,24);
+  }
+  finally{ b.disabled=false;
+    setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 6000); }
+});
 if($('btnTimbre')) $('btnTimbre').addEventListener('click',async()=>{
   const b=$('btnTimbre'); b.disabled=true; const was=b.textContent;
   b.textContent='\u2026';

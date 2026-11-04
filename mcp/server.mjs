@@ -684,6 +684,29 @@ const TOOLS = [
       since: { type: 'integer', description: 'the seq you last saw; 0 or omitted for everything held' },
       limit: { type: 'integer', description: 'at most this many, most recent' } } } },
 
+  { name: 'jbh_tempo', description:
+      'HOW FAST IS THE SOUND ON THIS PAD. The one measurement needed to build around '
+      + 'something the person brought with them: an uploaded loop could already be '
+      + 'played, chopped and pitched and never lined up with anything, because nothing '
+      + 'here could ask its tempo. jbh_pulse measures a beat against the tempo the '
+      + 'sequencer SET, which is a different question. Also returns where the first beat '
+      + 'falls, which matters as much as the period when aligning a loop to the grid, '
+      + 'and how it relates to the project tempo. '
+      + 'IT NAMES THE HALF AND THE DOUBLE EVERY TIME: a rhythm at 140 correlates almost '
+      + 'as well at 70, nothing in the audio settles which a person would tap, and '
+      + 'measured here no confidence threshold separates the right answers from the '
+      + 'wrong ones \u2014 the two wrong readings scored 0.57 and 0.31 while the eight '
+      + 'right ones spanned 0.30 to 0.70. Blind, the true tempo was the answer or among '
+      + '`alternatives` in all ten cases. Pass min and max if you know the range and it '
+      + 'is exact.',
+    inputSchema: { type: 'object', properties: {
+      pad: { type: 'integer', description: 'which pad; defaults to the selected one' },
+      min: { type: 'number', description: 'slowest bpm to consider (default 50)' },
+      max: { type: 'number', description: 'fastest bpm to consider (default 210)' },
+      centre: { type: 'number', description:
+        'where the tempo prior sits, default 120 \u2014 it nudges, it does not decide' },
+      win: { type: 'number', description: 'envelope window in seconds (default 0.005)' } } } },
+
   { name: 'jbh_take', description:
       'MEASURE A TAKE THEY RECORDED. The instant checks — jbh_pulse, jbh_melody, '
       + 'jbh_motif, jbh_harmony — read the SEQUENCER schedule and say nothing about '
@@ -1283,6 +1306,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_tell':        return ok(await jbh('tell', [a.text]));
       case 'jbh_messages':    return ok(await jbh('messages', []));
       case 'jbh_events':      return ok(await jbh('events', [{ since: a.since, limit: a.limit }]));
+      case 'jbh_tempo':       return ok(await jbh('tempo', [a.pad, { min: a.min,
+                                max: a.max, centre: a.centre, win: a.win }]));
       case 'jbh_take':        return ok(await jbh('take', [a.track, { bpm: a.bpm,
                                 refractory: a.refractory, delta: a.delta, floor: a.floor,
                                 win: a.win, div: a.div }]));

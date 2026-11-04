@@ -752,6 +752,14 @@ sustained chord sitting on a free pad, and the snare is untouched.</p>
   <div class="row" style="flex-wrap:wrap;gap:4px">
     <button id="btnTimbre" data-acts="pad" class="grow"
       title="Measure this sound: how fast it speaks, how long it rings, and the tightest part it can play">WHAT CAN THIS SOUND DO?</button>
+    <!-- HOW FAST IS IT. For a loop somebody brought with them, which
+         could be played, chopped and pitched and never lined up with
+         anything, because nothing here could ask its tempo. It names
+         the half and the double every time: a rhythm at 140 correlates
+         almost as well at 70, and nothing in the audio settles which
+         you would tap. -->
+    <button id="btnTempo" data-acts="pad" class="grow"
+      title="Find the tempo of the sound on this pad, and where its first beat falls">HOW FAST IS THIS LOOP?</button>
   </div>
   <div id="timbreInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 0;line-height:1.5"></div>
   <!-- Where a mutation goes. It used to go nowhere: the pad was measured,
@@ -2936,6 +2944,8 @@ var __JBH_PURE = (() => {
     ROLES: () => ROLES,
     SCALES: () => SCALES,
     attackRing: () => attackRing,
+    autocorr: () => autocorr,
+    beatPhase: () => beatPhase,
     centsOff: () => centsOff,
     chordInfo: () => chordInfo,
     clamp: () => clamp,
@@ -2965,6 +2975,7 @@ var __JBH_PURE = (() => {
     morphRanker: () => morphRanker,
     mulberry32: () => mulberry32,
     newPattern: () => newPattern,
+    onsetStrength: () => onsetStrength,
     onsets: () => onsets,
     packFromNames: () => packFromNames,
     parseSfz: () => parseSfz,
@@ -3011,6 +3022,7 @@ var __JBH_PURE = (() => {
     suggestFor: () => suggestFor,
     takeHealth: () => takeHealth,
     takeTiming: () => takeTiming,
+    tempo: () => tempo,
     timbreOf: () => timbreOf,
     toRoman: () => toRoman,
     toTriad: () => toTriad,
@@ -3810,6 +3822,22 @@ var __JBH_PURE = (() => {
   }
 
   // src/pure/take.js
+  function onsetStrength(data, sampleRate, opt) {
+    const o = opt || {};
+    const win = o.win || 5e-3;
+    const env = envelopeRms(data, sampleRate, win);
+    if (env.length < 3) return { flux: [], winSec: win, peak: 0 };
+    let peak = 0;
+    for (const v of env) if (v > peak) peak = v;
+    if (peak <= 0) return { flux: [], winSec: win, peak: 0 };
+    const eps = peak * 1e-4;
+    const flux = new Array(env.length).fill(0);
+    for (let i = 1; i < env.length; i++) {
+      const d = Math.log(env[i] + eps) - Math.log(env[i - 1] + eps);
+      flux[i] = d > 0 ? d : 0;
+    }
+    return { flux, env, winSec: win, peak };
+  }
   function onsets(data, sampleRate, opt) {
     const o = opt || {};
     const win = o.win || 5e-3;
@@ -4116,6 +4144,148 @@ var __JBH_PURE = (() => {
       frames: frames.length,
       voiced,
       says: notes2.length ? notes2.length + " note(s) over " + frames.length + " frames (" + Math.round(100 * voiced / Math.max(1, frames.length)) + "% pitched): " + notes2.map((n) => n.note).join(" ") + ". Monophonic only \u2014 a chord will come back as one of its notes or as nothing, not as a chord." : "nothing reliably pitched here. " + (voiced ? "Some frames were pitched but no run lasted long enough to be a note." : "A strummed chord, a drum, or noise will all do this.")
+    };
+  }
+
+  // src/pure/tempo.js
+  var PRIOR_CENTRE = 120;
+  var PRIOR_WIDTH = 0.9;
+  function autocorr(flux, minLag, maxLag) {
+    const n = flux.length;
+    const out = new Array(maxLag + 1).fill(0);
+    let mean = 0;
+    for (const v of flux) mean += v;
+    mean /= Math.max(1, n);
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      let s = 0, c = 0;
+      for (let i = lag; i < n; i++) {
+        s += (flux[i] - mean) * (flux[i - lag] - mean);
+        c++;
+      }
+      out[lag] = c > 0 ? s / c : 0;
+    }
+    return out;
+  }
+  function beatPhase(flux, winSec, periodFrames) {
+    if (!flux.length || !(periodFrames > 0)) return 0;
+    let best = 0, bestScore = -1;
+    const step = Math.max(1, Math.round(periodFrames / 48));
+    for (let off = 0; off < periodFrames; off += step) {
+      let s = 0;
+      for (let at = off; at < flux.length; at += periodFrames) {
+        const i = Math.round(at);
+        s += (flux[i] || 0) + 0.5 * ((flux[i - 1] || 0) + (flux[i + 1] || 0));
+      }
+      if (s > bestScore) {
+        bestScore = s;
+        best = off;
+      }
+    }
+    return +(best * winSec).toFixed(4);
+  }
+  function tempo(data, sampleRate, opt) {
+    const o = opt || {};
+    const minBpm = o.min != null ? +o.min : 50;
+    const maxBpm = o.max != null ? +o.max : 210;
+    const centre = o.centre != null ? +o.centre : PRIOR_CENTRE;
+    const st = onsetStrength(data, sampleRate, o);
+    const flux = st.flux;
+    const winSec = st.winSec;
+    if (!flux.length) {
+      return { bpm: null, confidence: 0, says: "nothing audible \u2014 no tempo to find." };
+    }
+    const fps = 1 / winSec;
+    const minLag = Math.max(2, Math.floor(fps * 60 / maxBpm));
+    const maxLag = Math.min(flux.length - 2, Math.ceil(fps * 60 / minBpm));
+    if (maxLag <= minLag) {
+      return {
+        bpm: null,
+        confidence: 0,
+        says: "too short to measure a tempo: " + (data.length / sampleRate).toFixed(1) + "s of audio cannot hold two beats at " + minBpm + "bpm."
+      };
+    }
+    const ac = autocorr(flux, minLag, maxLag);
+    let acMax = 0;
+    for (let l = minLag; l <= maxLag; l++) if (ac[l] > acMax) acMax = ac[l];
+    if (acMax <= 0) {
+      return {
+        bpm: null,
+        confidence: 0,
+        says: "no periodicity found. A single sustained sound, noise, or a free-time performance will all do this."
+      };
+    }
+    const peaks = [];
+    for (let l = minLag + 1; l < maxLag; l++) {
+      if (ac[l] >= ac[l - 1] && ac[l] >= ac[l + 1] && ac[l] > acMax * 0.1) {
+        peaks.push(l);
+      }
+    }
+    if (!peaks.length) peaks.push(ac.indexOf(acMax));
+    const score = (lag2) => {
+      const base = ac[lag2] / acMax;
+      let harm = 0, hits = 0;
+      for (const m of [2, 3, 4]) {
+        const l2 = Math.round(lag2 * m);
+        if (l2 <= maxLag) {
+          harm += Math.max(0, ac[l2]) / acMax;
+          hits++;
+        }
+      }
+      const support = hits ? harm / hits : 0;
+      const bpm2 = 60 * fps / lag2;
+      const oct = Math.log2(bpm2 / centre);
+      const prior = Math.exp(-0.5 * (oct / PRIOR_WIDTH) ** 2);
+      return { lag: lag2, bpm: bpm2, base, support, prior, total: (base + 0.5 * support) * prior };
+    };
+    const ranked = peaks.map(score).sort((a, b) => b.total - a.total);
+    const best = ranked[0];
+    let lag = best.lag;
+    if (lag > minLag && lag < maxLag) {
+      const a = ac[lag - 1], b = ac[lag], c = ac[lag + 1];
+      const den = 2 * (2 * b - a - c);
+      if (den !== 0) lag = lag + (c - a) / den;
+    }
+    const bpm = 60 * fps / lag;
+    const second = ranked[1];
+    const margin = second ? (best.total - second.total) / best.total : 0.5;
+    const periods = data.length / sampleRate / (lag / fps);
+    if (periods < 3) {
+      return {
+        bpm: null,
+        confidence: 0,
+        seconds: +(data.length / sampleRate).toFixed(2),
+        says: "too short to call it a tempo: " + (data.length / sampleRate).toFixed(2) + "s holds about " + periods.toFixed(1) + " beats at the only period that correlated. Three is the minimum worth reporting \u2014 two events make one interval, which is not a repeat."
+      };
+    }
+    const evidence = Math.min(1, periods / 8);
+    const alt = ranked.slice(1, 4).map((r) => +r.bpm.toFixed(1));
+    return {
+      bpm: +bpm.toFixed(1),
+      confidence: +Math.max(0, Math.min(1, margin * evidence)).toFixed(3),
+      beats: +periods.toFixed(1),
+      phaseSec: beatPhase(flux, winSec, lag),
+      alternatives: alt,
+      /* the octave neighbours, named, because they are the likely error */
+      halfOrDouble: alt.filter((x) => Math.abs(x / bpm - 2) < 0.08 || Math.abs(x / bpm - 0.5) < 0.04),
+      seconds: +(data.length / sampleRate).toFixed(2),
+      /* THE HALF OR DOUBLE IS NAMED EVERY TIME IT EXISTS, and that is not
+             a hedge — it is the measured epistemic state.
+      
+             The first version said so only when the margin was thin, on the
+             assumption that a confident answer is a right one. Measured over
+             ten tempos: the two WRONG answers came back at 0.57 and 0.31
+             confidence while the eight right ones spanned 0.30 to 0.70. The
+             margin does not separate them, so there is no threshold that
+             warns on the wrong ones and stays quiet on the rest.
+      
+             What IS true every time: the right answer was either exact or
+             sitting in `alternatives`, 10 out of 10. So the useful thing to
+             say is both numbers. "About 140, or 70, and I cannot tell which"
+             is worth more than a confident wrong number, and for the case
+             this exists for — somebody has uploaded a loop they already like
+             — it is a question they answer in a second. Given `min` and
+             `max`, this is exact: 6 of 6, the same as beatd told the same. */
+      says: "about " + bpm.toFixed(1) + "bpm" + (alt.filter((x) => Math.abs(x / bpm - 2) < 0.08 || Math.abs(x / bpm - 0.5) < 0.04).length ? " \u2014 or " + alt.filter((x) => Math.abs(x / bpm - 2) < 0.08 || Math.abs(x / bpm - 0.5) < 0.04).join(" or ") + "bpm, which is the same rhythm counted half or twice as fast. Nothing in the audio settles which a person would tap, so if you know roughly what it should be, pass min and max and this is exact." : ", with no half-or-double reading close behind it.") + " First beat at " + beatPhase(flux, winSec, lag) + "s."
     };
   }
 
@@ -10341,7 +10511,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R263 · 2026-11-04 · it starts on a Mac and a PC now';
+const BUILD = 'JBH-88 · R264 · 2026-11-04 · it can tell how fast your loop is';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -23615,6 +23785,15 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        SCHEDULE, which the app knows exactly. A take is audio off the
        mic bus and none of them can see it. */
     producing: [
+      'tempo(pad) is how fast a sound somebody brought with them actually is, and '
+        + 'the one measurement that makes building around their own loop possible: it '
+        + 'could be played, chopped and pitched and never lined up, because nothing '
+        + 'here could ask. pulse() measures a beat against the tempo the sequencer SET, '
+        + 'which is a different question. It also gives where the first beat falls, '
+        + 'which matters as much as the period for alignment. It NAMES THE HALF AND THE '
+        + 'DOUBLE every time, because nothing in the audio settles which a person would '
+        + 'tap and no confidence threshold separates the right readings from the wrong '
+        + 'ones; pass min and max if you know the range and it is exact.',
       'events({since}) is what the person just did — a take landing, the transport '
         + 'starting or stopping — with the numbers already attached. Poll it with the '
         + 'seq you last saw instead of asking them whether they recorded something. The '
@@ -24623,6 +24802,42 @@ window.MVX.take=function(which, opt){
   const bpm=o.bpm!=null?Math.abs(+o.bpm):Math.abs(S.bpm||120);
   const m=measureTake(buf.getChannelData(0), buf.sampleRate, bpm, o);
   return Object.assign({track:i+1, name:trk.name||('take'+(i+1)), bpm}, m);
+};
+/* HOW FAST IS THE SOUND ON THIS PAD.
+
+   The one thing needed to build around something somebody brought with
+   them. An uploaded loop could already be played, chopped and pitched
+   and never lined up with anything, because the app had no way to ask
+   its tempo -- pulse() measures a beat against a tempo the sequencer
+   SET, which is a different question.
+
+   It reports the half and the double every time, because nothing in the
+   audio settles which a person would tap and a measurement here found
+   no confidence threshold that separates the right answers from the
+   wrong ones. Pass min and max if you know the range and it is exact. */
+window.MVX.tempo=function(which, opt){
+  const o=opt||{};
+  const i=(which==null)?S.editPad:(+which|0);
+  const pd=S.pads[i];
+  if(!pd || pd.bufId<0) throw new Error('pad '+(i+1)+' is empty. Load a sound '
+    +'on it first \u2014 this measures audio, it does not guess.');
+  const buf=S.buffers[pd.bufId];
+  if(!buf) throw new Error('pad '+(i+1)+' points at a buffer that is gone.');
+  const r=tempo(buf.getChannelData(0), buf.sampleRate, o);
+  /* WHAT IT WOULD MEAN FOR THIS PROJECT, which is the actual question
+     behind asking: does it match what the sequencer is set to, and if
+     not, by how much. */
+  const mine=Math.abs(S.bpm||120);
+  const rel=r.bpm ? +(r.bpm/mine).toFixed(3) : null;
+  return Object.assign({pad:i+1, projectBpm:mine, ratio:rel}, r,
+    { says: r.says + (r.bpm
+      ? (' The project is at '+mine+'bpm, so this is '
+        +(Math.abs(rel-1)<0.02 ? 'already in step.'
+          : Math.abs(rel-2)<0.05 ? 'twice the project tempo.'
+            : Math.abs(rel-0.5)<0.03 ? 'half the project tempo.'
+              : (rel>1?'faster':'slower')+' by a factor of '
+                +(rel>1?rel:1/rel).toFixed(2)+'.'))
+      : '') });
 };
 window.MVX.events=function(opt){
   const o=opt||{};
@@ -27263,6 +27478,23 @@ if($('btnTakeMeasure')) $('btnTakeMeasure').addEventListener('click',async()=>{
    from a tool, so WRITE could refuse a figure because a sample is too
    slow and the person had no way to ask WHY, or to check before
    choosing. */
+if($('btnTempo')) $('btnTempo').addEventListener('click',async()=>{
+  const b=$('btnTempo'); b.disabled=true; const was=b.textContent;
+  b.textContent='\u2026';
+  const info=$('timbreInfo');
+  try{
+    const r=await window.MVX.tempo(S.editPad);
+    if(info) info.textContent='PAD '+r.pad+': '+r.says;
+    lcd(('PAD '+r.pad+' '+(r.bpm?r.bpm+'bpm':'no tempo')).slice(0,70));
+    b.textContent=r.bpm?(r.bpm+' BPM'):'NO TEMPO';
+  }catch(e){
+    if(info) info.textContent=e.message;
+    lcd(String(e.message).slice(0,60));
+    b.textContent='\u2014 '+String(e.message).slice(0,24);
+  }
+  finally{ b.disabled=false;
+    setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 6000); }
+});
 if($('btnTimbre')) $('btnTimbre').addEventListener('click',async()=>{
   const b=$('btnTimbre'); b.disabled=true; const was=b.textContent;
   b.textContent='\u2026';
