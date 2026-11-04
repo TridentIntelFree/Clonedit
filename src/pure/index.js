@@ -16,6 +16,10 @@ export * from './poly.js';
 export * from './ir.js';
 export * from './install.js';
 export * from './sfz.js';
+/* what a sample can actually do — attack, ring, and whether a part is
+   playable on it at a given tempo. Pure maths over a channel of audio,
+   so it is tested in Node against signals whose answers are known. */
+export * from './timbre.js';
 /* tonal is bundled in through here: pure, testable from Node, and
    published as globals ahead of the engine like everything else in
    this folder. */

@@ -2871,10 +2871,12 @@ var __JBH_PURE = (() => {
     POLY_MIN_BPM: () => POLY_MIN_BPM,
     POLY_MIN_CELLS: () => POLY_MIN_CELLS,
     SCALES: () => SCALES,
+    attackRing: () => attackRing,
     chordInfo: () => chordInfo,
     clamp: () => clamp,
     clampBpm: () => clampBpm,
     detectPlatform: () => detectPlatform,
+    envelopeRms: () => envelopeRms,
     euclid: () => euclid,
     fromRoman: () => fromRoman,
     installSteps: () => installSteps,
@@ -2885,6 +2887,7 @@ var __JBH_PURE = (() => {
     layerModeFor: () => layerModeFor,
     mainBpmOf: () => mainBpmOf,
     midiName: () => midiName,
+    minGap: () => minGap,
     morphPattern: () => morphPattern,
     morphRanker: () => morphRanker,
     mulberry32: () => mulberry32,
@@ -2893,6 +2896,7 @@ var __JBH_PURE = (() => {
     parseSfz: () => parseSfz,
     patLen: () => patLen,
     pickContour: () => pickContour,
+    playable: () => playable,
     polyCfg: () => polyCfg,
     polyCycleBars: () => polyCycleBars,
     polyDoesLock: () => polyDoesLock,
@@ -2925,6 +2929,8 @@ var __JBH_PURE = (() => {
     snapSemitone: () => snapSemitone,
     stepHasLock: () => stepHasLock,
     stepLock: () => stepLock,
+    stepMs: () => stepMs,
+    timbreOf: () => timbreOf,
     toRoman: () => toRoman,
     toTriad: () => toTriad,
     trackLen: () => trackLen
@@ -3639,6 +3645,87 @@ var __JBH_PURE = (() => {
     if (r > 1 && Math.floor(n / r) >= 2) return "velrr";
     if (r > 1) return "rr";
     return "vel";
+  }
+
+  // src/pure/timbre.js
+  function envelopeRms(data, sampleRate, winSec = 5e-3) {
+    const n = data.length | 0;
+    const w = Math.max(1, Math.floor(sampleRate * winSec));
+    const out = [];
+    for (let i = 0; i + w <= n; i += w) {
+      let s = 0;
+      for (let j = i; j < i + w; j++) {
+        const v = data[j];
+        s += v * v;
+      }
+      out.push(Math.sqrt(s / w));
+    }
+    return out;
+  }
+  function attackRing(env, winSec = 5e-3) {
+    const ms = winSec * 1e3;
+    if (!env || !env.length) return { attackMs: 0, ringMs: 0, peakAt: 0, silent: true };
+    let peak = 0;
+    for (let i = 0; i < env.length; i++) if (env[i] > peak) peak = env[i];
+    if (peak <= 0) return { attackMs: 0, ringMs: 0, peakAt: 0, silent: true };
+    let peakAt = 0;
+    for (let i = 0; i < env.length; i++) if (env[i] >= peak * 0.99) {
+      peakAt = i;
+      break;
+    }
+    let a = peakAt;
+    for (let i = 0; i <= peakAt; i++) if (env[i] >= peak * 0.9) {
+      a = i;
+      break;
+    }
+    let d = -1;
+    for (let i = peakAt; i < env.length; i++) if (env[i] <= peak * 0.1) {
+      d = i;
+      break;
+    }
+    const clipped = d < 0;
+    if (clipped) d = env.length - 1;
+    return {
+      attackMs: Math.round(a * ms),
+      ringMs: Math.round((d - peakAt) * ms),
+      ringClipped: clipped,
+      peakAt: Math.round(peakAt * ms),
+      silent: false
+    };
+  }
+  function timbreOf(data, sampleRate, winSec = 5e-3) {
+    let peak = 0;
+    for (let i = 0; i < data.length; i++) {
+      const a = Math.abs(data[i]);
+      if (a > peak) peak = a;
+    }
+    const env = envelopeRms(data, sampleRate, winSec);
+    const ar = attackRing(env, winSec);
+    return Object.assign({
+      peak: +peak.toFixed(4),
+      peakDb: peak > 0 ? +(20 * Math.log10(peak)).toFixed(1) : -Infinity,
+      seconds: +(data.length / sampleRate).toFixed(3)
+    }, ar);
+  }
+  function stepMs(bpm) {
+    return 15e3 / Math.max(1, Math.abs(bpm));
+  }
+  function playable(timbre, bpm, gap = 1) {
+    const sm = stepMs(bpm);
+    const noteMs = sm * Math.max(1, gap);
+    const t = timbre || {};
+    const attackMs = t.attackMs || 0;
+    const ringMs = t.ringMs || 0;
+    const speaks = attackMs <= noteMs * 0.5;
+    const overlap = ringMs > noteMs ? +(ringMs / noteMs).toFixed(2) : 0;
+    const says = !speaks ? "this sound takes " + attackMs + "ms to speak and a note here is " + Math.round(noteMs) + "ms, so it will not be heard. Write it slower (a wider gap), take the tempo down, or trim the pad\u2019s start." : overlap >= 2 ? "it rings for " + ringMs + "ms over a " + Math.round(noteMs) + "ms note, so about " + Math.ceil(overlap) + " notes sound at once. That is glue in a trio and mud in a fast part \u2014 every note late in a bar has to land in the chord it rings into." : "it speaks in time and does not pile up at this rate.";
+    return { speaks, noteMs: Math.round(noteMs), attackMs, ringMs, overlap, says };
+  }
+  function minGap(timbre, bpm, cap = 16) {
+    const sm = stepMs(bpm);
+    const attackMs = timbre && timbre.attackMs || 0;
+    const need = Math.ceil(attackMs / (sm * 0.5));
+    return Math.max(1, Math.min(cap, need || 1));
   }
 
   // node_modules/@tonaljs/pitch/dist/index.mjs
@@ -11532,6 +11619,9 @@ function buildPads(){
    once per buffer and cached; the pad only ever redraws from the cache. */
 const PAD_PK=48;                    // columns across a pad face
 const padPeaks={};                  // bufId -> Float32Array(PAD_PK) of |peak|
+/* bufId -> the timbre of that buffer, guarded by the buffer itself for
+   the same reason padPeaks is: a slot is reused. */
+const timbreCache={};
 function peaksFor(bufId){
   const buf=S.buffers[bufId]; if(!buf) return null;
   const hit=padPeaks[bufId];
@@ -16764,6 +16854,72 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     for(let i=0;i<NPADS;i++) if(S.pads[i].inst===name && S.pads[i].bufId>=0 && S.pads[i].srcNote!=null)
       out.push({pad:i, note:S.pads[i].srcNote});
     return out; },
+
+  /* WHAT THE SAMPLES CAN ACTUALLY DO, before a part is written for them.
+
+     WRITE knows an instrument's PITCH and nothing about its SOUND: the
+     register comes from the pad's sampled note, the role from the mean
+     of those notes, and that is all. So the same part gets written for a
+     90ms pluck and a two-second bowed swell, and whether it can be
+     played at all is discovered by listening to it.
+
+     `scripts/timbre-atlas.mjs` has measured exactly this per pack for a
+     long time and AGENTS.md says to read it before choosing a sound.
+     Two things that cannot fix: only two of ten packs have an atlas, and
+     an UPLOADED sound can never have one. Measuring the buffer the pad
+     already holds covers both, costs no render and no network, and uses
+     the same method so the numbers agree with the atlas.
+
+     Takes an instrument tag, a list of pads, or one pad — the same three
+     shapes `place()` and `audit()` take, for the same reason: a sampled
+     instrument is one sound across many pads. */
+  timbre(which, opt){
+    const o=opt||{};
+    const pads = (typeof which==='number') ? [clamp(which|0,0,NPADS-1)]
+      : Array.isArray(which) ? which.map(x=>clamp(x|0,0,NPADS-1))
+      : window.MVX.instPads(which).map(x=>x.pad);
+    if(!pads.length) throw new Error('nothing to measure for '+JSON.stringify(which)
+      +' — pass a pad number, a list of pads, or the tag of an instrument '
+      +'(pad(i,{inst:"bass"}) sets one).');
+    const rows=[];
+    for(const p of pads){
+      const pd=S.pads[p];
+      if(!pd || pd.bufId<0) continue;
+      const buf=S.buffers[pd.bufId];
+      if(!buf) continue;
+      /* KEYED BY bufId AND GUARDED BY THE BUFFER ITSELF. A slot is reused
+         when a pad is reloaded, so the id alone is not the sound — the
+         same trap peaksFor() has a note about, and caching on the id
+         alone would hand back the measurements of a sample that is no
+         longer there. */
+      const hit=timbreCache[pd.bufId];
+      let t = (hit && hit._src===buf) ? hit : null;
+      if(!t){
+        t=timbreOf(buf.getChannelData(0), buf.sampleRate);
+        t._src=buf; timbreCache[pd.bufId]=t;
+      }
+      rows.push({ pad:p, name:pd.name||'', peakDb:t.peakDb, attackMs:t.attackMs,
+        ringMs:t.ringMs, ringClipped:!!t.ringClipped, seconds:t.seconds, silent:!!t.silent });
+    }
+    if(!rows.length) throw new Error('those pads hold no audio to measure.');
+    /* the MEDIAN across the instrument, as the atlas does across a pack's
+       samples: one dead sample should not speak for the instrument */
+    const med=k=>{ const v=rows.map(r=>r[k]).sort((a,b)=>a-b); return v[v.length>>1]; };
+    const bpm = o.bpm!=null ? +o.bpm : Math.abs(S.bpm||120);
+    const t = { attackMs:med('attackMs'), ringMs:med('ringMs') };
+    const gapNeeded = minGap(t, bpm);
+    const play = playable(t, bpm, o.gap!=null ? +o.gap : gapNeeded);
+    return { pads:rows, bpm,
+      attackMs:t.attackMs, ringMs:t.ringMs, peakDb:med('peakDb'),
+      minGap:gapNeeded, sixteenthMs:Math.round(stepMs(bpm)),
+      playable:play,
+      says: rows.length+' pad'+(rows.length>1?'s':'')+': speaks in '+t.attackMs
+        +'ms, rings '+t.ringMs+'ms. At '+Math.round(bpm)+'bpm a sixteenth is '
+        +Math.round(stepMs(bpm))+'ms, so '+(gapNeeded>1
+          ? ('notes have to be at least '+gapNeeded+' steps apart for it to speak.')
+          : 'it can be written as fast as the grid goes.')
+        +' '+play.says };
+  },
   /* ONE NOTE, OR A CHORD, ANYWHERE IN THE RANGE.
 
      midi may be a number or an array. Notes landing on one pad at one step

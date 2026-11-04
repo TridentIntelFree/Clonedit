@@ -594,6 +594,22 @@ const TOOLS = [
       seed: { type: 'integer' },
       apply: { type: 'integer', description: 'the seed of the arrangement to write' } } } },
 
+  { name: 'jbh_timbre', description:
+      'WHAT A SOUND CAN ACTUALLY DO, before you write a part for it. The writing calls know '
+      + 'an instrument\u2019s PITCH and nothing about its SOUND, so the same part gets written '
+      + 'for a 90ms pluck and a two-second bowed swell. This measures the buffer the pad '
+      + 'already holds \u2014 no render, no network \u2014 and reports how long it takes to SPEAK '
+      + '(a note shorter than its own attack is not a quiet note, it is no note: at 174bpm a '
+      + 'sixteenth is 86ms and a bowed string takes 150-300ms to arrive) and how long it RINGS '
+      + '(which decides whether sixteen notes a bar overlap into mush, and is the same number '
+      + 'the ringing-note problem turns on \u2014 a held note has to land in the chord it rings '
+      + 'INTO). `minGap` is how many sixteenths apart the notes have to be for it to speak at '
+      + 'all. Takes an instrument tag, a list of pads, or one pad.',
+    inputSchema: { type: 'object', required: ['instrument'], properties: {
+      instrument: { description: 'an instrument tag, a pad number, or a list of pads' },
+      bpm: { type: 'number', description: 'judge it at this tempo instead of the project\u2019s' },
+      gap: { type: 'integer', description: 'sixteenths between notes to judge against' } } } },
+
   { name: 'jbh_inst_pads', description:
       'WHICH PADS AN INSTRUMENT SPANS. A sampled instrument is one sound laid across a pad '
       + 'per sampled note, and several calls need that list: jbh_place and jbh_audit take an '
@@ -1084,6 +1100,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
                                 gate: a.gate, scale: a.scale, shape: a.shape,
                                 poly: a.poly, converse: a.converse,
                                 seed: a.seed, apply: a.apply }]));
+      case 'jbh_timbre':      return ok(await jbh('timbre', [a.instrument,
+                                { bpm: a.bpm, gap: a.gap }]));
       case 'jbh_inst_pads':   return ok(await jbh('instPads', [a.instrument]));
       case 'jbh_bass':        return ok(await jbh('bass', [{ pad: a.pad, style: a.style,
                                 midi: a.midi, fromMidi: a.fromMidi, seconds: a.seconds,

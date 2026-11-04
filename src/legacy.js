@@ -5229,6 +5229,9 @@ function buildPads(){
    once per buffer and cached; the pad only ever redraws from the cache. */
 const PAD_PK=48;                    // columns across a pad face
 const padPeaks={};                  // bufId -> Float32Array(PAD_PK) of |peak|
+/* bufId -> the timbre of that buffer, guarded by the buffer itself for
+   the same reason padPeaks is: a slot is reused. */
+const timbreCache={};
 function peaksFor(bufId){
   const buf=S.buffers[bufId]; if(!buf) return null;
   const hit=padPeaks[bufId];
@@ -10461,6 +10464,72 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     for(let i=0;i<NPADS;i++) if(S.pads[i].inst===name && S.pads[i].bufId>=0 && S.pads[i].srcNote!=null)
       out.push({pad:i, note:S.pads[i].srcNote});
     return out; },
+
+  /* WHAT THE SAMPLES CAN ACTUALLY DO, before a part is written for them.
+
+     WRITE knows an instrument's PITCH and nothing about its SOUND: the
+     register comes from the pad's sampled note, the role from the mean
+     of those notes, and that is all. So the same part gets written for a
+     90ms pluck and a two-second bowed swell, and whether it can be
+     played at all is discovered by listening to it.
+
+     `scripts/timbre-atlas.mjs` has measured exactly this per pack for a
+     long time and AGENTS.md says to read it before choosing a sound.
+     Two things that cannot fix: only two of ten packs have an atlas, and
+     an UPLOADED sound can never have one. Measuring the buffer the pad
+     already holds covers both, costs no render and no network, and uses
+     the same method so the numbers agree with the atlas.
+
+     Takes an instrument tag, a list of pads, or one pad — the same three
+     shapes `place()` and `audit()` take, for the same reason: a sampled
+     instrument is one sound across many pads. */
+  timbre(which, opt){
+    const o=opt||{};
+    const pads = (typeof which==='number') ? [clamp(which|0,0,NPADS-1)]
+      : Array.isArray(which) ? which.map(x=>clamp(x|0,0,NPADS-1))
+      : window.MVX.instPads(which).map(x=>x.pad);
+    if(!pads.length) throw new Error('nothing to measure for '+JSON.stringify(which)
+      +' — pass a pad number, a list of pads, or the tag of an instrument '
+      +'(pad(i,{inst:"bass"}) sets one).');
+    const rows=[];
+    for(const p of pads){
+      const pd=S.pads[p];
+      if(!pd || pd.bufId<0) continue;
+      const buf=S.buffers[pd.bufId];
+      if(!buf) continue;
+      /* KEYED BY bufId AND GUARDED BY THE BUFFER ITSELF. A slot is reused
+         when a pad is reloaded, so the id alone is not the sound — the
+         same trap peaksFor() has a note about, and caching on the id
+         alone would hand back the measurements of a sample that is no
+         longer there. */
+      const hit=timbreCache[pd.bufId];
+      let t = (hit && hit._src===buf) ? hit : null;
+      if(!t){
+        t=timbreOf(buf.getChannelData(0), buf.sampleRate);
+        t._src=buf; timbreCache[pd.bufId]=t;
+      }
+      rows.push({ pad:p, name:pd.name||'', peakDb:t.peakDb, attackMs:t.attackMs,
+        ringMs:t.ringMs, ringClipped:!!t.ringClipped, seconds:t.seconds, silent:!!t.silent });
+    }
+    if(!rows.length) throw new Error('those pads hold no audio to measure.');
+    /* the MEDIAN across the instrument, as the atlas does across a pack's
+       samples: one dead sample should not speak for the instrument */
+    const med=k=>{ const v=rows.map(r=>r[k]).sort((a,b)=>a-b); return v[v.length>>1]; };
+    const bpm = o.bpm!=null ? +o.bpm : Math.abs(S.bpm||120);
+    const t = { attackMs:med('attackMs'), ringMs:med('ringMs') };
+    const gapNeeded = minGap(t, bpm);
+    const play = playable(t, bpm, o.gap!=null ? +o.gap : gapNeeded);
+    return { pads:rows, bpm,
+      attackMs:t.attackMs, ringMs:t.ringMs, peakDb:med('peakDb'),
+      minGap:gapNeeded, sixteenthMs:Math.round(stepMs(bpm)),
+      playable:play,
+      says: rows.length+' pad'+(rows.length>1?'s':'')+': speaks in '+t.attackMs
+        +'ms, rings '+t.ringMs+'ms. At '+Math.round(bpm)+'bpm a sixteenth is '
+        +Math.round(stepMs(bpm))+'ms, so '+(gapNeeded>1
+          ? ('notes have to be at least '+gapNeeded+' steps apart for it to speak.')
+          : 'it can be written as fast as the grid goes.')
+        +' '+play.says };
+  },
   /* ONE NOTE, OR A CHORD, ANYWHERE IN THE RANGE.
 
      midi may be a number or an array. Notes landing on one pad at one step
