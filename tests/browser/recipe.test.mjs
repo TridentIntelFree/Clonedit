@@ -18,20 +18,23 @@ export default async function ({ browser, base }) {
       await window.JBH.clear();
       const out = await window.JBH.recipe({ seed: 4242 });
       const pat = S.patterns[S.pattern];
-      const perSlot = {};
+      const perSlot = {}, perSlotVel = {};
       for (const s of out.slots) {
         const row = pat.steps[s.pad] || [];
         let hits = 0, probs = 0;
+        const vels = [];
         for (let i = 0; i < row.length; i++) if (row[i] > 0) {
           hits++;
+          vels.push(row[i]);                 /* the step's velocity as stored */
           const lk = pat.locks[s.pad + ':' + i];
           if (lk && lk.prob != null && lk.prob < 1) probs++;
         }
         perSlot[s.slot] = { pad: s.pad, hits, probs,
           name: S.pads[s.pad].name, inst: S.pads[s.pad].inst,
           bufId: S.pads[s.pad].bufId };
+        perSlotVel[s.slot] = vels;
       }
-      return { out, perSlot, selected: S.pattern, bpm: S.bpm,
+      return { out, perSlot, perSlotVel, selected: S.pattern, bpm: S.bpm,
         plen: patLen(S.patterns[S.pattern]) };
     });
     t.ok('it names an empty pad for every slot it asked for',
@@ -52,9 +55,27 @@ export default async function ({ browser, base }) {
     t.ok('the pattern is long enough for the recipe and the tempo is set',
       r.plen >= r.out.bars * 16 && Math.abs(r.bpm) === r.out.bpm,
       'plen ' + r.plen + ' for ' + r.out.bars + ' bars · ' + r.bpm + 'bpm');
-    t.ok('it does not claim its patterns are measured',
-      r.out.patternsMeasured === false && /composed rather than measured/.test(r.out.says),
-      r.out.says.slice(-90));
+    t.ok('the drum figures are measured, and it names the style and the share',
+      r.out.patternsMeasured === true && r.out.drew && Object.keys(r.out.drew).length > 0
+      && /Groove corpus/.test(r.out.says),
+      r.out.style + ' · ' + Object.entries(r.out.drew || {})
+        .map(([k, d]) => k + ' ' + d.g + ' ' + Math.round(d.share * 100) + '%').join('  '));
+    t.ok('AND NO PITCHED SLOT IS CLAIMED AS MEASURED',
+      r.out.slots.every(s => (s.pitched || s.slot === 'low')
+        ? r.out.measured[s.slot] === false : true)
+      && /Composed:/.test(r.out.says),
+      'measured: ' + JSON.stringify(r.out.measured));
+    t.ok('a measured step carries the velocity it was played at, not a flat default',
+      (() => {
+        const vs = [];
+        for (const [v, st] of Object.entries(r.perSlotVel)) {
+          if (r.out.measured[v]) vs.push(...st);
+        }
+        /* a flat default would be one value repeated; the corpus gives a
+           downbeat around 0.7 and a sixteenth figure around 0.5 */
+        return vs.length > 2 && new Set(vs.map(x => Math.round(x * 100))).size > 1;
+      })(),
+      JSON.stringify(r.perSlotVel));
 
     t.head('IT NEVER TAKES A PAD THAT ALREADY HAS A SOUND');
     const keep = await page.evaluate(async () => {

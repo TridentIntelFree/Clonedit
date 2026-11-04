@@ -203,6 +203,53 @@ test('every option a function reads is reachable through its tool', async () => 
       .map(m => m[1]));
   });
 
+  /* AN OPTION CAN BE READ ONE LAYER DOWN, and scanning only legacy.js is
+     blind to every one of them.
+
+     `recipe()` hands its whole options object to `makeRecipe(seed, o)` in
+     src/pure/recipes.js, so every option THAT function reads is a
+     recipe() option — and none of them appear as `o.` in legacy.js. This
+     check was therefore blind to family, bpm, feel, density and style
+     alike; it passed while `style` was reachable from the browser
+     console and unreachable over MCP, which is precisely the gap the
+     whole test exists to close. Found by adding `style` and noticing
+     the suite stayed green.
+
+     So: where an API method passes its options object wholesale into a
+     function exported from src/pure, that function's reads count as the
+     method's. Matched on the object being passed as a bare argument,
+     since that is what makes them the same options. */
+  const pureSrc = [];
+  {
+    const { readdirSync } = await import('node:fs');
+    const dir = resolve(ROOT, 'src', 'pure');
+    for (const f of readdirSync(dir)) {
+      if (f.endsWith('.js')) pureSrc.push(readFileSync(resolve(dir, f), 'utf8'));
+    }
+  }
+  const pureReads = (fn) => {
+    for (const src of pureSrc) {
+      const re = new RegExp('export function ' + fn + '\\s*\\(', 'g');
+      const m = re.exec(src);
+      if (!m) continue;
+      /* to the next top-level export, which is where the function ends
+         for the purposes of a text scan */
+      const from = m.index;
+      const nxt = src.indexOf('\nexport ', from + 10);
+      const body = src.slice(from, nxt > 0 ? nxt : src.length);
+      return new Set([...body.matchAll(/\bo\.([a-zA-Z][a-zA-Z0-9_]*)/g)].map(x => x[1]));
+    }
+    return null;
+  };
+  starts.forEach(([name, pos], i) => {
+    const end = i + 1 < starts.length ? starts[i + 1][1] : API.length;
+    const body = API.slice(pos, end);
+    for (const [, fn] of body.matchAll(/\b([a-zA-Z][a-zA-Z0-9_]*)\s*\([^()]*\bo\s*\)/g)) {
+      const down = pureReads(fn);
+      if (down) for (const k of down) reads[name].add(k);
+    }
+  });
+
   const NOT_AN_OPTION = {
     'packs.value': 'a .map(o => …) over DOM select options, not the options object',
     'packs.textContent': 'the same map',

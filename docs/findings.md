@@ -1707,3 +1707,189 @@ written against, and the cheapest way to find where it has drifted is
 to follow it literally and record every place it does not work. If you
 are reading this a long way downstream: do that again, and add what you
 find to the section it belongs in rather than to a list at the end.
+
+## The corpus does not reduce to a table, and two shapes had to fail first
+
+`src/pure/recipes.js` shipped with every recipe reporting
+`patternsMeasured: false`, because its drum patterns were a table like
+`kick:[0,16,32,48]` — somebody's idea of what house music does. The
+corpus that would settle it was already half-used here:
+`scripts/study-groove.py` reads the Groove MIDI Dataset, 1,150
+genre-labelled performances by ten drummers to a metronome, and took
+only the TIMING from it.
+
+Taking the patterns too turned out to be three different jobs, because
+the two obvious shapes for the answer are both wrong.
+
+**Per-step probabilities are flat.** Averaged over 334 rock takes the
+snare reads 20–34% on every one of sixteen steps. Written onto a grid as
+sixteen independent draws that scatters snare everywhere, because the
+steps inside one bar are strongly correlated and a marginal discards
+exactly that. The average of many grooves is not a groove. This was the
+shape the old `patternsMeasured: false` comment promised, and it would
+have been worse than what it replaced.
+
+**Exact whole-bar patterns are diffuse.** It takes 1,533 distinct
+kick/snare/hat combinations to cover half of rock's 6,296 bars, and the
+commonest single bar is 3% of them. Fill takes looked like the cause —
+647 of the 1,150 are labelled `fill` — and excluding them removes 70
+bars out of 6,366 and moves no figure by more than a point, because a
+fill take is a groove with a fill at the end. Human drummers vary nearly
+every bar and that is not an artefact to be filtered away.
+
+**One voice over one bar is the level that concentrates.** Rock snare is
+the backbeat on 26% of bars, hiphop snare on 34%, afrocuban kick is
+four-on-the-floor on 20%. So the output is a library of real bars, each
+carrying the share of the corpus it holds — which is what
+`src/pure/contours.js` and `infill()` already do for rhythm. The library
+stops being composed.
+
+### What validated it was the figures nobody asked for
+
+Everything rests on tick 0 being a bar line. Every take was played to a
+metronome at a stated tempo, so that is a reasonable assumption and the
+generator refuses to write the file unless rock's commonest snare bar is
+the backbeat and its commonest kick bar hits the downbeat.
+
+Those two it was told to expect. Three it was not came out anyway: jazz
+hi-hat on 2 and 4, the swing ride as `x...x..xx...x..x`, and reggae's
+one drop — a single kick on beat three — on 23% of reggae kick bars.
+Finding conventions nobody encoded is much better evidence than passing
+the check that was written for it.
+
+### A corpus bar is not a loop
+
+A bar in the table is a bar in CONTEXT: the drummer dropping out,
+building up, ending a phrase. Those bars are real and legitimately
+sparse, and looping one is nonsense. The tell was that the second
+commonest rock kick bar is a single hit on beat two at 6.4%, which is a
+pickup and not a groove.
+
+Misalignment was the first suspect and was measured rather than assumed.
+Scoring each take's four possible rotations by snare-on-the-backbeats
+and kick-on-the-downbeat: 84% of the takes that can be decided start on
+a bar line, 11.5% are off by a half bar and about 5% by an odd beat.
+Nowhere near enough to explain it, so the sparse tail is the corpus
+telling the truth about itself.
+
+(That measurement needed two attempts. Scored on the backbeat alone,
+nothing was ever decidable, because `{4,12}` maps onto itself under a
+half-bar shift — rotations 0 and 2 score identically by construction. A
+test that returns "no answer" for every single input is reporting a bug
+in itself, not a property of the data.)
+
+The filter is therefore a musical judgement and lives at SELECTION time,
+in `figureFor()`, not in `grooves.js`: a figure is loopable if it marks
+the bar on its own (two hits or more) or if one hit a bar is
+demonstrably the figure rather than a dropout, which a large share is
+the evidence for. Hit count alone cannot separate them, because the one
+drop is a single hit and IS the figure. Keeping the table as pure
+measurement and the judgement beside it is what makes both readable; a
+table with the judgement baked in has no way to show what was measured.
+
+### Sometimes the honest answer is that there is no figure
+
+Reggae's best loopable snare bar holds 1.8% of its bars and jazz's 2.9%,
+which means 97% of the time the drummer played something else. Calling
+either "the measured snare figure" is the overclaiming this whole layer
+exists to avoid.
+
+So a voice is refused unless its best loopable figure holds at least 4%
+of the style's bars, and the caller composes instead and reports that it
+composed. The floor is absolute AND the spread within a voice is
+relative, because either alone fails in a different direction: an
+absolute floor punishes the best-sampled styles, since rock's shares are
+low because the category is broad rather than because the playing is
+vague; a purely relative test accepts anything that beats the other
+candidates, which is how 1.8% would have got in.
+
+The upshot is that `patternsMeasured` became a map rather than being
+flipped to `true`. Kick is measured for all 13 styles, snare for 10, hat
+for 11, and every pitched part is still composed — one flag would have
+said something true about the hat and false about the bass.
+
+### Velocity is comparable within a voice and not across voices
+
+Carried over raw, the velocities put a reggae kick on the grid at 0.26
+under a snare at 0.90 — the shape of a complaint this repo has already
+written down twice, where the sound is not quiet but barely being
+played.
+
+The table says why. Kick figures average between 0.21 and 0.92 depending
+on style, while snares sit at 0.9 to 1.0 in ALL THIRTEEN styles. Every
+drummer in every style hitting the kick far softer than the snare is not
+a fact about music: a kick pedal and a struck mesh head are different
+sensors on one electronic kit. Whatever the cause — which this has not
+established — that offset belongs to the capture and must not be carried
+onto somebody else's samples.
+
+Each figure is therefore scaled by its own loudest stroke, so what
+survives is the shape inside it: the ghost note under the accent, which
+is the only reason to carry velocities at all.
+
+Scaling by the loudest stroke of the voice across the whole style was
+tried first and preserves one more real thing — a busy sixteenth kick
+genuinely is played lighter than four on the floor, within the one
+sensor. It is still wrong here, and a test found it: seed 16 wrote a
+kick peaking at 0.29, because that figure really is a third of the
+hardest kick in its style. A recipe loops ONE figure per voice, so the
+loud figure being measured against is not in the track to be louder
+than. If figures are ever varied across sections, the style becomes the
+right reference again.
+
+## Counting up from 1 explored one corner of the space
+
+`makeRecipe(seed)` seeds a xorshift directly from its argument:
+
+```js
+let rs = (seed >>> 0) || 0x9e37;
+const rnd = () => { rs ^= rs << 13; rs ^= rs >>> 17; rs ^= rs << 5;
+                    return (rs >>> 0) / 4294967296; };
+```
+
+A bare xorshift returns very small numbers for its first few draws from
+a small seed. Measured over seeds 1 to 199, the first draw had a mean of
+**0.006** — so `pick(FAMILIES)`, which is the first thing a recipe draws,
+chose `FAMILIES[0]` for ALL 199 OF THEM. Every recipe anyone made by
+counting up from 1 came out slow, and because the measured drum style is
+then chosen by tempo, only three of the thirteen styles could ever be
+reached. A UI counts up from 1, so this was the common case and not an
+edge.
+
+Mixing the seed before use (splitmix-style, then xorshift) takes that
+mean to 0.465, and over 4,000 seeds the four families come out uniform
+on a chi-square test. Warming the generator by discarding its first few
+draws was tried and is not needed; discarding exactly one draw measures
+worse than discarding none, and the uneven-looking 65/45/42/47 over the
+first 199 seeds is small-sample noise.
+
+**The test suite was green throughout.** It asserted that a recipe is
+reproducible from its seed and that it VARIES between seeds, and both
+were true — consecutive seeds differ in their later draws. Variety and
+uniformity are different properties and only one of them was being
+checked. The new test measures the distribution of families over 400
+seeds against a deliberately loose chi-square bound, because the job is
+to catch a generator stuck in one corner (the real bug scored about
+1200) and not to certify an RNG.
+
+## An option read one layer down is reachable from nowhere
+
+`tests/mcp-handshake.test.mjs` checks that every option a function reads
+is forwarded by its tool and declared in its schema — the reverse of the
+`jumble` check in `tests/mcp-coverage.test.mjs`, and the thing that
+catches an option you can set from the console and not over MCP.
+
+It scans `src/legacy.js` for `o.<name>` inside each API method. But
+`recipe()` hands its whole options object to `makeRecipe(seed, o)` in
+`src/pure/recipes.js`, so every option that function reads is a
+`recipe()` option and NONE of them appear as `o.` in `legacy.js`. The
+check was blind to family, bpm, feel, density and style alike. It stayed
+green while `style` was reachable from the browser console and
+unreachable over MCP, which is precisely the gap the test exists to
+close.
+
+Found by adding `style` and noticing the suite did not care. The check
+now follows an options object passed wholesale into a function exported
+from `src/pure` and counts that function's reads as the method's,
+verified the way the `jumble` case was: by taking `style` back out and
+watching it fail.

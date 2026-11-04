@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R257 · 2026-11-04 · a recipe is slots, and the pads start empty';
+const BUILD = 'JBH-88 · R258 · 2026-11-04 · the drum figures are measured now';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -10594,7 +10594,14 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         pitched:slot.pitched, says:slot.says, presets:slot.presets});
     }
 
-    /* the kit, as steps with their probabilities, across every bar */
+    /* THE KIT, AT THE VELOCITIES IT WAS PLAYED AT.
+       Each cell is {p, v}: a measured figure is a bar somebody actually
+       played, so its steps are certainties and the velocity is the one
+       taken off the corpus, while a composed voice keeps genuinely
+       probabilistic ghost notes. That distinction is the reason the
+       velocity is carried at all — a four-on-the-floor kick sits around
+       0.7 and a sixteenth-note figure around 0.5, and flattening both to
+       one number would make this a step list with extra bytes. */
     const bars = Math.floor(plen/16);
     let wrote=0;
     for(const u of used){
@@ -10603,8 +10610,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       for(let b=0;b<bars;b++) for(const k in P){
         const st=b*16+(+k);
         if(st>=plen) continue;
-        const p=+P[k];
-        window.MVX.step(u.pad, st, p>=1?0.95:0.8, p>=1?null:{prob:p});
+        const cell=P[k], p=+cell.p, v=+cell.v;
+        window.MVX.step(u.pad, st, clamp(v||0.8,0.01,1), p>=1?null:{prob:p});
         wrote++;
       }
     }
@@ -10612,7 +10619,13 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const empty=used.filter(u=>!R.steps[u.slot]).map(u=>u.label);
     return { seed:R.seed, name:R.name, bpm:R.bpm, swing:R.swing, feel:R.feel,
       density:R.density, motion:R.motion, bars, plen, slots:used, wroteSteps:wrote,
-      patternsMeasured:R.patternsMeasured,
+      /* PER VOICE, not one flag for the lot. The drum figures come out of
+         the Groove corpus and every pitched part is still composed, so a
+         single boolean would say something true about the hat and false
+         about the bass. `drew` names the style, the figure and the share
+         of bars it holds, so the claim can be checked rather than taken. */
+      patternsMeasured:R.patternsMeasured, measured:R.measured, drew:R.drew,
+      style:R.style, styleThin:R.styleThin, source:R.source,
       says: R.says+' '+used.length+' empty pads named for their slots'
         +(wrote?(', '+wrote+' steps written for the kit'):'')
         +'. Put a sound in a slot and it starts sounding -- fit(slot) says whether '

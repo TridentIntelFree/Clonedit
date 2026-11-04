@@ -32,6 +32,7 @@
    have arrived as undefined with nothing said. Callers that want it
    call minGap() themselves. */
 import { playable, stepMs } from './timbre.js';
+import { GROOVES } from './grooves.js';
 
 /* ---- THE SLOT VOCABULARY ------------------------------------------
    Each slot says what job it does and what a sound has to be able to do
@@ -146,9 +147,202 @@ const MOTION = [
   { id: 'four-bar',   bars: 4, says: 'a chord a bar' },
 ];
 
+/* ---- THE DRUM HALF IS MEASURED NOW -------------------------------- */
+
+/* WHICH MEASURED STYLE THIS TEMPO BELONGS TO.
+
+   The figures in grooves.js are grouped by the corpus's own style
+   labels, and a style carries the tempo range it was played at. Picking
+   a style whose range brackets the recipe's bpm is what keeps the two
+   consistent: a 170bpm recipe must not be handed figures measured off
+   90bpm hiphop takes, because the hat that reads as laid back at 90
+   reads as a blur at 170.
+
+   A style marked `thin` rests on fewer than twenty performances, so it
+   is one or two drummers rather than a genre. Those are used only when
+   nothing else brackets the tempo, and the recipe says which style it
+   drew from either way. */
+export function stylesFor(bpm, { allowThin = false } = {}) {
+  const all = Object.entries(GROOVES.styles)
+    .map(([id, e]) => ({ id, ...e }))
+    .filter(e => allowThin || !e.thin);
+  const inRange = all.filter(e => bpm >= e.bpm[0] && bpm <= e.bpm[2]);
+  if (inRange.length) {
+    /* nearest median first, so a 130bpm recipe prefers a style that
+       sits there over one that merely reaches it */
+    return inRange.sort((a, b) => Math.abs(a.bpm[1] - bpm) - Math.abs(b.bpm[1] - bpm));
+  }
+  if (!allowThin) return stylesFor(bpm, { allowThin: true });
+  return all.sort((a, b) => Math.abs(a.bpm[1] - bpm) - Math.abs(b.bpm[1] - bpm));
+}
+
+/* ONE FIGURE, CHOSEN BY DENSITY AND THEN BY HOW COMMON IT IS.
+
+   Density is a musical decision the recipe has already made, so it
+   selects the BAND of candidates — the sparsest third, the middle, the
+   busiest third by hit count — and the corpus share decides within that
+   band. Choosing purely by share would make every sparse recipe play
+   the commonest bar in the style, which is the same figure every time;
+   choosing purely at random throws away the thing that was measured. */
+export function figureFor(voice, style, dens, rnd) {
+  const d = style && style.voices && style.voices[voice];
+  if (!d || !d.figures.length) return null;
+  const hits = f => [...f.g].filter(c => c === 'x').length;
+  /* A CORPUS BAR IS NOT A LOOP, and this is where that bites.
+     A bar in the table is a bar in CONTEXT: the drummer dropping out,
+     building up, or ending a phrase. Those bars are real and legitimately
+     sparse, and looping one is nonsense — the second commonest rock kick
+     bar is a single hit on beat two, which is a pickup, not a groove.
+     (Rotated takes were the first suspect and were measured instead of
+     assumed: 84% of the takes that can be decided start on a bar line
+     and only about 5% are off by an odd beat, nowhere near enough to
+     explain it.)
+
+     So a figure is loopable if it marks the bar on its own — two hits
+     or more — or if one hit a bar is demonstrably the figure rather
+     than a dropout, which a large share is the evidence for. That
+     second clause is what keeps reggae's one drop, a single kick on
+     beat three held by 23% of its bars, while dropping rock's lone
+     kick at 3%. Filtering here and not in grooves.js on purpose: the
+     table is measurement and this is a musical judgement about looping,
+     and mixing the two would leave no way to see what was measured. */
+  const loopable = d.figures.filter(f => hits(f) >= 2 || f.p >= 0.15);
+  if (!loopable.length) return null;
+  /* AND SOMETIMES THE CORPUS HAS NO FIGURE TO GIVE. Reggae's best
+     loopable snare bar holds 1.8% of its bars and jazz's 2.9%, which
+     means that 97% of the time the drummer played something else.
+     Calling either "the measured snare figure" would be the exact
+     overclaiming this file exists to avoid, so the voice is refused and
+     the caller composes instead — and reports that it composed.
+
+     The floor is absolute AND the spread is relative, because one of
+     them alone gets it wrong in a different direction. An absolute
+     floor on its own punishes the best-sampled styles: rock holds 6,388
+     bars across 334 takes from 50 to 200bpm, so its shares are low
+     because the category is broad, not because the playing is vague.
+     A relative test on its own accepts anything as long as it beats the
+     other candidates, which is how 1.8% would have got in. */
+  const best = Math.max(...loopable.map(f => f.p));
+  if (best < 0.04) return null;
+  const pool = loopable.filter(f => f.p >= best * 0.4);
+  const sorted = pool.slice().sort((a, b) => hits(a) - hits(b));
+  const n = sorted.length;
+  const band = dens === 'sparse' ? sorted.slice(0, Math.max(1, Math.ceil(n / 2)))
+    : dens === 'busy' ? sorted.slice(Math.floor(n / 2))
+      : sorted;
+  /* weighted by the share each figure actually holds */
+  const tot = band.reduce((a, f) => a + f.p, 0);
+  let r = (rnd ? rnd() : Math.random()) * tot;
+  for (const f of band) { r -= f.p; if (r <= 0) return f; }
+  return band[band.length - 1];
+}
+
+/* COMPOSED FROM PRINCIPLES, for the voices the corpus cannot speak for
+   and for every pitched slot. This is what the whole recipe used to be
+   and it is still the honest answer wherever the measurement refuses:
+   kept as a named function so that `measured[voice] === false` points at
+   something real rather than being a flag over a hidden branch. */
+export function composeSteps(voice, fam, dens, rnd) {
+  const r = rnd || Math.random;
+  const beat = [0, 4, 8, 12], off = [2, 6, 10, 14];
+  const sixteenths = [1, 3, 5, 7, 9, 11, 13, 15];
+  const out = {};
+  const put = (s, p, v) => { out[s] = { p: +p.toFixed(2), v: +v.toFixed(2) }; };
+  if (voice === 'kick' || voice === 'low') {
+    for (const s of beat) {
+      if (voice === 'low' && s % 8 !== 0) continue;
+      put(s, fam === 'four' ? 1 : (s === 0 ? 1 : 0.25 + r() * 0.5), 0.8);
+    }
+    for (const s of off) if (r() < 0.4) put(s, 0.15 + r() * 0.35, 0.6);
+  } else if (voice === 'snare') {
+    put(4, 1, 0.9); put(12, 1, 0.9);
+    for (const s of sixteenths) if (r() < (dens === 'busy' ? 0.3 : 0.12)) put(s, 0.1 + r() * 0.3, 0.45);
+  } else if (voice === 'hat') {
+    const every = dens === 'busy' ? 1 : dens === 'normal' ? 2 : 4;
+    for (let s = 0; s < 16; s += every) put(s, s % 4 === 0 ? 1 : 0.5 + r() * 0.45, s % 4 === 0 ? 0.8 : 0.55);
+  }
+  return out;
+}
+
+/* A FIGURE AS STEPS THE SEQUENCER CAN TAKE: a definite hit, because a
+   measured bar is a bar somebody played and not a set of odds. The
+   variation across a track comes from choosing between figures, which is
+   what infill() already does for rhythm, rather than from rolling dice
+   on every step.
+
+   VELOCITY IS COMPARABLE WITHIN A VOICE AND NOT ACROSS VOICES, so only
+   the part that transfers is carried over.
+
+   Measured across the table: kick figures average between 0.21 and 0.92
+   depending on style, while snares sit at 0.9 to 1.0 in ALL THIRTEEN
+   styles. Every drummer in every style hitting the kick far softer than
+   the snare is not a fact about music; a kick pedal and a struck mesh
+   head are different sensors on one electronic kit, and whatever the
+   cause — which this has not established — that offset belongs to the
+   capture and must not be carried onto somebody else's samples. Written
+   through raw it put a reggae kick on the grid at velocity 0.26 under a
+   snare at 0.90, which is the shape of the complaint this repo has
+   already written down twice: the sound is not quiet, it is barely
+   being played.
+
+   So the figure is scaled by ITS OWN loudest stroke, and what survives
+   is the shape inside it: the ghost note under the accent, which is the
+   whole reason for carrying velocities.
+
+   Scaling by the loudest stroke of the voice ACROSS the style was tried
+   first and is wrong here, which took a test to see. It preserves one
+   more real thing — a busy sixteenth kick is genuinely played lighter
+   than four on the floor, within the one sensor — but it left seed 16
+   writing a kick that peaked at 0.29, because that figure really is a
+   third of the hardest kick in its style. A recipe loops ONE figure per
+   voice, so the loud figure it is being measured against is not in the
+   track to be louder than; the listener hears only this bar, and a part
+   that sits at a third of a reference nobody can hear reads as not
+   being played. If figures are ever varied across sections, the style
+   becomes the right reference again and this should change back.
+
+   The absolute level is then the pad's gain, which is where this repo
+   stages levels anyway: from a measured peak, not from taste. */
+function figureSteps(f) {
+  let ref = 0;
+  for (const v of Object.values(f.v)) if (v > ref) ref = v;
+  const scale = ref > 0 ? 0.95 / ref : 1;
+  const out = {};
+  for (let s = 0; s < 16; s++) {
+    if (f.g[s] !== 'x') continue;
+    const raw = f.v[s] || 0.8;
+    out[s] = { p: 1, v: Math.max(0.05, Math.min(1, +(raw * scale).toFixed(2))) };
+  }
+  return out;
+}
+
 export function makeRecipe(seed, opt) {
   const o = opt || {};
+  /* THE SEED IS MIXED BEFORE IT IS USED, and leaving that out made this
+     a one-family generator.
+
+     A bare xorshift returns very small numbers for its first few draws
+     from a small seed: measured over seeds 1-199 the first draw had a
+     mean of 0.006, so `pick(FAMILIES)` chose FAMILIES[0] for ALL 199 OF
+     THEM. Every recipe anyone made by counting up from 1 — which is
+     what a UI does — came out slow, and because the style is then
+     chosen by tempo, only three of the thirteen measured styles could
+     ever be drawn from. The same mean after mixing is 0.465, and
+     over 4,000 seeds the four families come out uniform on a
+     chi-square test. Warming the generator by discarding its first few
+     draws was tried and is not needed: the uneven-looking 65/45/42/47
+     over the first 199 seeds is small-sample noise, and discarding
+     exactly one draw measures WORSE than discarding none.
+
+     This passed the test that a recipe varies between seeds, because
+     consecutive seeds do differ in their LATER draws. Variety and
+     uniformity are different properties and only one of them was
+     being checked. */
   let rs = (seed >>> 0) || 0x9e37;
+  rs = (rs + 0x9e3779b9) >>> 0;
+  rs = Math.imul(rs ^ (rs >>> 16), 0x21f0aaad) >>> 0;
+  rs = Math.imul(rs ^ (rs >>> 15), 0x735a2d97) >>> 0;
+  rs = (rs ^ (rs >>> 15)) >>> 0 || 0x9e37;
   const rnd = () => { rs ^= rs << 13; rs ^= rs >>> 17; rs ^= rs << 5; return (rs >>> 0) / 4294967296; };
   const pick = a => a[Math.floor(rnd() * a.length) % a.length];
   const between = (lo, hi) => Math.round(lo + rnd() * (hi - lo));
@@ -171,28 +365,52 @@ export function makeRecipe(seed, opt) {
   if (rnd() < 0.5) slots.push('lead');
   if (rnd() < 0.35 || fam.id === 'slow') slots.push('pad');
 
-  /* STEP PROBABILITIES, NOT STEP LISTS. A probability per step is what
-     this sequencer already supports as a step lock, it is what a real
-     corpus actually yields, and it is what makes two bars of the same
-     recipe differ without being random. Composed from principles here;
-     see patternsMeasured below. */
-  const beat = [0, 4, 8, 12], off = [2, 6, 10, 14];
-  const sixteenths = [1, 3, 5, 7, 9, 11, 13, 15];
-  const P = {};
-  if (slots.includes('kick')) {
-    P.kick = {};
-    for (const s of beat) P.kick[s] = fam.id === 'four' ? 1 : (s === 0 ? 1 : +(0.25 + rnd() * 0.5).toFixed(2));
-    for (const s of off) if (rnd() < 0.4) P.kick[s] = +(0.15 + rnd() * 0.35).toFixed(2);
+  /* THE DRUM PATTERNS COME OUT OF THE CORPUS. One bar of one voice as
+     ten drummers actually played it, at the velocities they played it,
+     picked from a style whose measured tempo range brackets this bpm.
+     Each hit is a certainty rather than a probability, because a
+     measured bar is a bar somebody played — see figureSteps(). What is
+     still composed is every PITCHED slot, which is why `measured` below
+     is per voice. */
+  const styleOpts = stylesFor(bpm);
+  const style = o.style
+    ? (stylesFor(bpm, { allowThin: true }).find(x => x.id === o.style) || styleOpts[0])
+    : pick(styleOpts.slice(0, 3));
+  const P = {}, measured = {}, drew = {};
+  for (const id of slots) {
+    if (ROLES[id].pitched) { measured[id] = false; continue; }
+    /* `low` is a sub, and a drum corpus has nothing to say about a bass
+       part. The kick figure is the wrong answer for it — a sub doubling
+       the kick exactly is a known way to lose both. */
+    if (id === 'low') {
+      measured[id] = false;
+      P[id] = composeSteps('low', fam.id, dens, rnd);
+      continue;
+    }
+    /* A STYLE THAT DROPS A VOICE IS TELLING YOU SOMETHING. Punk in this
+       corpus is on the ride for 84% of its bars, so a punk "hat" figure
+       is a sixth of the evidence pretending to be the norm. Where the
+       named voice is mostly silent and another cymbal is not, the slot
+       takes the one that was actually played, and says so. */
+    let voice = id;
+    if (id === 'hat' && style.voices.hat && style.voices.hat.silent > 0.5) {
+      const alt = ['ride', 'open'].find(v => style.voices[v]
+        && style.voices[v].silent < style.voices.hat.silent);
+      if (alt) voice = alt;
+    }
+    const f = figureFor(voice, style, dens, rnd);
+    if (!f) {
+      measured[id] = false;
+      P[id] = composeSteps(id, fam.id, dens, rnd);
+      continue;
+    }
+    P[id] = figureSteps(f);
+    measured[id] = true;
+    drew[id] = { style: style.id, voice, g: f.g, share: f.p };
   }
-  if (slots.includes('snare')) {
-    P.snare = { 4: 1, 12: 1 };
-    for (const s of sixteenths) if (rnd() < (dens === 'busy' ? 0.3 : 0.12)) P.snare[s] = +(0.1 + rnd() * 0.3).toFixed(2);
-  }
-  if (slots.includes('hat')) {
-    P.hat = {};
-    const every = dens === 'busy' ? 1 : dens === 'normal' ? 2 : 4;
-    for (let s = 0; s < 16; s += every) P.hat[s] = s % 4 === 0 ? 1 : +(0.5 + rnd() * 0.45).toFixed(2);
-  }
+  /* A recipe with no drums measured is not one worth reporting as
+     measured, and it means the tempo found no style at all. */
+  const anyMeasured = Object.values(measured).some(Boolean);
 
   /* the gap each slot's notes sit at, which is what fitSlot() needs to
      judge a sound against: a hat on sixteenths and a pad on whole notes
@@ -212,13 +430,28 @@ export function makeRecipe(seed, opt) {
     })),
     steps: P,
     sixteenthMs: Math.round(stepMs(bpm)),
-    /* SAID OUT LOUD, because composed numbers that pass as measured ones
-       is the failure this repo keeps writing down. */
-    patternsMeasured: false,
+    /* SAID OUT LOUD, AND PER VOICE, because composed numbers passing as
+       measured ones is the failure this repo keeps writing down — and
+       one flag for a whole recipe would now say something true about
+       the hat and false about the bass. */
+    patternsMeasured: anyMeasured,
+    measured, drew,
+    style: style.id, styleThin: !!style.thin,
+    source: GROOVES.source,
     name,
     says: name + '. ' + motion.says + '. ' + slots.length + ' slots: '
       + slots.map(s => ROLES[s].label).join(', ')
-      + '. The step patterns are composed rather than measured — the Groove '
-      + 'corpus this repo already reads for its timing norms would fix that.',
+      + '. Drums measured off ' + style.id + ' in the Groove corpus ('
+      + style.takes + ' performances, ' + style.bars + ' bars'
+      + (style.thin ? ', THIN — few enough players that this is their habit '
+        + 'rather than the style' : '') + '): '
+      + (Object.keys(drew).length
+        ? Object.keys(drew).map(k => ROLES[k].label + ' ' + drew[k].g
+          + ' (' + Math.round(drew[k].share * 100) + '% of bars'
+          + (drew[k].voice !== k ? ', played on the ' + drew[k].voice : '') + ')').join(', ')
+        : 'none — no voice had a figure the corpus states clearly enough')
+      + '. Composed: ' + slots.filter(x => !measured[x]).map(x => ROLES[x].label).join(', ')
+      + ' (every pitched part, and any drum voice this style plays too '
+      + 'variably to name a figure for).',
   };
 }

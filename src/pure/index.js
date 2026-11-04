@@ -22,6 +22,12 @@ export * from './sfz.js';
 export * from './timbre.js';
 /* recipes: slots with a measurable brief, and a seeded generator */
 export * from './recipes.js';
+/* the measured drum figures the recipes draw from. Exported rather than
+   left as recipes.js's private import, because the whole point of
+   measuring something is that you can go and read the numbers — this
+   repo's recurring mistake is a capability with no way in, and a table
+   nobody can print is that same fault wearing a different hat. */
+export * from './grooves.js';
 /* tonal is bundled in through here: pure, testable from Node, and
    published as globals ahead of the engine like everything else in
    this folder. */

@@ -605,13 +605,24 @@ const TOOLS = [
       + 'by FAMILY because they are correlated in real music, and it names itself after what it '
       + 'is rather than after a genre it has not earned. Each slot carries a BRIEF in measurable '
       + 'terms, so jbh_fit can tell you whether the sound you chose can do that job. '
-      + 'The step patterns are composed, not measured, and every recipe says so.',
+      + 'THE DRUM FIGURES ARE MEASURED: one bar of one voice as ten drummers actually '
+      + 'played it, at the velocities they played it, drawn from a Groove-corpus style '
+      + 'whose measured tempo range brackets the chosen bpm. Every PITCHED part is still '
+      + 'composed, and so is any drum voice the style plays too variably to name a figure '
+      + 'for — reggae snare and jazz snare both are. The result says which, per voice, '
+      + 'in `measured`, and `drew` names the style, the figure and the share of bars it '
+      + 'holds so the claim can be checked rather than taken.',
     inputSchema: { type: 'object', properties: {
       seed: { type: 'integer', description: 'reproduces a recipe you liked' },
       family: { type: 'string', enum: ['slow', 'midtempo', 'four', 'fast'] },
       bpm: { type: 'number' },
       feel: { type: 'string', description: "straight, or a cross-rhythm: '3', '5', '7'" },
-      density: { type: 'string', enum: ['sparse', 'normal', 'busy'] } } } },
+      density: { type: 'string', enum: ['sparse', 'normal', 'busy'] },
+      style: { type: 'string', description:
+        'draw the drum figures from this measured Groove-corpus style instead of one '
+        + 'picked by tempo: rock, latin, funk, jazz, hiphop, afrocuban, neworleans, '
+        + 'soul, pop, reggae, punk, and the thinly-sampled afrobeat and dance. A style '
+        + 'that was not played at this bpm is ignored in favour of one that was.' } } } },
 
   { name: 'jbh_fit', description:
       'CAN THE SOUND IN THIS SLOT DO THE JOB. Measures whatever is in the pad now and checks '
@@ -1133,7 +1144,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
                                 seed: a.seed, apply: a.apply }]));
       case 'jbh_recipe':      return ok(await jbh('recipe', [{ seed: a.seed,
                                 family: a.family, bpm: a.bpm, feel: a.feel,
-                                density: a.density }]));
+                                density: a.density, style: a.style }]));
       case 'jbh_fit':         return ok(await jbh('fit', [a.slot, { bpm: a.bpm, gap: a.gap }]));
       case 'jbh_timbre':      return ok(await jbh('timbre', [a.instrument,
                                 { bpm: a.bpm, gap: a.gap }]));

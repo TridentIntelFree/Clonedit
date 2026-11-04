@@ -958,9 +958,30 @@ identical measurements are not a weak effect, they are no effect.
 | `harmony()` | J.S. Bach, 370 of the 371 chorales — the semitone/minor-9th class is 1.08% of 179,005 sounding voice-pairs, 94.6% of sonorities state a third, and at least one voice is held through 77.9% of chord changes |
 | `melody()` | Essen Folksong Collection, 8514 melodies |
 | `motif()` | 8196 of those melodies, bucketed by length: recurrence above the same intervals reshuffled is about +28 overall, +51 for lines of 96 notes or more |
+| `recipe()` | Groove MIDI Dataset, 1,138 takes and 20,528 bars — one bar of one drum voice as ten drummers played it, in `src/pure/grooves.js` |
 
 The scripts that produced them are in `scripts/study-*.py`. A random walk
 scores about +7 on `motif()`; that gap is the whole point of the measure.
+
+**`recipe()` is measured for DRUMS and composed for everything else, and
+it says which per voice.** `measured` is a map, not a flag, and `drew`
+names the style, the figure and the share of bars it holds. Three things
+about that table are worth knowing before you use it:
+
+- **A corpus bar is not a loop.** A bar in the data is a bar in
+  CONTEXT — the drummer dropping out, building up, ending a phrase. The
+  second commonest rock kick bar is a single hit on beat two, which is a
+  pickup. Figures are filtered for loopability at SELECTION time, not in
+  the table, so what was measured stays readable.
+- **Some voices have no figure to give, and are refused.** Reggae's best
+  loopable snare bar holds 1.8% of its bars, jazz's 2.9%. Those compose
+  instead and report `measured.snare === false`.
+- **Velocity is comparable within a voice, never across voices.** Kick
+  figures average 0.21–0.92 by style while snares sit at 0.9–1.0 in all
+  thirteen; every drummer in every style hitting the kick softer than
+  the snare is a property of the electronic kit, not the music. Each
+  figure is scaled by its own loudest stroke. Do not read a cross-voice
+  balance off this table.
 
 ## mutate() cannot make a new sound, and will be asked to
 
@@ -1089,6 +1110,8 @@ thing they are about:
 - [Nothing in this app looks at the time axis](docs/findings.md#nothing-in-this-app-looks-at-the-time-axis)
 - [Making sounds, not just judging them](docs/findings.md#making-sounds-not-just-judging-them)
 - [This file has been tested by use, and that is how it should be read](docs/findings.md#this-file-has-been-tested-by-use-and-that-is-how-it-should-be-read)
+- [The corpus does not reduce to a table, and two shapes had to fail first](docs/findings.md#the-corpus-does-not-reduce-to-a-table-and-two-shapes-had-to-fail-first)
+- [Counting up from 1 explored one corner of the space](docs/findings.md#counting-up-from-1-explored-one-corner-of-the-space)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story
