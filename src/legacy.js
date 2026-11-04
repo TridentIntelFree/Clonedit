@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R261 · 2026-11-04 · eighteen calls nobody was told about';
+const BUILD = 'JBH-88 · R262 · 2026-11-04 · the person can reach them too';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -17100,6 +17100,15 @@ function jbhNotify(what, data){
 window.MVX.take=function(which, opt){
   const o=opt||{};
   const i=(which==null)?S.trax.findIndex(t=>t&&t.bufId>=0):((+which|0)-1);
+  /* TWO DIFFERENT REFUSALS, because one message for both named the
+     wrong cause. Asked for no lane in particular and finding none with
+     a take, this said "no track null \u2014 TRAX has 8 lanes", which
+     reads as a bad argument when the real answer is that nothing has
+     been recorded yet. The button in TRAX hits exactly that path on a
+     fresh project, so it was the FIRST thing anybody would see. */
+  if(which==null && i<0) throw new Error('no lane has a take on it yet. '
+    +'Arm a lane, press PLAY, play something, then STOP \u2014 then this will '
+    +'tell you how it sat.');
   if(i<0 || i>=S.trax.length) throw new Error('no track '+which
     +' \u2014 TRAX has '+S.trax.length+' lanes, numbered from 1.');
   const trk=S.trax[i];
@@ -19717,6 +19726,61 @@ function drawPunch(){
         +' &middot; only this span is replaced. Drag on the ruler to move it.'
       : '⚠ OUT must be after IN — nothing will be punched.';
 }
+/* MEASURE A TAKE, FOR THE PERSON. take() existed and had no control:
+   an agent could tell somebody their take sits 22ms behind the click
+   and the person could not ask. It measures and changes nothing, which
+   is worth saying on the control itself -- a button next to REC that
+   might re-record is a button nobody presses.
+
+   It reports and does not grade. A take that is late, sparse or thin
+   may be exactly what was wanted, so only silence, clipping and an
+   offset are called faults; the rest is a number somebody is allowed
+   to disagree with. */
+if($('btnTakeMeasure')) $('btnTakeMeasure').addEventListener('click',async()=>{
+  const b=$('btnTakeMeasure'); b.disabled=true; const was=b.textContent;
+  b.textContent='\u2026';
+  const info=$('takeInfo');
+  try{
+    /* the armed lane if it holds a take, else whichever one does */
+    const arm=(typeof traxArm==='number' && traxArm>=0
+      && S.trax[traxArm] && S.trax[traxArm].bufId>=0) ? traxArm+1 : null;
+    const m=await window.MVX.take(arm);
+    if(info) info.textContent='TRACK '+m.track+': '+m.says;
+    lcd(('T'+m.track+' '+(m.timing?m.timing.says:m.health.says)).slice(0,70));
+    b.textContent=m.faults.length?('\u2014 '+m.faults.join(', ').toUpperCase()):'MEASURED';
+  }catch(e){
+    if(info) info.textContent=e.message;
+    lcd(String(e.message).slice(0,60));
+    b.textContent='\u2014 '+String(e.message).slice(0,24);
+  }
+  finally{ b.disabled=false;
+    setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 5000); }
+});
+/* WHAT CAN THIS SOUND DO, for the person. timbre() was reachable only
+   from a tool, so WRITE could refuse a figure because a sample is too
+   slow and the person had no way to ask WHY, or to check before
+   choosing. */
+if($('btnTimbre')) $('btnTimbre').addEventListener('click',async()=>{
+  const b=$('btnTimbre'); b.disabled=true; const was=b.textContent;
+  b.textContent='\u2026';
+  const info=$('timbreInfo');
+  try{
+    const t=await window.MVX.timbre(S.editPad);
+    const gap=t.minGap>1 ? ('needs '+t.minGap+' sixteenths between notes at '
+      +Math.abs(S.bpm||120)+'bpm') : 'can play sixteenths at '+Math.abs(S.bpm||120)+'bpm';
+    if(info) info.textContent='PAD '+(S.editPad+1)+': speaks in '+t.attackMs
+      +'ms, rings '+t.ringMs+'ms, peaks '+t.peakDb+'dBFS \u2014 '+gap+'. '
+      +(t.says||(t.playable&&t.playable.says)||'');
+    lcd(('PAD '+(S.editPad+1)+' '+t.attackMs+'ms attack, '+t.ringMs+'ms ring').slice(0,70));
+    b.textContent='MEASURED';
+  }catch(e){
+    if(info) info.textContent=e.message;
+    lcd(String(e.message).slice(0,60));
+    b.textContent='\u2014 '+String(e.message).slice(0,24);
+  }
+  finally{ b.disabled=false;
+    setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 5000); }
+});
 $('btnPunch').addEventListener('click',()=>{
   S.punchOn=!S.punchOn;
   if(S.punchOn && !(S.punchOut>S.punchIn)){ const bar=tvBarSec(); S.punchIn=0; S.punchOut=bar*2; }
@@ -24660,6 +24724,90 @@ if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
     lcd(String(e.message).slice(0,60));
   }
   finally{ b.disabled=false;
+    setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 4000); }
+});
+/* RECIPE AND FIT, FOR THE PERSON. Both existed and both were reachable
+   only from a tool, which is the asymmetry the discoverability audit
+   turned up: an agent could name the slots a track needs and measure
+   whether a sound suits one, and whoever was sitting in front of the app
+   could not.
+
+   The slot list is drawn rather than summarised, because the whole point
+   of a slot is that it is a BRIEF — "the low end, and it has to speak
+   fast enough for this tempo" tells you what to go and find, which is
+   the thing you otherwise have to already know. */
+let uiRecipe=null;
+function drawRecipeSlots(r, fits){
+  const box=$('mlSlots'); if(!box) return;
+  box.textContent='';
+  if(!r){ box.textContent=''; return; }
+  const head=document.createElement('div');
+  head.textContent=r.name+' \u00b7 '+r.bars+' bar'+(r.bars===1?'':'s')
+    +' \u00b7 drums from '+r.style+(r.styleThin?' (few players)':'');
+  head.style.color='var(--txt)';
+  box.appendChild(head);
+  for(const sl of r.slots){
+    const d=document.createElement('div');
+    const f=fits && fits[sl.slot];
+    /* A pad number is what the person has to go and press, so it leads. */
+    const bits=['PAD '+(sl.pad+1)+' \u00b7 '+sl.label];
+    if(f && f.empty===false) bits.push(f.fits?'fits':'does not fit');
+    else bits.push('empty');
+    d.textContent=bits.join(' \u2014 ')+'. '+((f&&f.says)||sl.says);
+    d.style.marginTop='2px';
+    if(f && f.empty===false) d.style.color=f.fits?'var(--ok,#7c7)':'var(--warn,#d94)';
+    box.appendChild(d);
+  }
+}
+if($('mlRecipe')) $('mlRecipe').addEventListener('click',async()=>{
+  const b=$('mlRecipe'); b.disabled=true; const was=b.textContent; b.textContent='\u2026';
+  try{
+    const r=await window.MVX.recipe({});
+    uiRecipe=r;
+    drawRecipeSlots(r,null);
+    if($('mlFit')) $('mlFit').disabled=false;
+    $('mlInfo').textContent=r.says;
+    drawPads(); drawSeq();
+    b.textContent='ANOTHER RECIPE?';
+    lcd(r.name+' \u2014 '+r.slots.length+' empty pads named for their jobs.');
+  }catch(e){
+    $('mlInfo').textContent=e.message;
+    b.textContent='\u2014 '+String(e.message).slice(0,28);
+    lcd(String(e.message).slice(0,60));
+  }
+  finally{ b.disabled=false;
+    setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 4000); }
+});
+/* DISABLED UNTIL A RECIPE EXISTS, because a control must not offer what
+   cannot work -- fit() refuses with no recipe loaded and a button that
+   only ever produces that refusal is worse than no button. */
+if($('mlFit')) $('mlFit').addEventListener('click',async()=>{
+  const b=$('mlFit'); b.disabled=true; const was=b.textContent; b.textContent='\u2026';
+  try{
+    if(!uiRecipe) throw new Error('load a recipe first');
+    const fits={};
+    let empty=0, bad=0;
+    for(const sl of uiRecipe.slots){
+      try{
+        const f=await window.MVX.fit(sl.slot);
+        fits[sl.slot]=f;
+        if(f.empty) empty++; else if(!f.fits) bad++;
+      }catch(e){ fits[sl.slot]={empty:true, says:e.message}; empty++; }
+    }
+    drawRecipeSlots(uiRecipe, fits);
+    const said = bad ? (bad+' sound'+(bad===1?'':'s')+' cannot do the job in that slot'
+        +(empty?(', and '+empty+' slot'+(empty===1?' is':'s are')+' still empty'):'')+'.')
+      : empty ? (empty+' slot'+(empty===1?'':'s')+' still empty \u2014 '
+        +'put a sound in and check again.')
+      : 'every sound fits the slot it is in.';
+    $('mlInfo').textContent=said;
+    lcd(said.slice(0,70));
+    b.textContent=bad?('\u2014 '+bad+' DO NOT FIT'):'ALL GOOD';
+  }catch(e){
+    $('mlInfo').textContent=e.message;
+    b.textContent='\u2014 '+String(e.message).slice(0,28);
+  }
+  finally{ b.disabled=!uiRecipe;
     setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 4000); }
 });
   $('mlOffer').addEventListener('click',async()=>{

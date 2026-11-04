@@ -725,6 +725,19 @@ sustained chord sitting on a free pad, and the snare is untouched.</p>
     <button id="btnToolFreeze" data-acts="pad" class="grow" title="Hold one instant of this pad's spectrum as a sustained pad">FREEZE PAD</button>
     <button id="btnToolTape" data-acts="pad" class="grow" title="Run this pad to tape — wow, flutter, drift and saturation">RUN TO TAPE</button>
   </div>
+  <!-- WHAT THIS SOUND CAN ACTUALLY DO, before you write a part for it.
+       Measured off the buffer: how long it takes to speak, how long it
+       rings, and the narrowest gap it can be played at this tempo. A
+       note shorter than its own attack is not a quiet note, it is no
+       note — so a 235ms swell on a 150bpm sixteenth part is silence
+       with the shape of a part, and this is the number that says so
+       before you spend the time. WRITE reads the same measurement and
+       only offers figures the sound can play. -->
+  <div class="row" style="flex-wrap:wrap;gap:4px">
+    <button id="btnTimbre" data-acts="pad" class="grow"
+      title="Measure this sound: how fast it speaks, how long it rings, and the tightest part it can play">WHAT CAN THIS SOUND DO?</button>
+  </div>
+  <div id="timbreInfo" style="font-size:10px;color:var(--txt-dim);margin:2px 0 0;line-height:1.5"></div>
   <!-- Where a mutation goes. It used to go nowhere: the pad was measured,
        the winner found, the pad put back, and the answer was a list of field
        names with "set them yourself" under it. These appear once there is a
@@ -1163,6 +1176,26 @@ where they come back into alignment. On a grid that relationship is invisible.</
     <button id="mlDemo" class="grow"
       title="Build a whole track from the pads on the board: tempo, key, progression, parts, drums, sends and an arrangement">BUILD ME A TRACK FROM MY PADS</button>
   </div>
+  <!-- A RECIPE IS THE EXACT INVERSE OF THE BUTTON ABOVE, and both are
+       worth having. That one writes onto whatever pads you already
+       loaded, so the track is shaped by your board. This one names the
+       SLOTS it needs — low end here, a hat here, a synth here — makes
+       the pads EMPTY under those names, and writes the kit pattern onto
+       them before any sound is chosen. The sequencer plays it either
+       way, so one recipe works on any kit and choosing the sounds
+       becomes the creative act rather than a constraint on it.
+
+       It was API-only until now: an agent could load a recipe and check
+       whether a sound fitted its slot, and the person sitting in front
+       of the app could not. That asymmetry is the thing this repo keeps
+       having to fix. -->
+  <div class="row" style="gap:4px;flex-wrap:wrap">
+    <button id="mlRecipe" class="grow"
+      title="Name the slots a track needs and leave the pads empty for you to fill">GIVE ME A RECIPE TO FILL IN</button>
+    <button id="mlFit" disabled
+      title="Measure the sound in each slot against what that slot has to do">CHECK MY SOUNDS</button>
+  </div>
+  <div id="mlSlots" style="font-size:10px;color:var(--txt-dim);margin:2px 0 0;line-height:1.5"></div>
   <!-- WITHOUT THIS THE PANEL ABOVE IS A DEAD END. infill() writes for an
        INSTRUMENT, and an instrument is a pad carrying an `inst` tag.
        instrument() sets one; sound(), the kits and every sample loaded by
@@ -1519,6 +1552,23 @@ hum a bassline into the mic over your beat. Then set the lane to loop with the
     <span class="pair"><span class="lbl">OUT</span><input type="number" id="punchOut" min="1" max="256" step="0.25" value="3"
       style="width:80px" aria-label="Punch out, in bars"></span>
     <span class="grow" id="punchHint" style="font-size:10px;color:var(--txt-dim)">off &mdash; a take replaces the whole lane</span>
+  </div>
+  <!-- WHAT THE TAKE ACTUALLY DID. Every other check in this app reads
+       the SCHEDULE, which the sequencer knows exactly; a take is audio
+       off the mic bus and none of them can see it. This finds the onsets
+       in the recording, measures how it sits against the click, and
+       names the three faults that are brokenness rather than taste:
+       silence, clipping, a DC offset.
+
+       The timing comes back as two numbers because they call for
+       opposite answers. Steadily behind the click is TIGHT and moves in
+       one nudge; spread is the only one that needs playing again. And
+       tight is judged against what human playing actually measures in
+       the Groove corpus, not against zero, which is a machine. -->
+  <div class="row" style="margin-bottom:2px">
+    <button id="btnTakeMeasure"
+      title="Measure the take on this lane: onsets, timing against the click, and whether it is usable">HOW DID THAT TAKE SIT?</button>
+    <span class="grow" id="takeInfo" style="font-size:10px;color:var(--txt-dim)">records nothing &mdash; it only measures what is already there</span>
   </div>
   <div id="tvwrap" style="display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--lcd-bg)">
     <div id="tvheads" style="flex:0 0 108px;background:var(--panel);border-right:1px solid var(--line)"></div>

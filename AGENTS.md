@@ -505,6 +505,17 @@ zero**, which is a machine.
 and on the LCD. `say()` is THEIRS and has no tool on purpose: it writes
 into their own transcript labelled as them.
 
+**ALL OF THIS HAS A CONTROL NOW, and for a while none of it did.** An
+audit found no button anywhere for `recipe()`, `fit()` or `timbre()`,
+and none for measuring a take — so an agent could name the slots a
+track needs, judge whether a sound suits one and measure what a sample
+can do, and the person in front of the app could not. The controls are
+GIVE ME A RECIPE TO FILL IN and CHECK MY SOUNDS on the WRITE panel,
+WHAT CAN THIS SOUND DO? beside the pad tools, and HOW DID THAT TAKE
+SIT? in TRAX. `tests/browser/user-can-too.test.mjs` drives the controls
+rather than the API, because every other test of these calls them
+directly and that is exactly how the gap survived.
+
 And the rule from the longest section in this file applies hardest here.
 A take that is late, sparse or thin may be exactly what they wanted. Say
 what you measured and let them decide; only silence, clipping and a DC
@@ -1170,6 +1181,7 @@ thing they are about:
 - [Counting up from 1 explored one corner of the space](docs/findings.md#counting-up-from-1-explored-one-corner-of-the-space)
 - [WRITE never listened to the pad it was writing for](docs/findings.md#write-never-listened-to-the-pad-it-was-writing-for)
 - [Eighteen calls an agent could use and would never hear about](docs/findings.md#eighteen-calls-an-agent-could-use-and-would-never-hear-about)
+- [An agent could, and the person could not](docs/findings.md#an-agent-could-and-the-person-could-not)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

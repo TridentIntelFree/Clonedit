@@ -2171,3 +2171,68 @@ built on it.
 That asymmetry is worth stating rather than quietly carrying: an agent
 can load a recipe, check whether a sound fits its slot, and measure
 what a sample can do, and a person sitting in front of the app cannot.
+
+## An agent could, and the person could not
+
+The discoverability audit turned up the half nobody had checked: there
+was no control anywhere for `recipe()`, `fit()` or `timbre()`, and none
+for measuring a take. An agent could name the slots a track needs, judge
+whether a sound suits one, and measure what a sample can actually do;
+whoever was sitting in front of the app could do none of it.
+
+That asymmetry is this repo's recurring fault seen from the other side.
+Every previous version of it was an engine feature with no way in at
+all — `gate` with no control, `poly` unused for six tracks, the pad's
+pitch knob invisible. This time the way in existed and pointed only at
+the agent, which is harder to notice because the capability demonstrably
+works and has tests.
+
+**And the tests were the reason it survived.** Every test of these calls
+them directly: `JBH.recipe()`, `JBH.fit()`, `JBH.timbre()`. A test that
+calls the API proves the capability works and says nothing about whether
+anyone can reach it. `tests/browser/user-can-too.test.mjs` drives the
+CONTROLS — `document.getElementById('mlRecipe').click()` — because that
+is the only question that was going unasked.
+
+The controls:
+
+| control | where | what it does |
+|---|---|---|
+| GIVE ME A RECIPE TO FILL IN | WRITE | names the slots, leaves the pads empty, writes the kit |
+| CHECK MY SOUNDS | WRITE | measures each slot's sound against that slot's job |
+| WHAT CAN THIS SOUND DO? | pad tools | attack, ring, and the tightest part this sample can play |
+| HOW DID THAT TAKE SIT? | TRAX | onsets, timing against the click, and the three real faults |
+
+RECIPE sits directly under BUILD ME A TRACK FROM MY PADS on purpose:
+they are exact inverses. That one writes onto whatever pads you already
+loaded, so the track is shaped by your board; this one names the slots
+and leaves the pads empty, so the pattern comes first and choosing the
+sounds is the creative act rather than a constraint on it.
+
+CHECK MY SOUNDS starts DISABLED, because `fit()` refuses with no recipe
+loaded and a button whose only possible output is that refusal is worse
+than no button — *a control must not offer what cannot work*.
+
+### The first thing anybody would have seen
+
+Pressing HOW DID THAT TAKE SIT? on a fresh project said:
+
+```
+no track null — TRAX has 8 lanes, numbered from 1.
+```
+
+`take()` had one refusal for two different situations. Asked for a
+specific lane that does not exist, "TRAX has 8 lanes" is the right
+answer. Asked for no lane in particular and finding none with a take,
+the right answer is that nothing has been recorded yet — and the button
+hits exactly that path on an empty project, so it was the first thing
+anybody would ever see from it. The error named the wrong cause, which
+is the fault `tape()` is documented for one section over. Split in two:
+
+```
+no lane has a take on it yet. Arm a lane, press PLAY, play something,
+then STOP — then this will tell you how it sat.
+```
+
+Found by a test asserting the refusal was helpful rather than merely
+present.
