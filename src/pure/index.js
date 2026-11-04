@@ -25,6 +25,12 @@ export * from './timbre.js';
    checks next door cannot see a take at all -- they read the sequencer,
    and a take is audio off the mic bus. */
 export * from './take.js';
+/* WHAT NOTE THAT WAS. The app could hear level, bands, onsets, attack
+   and ring, and could not tell you what you played -- so melody(),
+   motif(), counterpoint() and harmony(), all calibrated against real
+   corpora, could only ever read steps the sequencer scheduled. This is
+   the bridge from audio to notes, and it is monophonic and says so. */
+export * from './pitch.js';
 /* recipes: slots with a measurable brief, and a seeded generator */
 export * from './recipes.js';
 /* the measured drum figures the recipes draw from. Exported rather than

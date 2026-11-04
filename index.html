@@ -2872,16 +2872,20 @@ var __JBH_PURE = (() => {
     ROLES: () => ROLES,
     SCALES: () => SCALES,
     attackRing: () => attackRing,
+    centsOff: () => centsOff,
     chordInfo: () => chordInfo,
     clamp: () => clamp,
     clampBpm: () => clampBpm,
     composeSteps: () => composeSteps,
+    detectPitch: () => detectPitch,
     detectPlatform: () => detectPlatform,
+    difference: () => difference,
     envelopeRms: () => envelopeRms,
     euclid: () => euclid,
     figureFor: () => figureFor,
     fitSlot: () => fitSlot,
     fromRoman: () => fromRoman,
+    hzToMidi: () => hzToMidi,
     installSteps: () => installSteps,
     irDur: () => irDur,
     isInstalled: () => isInstalled,
@@ -2891,7 +2895,7 @@ var __JBH_PURE = (() => {
     mainBpmOf: () => mainBpmOf,
     makeRecipe: () => makeRecipe,
     measureTake: () => measureTake,
-    midiName: () => midiName,
+    midiToHz: () => midiToHz,
     minGap: () => minGap,
     morphPattern: () => morphPattern,
     morphRanker: () => morphRanker,
@@ -2902,6 +2906,8 @@ var __JBH_PURE = (() => {
     parseSfz: () => parseSfz,
     patLen: () => patLen,
     pickContour: () => pickContour,
+    pitchOfWindow: () => pitchOfWindow,
+    pitchTrack: () => pitchTrack,
     playable: () => playable,
     polyCfg: () => polyCfg,
     polyCycleBars: () => polyCycleBars,
@@ -3867,6 +3873,185 @@ var __JBH_PURE = (() => {
       onsetTimes: found,
       faults: health.faults,
       says: health.says + " " + timing.says
+    };
+  }
+
+  // src/pure/pitch.js
+  function hzToMidi(hz) {
+    return 69 + 12 * Math.log2(hz / 440);
+  }
+  function midiToHz(m) {
+    return 440 * Math.pow(2, (m - 69) / 12);
+  }
+  var NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  function midiName(m) {
+    const r = Math.round(m);
+    return NAMES[(r % 12 + 12) % 12] + (Math.floor(r / 12) - 1);
+  }
+  function centsOff(hz) {
+    const m = hzToMidi(hz);
+    return Math.round((m - Math.round(m)) * 100);
+  }
+  function difference(data, sampleRate, opt) {
+    const o = opt || {};
+    const minHz = o.minHz || 30;
+    const maxHz = o.maxHz || 1600;
+    const tauMin = Math.max(2, Math.floor(sampleRate / maxHz));
+    const tauMax = Math.min(Math.floor(data.length / 2), Math.ceil(sampleRate / minHz));
+    if (tauMax <= tauMin) return null;
+    const n = Math.floor(data.length / 2);
+    const d = new Float64Array(tauMax + 1);
+    for (let tau = tauMin; tau <= tauMax; tau++) {
+      let s = 0;
+      for (let i = 0; i < n; i++) {
+        const diff = data[i] - data[i + tau];
+        s += diff * diff;
+      }
+      d[tau] = s;
+    }
+    const dn = new Float64Array(tauMax + 1).fill(1);
+    let run = 0;
+    for (let tau = tauMin; tau <= tauMax; tau++) {
+      run += d[tau];
+      dn[tau] = run > 0 ? d[tau] * (tau - tauMin + 1) / run : 1;
+    }
+    return { dn, tauMin, tauMax };
+  }
+  function pitchOfWindow(data, sampleRate, opt) {
+    const o = opt || {};
+    const threshold = o.threshold != null ? o.threshold : 0.1;
+    const r = difference(data, sampleRate, o);
+    if (!r) return null;
+    const { dn, tauMin, tauMax } = r;
+    let tau = -1;
+    for (let t = tauMin; t <= tauMax; t++) {
+      if (dn[t] < threshold) {
+        while (t + 1 <= tauMax && dn[t + 1] < dn[t]) t++;
+        tau = t;
+        break;
+      }
+    }
+    if (tau < 0) {
+      let best = tauMin;
+      for (let t = tauMin; t <= tauMax; t++) if (dn[t] < dn[best]) best = t;
+      if (dn[best] >= 0.5) return null;
+      tau = best;
+    }
+    let refined = tau;
+    if (tau > tauMin && tau < tauMax) {
+      const a = dn[tau - 1], b = dn[tau], c = dn[tau + 1];
+      const denom = 2 * (2 * b - a - c);
+      if (denom !== 0) refined = tau + (c - a) / denom;
+    }
+    const hz = sampleRate / refined;
+    return {
+      hz: +hz.toFixed(2),
+      tau: refined,
+      confidence: +(1 - Math.min(1, dn[tau])).toFixed(3)
+    };
+  }
+  function detectPitch(data, sampleRate, opt) {
+    const o = opt || {};
+    const skip = o.skip != null ? o.skip : 0.04;
+    const winSec = o.window || 0.09;
+    const hops = o.hops || 5;
+    const win = Math.floor(sampleRate * winSec);
+    const start = Math.floor(sampleRate * skip);
+    if (data.length < start + win) {
+      const p = pitchOfWindow(data, sampleRate, o);
+      return p ? Object.assign({ short: true, windows: 1 }, withNote(p)) : null;
+    }
+    const span = data.length - start - win;
+    const picks = [];
+    for (let k = 0; k < hops; k++) {
+      const at = start + Math.floor(span * (hops === 1 ? 0 : k / (hops - 1)));
+      const p = pitchOfWindow(data.subarray(at, at + win), sampleRate, o);
+      if (p && p.confidence > 0) picks.push(p);
+    }
+    if (!picks.length) return null;
+    const sorted = picks.slice().sort((a, b) => a.hz - b.hz);
+    const mid = sorted[Math.floor(sorted.length / 2)];
+    const conf = picks.reduce((a, p) => a + p.confidence, 0) / picks.length;
+    const midis = picks.map((p) => hzToMidi(p.hz));
+    const agree = midis.filter((m) => Math.abs(m - hzToMidi(mid.hz)) < 0.5).length;
+    let crossings = 0;
+    const from = Math.min(start, Math.max(0, data.length - 1));
+    for (let i = from + 1; i < data.length; i++) {
+      if (data[i - 1] < 0 && data[i] >= 0 || data[i - 1] >= 0 && data[i] < 0) crossings++;
+    }
+    const zcrHz = crossings / (2 * Math.max(1e-6, (data.length - from) / sampleRate));
+    const tooSlow = mid.hz > 0 && zcrHz / mid.hz > 2.8;
+    const stable = agree >= Math.ceil(picks.length * 0.6) && picks.length >= 2 && !tooSlow;
+    const n = withNote(mid);
+    return Object.assign(n, {
+      windows: picks.length,
+      agree,
+      confidence: +conf.toFixed(3),
+      stable,
+      says: stable ? n.note + " (" + n.hz + "Hz)" + (Math.abs(n.cents) >= 20 ? ", but " + Math.abs(n.cents) + " cents " + (n.cents > 0 ? "sharp" : "flat") + " \u2014 that is the right note played out of tune, not a different note" : ", in tune within " + Math.abs(n.cents) + " cents") + ". " + agree + " of " + picks.length + " windows agree." : tooSlow ? "UNRELIABLE: " + n.note + " (" + n.hz + "Hz) cannot be right \u2014 the signal crosses zero about " + Math.round(zcrHz) + " times a second, far faster than that note, so its real pitch is above the " + (o.maxHz || 1600) + "Hz ceiling being searched. Widen maxHz." : "UNRELIABLE: only " + agree + " of " + picks.length + " windows agree, so " + n.note + " is a guess. Either the sound is not strongly pitched, or its pitch is outside the " + (o.minHz || 30) + "-" + (o.maxHz || 1600) + "Hz range being searched."
+    });
+  }
+  function withNote(p) {
+    const m = hzToMidi(p.hz);
+    return {
+      hz: p.hz,
+      midi: Math.round(m),
+      note: midiName(m),
+      cents: centsOff(p.hz),
+      confidence: p.confidence
+    };
+  }
+  function pitchTrack(data, sampleRate, opt) {
+    const o = opt || {};
+    const hopSec = o.hop || 0.02;
+    const winSec = o.window || 0.09;
+    const minConf = o.minConfidence != null ? o.minConfidence : 0.6;
+    const minNote = o.minNoteSec != null ? o.minNoteSec : 0.0625;
+    const win = Math.floor(sampleRate * winSec);
+    const hop = Math.max(1, Math.floor(sampleRate * hopSec));
+    const frames = [];
+    for (let at = 0; at + win <= data.length; at += hop) {
+      const p = pitchOfWindow(data.subarray(at, at + win), sampleRate, o);
+      frames.push(p && p.confidence >= minConf ? { t: at / sampleRate, midi: hzToMidi(p.hz), hz: p.hz, conf: p.confidence } : null);
+    }
+    const notes2 = [];
+    let run = [], gap = 0;
+    const gapFrames = o.gapFrames != null ? o.gapFrames : 3;
+    const flush = () => {
+      if (!run.length) return;
+      const dur = run[run.length - 1].t - run[0].t + hopSec;
+      if (dur >= minNote) {
+        const ms = run.map((f) => f.midi).sort((a, b) => a - b);
+        const med = ms[Math.floor(ms.length / 2)];
+        notes2.push({
+          at: +run[0].t.toFixed(3),
+          seconds: +dur.toFixed(3),
+          midi: Math.round(med),
+          note: midiName(med),
+          cents: Math.round((med - Math.round(med)) * 100),
+          confidence: +(run.reduce((a, f) => a + f.conf, 0) / run.length).toFixed(3),
+          frames: run.length
+        });
+      }
+      run = [];
+    };
+    for (const f of frames) {
+      if (!f) {
+        if (++gap > gapFrames) flush();
+        continue;
+      }
+      const ref = run.length ? run.reduce((a, x) => a + x.midi, 0) / run.length : f.midi;
+      if (run.length && Math.abs(f.midi - ref) > 0.6) flush();
+      gap = 0;
+      run.push(f);
+    }
+    flush();
+    const voiced = frames.filter(Boolean).length;
+    return {
+      notes: notes2,
+      frames: frames.length,
+      voiced,
+      says: notes2.length ? notes2.length + " note(s) over " + frames.length + " frames (" + Math.round(100 * voiced / Math.max(1, frames.length)) + "% pitched): " + notes2.map((n) => n.note).join(" ") + ". Monophonic only \u2014 a chord will come back as one of its notes or as nothing, not as a chord." : "nothing reliably pitched here. " + (voiced ? "Some frames were pitched but no run lasted long enough to be a note." : "A strummed chord, a drum, or noise will all do this.")
     };
   }
 
@@ -4915,14 +5100,14 @@ var __JBH_PURE = (() => {
     });
     const name2 = letter + acc + octStr;
     const pc2 = letter + acc;
-    const chroma4 = (SEMI[step] + alt + 120) % 12;
+    const chroma3 = (SEMI[step] + alt + 120) % 12;
     const height = oct === void 0 ? mod(SEMI[step] + alt, 12) - 1188 : SEMI[step] + alt + 12 * (oct + 1);
     const midi2 = height >= 0 && height <= 127 ? height : null;
     return {
       empty: false,
       acc,
       alt,
-      chroma: chroma4,
+      chroma: chroma3,
       coord,
       freq: oct === void 0 ? null : Math.pow(2, (height - 69) / 12) * 440,
       height,
@@ -5021,7 +5206,7 @@ var __JBH_PURE = (() => {
     intervals: []
   };
   var setNumToChroma = (num) => Number(num).toString(2).padStart(12, "0");
-  var chromaToNumber = (chroma4) => parseInt(chroma4, 2);
+  var chromaToNumber = (chroma3) => parseInt(chroma3, 2);
   var REGEX3 = /^[01]{12}$/;
   function isChroma(set) {
     return REGEX3.test(set);
@@ -5030,8 +5215,8 @@ var __JBH_PURE = (() => {
   var isPcset = (set) => set && isChroma(set.chroma);
   var cache3 = { [EmptyPcset.chroma]: EmptyPcset };
   function get(src) {
-    const chroma4 = isChroma(src) ? src : isPcsetNum(src) ? setNumToChroma(src) : Array.isArray(src) ? listToChroma(src) : isPcset(src) ? src.chroma : EmptyPcset.chroma;
-    return cache3[chroma4] = cache3[chroma4] || chromaToPcset(chroma4);
+    const chroma3 = isChroma(src) ? src : isPcsetNum(src) ? setNumToChroma(src) : Array.isArray(src) ? listToChroma(src) : isPcset(src) ? src.chroma : EmptyPcset.chroma;
+    return cache3[chroma3] = cache3[chroma3] || chromaToPcset(chroma3);
   }
   var chroma = (set) => get(set).chroma;
   var IVLS = [
@@ -5048,9 +5233,9 @@ var __JBH_PURE = (() => {
     "7m",
     "7M"
   ];
-  function chromaToIntervals(chroma4) {
+  function chromaToIntervals(chroma3) {
     const intervals = [];
-    for (let i = 0; i < 12; i++) if (chroma4.charAt(i) === "1") intervals.push(IVLS[i]);
+    for (let i = 0; i < 12; i++) if (chroma3.charAt(i) === "1") intervals.push(IVLS[i]);
     return intervals;
   }
   function modes(set, normalize = true) {
@@ -5077,8 +5262,8 @@ var __JBH_PURE = (() => {
   function rotateChroma(v) {
     return (v << 1 | v >>> 11) & 4095;
   }
-  function chromaToPcset(chroma4) {
-    const setNum = chromaToNumber(chroma4);
+  function chromaToPcset(chroma3) {
+    const setNum = chromaToNumber(chroma3);
     if (setNum === 0) return EmptyPcset;
     let normalizedNum = Infinity;
     let r = setNum;
@@ -5090,9 +5275,9 @@ var __JBH_PURE = (() => {
       empty: false,
       name: "",
       setNum,
-      chroma: chroma4,
+      chroma: chroma3,
       normalized: setNumToChroma(normalizedNum),
-      intervals: chromaToIntervals(chroma4)
+      intervals: chromaToIntervals(chroma3)
     };
   }
   function listToChroma(set) {
@@ -5701,11 +5886,11 @@ var __JBH_PURE = (() => {
   // node_modules/@tonaljs/chord-detect/dist/index.mjs
   var namedSet = (notes2) => {
     const pcToName = notes2.reduce((record, n) => {
-      const chroma4 = note(n).chroma;
-      if (chroma4 !== void 0) record[chroma4] = record[chroma4] || note(n).name;
+      const chroma3 = note(n).chroma;
+      if (chroma3 !== void 0) record[chroma3] = record[chroma3] || note(n).name;
       return record;
     }, {});
-    return (chroma4) => pcToName[chroma4];
+    return (chroma3) => pcToName[chroma3];
   };
   function detect(source, options = {}) {
     const notes2 = source.map((n) => note(n).pc).filter((x) => x);
@@ -5727,9 +5912,9 @@ var __JBH_PURE = (() => {
     const chromaNumber = parseInt(chordType.chroma, 2);
     return hasAnyThird(chromaNumber) && hasPerfectFifth(chromaNumber) && hasAnySeventh(chromaNumber);
   }
-  function withPerfectFifth(chroma4) {
-    const chromaNumber = parseInt(chroma4, 2);
-    return hasNonPerfectFifth(chromaNumber) ? chroma4 : (chromaNumber | 16).toString(2);
+  function withPerfectFifth(chroma3) {
+    const chromaNumber = parseInt(chroma3, 2);
+    return hasNonPerfectFifth(chromaNumber) ? chroma3 : (chromaNumber | 16).toString(2);
   }
   function findMatches(notes2, weight, options) {
     const tonic = notes2[0];
@@ -6251,8 +6436,8 @@ var __JBH_PURE = (() => {
   }
 
   // node_modules/@tonaljs/key/dist/index.mjs
-  var dist_exports4 = {};
-  __export(dist_exports4, {
+  var dist_exports3 = {};
+  __export(dist_exports3, {
     default: () => key_default,
     majorKey: () => majorKey,
     majorKeyChords: () => majorKeyChords,
@@ -6262,11 +6447,11 @@ var __JBH_PURE = (() => {
   });
 
   // node_modules/@tonaljs/note/dist/index.mjs
-  var dist_exports3 = {};
-  __export(dist_exports3, {
+  var dist_exports2 = {};
+  __export(dist_exports2, {
     accidentals: () => accidentals,
     ascending: () => ascending,
-    chroma: () => chroma3,
+    chroma: () => chroma2,
     default: () => note_default,
     descending: () => descending,
     distance: () => distance2,
@@ -6297,31 +6482,6 @@ var __JBH_PURE = (() => {
   });
 
   // node_modules/@tonaljs/midi/dist/index.mjs
-  var dist_exports2 = {};
-  __export(dist_exports2, {
-    chroma: () => chroma2,
-    default: () => midi_default,
-    freqToMidi: () => freqToMidi,
-    isMidi: () => isMidi,
-    midiToFreq: () => midiToFreq,
-    midiToNoteName: () => midiToNoteName,
-    pcset: () => pcset,
-    pcsetDegrees: () => pcsetDegrees,
-    pcsetNearest: () => pcsetNearest,
-    pcsetSteps: () => pcsetSteps,
-    toMidi: () => toMidi
-  });
-  function isMidi(arg) {
-    return +arg >= 0 && +arg <= 127;
-  }
-  function toMidi(note$1) {
-    if (isMidi(note$1)) return +note$1;
-    const n = note(note$1);
-    return n.empty ? null : n.midi;
-  }
-  function midiToFreq(midi2, tuning = 440) {
-    return Math.pow(2, (midi2 - 69) / 12) * tuning;
-  }
   var L2 = Math.log(2);
   var L440 = Math.log(440);
   function freqToMidi(freq2) {
@@ -6337,64 +6497,9 @@ var __JBH_PURE = (() => {
     if (options.pitchClass) return pc2;
     return pc2 + (Math.floor(midi2 / 12) - 1);
   }
-  function chroma2(midi2) {
-    return midi2 % 12;
-  }
-  function pcsetFromChroma(chroma4) {
-    return chroma4.split("").reduce((pcset2, val, index4) => {
-      if (index4 < 12 && val === "1") pcset2.push(index4);
-      return pcset2;
-    }, []);
-  }
-  function pcsetFromMidi(midi2) {
-    return midi2.map(chroma2).sort((a, b) => a - b).filter((n, i, a) => i === 0 || n !== a[i - 1]);
-  }
-  function pcset(notes2) {
-    return Array.isArray(notes2) ? pcsetFromMidi(notes2) : pcsetFromChroma(notes2);
-  }
-  function pcsetNearest(notes2) {
-    const set = pcset(notes2);
-    return (midi2) => {
-      const ch = chroma2(midi2);
-      for (let i = 0; i < 12; i++) {
-        const chUp = (ch + i) % 12;
-        const chDown = (ch - i + 12) % 12;
-        if (set.includes(chUp)) return midi2 + i;
-        if (set.includes(chDown)) return midi2 - i;
-      }
-    };
-  }
-  function pcsetSteps(notes2, tonic) {
-    const set = pcset(notes2);
-    const len = set.length;
-    return (step) => {
-      const index4 = step < 0 ? (len - -step % len) % len : step % len;
-      const octaves = Math.floor(step / len);
-      return set[index4] + octaves * 12 + tonic;
-    };
-  }
-  function pcsetDegrees(notes2, tonic) {
-    const steps3 = pcsetSteps(notes2, tonic);
-    return (degree) => {
-      if (degree === 0) return void 0;
-      return steps3(degree > 0 ? degree - 1 : degree);
-    };
-  }
-  var midi_default = {
-    chroma: chroma2,
-    freqToMidi,
-    isMidi,
-    midiToFreq,
-    midiToNoteName,
-    pcsetNearest,
-    pcset,
-    pcsetDegrees,
-    pcsetSteps,
-    toMidi
-  };
 
   // node_modules/@tonaljs/note/dist/index.mjs
-  var NAMES = [
+  var NAMES2 = [
     "C",
     "D",
     "E",
@@ -6406,7 +6511,7 @@ var __JBH_PURE = (() => {
   var toName = (n) => n.name;
   var onlyNotes = (array) => array.map(note).filter((n) => !n.empty);
   function names2(array) {
-    if (array === void 0) return NAMES.slice();
+    if (array === void 0) return NAMES2.slice();
     else if (!Array.isArray(array)) return [];
     else return onlyNotes(array).map(toName);
   }
@@ -6417,7 +6522,7 @@ var __JBH_PURE = (() => {
   var octave = (note2) => get5(note2).oct;
   var midi = (note2) => get5(note2).midi;
   var freq = (note2) => get5(note2).freq;
-  var chroma3 = (note2) => get5(note2).chroma;
+  var chroma2 = (note2) => get5(note2).chroma;
   function fromMidi(midi2) {
     return midiToNoteName(midi2);
   }
@@ -6494,7 +6599,7 @@ var __JBH_PURE = (() => {
     freq,
     fromFreq,
     fromFreqSharps,
-    chroma: chroma3,
+    chroma: chroma2,
     transpose: transpose3,
     tr,
     transposeBy,
@@ -6516,7 +6621,7 @@ var __JBH_PURE = (() => {
   };
   var cache4 = /* @__PURE__ */ new Map();
   function get6(src) {
-    return typeof src === "string" ? cached2(src) : typeof src === "number" ? get6(NAMES2[src] || "") : isPitch(src) ? fromPitch(src) : isNamedPitch(src) ? get6(src.name) : NO_ROMAN_NUMERAL;
+    return typeof src === "string" ? cached2(src) : typeof src === "number" ? get6(NAMES3[src] || "") : isPitch(src) ? fromPitch(src) : isNamedPitch(src) ? get6(src.name) : NO_ROMAN_NUMERAL;
   }
   function cached2(src) {
     let value = cache4.get(src);
@@ -6527,7 +6632,7 @@ var __JBH_PURE = (() => {
     return value;
   }
   function fromPitch(pitch2) {
-    return get6(altToAcc(pitch2.alt) + NAMES2[pitch2.step]);
+    return get6(altToAcc(pitch2.alt) + NAMES3[pitch2.step]);
   }
   var REGEX4 = /^(#{1,}|b{1,}|x{1,}|)(IV|I{1,3}|VI{0,2}|iv|i{1,3}|vi{0,2})([^IViv]*)$/;
   function tokenize2(str) {
@@ -6539,13 +6644,13 @@ var __JBH_PURE = (() => {
     ];
   }
   var ROMANS = "I II III IV V VI VII";
-  var NAMES2 = ROMANS.split(" ");
+  var NAMES3 = ROMANS.split(" ");
   var NAMES_MINOR = ROMANS.toLowerCase().split(" ");
   function parse3(src) {
     const [name2, acc, roman, chordType] = tokenize2(src);
     if (!roman) return NO_ROMAN_NUMERAL;
     const upperRoman = roman.toUpperCase();
-    const step = NAMES2.indexOf(upperRoman);
+    const step = NAMES3.indexOf(upperRoman);
     const alt = accToAlt(acc);
     const dir = 1;
     return {
@@ -6812,13 +6917,13 @@ var __JBH_PURE = (() => {
   function toMode(mode) {
     const [modeNum, setNum, alt, name2, triad, seventh, alias] = mode;
     const aliases = alias ? [alias] : [];
-    const chroma4 = Number(setNum).toString(2);
+    const chroma3 = Number(setNum).toString(2);
     return {
       empty: false,
       intervals: get3(name2).intervals,
       modeNum,
-      chroma: chroma4,
-      normalized: chroma4,
+      chroma: chroma3,
+      normalized: chroma3,
       name: name2,
       setNum,
       alt,
@@ -6840,8 +6945,8 @@ var __JBH_PURE = (() => {
   var seventhChords = chords(MODES.map((x) => x[5]));
 
   // node_modules/@tonaljs/progression/dist/index.mjs
-  var dist_exports5 = {};
-  __export(dist_exports5, {
+  var dist_exports4 = {};
+  __export(dist_exports4, {
     default: () => progression_default,
     fromRomanNumerals: () => fromRomanNumerals,
     toRomanNumerals: () => toRomanNumerals
@@ -6861,8 +6966,8 @@ var __JBH_PURE = (() => {
   };
 
   // node_modules/@tonaljs/scale/dist/index.mjs
-  var dist_exports6 = {};
-  __export(dist_exports6, {
+  var dist_exports5 = {};
+  __export(dist_exports5, {
     default: () => scale_default,
     degrees: () => degrees2,
     detect: () => detect2,
@@ -6949,17 +7054,17 @@ var __JBH_PURE = (() => {
     return all2().filter((scale2) => isSubset(scale2.chroma)).map((scale2) => scale2.name);
   }
   function scaleNotes(notes2) {
-    const pcset2 = notes2.map((n) => note(n).pc).filter((x) => x);
-    const tonic = pcset2[0];
-    const scale2 = sortedUniqNames(pcset2);
+    const pcset = notes2.map((n) => note(n).pc).filter((x) => x);
+    const tonic = pcset[0];
+    const scale2 = sortedUniqNames(pcset);
     return rotate(scale2.indexOf(tonic), scale2);
   }
   function modeNames(name2) {
     const s = get8(name2);
     if (s.empty) return [];
     const tonics = s.tonic ? s.notes : s.intervals;
-    return modes(s.chroma).map((chroma4, i) => {
-      const modeName = get8(chroma4).name;
+    return modes(s.chroma).map((chroma3, i) => {
+      const modeName = get8(chroma3).name;
       return modeName ? [tonics[i], modeName] : ["", ""];
     }).filter((x) => x[0]);
   }
@@ -6970,8 +7075,8 @@ var __JBH_PURE = (() => {
       const currNote = typeof noteOrMidi === "number" ? note(fromMidi(noteOrMidi)) : note(noteOrMidi);
       const height = currNote.height;
       if (height === void 0) return void 0;
-      const chroma4 = height % 12;
-      const position = chromas.indexOf(chroma4);
+      const chroma3 = height % 12;
+      const position = chromas.indexOf(chroma3);
       if (position === -1) return void 0;
       return enharmonic(currNote.name, names4[position]);
     };
@@ -7090,7 +7195,7 @@ var __JBH_PURE = (() => {
 
   // src/pure/theory.js
   var pc = (n) => {
-    const c = dist_exports3.chroma(n);
+    const c = dist_exports2.chroma(n);
     return c == null ? null : c;
   };
   function canonical(tail) {
@@ -7138,9 +7243,9 @@ var __JBH_PURE = (() => {
     const t = String(tonic || "").trim();
     if (!t) return [];
     const m = String(mode || "major").toLowerCase();
-    if (m === "major") return dist_exports4.majorKey(t).chords.slice();
-    if (m === "minor") return dist_exports4.minorKey(t).natural.chords.slice();
-    const sc = dist_exports6.get(t + " " + m);
+    if (m === "major") return dist_exports3.majorKey(t).chords.slice();
+    if (m === "minor") return dist_exports3.minorKey(t).natural.chords.slice();
+    const sc = dist_exports5.get(t + " " + m);
     if (!sc.notes.length) return [];
     return sc.notes.map((_, i) => {
       const pick = [0, 2, 4].map((k) => sc.notes[(i + k) % sc.notes.length]);
@@ -7151,7 +7256,7 @@ var __JBH_PURE = (() => {
   function toTriad(sym) {
     const info = chordInfo(sym);
     if (!info) return sym;
-    const root = dist_exports3.pitchClass(dist_exports3.fromMidi(60 + info.root));
+    const root = dist_exports2.pitchClass(dist_exports2.fromMidi(60 + info.root));
     if (info.intervals.includes(3) && info.intervals.includes(6)) return root + "dim";
     if (info.intervals.includes(4) && info.intervals.includes(8)) return root + "aug";
     if (info.intervals.includes(3)) return root + "m";
@@ -7160,28 +7265,24 @@ var __JBH_PURE = (() => {
   }
   function fromRoman(tonic, numerals) {
     if (!tonic || !Array.isArray(numerals) || !numerals.length) return [];
-    return dist_exports5.fromRomanNumerals(String(tonic), numerals.map(String));
+    return dist_exports4.fromRomanNumerals(String(tonic), numerals.map(String));
   }
   function toRoman(tonic, chords2) {
     if (!tonic || !Array.isArray(chords2) || !chords2.length) return [];
-    return dist_exports5.toRomanNumerals(String(tonic), chords2.map(String));
+    return dist_exports4.toRomanNumerals(String(tonic), chords2.map(String));
   }
   function scalePcs(tonic, mode) {
     const t = String(tonic || "").trim();
     if (!t) return [];
     const m = String(mode || "major").toLowerCase();
     const name2 = m === "minor" ? "aeolian" : m;
-    const sc = dist_exports6.get(t + " " + name2);
-    const notes2 = sc.notes.length ? sc.notes : dist_exports6.get(t + " major").notes;
+    const sc = dist_exports5.get(t + " " + name2);
+    const notes2 = sc.notes.length ? sc.notes : dist_exports5.get(t + " major").notes;
     return [...new Set(notes2.map(pc).filter((x) => x != null))];
   }
   function scalesFitting(notes2) {
     if (!Array.isArray(notes2) || !notes2.length) return [];
-    return dist_exports6.detect(notes2.map(String)).slice(0, 8);
-  }
-  function midiName(m) {
-    const n = dist_exports2.midiToNoteName(m | 0, { sharps: true });
-    return n || String(m);
+    return dist_exports5.detect(notes2.map(String)).slice(0, 8);
   }
   function rubsAgainst(midiOrPc, chord2) {
     const info = typeof chord2 === "string" ? chordInfo(chord2) : chord2;
