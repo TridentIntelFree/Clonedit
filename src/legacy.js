@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R256 · 2026-11-03 · the MCP server can actually start';
+const BUILD = 'JBH-88 · R257 · 2026-11-04 · a recipe is slots, and the pads start empty';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -5232,6 +5232,12 @@ const padPeaks={};                  // bufId -> Float32Array(PAD_PK) of |peak|
 /* bufId -> the timbre of that buffer, guarded by the buffer itself for
    the same reason padPeaks is: a slot is reused. */
 const timbreCache={};
+/* the recipe last loaded, so fit() knows which brief a pad is answering.
+   Kept off S on purpose: the session document validates pad and track
+   SHAPES against newPad()/newTrack(), and a new top-level key is not
+   worth risking a refused project load over. It is not persisted, and
+   fit() says so by refusing rather than guessing. */
+let lastRecipe=null;
 function peaksFor(bufId){
   const buf=S.buffers[bufId]; if(!buf) return null;
   const hit=padPeaks[bufId];
@@ -10530,6 +10536,120 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           : 'it can be written as fast as the grid goes.')
         +' '+play.says };
   },
+  /* LOAD A RECIPE AS SLOTS, AND LEAVE THE PADS EMPTY.
+
+     writeSurprise() writes onto whatever pads are already loaded, so the
+     recipe is shaped by the board. This is the other way round: the
+     recipe says which slots it needs, the pads are created EMPTY under
+     those names, and the sequencer plays the pattern whether or not
+     anything is in them yet. Put your own sound in a slot and that slot
+     starts sounding; the pattern never changes.
+
+     Steps can be written to an empty pad because a pattern is data:
+     pat.steps[p] does not care whether pad p holds a buffer. So the
+     rhythm is real and audible the moment a sound arrives, which is what
+     makes an empty named pad a brief rather than a placeholder.
+
+     THE PROBABILITIES ARE STEP LOCKS, not a new idea. This sequencer has
+     had per-step probability all along, so a recipe's 0.65 on step 6 is
+     written as {prob:0.65} and the engine does the rest -- which is also
+     why two bars of one recipe differ without being random.
+
+     The PITCHED slots are left without notes on purpose. instPads()
+     counts a pad as part of an instrument only once it has a srcNote,
+     and an empty pad has none, so there is nothing to write a melody
+     against until a sound is in the slot. Put one in and OFFER (or
+     ensemble()) writes the part. Said out loud in `says` rather than
+     left as a surprise. */
+  recipe(arg, opt){
+    const o = (arg && typeof arg==='object') ? arg : (opt||{});
+    const seed = (typeof arg==='number') ? (arg>>>0)
+      : (o.seed!=null ? (+o.seed>>>0) : (Date.now()&0x7fffffff));
+    const R = makeRecipe(seed, o);
+
+    /* the pattern has to be long enough for the recipe's bars, and it
+       has to be SELECTED -- configuring a pattern does not select it,
+       and three tracks were bounced with every note piled into pattern 0 */
+    const want = Math.max(16, Math.min(MAXSTEPS, R.bars*16));
+    const plen = PATLENS.find(L=>L>=want) || MAXSTEPS;
+    const pr = window.MVX.pattern(S.pattern, {select:true, plen, clear:true});
+    if(pr && pr.warning) throw new Error(pr.warning);
+    if(pr && pr.selected!==true) throw new Error('could not select pattern '+(S.pattern+1));
+    window.MVX.set({bpm:R.bpm, swing:R.swing});
+
+    /* one empty pad per slot. An UNTAGGED empty pad is preferred and a
+       pad with a sound on it is never claimed: taking someone's loaded
+       sound to make room for a slot is the wrong guess to make silently. */
+    const used=[], taken=new Set();
+    for(const slot of R.slots){
+      let at=-1;
+      for(let i=0;i<NPADS;i++){
+        if(taken.has(i)) continue;
+        if(S.pads[i].bufId<0 && !S.pads[i].inst){ at=i; break; }
+      }
+      if(at<0) break;                       /* no room: report, do not overwrite */
+      taken.add(at);
+      window.MVX.pad(at, {name:slot.label, inst:slot.id});
+      used.push({slot:slot.id, label:slot.label, pad:at, gap:slot.gap,
+        pitched:slot.pitched, says:slot.says, presets:slot.presets});
+    }
+
+    /* the kit, as steps with their probabilities, across every bar */
+    const bars = Math.floor(plen/16);
+    let wrote=0;
+    for(const u of used){
+      const P = R.steps[u.slot];
+      if(!P) continue;
+      for(let b=0;b<bars;b++) for(const k in P){
+        const st=b*16+(+k);
+        if(st>=plen) continue;
+        const p=+P[k];
+        window.MVX.step(u.pad, st, p>=1?0.95:0.8, p>=1?null:{prob:p});
+        wrote++;
+      }
+    }
+    lastRecipe={ recipe:R, slots:used, pattern:S.pattern };
+    const empty=used.filter(u=>!R.steps[u.slot]).map(u=>u.label);
+    return { seed:R.seed, name:R.name, bpm:R.bpm, swing:R.swing, feel:R.feel,
+      density:R.density, motion:R.motion, bars, plen, slots:used, wroteSteps:wrote,
+      patternsMeasured:R.patternsMeasured,
+      says: R.says+' '+used.length+' empty pads named for their slots'
+        +(wrote?(', '+wrote+' steps written for the kit'):'')
+        +'. Put a sound in a slot and it starts sounding -- fit(slot) says whether '
+        +'it can do that job.'
+        +(empty.length?(' '+empty.join(', ')+' are pitched and have no notes yet: '
+          +'an empty pad has no srcNote, so there is nothing to write a melody '
+          +'against until a sound is in. Load one, then OFFER.'):'')
+        +(taken.size<R.slots.length?(' Only '+taken.size+' of '+R.slots.length
+          +' slots had an empty pad to use; nothing loaded was overwritten.'):'') };
+  },
+
+  /* CAN THE SOUND IN THIS SLOT DO THE JOB. Measures whatever is in the
+     pad now and checks it against the brief the recipe set, at the gap
+     that slot's notes actually sit at -- the same sound can suit a pad
+     slot and be inaudible in a hat slot, and only the gap tells them
+     apart. */
+  fit(which, opt){
+    const o=opt||{};
+    if(!lastRecipe) throw new Error('no recipe loaded -- call recipe() first, '
+      +'or use timbre() to measure a pad on its own.');
+    const want = String(which);
+    const u = lastRecipe.slots.find(x=>x.slot===want || x.label===want
+      || x.pad===(typeof which==='number'?which:-1));
+    if(!u) throw new Error('no slot "'+want+'" in this recipe. It has: '
+      +lastRecipe.slots.map(x=>x.slot).join(', '));
+    const pd=S.pads[u.pad];
+    if(!pd || pd.bufId<0) return { slot:u.slot, label:u.label, pad:u.pad,
+      empty:true, fits:false,
+      says:u.label+' is still empty. '+u.says+' Presets in the right family: '
+        +u.presets.join(', ')+' -- but pick by what it measures, not by its name.' };
+    const t = window.MVX.timbre(u.pad, {bpm:o.bpm, gap:u.gap});
+    const f = fitSlot(u.slot, t, o.bpm!=null?+o.bpm:Math.abs(S.bpm||120), o.gap!=null?+o.gap:u.gap);
+    return { slot:u.slot, label:u.label, pad:u.pad, empty:false,
+      fits:f.fits, attackMs:t.attackMs, ringMs:t.ringMs, gap:u.gap,
+      says:u.label+': '+f.says };
+  },
+
   /* ONE NOTE, OR A CHORD, ANYWHERE IN THE RANGE.
 
      midi may be a number or an array. Notes landing on one pad at one step
@@ -26385,6 +26505,17 @@ function projNew(){
      cleared between blocks and found pattern 1 still carrying four
      chords from two blocks earlier. */
   S.key=null; S.chords={}; S.sections={};
+  /* THE LOADED RECIPE GOES TOO, and it is the same fault one layer up.
+     A recipe is a set of SLOTS, each naming a pad; wipe the pads and
+     every one of those names points at a fresh empty pad that nobody
+     briefed. fit() would then measure whatever landed there and report
+     it against a brief from the previous project, which is worse than
+     refusing — the numbers are real and the slot they are judged
+     against is imaginary. The comment where lastRecipe is declared
+     claims it is not persisted and that fit() refuses rather than
+     guesses; this line is what makes that true. Caught by the browser
+     test asserting the refusal, which got a cheerful answer instead. */
+  lastRecipe=null;
   S.pattern=0; S.bank=0; S.editPad=0; S.seqPad=0;
   S.scOn=false; workBuf=null; slices=[]; selSlice=-1;
   Object.keys(warpOrig).forEach(k=>delete warpOrig[k]);

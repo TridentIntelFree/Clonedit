@@ -594,6 +594,37 @@ const TOOLS = [
       seed: { type: 'integer' },
       apply: { type: 'integer', description: 'the seed of the arrangement to write' } } } },
 
+  { name: 'jbh_recipe', description:
+      'LOAD A RECIPE AS SLOTS AND LEAVE THE PADS EMPTY. The other build call writes onto '
+      + 'whatever pads are already loaded, so the recipe is shaped by the board; this is the '
+      + 'other way round. The recipe says which slots it needs \u2014 low end here, a hat here, '
+      + 'a synth here \u2014 the pads are created EMPTY under those names, and the sequencer '
+      + 'plays the pattern whether or not anything is in them. Put a sound in a slot and that '
+      + 'slot starts sounding; the pattern never changes, so one recipe plays on any kit. '
+      + 'Seeded and composed rather than picked from a list: tempo, feel and density are drawn '
+      + 'by FAMILY because they are correlated in real music, and it names itself after what it '
+      + 'is rather than after a genre it has not earned. Each slot carries a BRIEF in measurable '
+      + 'terms, so jbh_fit can tell you whether the sound you chose can do that job. '
+      + 'The step patterns are composed, not measured, and every recipe says so.',
+    inputSchema: { type: 'object', properties: {
+      seed: { type: 'integer', description: 'reproduces a recipe you liked' },
+      family: { type: 'string', enum: ['slow', 'midtempo', 'four', 'fast'] },
+      bpm: { type: 'number' },
+      feel: { type: 'string', description: "straight, or a cross-rhythm: '3', '5', '7'" },
+      density: { type: 'string', enum: ['sparse', 'normal', 'busy'] } } } },
+
+  { name: 'jbh_fit', description:
+      'CAN THE SOUND IN THIS SLOT DO THE JOB. Measures whatever is in the pad now and checks '
+      + 'it against the brief the recipe set, AT THE GAP that slot\u2019s notes sit at \u2014 the '
+      + 'same sample can suit a pad slot and be inaudible in a hat slot, and only the gap tells '
+      + 'them apart. It reports rather than refuses, because a brief gets broken on purpose; the '
+      + 'one firm line is whether the sound can SPEAK at the rate it is played, which is '
+      + 'brokenness rather than taste. On an empty slot it hands back the brief and the presets '
+      + 'in the right family.',
+    inputSchema: { type: 'object', required: ['slot'], properties: {
+      slot: { description: 'the slot id or label, or its pad number' },
+      bpm: { type: 'number' }, gap: { type: 'integer' } } } },
+
   { name: 'jbh_timbre', description:
       'WHAT A SOUND CAN ACTUALLY DO, before you write a part for it. The writing calls know '
       + 'an instrument\u2019s PITCH and nothing about its SOUND, so the same part gets written '
@@ -1100,6 +1131,10 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
                                 gate: a.gate, scale: a.scale, shape: a.shape,
                                 poly: a.poly, converse: a.converse,
                                 seed: a.seed, apply: a.apply }]));
+      case 'jbh_recipe':      return ok(await jbh('recipe', [{ seed: a.seed,
+                                family: a.family, bpm: a.bpm, feel: a.feel,
+                                density: a.density }]));
+      case 'jbh_fit':         return ok(await jbh('fit', [a.slot, { bpm: a.bpm, gap: a.gap }]));
       case 'jbh_timbre':      return ok(await jbh('timbre', [a.instrument,
                                 { bpm: a.bpm, gap: a.gap }]));
       case 'jbh_inst_pads':   return ok(await jbh('instPads', [a.instrument]));

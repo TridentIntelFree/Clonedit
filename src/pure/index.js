@@ -20,6 +20,8 @@ export * from './sfz.js';
    playable on it at a given tempo. Pure maths over a channel of audio,
    so it is tested in Node against signals whose answers are known. */
 export * from './timbre.js';
+/* recipes: slots with a measurable brief, and a seeded generator */
+export * from './recipes.js';
 /* tonal is bundled in through here: pure, testable from Node, and
    published as globals ahead of the engine like everything else in
    this folder. */
