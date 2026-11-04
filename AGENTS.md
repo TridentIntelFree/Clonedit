@@ -569,6 +569,17 @@ phone — belongs at the end, where it was always going to live.
 A song script should look like: write a pattern, `review({quick:true})`,
 write the next one. Not: write everything, then look.
 
+**AND `infill()` AND `ensemble()` DO THAT FOR YOU NOW.** Applying a
+candidate runs the free checks and reports only what they FOUND, under
+`checked` — silence means nothing to say. It carries the material
+checks only (`melody`, `motif`, `counterpoint`, `harmony`) and
+deliberately not `form` or `pulse`: the first version forwarded
+everything and told a one-bar sketch "there is no arrangement", which
+is true, is the normal state of a project somebody just started, and is
+not about the notes just written. Arrangement and groove are
+`review()`'s question. Pass `chords` so harmony is checked too, and
+`check:false` when writing many parts before looking once.
+
 ## There is no correct loudness
 
 Every track bounced in this repo was aimed at about −11.5 LUFS, as
@@ -1198,6 +1209,7 @@ thing they are about:
 - [An agent could, and the person could not](docs/findings.md#an-agent-could-and-the-person-could-not)
 - [The MCP server could not start on a Mac or on Windows](docs/findings.md#the-mcp-server-could-not-start-on-a-mac-or-on-windows)
 - [A piece can pass every check in this repo and be one loop](docs/findings.md#a-piece-can-pass-every-check-in-this-repo-and-be-one-loop)
+- [The loop this file prescribes was never automated](docs/findings.md#the-loop-this-file-prescribes-was-never-automated)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

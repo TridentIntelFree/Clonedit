@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R265 · 2026-11-04 · it can see whether the piece has a shape';
+const BUILD = 'JBH-88 · R266 · 2026-11-04 · a write says what it did to the piece';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -11774,7 +11774,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       const ev=notes.map(([m,st,v,beats,nudge])=>['note', inst, m, st, v,
         nudge ? {beats, nudge} : {beats}]);
       const r=await window.MVX.batch(ev);
-      return { applied:true, inst, seed, from, bars, wrote:notes.length,
+      const checked=await checkAfterWrite({src:o.src, chords:o.chords, check:o.check});
+      return { applied:true, inst, seed, from, bars, wrote:notes.length, checked,
         failed:r.failed||0, chords:prog.slice(),
         score:chosen?chosen.score:score(notes.map(
           ([midi,step,vel,beats])=>({midi,step,vel,beats}))),
@@ -11788,7 +11789,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         says:'wrote '+notes.length+' notes for '+inst+' into bar'
           +(bars===1?' '+(from+1):'s '+(from+1)+'–'+(from+bars))
           +' over '+prog.join(' ')+'.'
-          +(cellNote?(' '+cellNote):'') };
+          +(cellNote?(' '+cellNote):'')
+          +(checked && checked.clean===false ? (' '+checked.says) : '') };
     }
 
     const best=cands[0];
@@ -15221,15 +15223,17 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           lanes.push(q.inst+' '+q.ratio+' @'+q.bpm);
         }catch(e){}
       }
+      const checked=await checkAfterWrite({src:o.src, chords:o.chords, check:o.check});
       return { applied:chosen.seed, voices:written.map(v=>v.inst), wrote,
-        score:chosen.score, lanes, shaped,
+        score:chosen.score, lanes, shaped, checked,
         says:'wrote '+wrote+' notes across '+written.length+' voices — '
           +written.map(v=>v.inst).join(', ')+' — over bars '+(from+1)+'–'+(from+bars)
           +'. '+chosen.score.rubs+' semitone clashes between voices, '
           +chosen.score.oblique+'% oblique motion against 68% in Palestrina.'
           +(lanes.length?' Cross-tempo lanes on '+lanes.join(', ')
             +' — each keeps its grid part underneath.':'')
-          +(shaped.length?' Dynamic arcs: '+shaped.join(', ')+'.':'') };
+          +(shaped.length?' Dynamic arcs: '+shaped.join(', ')+'.':'')
+          +(checked && checked.clean===false ? (' '+checked.says) : '') };
     }
 
     const best=cands[0];
@@ -17195,6 +17199,69 @@ window.MVX.tempo=function(which, opt){
 
    Free in the same sense as pulse() and motif(): it reads the
    arrangement the app already knows exactly and renders nothing. */
+/* WHAT THE WRITE JUST DID TO THE PIECE.
+
+   AGENTS.md prescribes the working loop in one line -- "write a
+   pattern, review({quick:true}), write the next one. Not: write
+   everything, then look" -- and nothing automated it. infill() told you
+   it wrote twelve notes and nothing about what those notes did: whether
+   the line it made is a tune or a scale with a rhythm, whether it now
+   shadows another voice, whether it fits the chords. Those checks are
+   FREE, they read the schedule and render nothing, and they were a
+   separate call nobody made in between.
+
+   FINDINGS ONLY, and that is the whole design. Printing five verdicts
+   after every write is how a check gets ignored -- review() had to be
+   fixed twice for exactly that, once for running melodic checks on
+   shakers and once for reporting one fact four times per instrument,
+   burying four real findings under thirty-two spurious ones. Silence
+   here means the free checks had nothing to say.
+
+   It reuses review({quick:true}) rather than calling the checks again,
+   because two routes to the same verdict is how they drift apart. */
+async function checkAfterWrite(o){
+  const opt=o||{};
+  if(opt.check===false) return null;
+  try{
+    const r=await window.MVX.review(Object.assign({quick:true},
+      opt.src?{src:opt.src}:{}, opt.chords?{chords:opt.chords}:{}));
+    /* ONLY WHAT THE WRITE COULD HAVE CAUSED, and this had to be fixed
+       before it shipped. The first version forwarded every finding
+       review quick produced, and the very first test of it reported
+       "1 thing to look at after that write: form. there is no
+       arrangement" -- on a one-bar sketch, where the song chain being
+       empty is the normal state of a project somebody has just started.
+       Every write during sketching would have carried that complaint.
+
+       AGENTS.md: a check that cries wolf gets ignored, and then it may
+       as well not exist; when adding one, ask what it will say on
+       material where nothing is wrong. On material where nothing is
+       wrong, the arrangement checks say the arrangement is unfinished,
+       which is true and is not about the notes that were just written.
+
+       So the post-write report carries the checks about the MATERIAL --
+       the line, its relation to the other voices, and whether it fits
+       the chords. form and pulse are about the whole project and stay
+       in review(), which is where somebody asks about the whole
+       project. */
+    const MATERIAL = ['melody', 'motif', 'counterpoint', 'harmony'];
+    const found=((r&&r.findings)||[]).filter(f=>MATERIAL.indexOf(f.tool)>=0);
+    if(!found.length) return { clean:true, ran:(r&&r.ran)||[],
+      says:'the free checks found nothing to look at in the material. '
+        +'(Arrangement and groove are review()\u2019s question, not this one\u2019s.)' };
+    return { clean:false, ran:(r&&r.ran)||[],
+      findings:found.map(f=>({tool:f.tool, says:f.says, fix:f.fix})),
+      says:found.length+' thing'+(found.length===1?'':'s')+' to look at after '
+        +'that write: '+found.map(f=>f.tool).join(', ')+'. '
+        +found.map(f=>f.says).join(' ') };
+  }catch(e){
+    /* A FAILED CHECK MUST NOT FAIL THE WRITE. The notes are already on
+       the grid; throwing here would report a successful write as an
+       error and send somebody looking for the wrong thing. */
+    return { clean:null, says:'could not run the free checks after writing: '
+      +String((e&&e.message)||e).slice(0,120) };
+  }
+}
 window.MVX.form=function(opt){
   const o=opt||{};
   /* the steps each pattern plays, as keys the pure side can compare.

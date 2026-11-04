@@ -2408,3 +2408,64 @@ hunting for a syntax error in a function that is perfectly fine. The
 cap is a runaway guard, not a budget for the document; it is 40000 now
 and the message says to check the cap before believing the function is
 broken.
+
+## The loop this file prescribes was never automated
+
+AGENTS.md says it in one line: *"A song script should look like: write
+a pattern, `review({quick:true})`, write the next one. Not: write
+everything, then look."* That is the working loop, it is correct, and
+nothing in the app did it. `infill()` reported that it wrote twelve
+notes and said nothing about what those notes did — while the checks
+that would say are FREE, read the schedule, and were a separate call
+somebody had to remember to make in between.
+
+So applying a candidate now runs them and attaches what they found. It
+reuses `review({quick:true})` rather than calling the checks again,
+because two routes to the same verdict is how they drift apart.
+
+### And the first run of its own test caught it crying wolf
+
+The first version forwarded every finding review quick produced. The
+very first assertion printed:
+
+```
+wrote 3 notes for keys into bar 1 over C.
+1 thing to look at after that write: form.
+there is no arrangement — the song chain is empty
+```
+
+Which is **true**, and is the normal state of a project somebody
+started four minutes ago, and has nothing to do with the three notes
+just written. Every write during sketching would have carried it.
+
+That is the exact failure this file already names twice — *a check that
+cries wolf gets ignored, and then it may as well not exist* — and the
+rule it gives for avoiding it is to ask what a new check will say on
+material where nothing is wrong. On material where nothing is wrong,
+the arrangement checks say the arrangement is unfinished.
+
+So the post-write report carries the MATERIAL checks only: `melody`,
+`motif`, `counterpoint`, `harmony` — the line, how it sits against the
+other voices, and whether it fits the chords. `form` and `pulse` are
+about the whole project and stay in `review()`, which is where somebody
+asks about the whole project. The clean message says so, rather than
+leaving their absence to look like an oversight.
+
+### A failed check must not fail the write
+
+The notes are already on the grid by the time the check runs. Throwing
+there would report a successful write as an error and send somebody
+looking for a fault in the writing, which is the "error names the wrong
+cause" shape that `tape()` is documented for. It returns
+`clean: null` with the reason instead, and a test sabotages `review()`
+to prove the notes still land.
+
+### Two options appeared out of nowhere, and the net caught them
+
+Reading `o.chords` and `o.check` in the new helper silently gave
+`infill()` and `ensemble()` two options no tool forwarded. The handshake
+test named all four within seconds of the code existing. That check was
+extended earlier the same day to follow an options object passed into
+`src/pure`, and this is the first time it caught something that was not
+deliberately planted — which is the difference between a test that
+passes and a test that works.

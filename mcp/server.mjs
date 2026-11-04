@@ -572,6 +572,15 @@ const TOOLS = [
       + 'FAULT \u2014 minor ninths, then missing thirds, then distance from the Essen folk norms '
       + '\u2014 which is not the same as ranked by worth. Nothing here can hear them.',
     inputSchema: { type: 'object', required: ['instrument'], properties: {
+      check: { type: 'boolean', description:
+        'after writing, run the FREE checks and report only what they found \u2014 '
+        + 'default on. AGENTS.md prescribes write-then-review-quick as the working '
+        + 'loop and this is that loop, automated. Pass false when writing many parts '
+        + 'in a row and checking once at the end.' },
+      chords: { type: 'array', items: { type: 'string' }, description:
+        'the progression, one symbol per bar, so the post-write check can run '
+        + 'harmony() too \u2014 without it nothing verifies the notes fit the chords, '
+        + 'and the result says so rather than passing silently.' },
       instrument: { type: 'string' },
       from: { type: 'integer', description: 'first bar' },
       bars: { type: 'integer' },
@@ -625,6 +634,15 @@ const TOOLS = [
       + 'A span past four bars does not fit one pattern; cut it into four-bar chunks yourself '
       + 'and write each into the next pattern along.',
     inputSchema: { type: 'object', required: ['voices'], properties: {
+      check: { type: 'boolean', description:
+        'after writing, run the FREE checks and report only what they found \u2014 '
+        + 'default on. AGENTS.md prescribes write-then-review-quick as the working '
+        + 'loop and this is that loop, automated. Pass false when writing many parts '
+        + 'in a row and checking once at the end.' },
+      chords: { type: 'array', items: { type: 'string' }, description:
+        'the progression, one symbol per bar, so the post-write check can run '
+        + 'harmony() too \u2014 without it nothing verifies the notes fit the chords, '
+        + 'and the result says so rather than passing silently.' },
       voices: { type: 'array', description:
         'two or more, in any order — roles decide who goes first: '
         + '[{inst:"bass", role:"bass"}, {inst:"keys", role:"lead"}]',
@@ -1316,13 +1334,14 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
                                 lo: a.lo, hi: a.hi, src: a.src, seed: a.seed,
                                 density: a.density, octave: a.octave, feel: a.feel,
                                 gate: a.gate, scale: a.scale, shape: a.shape,
-                                against: a.against,
+                                against: a.against, check: a.check, chords: a.chords,
                                 apply: a.apply }]));
       case 'jbh_ensemble':    return ok(await jbh('ensemble', [a.voices, {
                                 from: a.from, bars: a.bars, n: a.n, src: a.src,
                                 density: a.density, octave: a.octave, feel: a.feel,
                                 gate: a.gate, scale: a.scale, shape: a.shape,
                                 poly: a.poly, converse: a.converse,
+                                check: a.check, chords: a.chords,
                                 seed: a.seed, apply: a.apply }]));
       case 'jbh_tell':        return ok(await jbh('tell', [a.text]));
       case 'jbh_messages':    return ok(await jbh('messages', []));
