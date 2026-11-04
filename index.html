@@ -10612,7 +10612,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R266 · 2026-11-04 · a write says what it did to the piece';
+const BUILD = 'JBH-88 · R267 · 2026-11-04 · a recipe can use the sounds you already had';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -18390,9 +18390,17 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       }
     }
     lastRecipe={ recipe:R, slots:used, pattern:S.pattern };
+    /* THE CALLER GETS COPIES. `used` is the live record slot() rewrites
+       when a sound is assigned, and handing the same objects out meant
+       a snapshot taken before the call had silently changed after it --
+       read `slots[2].pad` afterwards and you get the NEW pad, with
+       nothing to say it moved. It cost an hour here: a test compared
+       the old pad against the new one, both reads went through the same
+       mutated object, and the move looked like a copy. */
+    const snapshot=used.map(u=>Object.assign({}, u));
     const empty=used.filter(u=>!R.steps[u.slot]).map(u=>u.label);
     return { seed:R.seed, name:R.name, bpm:R.bpm, swing:R.swing, feel:R.feel,
-      density:R.density, motion:R.motion, bars, plen, slots:used, wroteSteps:wrote,
+      density:R.density, motion:R.motion, bars, plen, slots:snapshot, wroteSteps:wrote,
       /* PER VOICE, not one flag for the lot. The drum figures come out of
          the Groove corpus and every pitched part is still composed, so a
          single boolean would say something true about the hat and false
@@ -18411,6 +18419,66 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           +' slots had an empty pad to use; nothing loaded was overwritten.'):'') };
   },
 
+  /* PUT A SOUND YOU ALREADY HAD INTO A SLOT.
+ 
+     The missing half of the recipe idea. A slot is a BRIEF -- "the low
+     end, and it has to speak fast enough for this tempo" -- and a brief
+     you cannot fill with what you own is a brief that only works on an
+     empty board. recipe() claims empty pads on purpose, so somebody
+     with a full board got slots pointing at new empty pads and no way
+     to say "pad 3 is my kick, use that".
+
+     THE STEPS MOVE WITH IT, which is the whole reason this is a call
+     and not a note in the manual. The kit pattern was written onto the
+     slot's pad before any sound was chosen; leaving it there would
+     have the part playing silently on an empty pad while the sound you
+     just assigned sits mute, which reads exactly like the assignment
+     not working. */
+  slot(which, pad, opt){
+    const o=opt||{};
+    if(!lastRecipe) throw new Error('no recipe loaded -- call recipe() first.');
+    const want=String(which);
+    const u=lastRecipe.slots.find(x=>x.slot===want || x.label===want);
+    if(!u) throw new Error('no slot "'+want+'" in this recipe. It has: '
+      +lastRecipe.slots.map(x=>x.slot).join(', '));
+    const to=+pad|0;
+    if(!(to>=0 && to<NPADS)) throw new Error('pad '+pad+' is not a pad. '
+      +'They are numbered 1 to '+NPADS+' in the UI, 0 to '+(NPADS-1)+' here.');
+    if(S.pads[to].bufId<0) throw new Error('pad '+(to+1)+' is empty, so putting it '
+      +'in the '+u.label+' slot would change nothing. Load a sound on it first, or '
+      +'load one onto the slot\u2019s own pad '+(u.pad+1)+'.');
+    const from=u.pad;
+    if(from===to) return { slot:u.slot, pad:to, moved:0,
+      says:u.label+' is already pad '+(to+1)+'.' };
+    /* carry the written part across, then clear the old pad's row so
+       the figure is not playing in two places at once */
+    let moved=0;
+    for(const pat of S.patterns){
+      const row=pat.steps[from];
+      if(!row) continue;
+      const dst=pat.steps[to]||(pat.steps[to]=[]);
+      for(let i=0;i<row.length;i++){
+        if(!(row[i]>0)) continue;
+        dst[i]=row[i]; moved++;
+        const lk=pat.locks[LK(from,i,false)];
+        if(lk) pat.locks[LK(to,i,false)]=Object.assign({}, lk);
+      }
+      pat.steps[from]=[];
+      for(const k in pat.locks) if(k.indexOf(from+':')===0) delete pat.locks[k];
+    }
+    /* the slot's name and tag follow too, so balance() and the panel
+       keep seeing one instrument rather than two halves of one */
+    window.MVX.pad(to, {name:u.label, inst:u.slot});
+    if(!o.keepOld) window.MVX.pad(from, {name:'', inst:''});
+    u.pad=to;
+    try{ drawPads(); drawSeq(); }catch(e){}
+    const f=window.MVX.fit(u.slot, {bpm:o.bpm});
+    return { slot:u.slot, label:u.label, pad:to, from, moved, fit:f,
+      says:u.label+' is pad '+(to+1)+' now'
+        +(moved?(', and '+moved+' step'+(moved===1?'':'s')+' moved with it'):'')
+        +'. '+f.says };
+  },
+
   /* CAN THE SOUND IN THIS SLOT DO THE JOB. Measures whatever is in the
      pad now and checks it against the brief the recipe set, at the gap
      that slot's notes actually sit at -- the same sound can suit a pad
@@ -18426,10 +18494,53 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     if(!u) throw new Error('no slot "'+want+'" in this recipe. It has: '
       +lastRecipe.slots.map(x=>x.slot).join(', '));
     const pd=S.pads[u.pad];
-    if(!pd || pd.bufId<0) return { slot:u.slot, label:u.label, pad:u.pad,
-      empty:true, fits:false,
-      says:u.label+' is still empty. '+u.says+' Presets in the right family: '
-        +u.presets.join(', ')+' -- but pick by what it measures, not by its name.' };
+    if(!pd || pd.bufId<0){
+      /* THE SOUNDS ALREADY ON THE BOARD ARE CANDIDATES, and leaving them
+         out was the hole in this.
+
+         recipe() deliberately claims only EMPTY pads -- taking somebody's
+         loaded sound to make room for a slot is the wrong guess to make
+         silently -- and the consequence went unnoticed: a person with a
+         board full of sounds got a set of new empty pads, and CHECK MY
+         SOUNDS reported every slot empty forever, because the only pads
+         it looked at were the ones the recipe had made. Their own sounds
+         were invisible to it and there was no way to put one in a slot.
+
+         suggestFor() has ranked candidates for a role since the day
+         recipes were added and nothing ever called it, which is this
+         repo's most repeated mistake wearing its usual disguise: the
+         capability existed, was tested, and had no way in. */
+      const mine=[];
+      const inSlots=new Set(lastRecipe.slots.map(x=>x.pad));
+      for(let i=0;i<NPADS;i++){
+        if(inSlots.has(i)) continue;
+        const p=S.pads[i];
+        if(!p || p.bufId<0) continue;
+        try{
+          mine.push({ id:i, pad:i, name:p.name||('pad '+(i+1)),
+            timbre:window.MVX.timbre(i, {bpm:o.bpm, gap:u.gap}) });
+        }catch(e){}
+      }
+      const bpmNow=o.bpm!=null?+o.bpm:Math.abs(S.bpm||120);
+      const ranked=mine.length
+        ? suggestFor(u.slot, mine, bpmNow, u.gap).slice(0,3)
+          .map(r=>Object.assign({}, r,
+            { pad:(mine.find(m=>m.id===r.id)||{}).pad,
+              name:(mine.find(m=>m.id===r.id)||{}).name }))
+        : [];
+      return { slot:u.slot, label:u.label, pad:u.pad,
+        empty:true, fits:false, candidates:ranked,
+        says:u.label+' is still empty. '+u.says
+          +(ranked.length
+            ? ' You already have '+ranked.length+' sound'+(ranked.length===1?'':'s')
+              +' that could do it: '
+              +ranked.map(r=>'PAD '+(r.pad+1)+' '+r.name
+                +(r.fits?' (fits)':' ('+String(r.says||'').slice(0,60)+')')).join('; ')
+              +'. slot("'+u.slot+'", '+((ranked[0]||{}).pad)+') puts one in, and the '
+              +'steps move with it.'
+            : ' Presets in the right family: '+u.presets.join(', ')
+              +' -- but pick by what it measures, not by its name.') };
+    }
     const t = window.MVX.timbre(u.pad, {bpm:o.bpm, gap:u.gap});
     const f = fitSlot(u.slot, t, o.bpm!=null?+o.bpm:Math.abs(S.bpm||120), o.gap!=null?+o.gap:u.gap);
     return { slot:u.slot, label:u.label, pad:u.pad, empty:false,
@@ -23887,8 +23998,11 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         + 'filters. Order matters: the bass states the harmony and goes first.',
       'recipe({seed}) sets a tempo and a feel and makes EMPTY NAMED PADS — low end '
         + 'here, a hat here, a synth here — writes the kit pattern onto them before any '
-        + 'sound is chosen, and fit(slot) says whether the sound you dropped in can do '
-        + 'that job. The drum figures are measured from the Groove corpus, one bar of '
+        + 'sound is chosen. fit(slot) says whether the sound you dropped in can do '
+        + 'that job, and on an EMPTY slot it ranks the sounds you already have that '
+        + 'could fill it \u2014 slot(name, pad) then puts one in and the written steps '
+        + 'move with it, which matters because the kit pattern is written before any '
+        + 'sound is chosen. The drum figures are measured from the Groove corpus, one bar of '
         + 'one voice as ten drummers played it; every pitched part is composed and '
         + '`measured` says which per voice.',
       'phrase(name,from,to) copies a written phrase somewhere else, which is how a '
@@ -31854,8 +31968,49 @@ function mlVoices(){
   const rows=names.map(n=>({ inst:n,
     mid:byInst[n].reduce((a,b)=>a+b,0)/byInst[n].length }))
     .sort((a,b)=>a.mid-b.mid);
-  return rows.map((r,i)=>({ inst:r.inst,
+  /* WHAT THE SOUND CAN PLAY, not only where it sits.
+
+     This assigned roles from the mean sampled pitch alone -- lowest
+     takes bass, highest takes arp -- which is right about register and
+     silent about whether the sound can be played that way. An arp part
+     puts notes two sixteenths apart, so at 150bpm it asks for a note
+     every 200ms; hand that to a bowed swell that takes 235ms to speak
+     and the part is silence with the shape of a part. The instrument
+     was chosen for being the highest, and nothing asked whether it
+     could do the job.
+
+     The register ordering still decides. This only refuses to call
+     something an ARP when it demonstrably cannot play one, and says so
+     rather than quietly reshuffling -- a role that moved for a reason
+     nobody can see is worse than the wrong role. Bass is left alone: a
+     slow sound is perfectly good down there, where the notes are far
+     apart anyway. */
+  const bpmNow=Math.abs(S.bpm||120);
+  const canArp=(inst)=>{
+    try{ const t=window.MVX.timbre(inst, {bpm:bpmNow, gap:2});
+      return { ok:(t.minGap||1)<=2, attackMs:t.attackMs, minGap:t.minGap||1 }; }
+    catch(e){ return { ok:true }; }      /* unmeasurable: do not demote on a guess */
+  };
+  const out=rows.map((r,i)=>({ inst:r.inst,
     role: i===0 ? 'bass' : (i===rows.length-1 && rows.length>2 ? 'arp' : 'lead') }));
+  const arpAt=out.findIndex(r=>r.role==='arp');
+  if(arpAt>=0){
+    const v=canArp(out[arpAt].inst);
+    if(!v.ok){
+      const was=out[arpAt].inst;
+      out[arpAt].role='lead';
+      out[arpAt].why=was+' takes '+v.attackMs+'ms to speak and an arp part puts notes '
+        +'closer than that at '+bpmNow+'bpm, so it carries the tune instead.';
+      /* offer the role to the next highest that can take it */
+      for(let i=out.length-2;i>0;i--){
+        if(out[i].role!=='lead') continue;
+        if(canArp(out[i].inst).ok){ out[i].role='arp';
+          out[i].why=out[i].inst+' takes the arp instead, being the highest that can '
+            +'play one.'; break; }
+      }
+    }
+  }
+  return out;
 }
 
 /* WHAT IS ALREADY ON THE GRID, for infill() to write against.
@@ -32694,10 +32849,25 @@ if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
    fast enough for this tempo" tells you what to go and find, which is
    the thing you otherwise have to already know. */
 let uiRecipe=null;
-function drawRecipeSlots(r, fits){
+/* `note` is written INTO THIS BOX rather than into mlInfo, and that is
+   not a style choice. mlInfo is shared: the key-and-chords panel
+   rewrites it on every redraw with the chord status, so an action's
+   result lives exactly until the next redraw -- and assigning a pad
+   redraws. The first version of the USE PAD button reported "LOW END
+   is pad 1 now" and had it replaced by "No chords on pattern 1" before
+   anybody could read it, which reads as the button having done
+   something else entirely. Results belong where the thing they are
+   about is drawn. */
+function drawRecipeSlots(r, fits, note){
   const box=$('mlSlots'); if(!box) return;
   box.textContent='';
   if(!r){ box.textContent=''; return; }
+  if(note){
+    const n=document.createElement('div');
+    n.textContent=note;
+    n.style.cssText='color:var(--amber);margin-bottom:2px';
+    box.appendChild(n);
+  }
   const head=document.createElement('div');
   head.textContent=r.name+' \u00b7 '+r.bars+' bar'+(r.bars===1?'':'s')
     +' \u00b7 drums from '+r.style+(r.styleThin?' (few players)':'');
@@ -32714,6 +32884,39 @@ function drawRecipeSlots(r, fits){
     d.style.marginTop='2px';
     if(f && f.empty===false) d.style.color=f.fits?'var(--ok,#7c7)':'var(--warn,#d94)';
     box.appendChild(d);
+    /* A SUGGESTION YOU CANNOT ACT ON IS A SENTENCE. fit() names the
+       loaded pads that would suit an empty slot and then said
+       slot("low", 2) -- an API call, from a panel, to somebody who has
+       never opened a console. That is the same fault as the capability
+       with no way in, one layer smaller: the advice was reachable and
+       the action was not. One button per candidate. */
+    if(f && f.empty && f.candidates && f.candidates.length){
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 4px';
+      for(const c of f.candidates){
+        const btn=document.createElement('button');
+        btn.textContent='USE PAD '+(c.pad+1)+(c.name?(' \u00b7 '+c.name):'');
+        btn.title=(c.fits?'This sound suits the slot. ':'')+String(c.says||'');
+        btn.style.fontSize='10px';
+        btn.addEventListener('click',async()=>{
+          btn.disabled=true;
+          try{
+            const r=await window.MVX.slot(sl.slot, c.pad);
+            lcd(r.says.slice(0,70));
+            /* redraw from the live record, so the panel shows where the
+               slot actually is now rather than where it was drawn */
+            if(uiRecipe) uiRecipe.slots=uiRecipe.slots.map(x=>
+              x.slot===sl.slot?Object.assign({},x,{pad:r.pad}):x);
+            drawPads(); drawSeq();
+            /* last, because drawPads() rewrites mlInfo through the
+               chord panel and would take this with it */
+            drawRecipeSlots(uiRecipe, null, r.says);
+          }catch(e){ drawRecipeSlots(uiRecipe, null, e.message); btn.disabled=false; }
+        });
+        row.appendChild(btn);
+      }
+      box.appendChild(row);
+    }
   }
 }
 if($('mlRecipe')) $('mlRecipe').addEventListener('click',async()=>{

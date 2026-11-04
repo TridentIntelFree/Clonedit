@@ -481,6 +481,16 @@ is the bass whatever it is called, so they come from each instrument's
 mean sampled pitch: lowest takes bass, highest takes arp, the rest carry
 the tune.
 
+**AND THE ARP ROLE NOW ASKS WHETHER THE SOUND CAN PLAY ONE.** Pitch
+decides the register and says nothing about speed, so a bowed swell
+that happens to sit highest was made the arp — a part putting notes two
+sixteenths apart, which at 150bpm asks for a note every 200ms from
+something taking 235ms to speak. `mlVoices()` measures with `timbre()`
+and declines to call something an arp when it demonstrably cannot play
+one, hands the role to the highest that can, and puts the reason in
+`why` rather than reshuffling silently. Bass is untouched: a slow sound
+is fine down there, where the notes are far apart anyway.
+
 ## Producing while somebody plays
 
 The checks in the next section read the SCHEDULE, which the app knows
@@ -510,7 +520,10 @@ audit found no button anywhere for `recipe()`, `fit()` or `timbre()`,
 and none for measuring a take — so an agent could name the slots a
 track needs, judge whether a sound suits one and measure what a sample
 can do, and the person in front of the app could not. The controls are
-GIVE ME A RECIPE TO FILL IN and CHECK MY SOUNDS on the WRITE panel,
+GIVE ME A RECIPE TO FILL IN and CHECK MY SOUNDS on the WRITE panel
+(CHECK MY SOUNDS ranks the pads you ALREADY HAVE against each empty
+slot and offers a USE PAD button per candidate; `slot(name, pad)` is
+the call, and the written steps move with it),
 WHAT CAN THIS SOUND DO? beside the pad tools, and HOW DID THAT TAKE
 SIT? in TRAX. `tests/browser/user-can-too.test.mjs` drives the controls
 rather than the API, because every other test of these calls them
@@ -1210,6 +1223,8 @@ thing they are about:
 - [The MCP server could not start on a Mac or on Windows](docs/findings.md#the-mcp-server-could-not-start-on-a-mac-or-on-windows)
 - [A piece can pass every check in this repo and be one loop](docs/findings.md#a-piece-can-pass-every-check-in-this-repo-and-be-one-loop)
 - [The loop this file prescribes was never automated](docs/findings.md#the-loop-this-file-prescribes-was-never-automated)
+- [A recipe that cannot use the sounds you already have](docs/findings.md#a-recipe-that-cannot-use-the-sounds-you-already-have)
+- [The arp role never asked whether the sound could play one](docs/findings.md#the-arp-role-never-asked-whether-the-sound-could-play-one)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

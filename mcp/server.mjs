@@ -818,6 +818,23 @@ const TOOLS = [
         + 'soul, pop, reggae, punk, and the thinly-sampled afrobeat and dance. A style '
         + 'that was not played at this bpm is ignored in favour of one that was.' } } } },
 
+  { name: 'jbh_slot', description:
+      'PUT A SOUND THE PERSON ALREADY HAD INTO A RECIPE SLOT, and move the written '
+      + 'steps with it. jbh_recipe claims only EMPTY pads on purpose \u2014 taking a '
+      + 'loaded sound to make room for a slot is the wrong guess to make silently '
+      + '\u2014 so on a board that already has sounds, every slot points at a new '
+      + 'empty pad and there was no way to say "pad 3 is my kick, use that". '
+      + 'The steps move because the kit pattern is written before any sound is '
+      + 'chosen: left behind, the part would play silently on an empty pad while the '
+      + 'sound you just assigned sits mute, which reads exactly like the assignment '
+      + 'not working. jbh_fit on an empty slot now ranks the loaded pads that could '
+      + 'fill it, so the usual order is fit, then this.',
+    inputSchema: { type: 'object', required: ['slot', 'pad'], properties: {
+      slot: { type: 'string', description: 'the slot id or its label, e.g. kick or KICK' },
+      pad: { type: 'integer', description: 'the pad holding the sound, 0-based' },
+      bpm: { type: 'number', description: 'tempo to judge the fit at; defaults to the project' },
+      keepOld: { type: 'boolean', description:
+        'leave the slot\u2019s old empty pad named and tagged instead of clearing it' } } } },
   { name: 'jbh_fit', description:
       'CAN THE SOUND IN THIS SLOT DO THE JOB. Measures whatever is in the pad now and checks '
       + 'it against the brief the recipe set, AT THE GAP that slot\u2019s notes sit at \u2014 the '
@@ -1358,6 +1375,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_recipe':      return ok(await jbh('recipe', [{ seed: a.seed,
                                 family: a.family, bpm: a.bpm, feel: a.feel,
                                 density: a.density, style: a.style }]));
+      case 'jbh_slot':        return ok(await jbh('slot', [a.slot, a.pad,
+                                { bpm: a.bpm, keepOld: a.keepOld }]));
       case 'jbh_fit':         return ok(await jbh('fit', [a.slot, { bpm: a.bpm, gap: a.gap }]));
       case 'jbh_timbre':      return ok(await jbh('timbre', [a.instrument,
                                 { bpm: a.bpm, gap: a.gap }]));

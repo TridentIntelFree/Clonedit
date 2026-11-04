@@ -2469,3 +2469,100 @@ extended earlier the same day to follow an options object passed into
 `src/pure`, and this is the first time it caught something that was not
 deliberately planted — which is the difference between a test that
 passes and a test that works.
+
+## A recipe that cannot use the sounds you already have
+
+Reported from use: *"when I click check my sounds it doesn't check pads
+that I already had to fill the gap, it only counts the new recipe."*
+
+Exactly right, and the cause was a decision made on purpose whose
+consequence was never followed through. `recipe()` claims only EMPTY
+untagged pads — taking somebody's loaded sound to make room for a slot
+is the wrong guess to make silently, and a test asserts it. But on a
+board that already has sounds, that leaves every slot pointing at a
+NEW empty pad, `fit()` reports them empty forever because the only pads
+it looks at are the ones the recipe made, and there was no way at all to
+say "pad 3 is my kick, use that".
+
+So the half that was built is correct and the half that makes it usable
+was missing.
+
+### suggestFor() had been sitting there the whole time
+
+`src/pure/recipes.js` has exported `suggestFor(role, candidates, bpm,
+gap)` since recipes were added — it ranks candidate sounds against a
+slot's brief — and **nothing ever called it**. It had a unit test and no
+caller. That is this repo's most repeated mistake wearing its usual
+disguise: the capability existed, was tested, and had no way in.
+
+`fit()` on an empty slot now measures every loaded pad that is not
+already in a slot, ranks them with it, and names the best three by pad
+number.
+
+### And a suggestion you cannot act on is just a sentence
+
+The first version printed the ranking and ended with `slot("low", 2)` —
+an API call, in a panel, to somebody who has never opened a console.
+That is the same fault one layer smaller: the advice was reachable and
+the action was not. There is a **USE PAD** button per candidate now.
+
+`slot(name, pad)` **moves the written steps with the assignment**, which
+is the whole reason it is a call rather than a note in the manual. The
+kit pattern is written onto the slot's pad before any sound is chosen;
+left behind, the part would play silently on an empty pad while the
+sound just assigned sits mute — which reads exactly like the assignment
+not working.
+
+### The returned slots were the live ones, and mutated under the caller
+
+`recipe()` handed back the same objects `slot()` rewrites. So a snapshot
+taken before an assignment had silently changed after it: read
+`slots[2].pad` afterwards and you get the NEW pad, with nothing to say
+it moved.
+
+It cost an hour. A test compared the old pad against the new one, both
+reads went through the same mutated object, the move looked like a copy,
+and the implementation was blamed. `recipe()` returns copies now.
+
+### mlInfo is shared, so a result lives until the next redraw
+
+The USE PAD button reported "LOW END is pad 1 now" and had it replaced
+by "No chords on pattern 1" before anybody could read it. `mlInfo`
+carries both the key-and-chords panel's STATUS and every action's
+RESULT, the panel rewrites it on any redraw, and assigning a pad
+redraws. The result reads as the button having done something else
+entirely.
+
+Results belong where the thing they are about is drawn, so the outcome
+goes into the slots box. Worth suspecting anywhere else a shared status
+line carries an action's answer.
+
+## The arp role never asked whether the sound could play one
+
+The second half of the same report: write should *"consider what sounds
+it has before it writes them"*.
+
+`mlVoices()` assigned roles from the mean sampled pitch alone — lowest
+takes bass, highest takes arp, the rest carry the tune. That is right
+about REGISTER and silent about SPEED. An arp part puts notes two
+sixteenths apart, so at 150bpm it asks for a note every 200ms; hand
+that to a bowed swell taking 235ms to speak and the part is silence
+with the shape of a part. The instrument was chosen for being the
+highest and nothing asked whether it could do the job.
+
+Measured in the browser, three tagged sounds where the slowest is also
+the highest:
+
+```
+before   thud=bass  click=lead  swell=arp
+after    thud=bass  click=arp   swell=lead
+         "swell takes 230ms to speak and an arp part puts notes closer
+          than that at 150bpm, so it carries the tune instead."
+```
+
+The register ordering still decides. This only declines to call
+something an arp when it demonstrably cannot play one, hands the role to
+the highest that can, and says why — a role that moved for a reason
+nobody can see is worse than the wrong role. Bass is left alone: a slow
+sound is fine down there, where the notes are far apart anyway. An
+instrument whose timbre cannot be measured is not demoted on a guess.
