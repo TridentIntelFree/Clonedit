@@ -1,11 +1,21 @@
 /* WHAT A SAMPLE CAN ACTUALLY DO, measured from the sample.
 
-   WRITE knows each instrument's PITCH and nothing about its SOUND. The
-   register comes from the pad's sampled note and the role from the mean
-   of those notes, and that is the whole of what `infill()` and
-   `ensemble()` know about the thing they are writing for. So a part gets
+   WRITE KNEW each instrument's PITCH and nothing about its SOUND. The
+   register came from the pad's sampled note and the role from the mean
+   of those notes, and that was the whole of what `infill()` and
+   `ensemble()` knew about the thing they were writing for. So a part got
    written identically for a 90ms pluck and a two-second bowed swell, and
-   whether it can be played at all is discovered by listening.
+   whether it could be played at all was discovered by listening.
+
+   THAT IS WIRED NOW, and the gap between this module existing and being
+   called is the thing worth remembering. `infill()` measures the
+   instrument once, takes `minGap` from it, and offers only the rhythmic
+   cells the sound can actually speak at -- measured in the browser, a
+   pluck gets 3 of 3 arp figures at 150bpm and a 235ms swell gets 0 of 3
+   and is told it needs 500ms between notes. `ensemble()` calls
+   `infill()`, so it inherits it. The part is still written, because the
+   sound is the person's choice; what changes is that the figure suits
+   it and the report says so.
 
    Two of the measurements in `scripts/timbre-atlas.mjs` decide that, and
    neither needs a render or a Fourier transform — just the envelope of

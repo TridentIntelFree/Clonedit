@@ -173,7 +173,7 @@ link above is the live path.
 | Path | What it is |
 | --- | --- |
 | `src/` | **The source.** Edit here. `index.html` (markup), `app.css`, `legacy.js` (the engine), `pure/` (logic, unit-tested), `lib/*.svelte` (components). |
-| `tests/` | Node unit tests for `src/pure/` (no browser, under a second), plus `tests/browser/` — 29 suites that drive the real app in Chromium, including a stress suite that property-tests, soaks and fuzzes rather than asking questions somebody already thought of. |
+| `tests/` | Node unit tests for `src/pure/` (no browser, under a second), plus `tests/browser/` — 30 suites that drive the real app in Chromium, including a stress suite that property-tests, soaks and fuzzes rather than asking questions somebody already thought of. |
 | `index.html` | **The app — generated.** One self-contained file: open it, serve it, or install it as a PWA. Built from `src/`; do not edit by hand. |
 | `standalone.html` | A frozen, hand-written snapshot of R96, kept as a build-free fallback. See below. |
 | `samples/` | CC0 sound packs, served **beside** the app rather than inside it. Loading one is a network fetch and each sound is downloaded to IndexedDB before it can be used — the app itself ships no audio. |
@@ -222,7 +222,7 @@ A plain `file://` open works too, except that service-worker install and a few
 
 ```sh
 npm test                      # 207 unit tests, about a second, no browser
-node scripts/browser-tests.mjs   # 29 suites against the built index.html, ~20 min
+node scripts/browser-tests.mjs   # 30 suites against the built index.html, ~20 min
 node scripts/browser-tests.mjs guides   # or just one
 ```
 

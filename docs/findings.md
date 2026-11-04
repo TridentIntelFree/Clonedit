@@ -2029,3 +2029,77 @@ Zero is a machine. This repo already knows the neighbouring version of
 that mistake: `pulse()` scores a human drummer ~100% because its
 tolerance is five times wider than the deviation being measured, so
 "sixteenth 100%" was never evidence a track was robotic.
+
+## WRITE never listened to the pad it was writing for
+
+`src/pure/timbre.js` was added to measure what a sample can actually do:
+how long it takes to speak, how long it rings, and the narrowest gap it
+can be played at. Its own header described the problem it existed to
+solve — that `infill()` and `ensemble()` know an instrument's PITCH and
+nothing about its SOUND, because `mlVoices()` reads `p.srcNote` and
+nothing else, so a 90ms pluck and a two-second bowed swell get identical
+parts.
+
+Then nothing called it. `timbre`, `minGap` and `playable` appeared in
+exactly two places in `src/legacy.js`: the `timbre()` method itself and
+an error message in `fit()`. The write path never asked.
+
+That is this repo's most repeated mistake — a capability with no way in —
+and this was the version where the capability existed, was tested, was
+documented, and sat one function call from the code that needed it. The
+module header even said what the consequence was. Writing the thing and
+wiring the thing are two jobs and only the first one feels finished.
+
+### What it took
+
+A cell in the library is `[step, beats]` pairs, so the tightest gap in
+one is the smallest distance between consecutive onsets, including the
+wrap into the next bar because cells repeat. An `arp` cell puts notes two
+sixteenths apart and a `bass` cell four to six. `minGap` is already in
+sixteenths, so "can this sound play this cell" is a comparison and not a
+new measurement.
+
+Measured in the browser, same role, same tempo, same seed, two sounds
+differing only in attack:
+
+```
+pluck  5ms attack   minGap 1   3/3 arp figures fit
+swell  235ms        minGap 5   0/3 arp figures fit
+```
+
+and the swell's report reads: *takes 235ms to speak and every arp figure
+puts notes closer than the 5 sixteenths (500ms) it needs at this tempo.
+The loosest one was used anyway. Write it slower, take the tempo down, or
+trim the pad's start — or pick a quicker sound for this part.*
+
+`ensemble()` calls `infill()`, so one fix covered both, and `CELLS[`
+appears exactly once in the file so there was no second generator to
+keep in step.
+
+### Filtered, not forced, and it still writes
+
+The role and the tempo are the person's decisions and so is the sound.
+When no cell in the library suits it, refusing would be wrong — this call
+OFFERS candidates, and a sound that is marginal at this tempo is still
+the one they chose. So the loosest available cell is used, the part is
+written, and the report says what it heard and names the fix.
+
+That is the line the longest section in AGENTS.md draws. Whether a note
+is shorter than its own attack is BROKENNESS: it is not a quiet note, it
+is no note. Whether a 235ms swell belongs in a 150bpm arp part is TASTE,
+and the app does not get a vote.
+
+The ring is reported the same way and is not filtered on at all, because
+overlap is sometimes the point — a trio holds its bar lines together with
+it. It is said out loud when a sound rings more than twice its gap, with
+the consequence attached: glue in a trio and mud in a fast part, and
+every note late in a bar has to land in the chord it rings into.
+
+### The stale claim was the tell
+
+`timbre.js`'s header still described WRITE as knowing nothing about
+sound, in the present tense, after the wiring made it false. A document
+read on every turn carrying a claim that is no longer true is worse than
+one that says nothing, because the next session will believe it and
+rebuild what already exists. It is corrected, and the correction says
+when it changed and what the measurement was.

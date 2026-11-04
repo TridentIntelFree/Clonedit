@@ -396,6 +396,17 @@ third, then distance from the Essen norms — which is **not** ranked by
 worth. Nothing here can hear them. If the one ranked fifth sounds
 best, the ranking is wrong and the ear is right.
 
+**IT LISTENS TO THE PAD FIRST, which it did not for a long time.**
+`mlVoices()` reads `p.srcNote` and nothing else, so all WRITE knew about
+an instrument was its pitch and a 90ms pluck and a two-second bowed
+swell got identical parts. `infill()` now measures the instrument with
+`timbre()` and offers only the cells its `minGap` allows: at 150bpm a
+pluck fits 3 of 3 arp figures and a 235ms swell fits 0 of 3 and is told
+it needs 500ms between notes, with the three ways out. It still writes —
+the sound is your choice and a marginal one is still the one you picked —
+and the result carries `timbre` so you can see what it heard.
+`ensemble()` calls `infill()`, so it inherits all of this.
+
 ### ensemble() — every layer at once, each against the others
 
 "Can we have write consider each layer of the sequence simultaneously?
@@ -1157,6 +1168,7 @@ thing they are about:
 - [A take is late or it is loose, and those are different problems](docs/findings.md#a-take-is-late-or-it-is-loose-and-those-are-different-problems)
 - [The corpus does not reduce to a table, and two shapes had to fail first](docs/findings.md#the-corpus-does-not-reduce-to-a-table-and-two-shapes-had-to-fail-first)
 - [Counting up from 1 explored one corner of the space](docs/findings.md#counting-up-from-1-explored-one-corner-of-the-space)
+- [WRITE never listened to the pad it was writing for](docs/findings.md#write-never-listened-to-the-pad-it-was-writing-for)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story
