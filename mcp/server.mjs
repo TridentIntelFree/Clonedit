@@ -42,12 +42,55 @@ function findApp() {
   throw new Error('Cannot find index.html. Set JBH_APP to the built app, e.g. '
     + 'JBH_APP=/path/to/Clonedit/index.html');
 }
-function findBrowser() {
-  for (const p of [process.env.CHROME_PATH, '/opt/pw-browsers/chromium',
-    '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome']) {
-    if (p && existsSync(p)) return p;
+/* THIS SERVER COULD NOT START ON A MAC OR ON WINDOWS.
+
+   The list that used to be here was /opt/pw-browsers and three paths
+   under /usr/bin, and this repo depends on `playwright-core`, which
+   deliberately ships NO browser binaries. So on either of the two
+   platforms most people have, with Chrome sitting right there installed,
+   it found nothing, fell through to "let playwright use its own
+   download", and there was none. The entire point of this server is to
+   let somebody's AI drive the app in front of them, and it could not
+   boot.
+
+   scripts/lib/find-chrome.mjs answers it for all three, takes its
+   platform as a parameter so the Windows and macOS branches are tested
+   from here rather than hoped at, and returns CANDIDATES in the order to
+   try: an explicit CHROME_PATH, then real paths for this platform, then
+   Playwright's `chrome` and `msedge` channels, then its own download.
+   The last two cannot be stat-ed, so they are tried by launching. */
+async function launchBrowser() {
+  const { chromeCandidates, noBrowserMessage, hasDisplay } =
+    await import('../scripts/lib/find-chrome.mjs');
+  /* VISIBLE BY DEFAULT, which is the other half of being friendly to a
+     person on a desktop. This launched headless, so an agent drove a
+     browser nobody could see -- fine in CI and exactly wrong for
+     somebody sitting in front of the app, who can also click in the
+     same window and take over. Headless is still the answer where there
+     is no screen: this container has none, and a headful launch there
+     fails outright. JBH_HEADLESS forces either way. */
+  const want = process.env.JBH_HEADLESS;
+  const headless = want === '1' || want === 'true' ? true
+    : want === '0' || want === 'false' ? false
+      : !hasDisplay();
+  const tried = [];
+  for (const c of chromeCandidates()) {
+    if (c.executablePath && !existsSync(c.executablePath)) continue;
+    const opts = { headless };
+    if (c.executablePath) opts.executablePath = c.executablePath;
+    if (c.channel) opts.channel = c.channel;
+    /* A window somebody is meant to watch should not open at a default
+       800x600 with the app's tabs wrapped. Only when it is visible --
+       a headless size is the viewport's business. */
+    if (!headless) opts.args = ['--window-size=1280,900'];
+    try {
+      const b = await chromium.launch(opts);
+      return { browser: b, how: c.why, headless };
+    } catch (e) {
+      tried.push(c.why + ': ' + String(e && e.message || e).split('\n')[0]);
+    }
   }
-  return null;          // let playwright use its own download if it has one
+  throw new Error(noBrowserMessage() + ' Tried: ' + tried.join(' | '));
 }
 
 /* THE APP IS SERVED OVER HTTP, NOT OPENED AS A FILE, and that was a
@@ -82,7 +125,7 @@ async function appUrl() {
   const root = dirname(app);
   if (!fileServer) {
     const { createServer } = await import('node:http');
-    const { normalize, extname, basename } = await import('node:path');
+    const { normalize, extname, basename, sep } = await import('node:path');
     const { statSync } = await import('node:fs');
     const srv = createServer((req, res) => {
       /* the path is normalised and confined to the root: this serves a
@@ -90,7 +133,14 @@ async function appUrl() {
       let p;
       try { p = resolve(root, '.' + normalize(decodeURIComponent(req.url.split('?')[0]))); }
       catch (e) { res.writeHead(400); return res.end(); }
-      if (!p.startsWith(root) || !existsSync(p) || !statSync(p).isFile()) {
+      /* ROOT PLUS A SEPARATOR, not root as a prefix. `/home/me/Clonedit`
+         is a prefix of `/home/me/Clonedit-private`, so a bare
+         startsWith lets a sibling directory through -- on every
+         platform, and the Windows case is worse because the separator
+         differs. Confining to a directory means confining to its
+         contents. */
+      if ((p !== root && !p.startsWith(root + sep)) || !existsSync(p)
+        || !statSync(p).isFile()) {
         res.writeHead(404); return res.end();
       }
       res.writeHead(200, { 'content-type': MIME[extname(p)] || 'application/octet-stream' });
@@ -107,9 +157,14 @@ async function app() {
   if (page) return page;
   if (booting) return booting;
   booting = (async () => {
-    const exe = findBrowser();
-    browser = await chromium.launch(exe ? { executablePath: exe } : {});
-    const ctx = await browser.newContext();
+    const got = await launchBrowser();
+    browser = got.browser;
+    /* Said on stderr rather than kept, because "I cannot see a window"
+       is otherwise a mystery with no way in to it. */
+    process.stderr.write('[jbh] browser: ' + got.how
+      + (got.headless ? ' (headless \u2014 no display found)' : ' (visible)') + '\n');
+    const ctx = await browser.newContext(got.headless ? {}
+      : { viewport: null });   /* let the real window size drive it */
     /* The first-run tour would sit over everything and the install nudge
        steals a tap; neither means anything to a program. */
     await ctx.addInitScript(() => {

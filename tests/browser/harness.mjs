@@ -26,21 +26,27 @@ export const ROOT = resolve(import.meta.dirname, '..', '..');
    fixed path can name. It is asked last among the deliberate options and
    wrapped, because on a machine with no download it throws rather than
    returning nothing. */
+/* ONE LIST, SHARED WITH THE MCP SERVER. This had its own: CHROME_PATH,
+   a playwright directory, three paths under /usr/bin and exactly one
+   macOS path -- and nothing for Windows at all, so the browser suites
+   could not run there. The server's copy was Linux-only. Two answers to
+   the same question, both wrong in the same direction, which is what
+   happens when the question gets answered twice.
+
+   scripts/lib/find-chrome.mjs covers all three platforms and is tested
+   for each. Playwright's own `executablePath()` is still consulted,
+   because it knows about a download this cannot guess the location of. */
 export async function findBrowser() {
-  const fixed = [
-    process.env.CHROME_PATH,
-    resolve(process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers', 'chromium'),
-  ].filter(Boolean);
+  const { pickChrome } = await import('../../scripts/lib/find-chrome.mjs');
   const isFile = p => { try { return statSync(p).isFile(); } catch { return false; } };
-  const hit = fixed.find(isFile);
-  if (hit) return hit;
+  const hit = pickChrome();
+  if (hit && isFile(hit.executablePath)) return hit.executablePath;
   try {
     const { chromium } = await import('playwright-core');
     const p = chromium.executablePath();
     if (p && isFile(p)) return p;
   } catch {}
-  return ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome',
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find(isFile);
+  return null;
 }
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json',

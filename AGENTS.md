@@ -1182,6 +1182,7 @@ thing they are about:
 - [WRITE never listened to the pad it was writing for](docs/findings.md#write-never-listened-to-the-pad-it-was-writing-for)
 - [Eighteen calls an agent could use and would never hear about](docs/findings.md#eighteen-calls-an-agent-could-use-and-would-never-hear-about)
 - [An agent could, and the person could not](docs/findings.md#an-agent-could-and-the-person-could-not)
+- [The MCP server could not start on a Mac or on Windows](docs/findings.md#the-mcp-server-could-not-start-on-a-mac-or-on-windows)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

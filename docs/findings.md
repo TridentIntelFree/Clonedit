@@ -2236,3 +2236,94 @@ then STOP — then this will tell you how it sat.
 
 Found by a test asserting the refusal was helpful rather than merely
 present.
+
+## The MCP server could not start on a Mac or on Windows
+
+The whole point of `mcp/server.mjs` is to let somebody's AI drive the app
+in front of them. On either of the two platforms most people have, it
+could not boot.
+
+Its browser lookup was four Linux paths:
+
+```
+CHROME_PATH, /opt/pw-browsers/chromium, /usr/bin/chromium,
+/usr/bin/chromium-browser, /usr/bin/google-chrome
+```
+
+and this repo depends on `playwright-core`, which **deliberately ships
+no browser binaries**. So on a Mac with Chrome sitting in
+`/Applications`, it found nothing, fell through to a comment reading
+*"let playwright use its own download if it has one"*, and there was
+none.
+
+`tests/browser/harness.mjs` had its own copy of the same question, with
+one macOS path and no Windows path at all. Two answers to the same
+question, wrong in the same direction — which is what happens when a
+question gets answered twice.
+
+### Platform is a parameter, because otherwise it cannot be tested
+
+Both copies were written in a Linux container, where a Windows path can
+be typed and never evaluated. That is the whole mechanism of the bug,
+not an accident of it.
+
+`scripts/lib/find-chrome.mjs` takes its platform and environment as
+arguments, and `tests/find-chrome.test.mjs` exercises all three from
+here. It is not the same as running on a Mac, and it is the difference
+between paths that were reasoned about and paths nobody ever looked at.
+
+**And the separator caught the same trap one level down.** `join` from
+`node:path` uses the HOST's separator, so building a Windows path with
+it on Linux produces `C:\Program Files/Google/Chrome/...` — mixed, and
+worse, the test that checked it could not see the difference. The
+win32 branch uses `path.win32.join` explicitly, which makes the output
+identical wherever it is computed and the assertion mean something.
+
+### Windows needs three roots and the third is the common one
+
+A 64-bit Chrome installs to Program Files, a 32-bit one to Program
+Files (x86), and a per-user install — which is what you get **without
+admin rights**, so what a work laptop usually has — to `LOCALAPPDATA`.
+Missing that third is missing the commonest case on a managed machine.
+The roots are read from the environment rather than hardcoded to `C:`,
+because a machine whose system drive is something else is unusual and
+not rare.
+
+Edge, Brave and Chromium are all tried as well. They are Chromium
+underneath and drive identically, and somebody who has Edge and not
+Chrome should not be told to install a browser.
+
+### Visible by default, which is the other half of being friendly
+
+`chromium.launch({})` defaults to headless, so an agent drove a browser
+nobody could see. That is right in CI and exactly wrong for a person
+sitting at a desktop — who can also click in the same window and take
+over, which costs nothing to allow and is most of what "watch my AI
+work" means.
+
+It launches visible now, at 1280x900 with the real window driving the
+viewport, and falls back to headless where there is no screen —
+checked, not assumed, since this container has none and a headful
+launch there fails outright. The choice is reported on stderr:
+
+```
+[jbh] browser: PLAYWRIGHT_BROWSERS_PATH (headless — no display found)
+```
+
+because "I cannot see a window" is otherwise a mystery with no way into
+it. `JBH_HEADLESS=1` forces hidden, `0` forces shown.
+
+Verified by spawning the real server over stdio and making real tool
+calls — `jbh_state` and a `jbh_pack` load — rather than by reading the
+code. The handshake tests boot the server but not the browser, which
+launches lazily on the first call, so they could never have caught this.
+
+### And a prefix is not a directory
+
+The static server that serves the app and its sample packs confined
+requests with `p.startsWith(root)`. `/home/me/Clonedit` is a prefix of
+`/home/me/Clonedit-private`, so a sibling directory was reachable — on
+every platform, and more easily on Windows where the separator differs.
+Confining to a directory means `root + sep`. Found while reading the
+path handling for platform assumptions, which is the kind of thing that
+only turns up when you go looking at paths for another reason.

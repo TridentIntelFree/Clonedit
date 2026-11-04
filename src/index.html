@@ -2706,6 +2706,20 @@ this screen from elsewhere; all three routes below need a computer.</p>
     <p>Add to your agent&rsquo;s MCP config, with the real path:</p>
     <div class="cmd" id="cmdMcpCfg">{"mcpServers":{"jbh88":{"command":"node","args":["/path/to/Clonedit/mcp/server.mjs"]}}}</div>
     <div class="row"><button id="btnCopyMcp" class="grow">COPY CONFIG</button></div>
+    <p><b>On Windows</b> the path needs doubled backslashes inside JSON &mdash;
+<span class="lit">C:\\Users\\you\\Clonedit\\mcp\\server.mjs</span> &mdash; or just use
+forward slashes, which Node accepts there too. <b>On a Mac</b> it is wherever you
+cloned it, e.g. <span class="lit">/Users/you/Clonedit/mcp/server.mjs</span>.</p>
+    <p>It needs a <b>Chromium-based browser</b> and finds Chrome, Edge, Brave or
+Chromium wherever your platform keeps them &mdash; including a per-user Chrome
+under <span class="lit">LOCALAPPDATA</span>, which is what you get on Windows
+without admin rights. If you have none, run
+<span class="lit">npx playwright install chromium</span>, or point
+<span class="lit">CHROME_PATH</span> at a browser you already have.</p>
+    <p><b>You will see the window.</b> On a Mac or a PC it opens visibly, so you
+can watch your AI work and click in the same window yourself. It only goes
+headless where there is no screen at all. <span class="lit">JBH_HEADLESS=1</span>
+hides it; <span class="lit">JBH_HEADLESS=0</span> forces it to show.</p>
     <p>Drives its own instance, not this screen. Results come back as a
 <span class="lit">.json</span> for <b>LOAD .JSON</b> below, or a
 <span class="lit">.wav</span>. The status line here stays closed.</p>
