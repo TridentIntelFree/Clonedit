@@ -24,9 +24,9 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { chromium } from 'playwright-core';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { dirname, resolve, isAbsolute } from 'node:path';
-import { writeFileSync, existsSync } from 'node:fs';
+import { writeFileSync, existsSync, readFileSync } from 'node:fs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /* The app, resolved in the order that makes the common cases work without
@@ -50,6 +50,58 @@ function findBrowser() {
   return null;          // let playwright use its own download if it has one
 }
 
+/* THE APP IS SERVED OVER HTTP, NOT OPENED AS A FILE, and that was a
+   functional hole rather than a preference.
+
+   This loaded `file:///.../index.html`, and Chromium blocks fetch() to a
+   file:// URL. The app fetches its sample packs — the manifest and then
+   each sound — so EVERY PACK WAS UNREACHABLE OVER MCP:
+
+     jbh_pack -> pack did not load: file:///.../samples/salamander.json
+
+   which took jbh_packs, jbh_instrument and jbh_load_sound with it. An
+   agent connecting to this server could use the 31 synthesised presets
+   and nothing else, including `nakeddrums` — the recorded kit AGENTS.md
+   insists on for drums, loaded with instrument(). The documented
+   recommendation could not be followed through the documented
+   interface, and no test had ever started this server to find out.
+
+   The browser suites have served the app over HTTP from the start; this
+   is the same few lines. Rooted at the directory the app lives in, so
+   `samples/` sits beside it exactly as it does when deployed, and bound
+   to 127.0.0.1 so nothing outside this machine can reach it. 127.0.0.1
+   is also a secure context, so the service worker registers and the
+   offline behaviour matches the real thing. */
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+  '.json': 'application/json', '.wav': 'audio/wav', '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg', '.flac': 'audio/flac', '.png': 'image/png',
+  '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
+let fileServer = null;
+async function appUrl() {
+  const app = findApp();
+  const root = dirname(app);
+  if (!fileServer) {
+    const { createServer } = await import('node:http');
+    const { normalize, extname, basename } = await import('node:path');
+    const { statSync } = await import('node:fs');
+    const srv = createServer((req, res) => {
+      /* the path is normalised and confined to the root: this serves a
+         sample library, not the filesystem */
+      let p;
+      try { p = resolve(root, '.' + normalize(decodeURIComponent(req.url.split('?')[0]))); }
+      catch (e) { res.writeHead(400); return res.end(); }
+      if (!p.startsWith(root) || !existsSync(p) || !statSync(p).isFile()) {
+        res.writeHead(404); return res.end();
+      }
+      res.writeHead(200, { 'content-type': MIME[extname(p)] || 'application/octet-stream' });
+      res.end(readFileSync(p));
+    });
+    await new Promise(r => srv.listen(0, '127.0.0.1', r));
+    fileServer = { srv, port: srv.address().port, file: basename(app) };
+  }
+  return 'http://127.0.0.1:' + fileServer.port + '/' + fileServer.file;
+}
+
 let browser = null, page = null, booting = null;
 async function app() {
   if (page) return page;
@@ -64,7 +116,7 @@ async function app() {
       try { localStorage.setItem('jbh_tour_v1', 'done'); } catch (e) {}
     });
     page = await ctx.newPage();
-    await page.goto(pathToFileURL(findApp()).href);
+    await page.goto(await appUrl());
     await page.waitForFunction(() => typeof window.JBH !== 'undefined', null, { timeout: 30000 });
     /* Audio has to be started explicitly; a page nobody clicked has a
        suspended context and every render would come back silent. */
@@ -117,6 +169,16 @@ const TOOLS = [
       + 'caught what the listener then complained about were among the eleven not run. Choosing '
       + 'which checks to run by hand is where results stop being repeatable.',
     inputSchema: { type: 'object', properties: {
+      quick: { type: 'boolean', description:
+        'THE ONE TO USE WHILE BUILDING. Runs only the checks that render nothing — pulse, '
+        + 'melody, motif, counterpoint, harmony — so it is instant and can be called after '
+        + 'every pattern. Without it this renders audio per pad and takes about twenty minutes.' },
+      chords: { type: 'array', items: { type: 'string' },
+        description: 'check against a progression you have not committed to with jbh_chords' },
+      maxPads: { type: 'integer', description: 'cap the per-pad loudness pass (default 16)' },
+      padSrc: { type: 'string', enum: ['pat', 'song'] },
+      loudnessSrc: { type: 'string', enum: ['pat', 'song'] },
+      beatsPerBar: { type: 'integer' },
       src: { type: 'string', enum: ['pat', 'song', 'chain', 'morph'] },
       instruments: { type: 'array', items: { type: 'string' } } } } },
 
@@ -209,6 +271,12 @@ const TOOLS = [
       + 'pad and tags them. Returns the pads, the range, and worstBend — the furthest any note '
       + 'will ever be transposed with this layout, worth reading BEFORE writing the part.',
     inputSchema: { type: 'object', required: ['name'], properties: {
+      rr: { type: 'integer', description:
+        'round robins per note. Alternates are takes of the SAME dynamic, so a repeat is not '
+        + 'the same waveform twice; velocity layers are a different thing, counted from the '
+        + 'sample count.' },
+      xfade: { type: 'number', description: 'crossfade between layers; false to disable' },
+      relGain: { type: 'number', description: 'level of the release samples, where the pack has them' },
       name: { type: 'string' }, pack: { type: 'string' }, match: { type: 'string' },
       lo: { type: 'integer' }, hi: { type: 'integer' }, max: { type: 'integer' } } } },
 
@@ -243,6 +311,7 @@ const TOOLS = [
       + 'a run spanning an octave is never one sample stretched an octave. Pads are reused '
       + 'across patterns.',
     inputSchema: { type: 'object', required: ['name', 'notes'], properties: {
+      lock: { type: 'boolean', description: 'false writes plain steps instead of step locks' },
       name: { type: 'string' }, notes: { type: 'array', items: { type: 'array' } },
       bpm: { type: 'number' }, cells: { type: 'integer' },
       fire: { type: 'array', items: { type: 'integer' } },
@@ -254,6 +323,8 @@ const TOOLS = [
       + 'instead of analysing the rendered WAV; the app already knows exactly, and an onset '
       + 'detector does not.',
     inputSchema: { type: 'object', properties: {
+      stretchLimit: { type: 'number', description: 'flag a sample bent further than this many semitones (default 4)' },
+      worstCase: { type: 'boolean' },
       src: { type: 'string', enum: ['pat', 'song', 'chain', 'morph'] },
       loops: { type: 'integer' }, full: { type: 'boolean' } } } },
 
@@ -338,6 +409,8 @@ const TOOLS = [
       + 'crest, and how it sits against the -14 LUFS streaming target — peak and RMS cannot '
       + 'tell you a mix is loud but dead.',
     inputSchema: { type: 'object', properties: {
+      depth: { type: 'integer', enum: [16, 24], description: 'bit depth of the WAV (default 16)' },
+      noTail: { type: 'boolean', description: 'false lets reverb and delay ring out past the end' },
       src: { type: 'string', enum: ['pat', 'song', 'chain', 'morph'], description: 'default pat' },
       loops: { type: 'integer', description: 'default 1' },
       only: { type: 'array', items: { type: 'integer' }, description: 'pads to render alone — a stem' },
@@ -366,7 +439,10 @@ const TOOLS = [
       + 'being pitch-shifted further than they survive, pads that are playing and cannot be '
       + 'heard, pads that own a band despite being quiet, and the distance from a loaded '
       + 'reference. jbh_review calls this; use it directly when you only want this part.',
-    inputSchema: { type: 'object', properties: { src: { type: 'string' } } } },
+    inputSchema: { type: 'object', properties: {
+      balance: { type: 'boolean', description: 'set false to skip the group-balance pass' },
+      loops: { type: 'integer' },
+      maxBuried: { type: 'integer', description: 'how many buried pads to report (default 8)' }, src: { type: 'string' } } } },
 
   { name: 'jbh_loudness', description:
       'PERCEIVED LOUDNESS PER PAD, WHICH IS NOT ENERGY. Renders each pad alone and reports LUFS '
@@ -376,6 +452,7 @@ const TOOLS = [
       + 'own energy, which is exactly what "that is louder than I expected" means. One render '
       + 'per pad, so prefer src:"pat".',
     inputSchema: { type: 'object', properties: {
+      max: { type: 'integer', description: 'stop after this many pads' },
       src: { type: 'string' }, loops: { type: 'integer' } } } },
 
   { name: 'jbh_translate', description:
@@ -384,7 +461,8 @@ const TOOLS = [
       + 'the loss in dB and names the worst instrument. The fix it implies is always the same: '
       + 'a bass carries through its HARMONICS, so saturate a parallel copy into 150-800Hz and '
       + 'the ear reconstructs a fundamental the speaker cannot make.',
-    inputSchema: { type: 'object', properties: { src: { type: 'string' } } } },
+    inputSchema: { type: 'object', properties: {
+      loops: { type: 'integer' }, src: { type: 'string' } } } },
 
   { name: 'jbh_pulse', description:
       'IS THERE A BEAT A LISTENER CAN FIND. Weighs every onset by how loud it actually is — '
@@ -401,6 +479,8 @@ const TOOLS = [
       + 'about +28, rising to +51 for lines of 96 notes or more. melody() and counterpoint() '
       + 'both pass a random walk; this is the check that does not.',
     inputSchema: { type: 'object', required: ['instrument'], properties: {
+      n: { type: 'integer', description: 'motif length in notes (default 4)' },
+      trials: { type: 'integer', description: 'reshuffles to score against (default 40)' },
       instrument: { type: 'string' }, src: { type: 'string' } } } },
 
   { name: 'jbh_melody', description:
@@ -445,7 +525,136 @@ const TOOLS = [
       lo: { type: 'integer' }, hi: { type: 'integer' },
       src: { type: 'string', enum: ['pat', 'song'] },
       seed: { type: 'integer' },
+      /* SEVEN LEVERS WERE UNREACHABLE OVER MCP. infill() reads sixteen
+         options and this schema forwarded nine, so density, octave,
+         feel, gate, scale, shape and against existed, worked, and could
+         not be set by an agent — including both levers added most
+         recently. That is the trap AGENTS.md records in the other
+         direction (a forwarded name the function does not read) and the
+         coverage test only ever checked that direction. */
+      density: { type: 'string', enum: ['sparse', 'normal', 'busy'] },
+      octave: { type: 'integer', description: 'shift the register, in octaves' },
+      feel: { type: 'string', description: "straight, or a cross-rhythm cycle: '3', '5', '6', '7', '9'" },
+      gate: { type: 'number', description: 'scales note length; 0.25 clipped to 3 held' },
+      scale: { type: 'string', description: "'penta' narrows the passing notes to five" },
+      shape: { type: 'string', description: 'a contour to follow' },
+      against: { type: 'array', description:
+        'notes already sounding, as {midi, step, beats, inst} \u2014 switches on BOTH '
+        + 'inter-voice filters: no semitone above a sounding voice, and no parallel '
+        + 'fifths or octaves with it. Without it a voice is written as though it were '
+        + 'alone in the pattern.',
+        items: { type: 'object' } },
       apply: { type: 'integer', description: 'the seed of the candidate to write' } } } },
+
+  /* THE WHOLE ARRANGEMENT AT ONCE, AND IT HAD NO TOOL AT ALL. ensemble()
+     is the answer to "can write consider each layer of the sequence
+     simultaneously"; it reads fourteen options and an agent over MCP
+     could reach none of them. Found by a handshake test asserting the
+     tool list, which is a check that did not exist because nothing had
+     ever started this server. */
+  { name: 'jbh_ensemble', description:
+      'WRITE EVERY VOICE AT ONCE, EACH AGAINST THE OTHERS, and offer whole arrangements to '
+      + 'choose between. jbh_infill stays one voice over one span because that constraint is '
+      + 'what makes a suggestion usable; this does not throw it away — it writes the voices '
+      + 'ONE AT A TIME, FOUNDATION FIRST, each knowing what the earlier ones already play. '
+      + 'Order matters: the bass states the harmony so it goes first, and writing the lead '
+      + 'first leaves the bass dodging a line that was not thinking about it. '
+      + 'Two inter-voice rules are enforced rather than hoped for: no semitone between voices '
+      + '(1.08% of Bach’s 179,005 sounding voice-pairs, the second rarest thing in the '
+      + 'corpus) and no parallel fifths or octaves (0.235% and 0.111% in Palestrina, where '
+      + 'generated parts measured ten to seventy times those rates before it was filtered). '
+      + 'Oblique motion is SCORED and never forced. Like jbh_infill it writes nothing until '
+      + 'you call again with `apply` set to a candidate seed — and an apply whose seed is '
+      + 'not in the regenerated set is REFUSED rather than quietly substituted, because the '
+      + 'nearest match is not the one that was chosen. '
+      + 'A span past four bars does not fit one pattern; cut it into four-bar chunks yourself '
+      + 'and write each into the next pattern along.',
+    inputSchema: { type: 'object', required: ['voices'], properties: {
+      voices: { type: 'array', description:
+        'two or more, in any order — roles decide who goes first: '
+        + '[{inst:"bass", role:"bass"}, {inst:"keys", role:"lead"}]',
+        items: { type: 'object', properties: {
+          inst: { type: 'string' },
+          role: { type: 'string', enum: ['bass', 'lead', 'pad', 'arp'] } } } },
+      from: { type: 'integer', description: 'first bar' },
+      bars: { type: 'integer', description: 'at most 4 — one pattern holds four bars' },
+      n: { type: 'integer', description: 'how many arrangements to offer' },
+      src: { type: 'string', enum: ['pat', 'song'] },
+      density: { type: 'string', enum: ['sparse', 'normal', 'busy'] },
+      octave: { type: 'integer' },
+      feel: { type: 'string', description: "straight, or '3', '5', '6', '7', '9'" },
+      gate: { type: 'number', description: 'scales note length; 0.25 clipped to 3 held' },
+      scale: { type: 'string', description: "'penta' narrows the passing notes" },
+      shape: { type: 'string' },
+      poly: { type: 'string', enum: ['none', 'spread', 'wide'], description:
+        'cross-tempo lanes: each upper voice gets a lane at its own BPM while keeping the '
+        + 'grid part written for it, so the timings conflict instead of replacing one another. '
+        + 'The foundation never drifts — a sub that wanders off the beat takes the weight with it.' },
+      converse: { type: 'boolean', description: 'voices answer each other rather than all playing through' },
+      seed: { type: 'integer' },
+      apply: { type: 'integer', description: 'the seed of the arrangement to write' } } } },
+
+  { name: 'jbh_inst_pads', description:
+      'WHICH PADS AN INSTRUMENT SPANS. A sampled instrument is one sound laid across a pad '
+      + 'per sampled note, and several calls need that list: jbh_place and jbh_audit take an '
+      + 'instrument tag precisely because handing them the middle pad measured one note of a '
+      + 'piano against the other ten notes of the same piano and reported it as absent. '
+      + 'Returns [{pad, note}].',
+    inputSchema: { type: 'object', required: ['instrument'],
+      properties: { instrument: { type: 'string' } } } },
+
+  /* THE OPTION NAMES BELOW ARE READ OFF THE FUNCTIONS, not guessed. The
+     first draft of these three schemas invented `note`, `secs`, `to`,
+     `mode` and `bars`, none of which any of them reads — the exact trap
+     AGENTS.md records for jbh_resynth's `jumble`: a knob that looks
+     settable, does nothing, and hides the ones that work. And the
+     coverage test passed on all five, because its reverse check only
+     walks the sound GENERATORS. */
+  { name: 'jbh_bass', description:
+      'MAKE A BASS, synthesised in the page, so it needs no pack and no connection. Styles are '
+      + 'sub (a clean sine with just enough upper harmonic to carry on a small speaker, where '
+      + 'nothing under about 400Hz is reproduced at all), reese, fm and pluck. Every style sets '
+      + 'a lowpass with velocity routed to the cutoff, so a hard note comes out brighter and '
+      + 'not merely louder — which on a single-sample pad is the only expression there is.',
+    inputSchema: { type: 'object', properties: {
+      pad: { type: 'integer' },
+      style: { type: 'string', enum: ['sub', 'reese', 'fm', 'pluck'] },
+      midi: { type: 'integer', description: 'the note it is sampled at' },
+      fromMidi: { type: 'integer' },
+      seconds: { type: 'number' },
+      bright: { type: 'number' }, detune: { type: 'number' },
+      fall: { type: 'number', description: 'pitch drop, in semitones' },
+      wobbleHz: { type: 'number' },
+      seed: { type: 'integer' } } } },
+
+  { name: 'jbh_chop', description:
+      'SLICE A PAD INTO N PIECES across the pads, which is how a break becomes playable '
+      + 'material rather than one long sample. `floorDb` is what counts as silence between '
+      + 'slices and `boredom` biases it away from reusing the same one.',
+    inputSchema: { type: 'object', required: ['pad', 'n'], properties: {
+      pad: { type: 'integer' }, n: { type: 'integer', description: 'how many slices' },
+      floorDb: { type: 'number' }, boredom: { type: 'number' },
+      window: { type: 'number' } } } },
+
+  { name: 'jbh_phrase', description:
+      'PHRASE A PART THAT IS ALREADY WRITTEN — shape its velocities and its timing across a '
+      + 'span of steps, or put a swell through it. This is how a line stops sounding typed in: '
+      + 'the notes are already there and what changes is how they are played. Takes an '
+      + 'instrument tag or a pad number, the span, and a named shape or [[position, value], …].',
+    inputSchema: { type: 'object', required: ['instrument'], properties: {
+      instrument: { type: 'string', description: 'an instrument tag, or a pad number' },
+      from: { type: 'integer', description: 'first step (default 0)' },
+      to: { type: 'integer', description: 'last step (default the end of the pattern)' },
+      vel: { description: 'a velocity shape: a name, or [[position, value], …]' },
+      time: { description: 'a timing shape, same form — push and pull against the grid' },
+      swell: { type: 'number' },
+      only: { type: 'array', items: { type: 'integer' },
+        description: 'restrict to these pads of the instrument' } } } },
+
+  { name: 'jbh_check_mix', description:
+      'THE MIX WARNINGS the app shows itself — clipping, a pad with nowhere to sit, a send '
+      + 'turned up with nothing feeding it. Cheap: it reads state and renders nothing.',
+    inputSchema: { type: 'object', properties: {} } },
 
   { name: 'jbh_key', description:
       'DECLARE THE KEY, or read it back. Until this existed the app stored no key anywhere and '
@@ -514,6 +723,7 @@ const TOOLS = [
       + 'stops inside each bar and reads as play, cut, silence, play. Real voices rest about a '
       + 'quarter of the time, so what matters is the PHASE of the gaps, not their presence.',
     inputSchema: { type: 'object', required: ['instrument'], properties: {
+      loops: { type: 'integer' },
       instrument: { type: 'string' }, src: { type: 'string' } } } },
 
   { name: 'jbh_dynamics', description:
@@ -527,19 +737,26 @@ const TOOLS = [
       + 'it to see where an instrument actually sits before deciding it needs EQ — a vibraphone '
       + 'struck with soft mallets is 80dB down above 8kHz and no filter will put air into it.',
     inputSchema: { type: 'object', properties: {
+      from: { type: 'number', description: 'start of the window, in seconds' },
+      seconds: { type: 'number', description: 'how much to measure (default 120)' },
+      loops: { type: 'integer' }, noTail: { type: 'boolean' },
       src: { type: 'string' }, pads: { type: 'array', items: { type: 'integer' } } } } },
 
   { name: 'jbh_reference', description:
       'LOAD A FINISHED RECORDING TO BE JUDGED AGAINST. Do this BEFORE reviewing: without it, '
       + 'tonal balance is simply not checked and critique says so. Pass a URL the app can '
       + 'fetch, or null to clear.',
-    inputSchema: { type: 'object', properties: { url: { type: 'string' } } } },
+    inputSchema: { type: 'object', properties: {
+      from: { type: 'number', description: 'skip into the file, in seconds' },
+      seconds: { type: 'number', description: 'how much of it to measure (default 120)' }, url: { type: 'string' } } } },
 
   { name: 'jbh_compare', description:
       'THIS MIX AGAINST THE LOADED REFERENCE, band by band. Both sides are normalised against '
       + 'their OWN total, which is the only way two mixes are comparable — an absolute spectrum '
       + 'once showed a track fixed at the top while a 16dB hole sat at 500Hz.',
-    inputSchema: { type: 'object', properties: { src: { type: 'string' } } } },
+    inputSchema: { type: 'object', properties: {
+      from: { type: 'number' }, seconds: { type: 'number' },
+      loops: { type: 'integer' }, noTail: { type: 'boolean' }, src: { type: 'string' } } } },
 
   { name: 'jbh_vs_dry', description:
       'WHAT A PAD\'S OWN CHAIN DID TO IT. Renders the pad twice from the same notes, velocity '
@@ -548,6 +765,7 @@ const TOOLS = [
       + 'answer shows is the processing. Use it when a sound is not sitting right and you want '
       + 'to know whether the pad or the part is at fault.',
     inputSchema: { type: 'object', required: ['pad'], properties: {
+      loops: { type: 'integer' },
       pad: { type: 'integer' }, src: { type: 'string' } } } },
 
   { name: 'jbh_balance', description:
@@ -561,6 +779,8 @@ const TOOLS = [
       + 'A group pinned at the cap is reported: that means the part or the sound is wrong, not '
       + 'the level. It suggests, it does not apply.',
     inputSchema: { type: 'object', properties: {
+      target: { type: 'array', items: { type: 'number' }, description:
+        'nine band levels to solve against, instead of the loaded reference' },
       src: { type: 'string' }, maxMoveDb: { type: 'number' },
       groups: { type: 'array', items: { type: 'string' } } } } },
 
@@ -574,6 +794,8 @@ const TOOLS = [
       + 'population x generations renders of one pad. It restores the pad unless keep:true, so '
       + 'nothing is applied behind your back.',
     inputSchema: { type: 'object', required: ['pad'], properties: {
+      loops: { type: 'integer' },
+      toPad: { type: 'integer', description: 'write the winner to another pad and keep the original' },
       pad: { type: 'integer' },
       want: { type: 'string', enum: ['different', 'similar', 'brighter', 'darker', 'punchier', 'fuller'] },
       population: { type: 'integer' }, generations: { type: 'integer' },
@@ -731,7 +953,59 @@ const TOOLS = [
       method: { type: 'string' }, args: { type: 'array' } } } },
 ];
 
-const server = new Server({ name: 'jbh88', version: '1.0.0' }, { capabilities: { tools: {} } });
+/* THE VERSION OF THE APP THIS IS ACTUALLY DRIVING, not a constant nobody
+   bumps. It read '1.0.0' while the app was on R255, which tells a client
+   nothing and is wrong in a way that cannot be noticed. Parsed out of the
+   built file, because that file IS the app. */
+function appBuild() {
+  try {
+    const m = readFileSync(findApp(), 'utf8').match(/const BUILD *= *'([^']+)'/);
+    return m ? m[1] : null;
+  } catch (e) { return null; }
+}
+
+/* WHAT A CLIENT IS TOLD AT THE HANDSHAKE, which until now was nothing.
+
+   `instructions` is part of the initialize result and is what a client
+   puts in front of the model BEFORE its first call. The tool list alone
+   cannot do that job: `jbh_howto`'s description has said "START HERE" all
+   along and nothing made anyone start there, so an agent's first call was
+   whatever looked most like the task — which is how a track got bounced
+   with six of seventeen checks run.
+
+   Kept short on purpose. These are the things that cost real work when
+   they were not known, and every one of them is in AGENTS.md with the
+   measurement behind it. */
+const INSTRUCTIONS = [
+  'JBH-88 is a complete groovebox driven in a real browser: these tools load actual',
+  'sounds, write actual steps, render the actual mix and READ THE LEVEL BACK. Nothing',
+  'here is simulated, and nothing is audible to the user — work reaches them as a file',
+  '(jbh_save_session writes a .json they open with PROJ, jbh_render writes a .wav).',
+  'It cannot reach a copy of the app on their phone; there is no server in this project.',
+  '',
+  'Call jbh_howto first. It costs nothing and it is the order to work in.',
+  '',
+  'The things that cost the most when they were not known:',
+  '1. Write MUSIC, not texture. Chords that change and a melody with contour. Nothing',
+  '   here measures whether the harmony moves, so a well-mixed drone passes everything.',
+  '2. ONE SOUND AT A TIME: make it, write its part, then jbh_place it against what is',
+  '   already there — before starting the next. Placing everything blind and balancing',
+  '   at the end is a problem you do not have to create.',
+  '3. Declare the key and the progression (jbh_key, jbh_chords) or harmony is NOT',
+  '   checked. It is never inferred from the notes, because inferring it is what makes',
+  '   a wrong note look correct.',
+  '4. jbh_pattern(n) configures a pattern; it does not select it unless you pass',
+  '   select:true. Three tracks were bounced with every note piled into pattern 0.',
+  '5. jbh_review({quick:true}) is free — it renders nothing — so run it after every',
+  '   pattern rather than once at the end. The full review takes about twenty minutes.',
+  '6. The checks detect BROKENNESS, not quality. Passing them all is not evidence that',
+  '   anyone would want to hear it, and never move a musical parameter to improve a',
+  '   number: every measure here is blind to whether the music is any good.',
+].join('\n');
+
+const server = new Server(
+  { name: 'jbh88', version: appBuild() || '0.0.0-unknown' },
+  { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
 
 const ok = (v) => ({ content: [{ type: 'text', text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] });
@@ -759,12 +1033,16 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_pattern':     return ok(await jbh('pattern', [a.pattern, a.props]));
       case 'jbh_euclid':      return ok(await jbh('euclid', [a.pad, a.hits, a.steps, a.rot, a.vel, a.locks]));
       case 'jbh_params':      return ok(await jbh('params'));
-      case 'jbh_instrument':  return ok(await jbh('instrument', [a.name, { pack: a.pack, match: a.match, lo: a.lo, hi: a.hi, max: a.max }]));
+      case 'jbh_instrument':  return ok(await jbh('instrument', [a.name, { pack: a.pack,
+                                match: a.match, lo: a.lo, hi: a.hi, max: a.max,
+                                rr: a.rr, xfade: a.xfade, relGain: a.relGain }]));
       case 'jbh_packs':       return ok(await jbh('packs'));
       case 'jbh_layer':       return ok(await jbh('layer', [a.pad, a.id]));
       case 'jbh_note':        return ok(await jbh('note', [a.name, a.midi, a.step, a.vel, a.locks]));
-      case 'jbh_figure':      return ok(await jbh('figure', [a.name, { notes: a.notes, bpm: a.bpm, cells: a.cells, fire: a.fire, match: a.match, maxBend: a.maxBend }]));
-      case 'jbh_schedule':    return ok(await jbh('schedule', [{ src: a.src, loops: a.loops, full: a.full }]));
+      case 'jbh_figure':      return ok(await jbh('figure', [a.name, { notes: a.notes, bpm: a.bpm, cells: a.cells, fire: a.fire, match: a.match, maxBend: a.maxBend, lock: a.lock }]));
+      case 'jbh_schedule':    return ok(await jbh('schedule', [{ src: a.src, loops: a.loops,
+                                full: a.full, stretchLimit: a.stretchLimit,
+                                worstCase: a.worstCase }]));
       case 'jbh_levels':      return ok(await jbh('levels', [{ src: a.src, loops: a.loops }]));
       case 'jbh_automate':    return ok(await jbh('automate', [a.target, a.points === undefined ? null : a.points, { pattern: a.pattern }]));
       case 'jbh_auto_targets':return ok(await jbh('autoTargets'));
@@ -776,37 +1054,74 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_hit':         return ok(await jbh('hit', [a.pad, a.vel, a.pitch]));
       case 'jbh_song_doc':    return ok(await jbh('export'));
       case 'jbh_howto':       return ok(await jbh('howto'));
+      /* `quick` WAS NOT FORWARDED, and that one omission made the method
+         this repo recommends impossible over MCP: review({quick:true})
+         renders nothing and is meant to run after every pattern, while
+         the full pass takes about twenty minutes. An agent that cannot
+         ask for the cheap one checks once at the end, which is the exact
+         failure AGENTS.md was written to prevent. */
       case 'jbh_review':      return ok(await jbh('review', [{ src: a.src || 'song',
-                                instruments: a.instruments }]));
-      case 'jbh_critique':    return ok(await jbh('critique', [{ src: a.src }]));
-      case 'jbh_loudness':    return ok(await jbh('loudness', [{ src: a.src, loops: a.loops }]));
-      case 'jbh_translate':   return ok(await jbh('translate', [{ src: a.src }]));
+                                instruments: a.instruments, quick: a.quick,
+                                chords: a.chords, maxPads: a.maxPads,
+                                padSrc: a.padSrc, loudnessSrc: a.loudnessSrc,
+                                beatsPerBar: a.beatsPerBar }]));
+      case 'jbh_critique':    return ok(await jbh('critique', [{ src: a.src,
+                                balance: a.balance, loops: a.loops,
+                                maxBuried: a.maxBuried }]));
+      case 'jbh_loudness':    return ok(await jbh('loudness', [{ src: a.src, loops: a.loops, max: a.max }]));
+      case 'jbh_translate':   return ok(await jbh('translate', [{ src: a.src, loops: a.loops }]));
       case 'jbh_pulse':       return ok(await jbh('pulse', [{ src: a.src }]));
       case 'jbh_infill':      return ok(await jbh('infill', [a.instrument, {
                                 from: a.from, bars: a.bars, n: a.n, role: a.role,
                                 lo: a.lo, hi: a.hi, src: a.src, seed: a.seed,
+                                density: a.density, octave: a.octave, feel: a.feel,
+                                gate: a.gate, scale: a.scale, shape: a.shape,
+                                against: a.against,
                                 apply: a.apply }]));
+      case 'jbh_ensemble':    return ok(await jbh('ensemble', [a.voices, {
+                                from: a.from, bars: a.bars, n: a.n, src: a.src,
+                                density: a.density, octave: a.octave, feel: a.feel,
+                                gate: a.gate, scale: a.scale, shape: a.shape,
+                                poly: a.poly, converse: a.converse,
+                                seed: a.seed, apply: a.apply }]));
+      case 'jbh_inst_pads':   return ok(await jbh('instPads', [a.instrument]));
+      case 'jbh_bass':        return ok(await jbh('bass', [{ pad: a.pad, style: a.style,
+                                midi: a.midi, fromMidi: a.fromMidi, seconds: a.seconds,
+                                bright: a.bright, detune: a.detune, fall: a.fall,
+                                wobbleHz: a.wobbleHz, seed: a.seed }]));
+      case 'jbh_chop':        return ok(await jbh('chop', [a.pad, a.n,
+                                { floorDb: a.floorDb, boredom: a.boredom, window: a.window }]));
+      case 'jbh_phrase':      return ok(await jbh('phrase', [a.instrument, a.from, a.to,
+                                { vel: a.vel, time: a.time, swell: a.swell, only: a.only }]));
+      case 'jbh_check_mix':   return ok(await jbh('checkMix', []));
       case 'jbh_key':         return ok(await jbh('key', a.tonic===undefined?[]:[a.tonic, a.mode]));
       case 'jbh_chords':      return ok(await jbh('chords',
                                 a.pattern===undefined?[]:[a.pattern, a.chords]));
       case 'jbh_progression': return ok(await jbh('progression', [{ src: a.src }]));
       case 'jbh_harmony':     return ok(await jbh('harmony', [{ chords: a.chords,
                                 beatsPerBar: a.beatsPerBar, src: a.src }]));
-      case 'jbh_motif':       return ok(await jbh('motif', [a.instrument, { src: a.src }]));
+      case 'jbh_motif':       return ok(await jbh('motif', [a.instrument, { src: a.src, n: a.n, trials: a.trials }]));
       case 'jbh_melody':      return ok(await jbh('melody', [a.instrument, { src: a.src }]));
       case 'jbh_counterpoint':return ok(await jbh('counterpoint', [a.instruments, { src: a.src }]));
-      case 'jbh_continuity':  return ok(await jbh('continuity', [a.instrument, { src: a.src }]));
+      case 'jbh_continuity':  return ok(await jbh('continuity', [a.instrument, { src: a.src, loops: a.loops }]));
       case 'jbh_dynamics':    return ok(await jbh('dynamics'));
-      case 'jbh_spectrum':    return ok(await jbh('spectrum', [{ src: a.src, pads: a.pads }]));
-      case 'jbh_reference':   return ok(await jbh('reference', [a.url === undefined ? null : a.url]));
-      case 'jbh_compare':     return ok(await jbh('compare', [{ src: a.src }]));
-      case 'jbh_vs_dry':      return ok(await jbh('vsDry', [a.pad, { src: a.src }]));
+      case 'jbh_spectrum':    return ok(await jbh('spectrum', [{ src: a.src, pads: a.pads,
+                                from: a.from, seconds: a.seconds, loops: a.loops,
+                                noTail: a.noTail }]));
+      case 'jbh_reference':   return ok(await jbh('reference', [a.url === undefined ? null : a.url,
+                                { from: a.from, seconds: a.seconds }]));
+      case 'jbh_compare':     return ok(await jbh('compare', [{ src: a.src,
+                                from: a.from, seconds: a.seconds, loops: a.loops,
+                                noTail: a.noTail }]));
+      case 'jbh_vs_dry':      return ok(await jbh('vsDry', [a.pad, { src: a.src, loops: a.loops }]));
       case 'jbh_balance':     return ok(await jbh('balance', [{ src: a.src,
-                                maxMoveDb: a.maxMoveDb, groups: a.groups }]));
+                                maxMoveDb: a.maxMoveDb, groups: a.groups,
+                                target: a.target }]));
       case 'jbh_mutate':      return ok(await jbh('mutate', [a.pad, { want: a.want,
                                 population: a.population, generations: a.generations,
                                 amount: a.amount, keep: a.keep, seed: a.seed,
-                                src: a.src, knobs: a.knobs }]));
+                                src: a.src, knobs: a.knobs,
+                                loops: a.loops, toPad: a.toPad }]));
       case 'jbh_paint':       return ok(await jbh('paint', [{ pad: a.pad, seconds: a.seconds,
                                 lo: a.lo, hi: a.hi, log: a.log, rows: a.rows,
                                 partials: a.partials, midi: a.midi, name: a.name, seed: a.seed }]));
@@ -844,7 +1159,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       case 'jbh_render': {
         const r = await jbh('render', [{ src: a.src || 'pat', loops: a.loops || 1,
-          only: a.only, loudness: !!a.loudness, wav: !!a.wav_path }]);
+          only: a.only, loudness: !!a.loudness, wav: !!a.wav_path,
+          depth: a.depth, noTail: a.noTail }]);
         if (!r) return ok({ rendered: false, why: 'nothing to render — no pattern hits and no tape lanes' });
         if (a.wav_path && r.wavBase64) {
           const p = outPath(a.wav_path);
@@ -894,7 +1210,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   }
 });
 
-process.on('SIGINT', async () => { try { if (browser) await browser.close(); } catch (e) {} process.exit(0); });
-process.on('SIGTERM', async () => { try { if (browser) await browser.close(); } catch (e) {} process.exit(0); });
+async function shutdown() {
+  try { if (browser) await browser.close(); } catch (e) {}
+  try { if (fileServer) fileServer.srv.close(); } catch (e) {}
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 await server.connect(new StdioServerTransport());

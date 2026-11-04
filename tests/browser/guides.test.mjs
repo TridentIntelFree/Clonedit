@@ -3,7 +3,7 @@
    Two problems that turn out to be the same problem: a guide is only worth
    anything if what it points at is really there and really on the screen.
 
-   The tour, the six recipes and the suggestion bar all name controls by id and
+   The tour, the eight recipes and the suggestion bar all name controls by id and
    spotlight them. Nothing in the build checks that those ids still exist — a
    renamed button leaves a step that highlights nothing and reads as broken, and
    it is exactly the kind of rot that a growing app produces quietly. This walks
@@ -105,7 +105,7 @@ export default async function ({ browser, base }) {
     t.ok('and LIVE in particular is walked, not just named — it is half the app',
       cover.walked.includes('live'));
     t.ok('with a recipe of its own, so there is a way in and not only a mention',
-      cover.recipes === 7, cover.recipes + ' recipes');
+      cover.recipes === 8, cover.recipes + ' recipes');
 
     t.head('EACH STEP IS ON SCREEN WHEN ITS TAB IS OPEN');
     /* Targets inside a panel a previous step opens are excluded here and

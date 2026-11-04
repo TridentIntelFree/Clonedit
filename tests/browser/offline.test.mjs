@@ -104,6 +104,129 @@ export default async function ({ browser, base }) {
     t.ok('the bounce renders and is not silent', still.peak > 0.01,
       'peak ' + still.peak.toFixed(3) + ' over ' + still.secs.toFixed(2) + 's');
 
+    /* ---- THE OFFLINE SHELL, WHICH WAS EMPTY --------------------------
+       The suite above proves the instrument keeps PLAYING with the
+       network cut. It never asked whether the app OPENS, and it did not:
+       `cache.addAll()` is atomic, `'./'` 404s on any server without a
+       directory index — including this harness — so the precache
+       rejected, `install` failed, the worker never activated and the
+       cache sat empty. The page swallowed it in `.catch(()=>{})`.
+
+         cached   { "jbh88-shell-v5": [] }      rootStatus 404
+         state    "none"    controlled false    reload  ERR_INTERNET_DISCONNECTED
+
+       This harness IS the known-bad input, which is why the assertion
+       belongs here: `'./'` still 404s below, and the shell has to
+       populate anyway. */
+    t.head('THE OFFLINE SHELL SURVIVES A MISSING ENTRY');
+    await ctx.setOffline(false);
+    const sw = await page.evaluate(async () => {
+      const w = ms => new Promise(r => setTimeout(r, ms));
+      const reg = await navigator.serviceWorker.register('./sw.js');
+      for (let i = 0; i < 80; i++) { await w(200); if (navigator.serviceWorker.controller) break; }
+      const names = await caches.keys();
+      const have = [];
+      for (const n of names) have.push(...(await (await caches.open(n)).keys())
+        .map(q => q.url.replace(location.origin, '')));
+      let rootStatus = null;
+      try { rootStatus = (await fetch('./', { cache: 'no-store' })).status; } catch (e) {}
+      return { controlled: !!navigator.serviceWorker.controller,
+        state: reg.active ? reg.active.state : 'none', names, have, rootStatus };
+    });
+    t.ok("the harness really does 404 './' — the entry that broke it",
+      sw.rootStatus === 404, "'./' -> HTTP " + sw.rootStatus);
+    t.ok('the worker activates anyway, instead of failing its install',
+      sw.state === 'activated' && sw.controlled,
+      sw.state + ' · controlled ' + sw.controlled);
+    t.ok('AND THE SHELL IS POPULATED, not empty',
+      sw.have.indexOf('/index.html') >= 0 && sw.have.length >= 7,
+      sw.have.length + ' cached: ' + sw.have.join(' '));
+
+    t.head('AND THE APP OPENS WITH THE NETWORK CUT');
+    await ctx.setOffline(true);
+    let reopened = null, reloadErr = null;
+    try {
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
+      reopened = await page.evaluate(() => ({
+        write: !!document.getElementById('mlOffer'),
+        pads: !!document.getElementById('padgrid'),
+        jbh: typeof window.JBH === 'object' }));
+    } catch (e) { reloadErr = String(e && e.message || e).split('\n')[0]; }
+    t.ok('it reloads from the cache rather than the network',
+      !!reopened && reopened.jbh, reloadErr || JSON.stringify(reopened));
+    t.ok('and the WRITE panel is there to use',
+      !!reopened && reopened.write && reopened.pads, JSON.stringify(reopened));
+
+    /* ---- AND WRITING REALLY WORKS, FROM COLD, WITH NO CONNECTION ----
+       The presets are generated in code and the norms are baked
+       constants, so every part of the WRITE path should run. Asserted
+       rather than assumed, because "it ships no audio" is a claim about
+       the sounds and says nothing about infill, ensemble or the five
+       free checks. */
+    t.head('THE WHOLE WRITE PATH RUNS WITH NO CONNECTION');
+    const wrote = await page.evaluate(async () => {
+      const w = ms => new Promise(r => setTimeout(r, ms));
+      const g = id => document.getElementById(id);
+      const o = {};
+      await window.JBH.clear();
+      for (const [p, id, note] of [[0, 'bsub', 36], [1, 'pfelt', 60], [2, 'xbell', 72]]) {
+        g('presetSel').value = id;
+        g('presetSel').dispatchEvent(new Event('change'));
+        g('presetNote').value = String(note);
+        const before = S.buffers.length;
+        S.editPad = p; S.seqPad = p;
+        g('btnPresetLoad').click();
+        for (let k = 0; k < 200; k++) { await w(100); if (S.buffers.length > before) break; }
+        await w(100);
+      }
+      const live = S.pads.map((x, i) => ({ x, i })).filter(q => q.x.bufId >= 0).slice(0, 3);
+      o.presets = live.length;
+      const names = ['sub', 'keys', 'bell'];
+      live.forEach((q, n) => window.JBH.pad(q.i,
+        { inst: names[n], srcNote: q.x.srcNote != null ? q.x.srcNote : 36 + q.i }));
+      window.JBH.key('F', 'dorian');
+      window.JBH.pattern(0, { plen: 64, clear: true, select: true });
+      window.JBH.chords(0, ['Fm', 'Bb', 'Eb', 'Cm']);
+      const vs = names.map((n, i) => ({ inst: n, role: i === 0 ? 'bass' : 'lead' }));
+      const off = await window.JBH.ensemble(vs, { bars: 4, n: 3, src: 'pat', seed: 4242 });
+      o.offered = off.candidates.length;
+      o.wrote = (await window.JBH.ensemble(vs,
+        { bars: 4, n: 3, src: 'pat', seed: 4242, apply: off.candidates[0].seed })).wrote;
+      o.pulse = (await window.JBH.pulse({ src: 'pat' })).pulseStrength;
+      o.melody = (await window.JBH.melody('sub', { src: 'pat' })).notes;
+      o.harmony = ((await window.JBH.harmony({ src: 'pat' })).findings || []).length;
+      const c = await window.JBH.counterpoint(['sub', 'keys'], { src: 'pat' });
+      o.oblique = c.motion ? c.motion.oblique : null;
+      /* THE PACK HAS TWO CORRECT OUTCOMES OFFLINE and the first draft of
+         this assertion demanded the second one, so it failed on the
+         better news: the worker caches every successful GET, so a
+         manifest fetched earlier comes back from cache with no network
+         and the pack simply WORKS. When nothing has been cached the call
+         throws instead, and then the message has to name the presets.
+         Asserting only the throw was asserting that the redundancy had
+         not worked. */
+      try {
+        await window.JBH.pack('samples/salamander.json');
+        o.packSounds = window.JBH.sounds().length;
+      } catch (e) { o.packErr = String(e && e.message || e); }
+      return o;
+    });
+    t.ok('three presets load with the network down',
+      wrote.presets === 3, wrote.presets + ' pads');
+    t.ok('OFFER and WRITE IT run — infill and ensemble need no connection',
+      wrote.offered >= 2 && wrote.wrote > 0,
+      wrote.offered + ' candidates, ' + wrote.wrote + ' notes written');
+    t.ok('and all five free checks run off their baked norms',
+      wrote.pulse != null && wrote.melody > 0 && wrote.harmony != null &&
+      wrote.oblique != null,
+      'pulse ' + wrote.pulse + ' · ' + wrote.melody + ' notes · harmony ' +
+      wrote.harmony + ' findings · oblique ' + wrote.oblique);
+    t.ok('A PACK EITHER COMES BACK FROM CACHE OR NAMES THE WAY ROUND IT',
+      (wrote.packSounds > 0) || /presets need none/.test(wrote.packErr || ''),
+      wrote.packSounds > 0
+        ? 'served from cache with the network down — ' + wrote.packSounds + ' sounds'
+        : 'refused: ' + (wrote.packErr || '').slice(0, 130));
+
     t.head('NETWORK BACK');
     await ctx.setOffline(false);
     await page.waitForTimeout(400);

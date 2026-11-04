@@ -14,6 +14,7 @@
     "lint": "node scripts/lint-comments.mjs --self-test && node scripts/lint-comments.mjs src/*.js songs/*.mjs tests/*.mjs tests/browser/*.mjs scripts/*.mjs"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "esbuild": "^0.28.1",
     "playwright-core": "^1.62.0",

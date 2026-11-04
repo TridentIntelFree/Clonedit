@@ -8,7 +8,7 @@ lanes and punch in over them, then bounce the result to WAV — with no connecti
 and nothing sent anywhere.
 
 Everything ships as **one self-contained HTML file**. No server, no install, no
-account; open it from a file:// URL if you like. It is about 1.3 MB.
+account; open it from a file:// URL if you like. It is about 2 MB.
 
 ### The sections
 
@@ -23,6 +23,7 @@ replaced held all twelve tabs and scrolled sideways, which hid half of them.
 | SOUND | **PADS / SMPL** | 64 pads across four banks. Import, record from the mic, or synthesise a sound from PRESETS; chop, trim, warp, reverse, slice on transients. BUILD KIT carves a whole kit out of one sample. |
 | SOUND | **TOOLS** | PAINT a sound from inharmonic partials, REBUILD one out of the pieces of your other pads, FREEZE an instant of it into something that sustains, RUN TO TAPE for a pitch that will not hold still, and MUTATE to vary a sound and keep what measures best. All five act on the pad the tab names at the top. |
 | WRITE | **SEQ** | 16–64 steps, grid or circle view. Per-track lengths for polymeter, euclidean fills, groove templates, a NOTES lane for melodies, POLY for a pad at its own tempo, and **step locks** — give one step its own pitch, probability, ratchet, nudge, cutoff, level, pan, decay or start point. |
+| WRITE | **SEQ → the written layer** | The app holds a **key and a progression** (one chord per bar of a pattern, so a pattern stays harmonically closed and can be dropped anywhere). **TAG IT** makes a pad an instrument; **OFFER** then proposes several ways to play one voice over one span and writes nothing until **WRITE IT**, because a model that hands over a finished part overwhelms you with content and frustrates you with randomness. Tick **ALL** and it writes every voice at once, foundation first, each one against the others — no semitone between voices, no parallel fifths or octaves. Articulation, density, register, a cross-rhythm feel and cross-tempo lanes are all controls. **BUILD ME A TRACK** does the whole thing in one tap in any of **sixteen recipes**, from house to gamelan, using the pads you already have. |
 | PLAY | **TRAX** | Eight tape lanes with a **Track View**: headers left, bar ruler on top, clips drawn where they play. Drag to move, drag the edges to trim, fades, and **punch in/out** that replaces a span and keeps the rest. |
 | PLAY | **LIVE** | Thirteen synth voices — including phase distortion, PWM, a partial cluster, formant, ring modulation and a per-note **grand piano** — through DRIVE, CHORUS, PHASER, TREMOLO and a tuneable ROOM. Nine ways to play them, a keyboard that is always on screen, and a tombola where notes bounce inside a spinning shape. |
 | PLAY | **MIC / AMP** | Record a voice, or play a guitar or line input through an amp simulation. |
@@ -160,11 +161,13 @@ link above is the live path.
 | Path | What it is |
 | --- | --- |
 | `src/` | **The source.** Edit here. `index.html` (markup), `app.css`, `legacy.js` (the engine), `pure/` (logic, unit-tested), `lib/*.svelte` (components). |
-| `tests/` | Node unit tests for `src/pure/` (no browser, under a second), plus `tests/browser/` — eighteen suites that drive the real app in Chromium, including a stress suite that property-tests, soaks and fuzzes rather than asking questions somebody already thought of. |
+| `tests/` | Node unit tests for `src/pure/` (no browser, under a second), plus `tests/browser/` — 27 suites that drive the real app in Chromium, including a stress suite that property-tests, soaks and fuzzes rather than asking questions somebody already thought of. |
 | `index.html` | **The app — generated.** One self-contained file: open it, serve it, or install it as a PWA. Built from `src/`; do not edit by hand. |
 | `standalone.html` | A frozen, hand-written snapshot of R96, kept as a build-free fallback. See below. |
 | `samples/` | CC0 sound packs, served **beside** the app rather than inside it. Loading one is a network fetch and each sound is downloaded to IndexedDB before it can be used — the app itself ships no audio. |
-| `icons/`, `manifest.webmanifest`, `sw.js` | PWA install and offline shell. |
+| `mcp/` | **The MCP server.** Owns a headless browser with the app loaded and forwards tool calls into it, so an agent builds in the real engine and can read the level back. There is no second implementation of anything. |
+| `songs/` | One script per finished track, rendering it end to end. The bounces are gitignored; the scripts are the artefact. |
+| `icons/`, `manifest.webmanifest`, `sw.js` | PWA install and offline shell — the page, the manifest and the icons, cached per entry so one missing file cannot empty the shell. |
 
 ## Building and running
 
@@ -205,8 +208,8 @@ A plain `file://` open works too, except that service-worker install and a few
 ### Testing
 
 ```sh
-npm test                      # 81 unit tests, well under a second, no browser
-node scripts/browser-tests.mjs   # 18 suites against the built index.html, ~8 min
+npm test                      # 144 unit tests, about a second, no browser
+node scripts/browser-tests.mjs   # 27 suites against the built index.html, ~20 min
 node scripts/browser-tests.mjs guides   # or just one
 ```
 

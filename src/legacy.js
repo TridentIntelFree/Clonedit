@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R254 · 2026-11-03 · one voice is written against the others';
+const BUILD = 'JBH-88 · R256 · 2026-11-03 · the MCP server can actually start';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -5056,6 +5056,14 @@ function logErr(m){ errLog.push(new Date().toTimeString().slice(0,8)+' '+m); if(
    repo keeps a section about; `firedBad` lands in DIAG so the next fault
    of this shape is visible instead of inferred from a stutter. */
 let firedBad=0;
+/* DECLARED HERE, NOT BESIDE THE REGISTRATION THAT SETS IT. The register
+   call is at the bottom of the file and DIAG reads this a thousand lines
+   above it, so a `let` down there is a temporal dead zone of exactly the
+   shape that cost this repo two sessions — `typeof refSpec` and
+   `pentaOnly`. A read before initialisation THROWS, and the throw would
+   take the rest of DIAG with it, which is the one output a person pastes
+   when something is wrong. */
+let swShell=null;                 /* what the worker says it has cached */
 function fireSafe(fn){
   try{ fn(); }
   catch(e){ firedBad++; logErr('voice dropped: '+(e&&e.message?e.message:e)); }
@@ -10114,7 +10122,18 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        agent gets neither of those, so a pack that never arrived has to be an
        exception rather than an empty list it might mistake for a small pack. */
     if(!packManifest || !Array.isArray(packManifest.samples))
-      throw new Error('pack did not load: '+packBase());
+      /* NAME THE WAY ROUND IT, because there is one and it is not
+         obvious. Downloading a pack is the ONLY part of writing that
+         needs a connection: the 31 presets are generated in code, and
+         the key, the chords, infill, ensemble and all five free checks
+         run off baked norms. A failure here used to read as "no sounds
+         available", which is wrong by thirty-one. */
+      throw new Error('pack did not load: '+packBase()
+        +(navigator.onLine===false
+          ? ' — no connection. The 31 built-in presets need none: pick one on'
+            +' SAMPLE, press RENDER → PAD, then TAG IT and the WRITE panel works'
+            +' as normal. Packs already downloaded are kept and still load.'
+          : ''));
     return window.MVX.sounds();
   },
   sounds(){
@@ -27713,6 +27732,19 @@ function diagDump(tag){
       'ccMaps: '+(Object.keys(S.ccMaps).length?JSON.stringify(S.ccMaps):'none')+' · midiIn:'+(midiAccess?'on':'off'),
       'gainWrites: '+(gainLog.length?gainLog.join(' | '):'none'),
       'voices dropped: '+(firedBad||'none'),
+      /* WILL IT WORK WITH NO CONNECTION. Three separate things have to be
+         true and each used to be invisible: the page itself cached by the
+         worker, the samples stored in IndexedDB, and the pack manifest
+         kept so the list survives. Everything the WRITE panel needs —
+         the 31 presets, the key, the chords, infill, ensemble, and all
+         five free checks with their baked norms — needs none of it;
+         downloading a pack is the only part that cannot work offline. */
+      'offline: shell '+(swShell
+          ? (swShell.have+'/'+swShell.want+(swShell.missing?' — INCOMPLETE':' — ready'))
+          : (('serviceWorker' in navigator)?'not reported yet':'unsupported'))
+        +' · stored samples '+packHaveKeys.size
+        +' · cached pack '+(packManifest?(packManifest.name||'yes'):'none')
+        +' · presets need no connection',
       'errors: '+(errLog.length?errLog.join(' | '):'none'),
     ];
     lines.forEach(l=>plog(l));
@@ -28025,8 +28057,8 @@ function tourClose(finished){
 function tourSeen(){ try{ return !!localStorage.getItem(TOUR_KEY); }catch(e){ return true; } }
 
 /* ---------------- the recipe book -------------------------------------------
-   Six workflows, each ending in something that exists: a loop playing, a take
-   on a pad, a file on your phone. Every step names a real control and, where
+   Eight workflows, each ending in something that exists: a loop playing, a
+   part you chose, a take on a pad, a file on your phone. Every step names a real control and, where
    the result is checkable, watches for it.
    Predicates are cheap reads of live state, called four times a second while a
    step is open, so they must not allocate or render. */
@@ -28126,6 +28158,51 @@ const recipeBook=[
     tap:'btnChainOn', done:()=>S.chainOn },
   { el:'btnPlay', title:'LISTEN TO IT MOVE',
     body:'That is an arrangement. For something longer, <b>SONG</b> holds sections with repeat counts, so eight bars of one thing and four of another is two entries rather than twelve.',
+    waitFor:'press PLAY.', didIt:'It is playing.',
+    base:()=>playing, done:b=>playing&&!b }]},
+
+/* THE WRITTEN LAYER HAD NO WALKTHROUGH AT ALL, which is the gap this
+   whole guide system exists to close. Seven recipes and not one of them
+   touched mlTonic, mlChords, mlTagGo, mlOffer, mlApply, mlDemo or
+   mlGenre — the key, the progression, TAG IT, OFFER/WRITE IT and the
+   sixteen recipes were invisible to onboarding.
+
+   And it is the panel that needs one most: by its own documentation it
+   takes six decisions before it does anything, which is most of what
+   "make write user friendly" meant. DEMO and BUILD ME A TRACK do those
+   six for you, but pressing a button that does everything teaches
+   nothing about doing it yourself. This walks the six. */
+{ id:'write', name:'Let it write a part with you',
+  blurb:'Declare a key and some chords, then have the app offer you several ways to play a part — and choose one. Three minutes.',
+  steps:[
+  { title:'LET IT WRITE A PART WITH YOU', body:'This does not hand you a finished track. It <b>offers</b> you parts and you pick, which is the only way a suggestion is any use.<br><br>Six small steps. Everything you make here stays when you finish.' },
+  { tab:'smpl', el:'btnPresetLoad', title:'TWO SOUNDS TO WRITE FOR',
+    body:'Pick a bass from <b>PRESETS</b> and press <b>RENDER &rarr; PAD</b>. Then select a second pad and do it again with a piano or a bell.<br><br>Two is the minimum: writing is about how parts sit together, so one part has nothing to sit against.',
+    waitFor:'put a sound on two pads.', didIt:'Two sounds.',
+    done:()=>S.pads.filter(p=>p.bufId>=0 && p.srcNote!=null).length>=2 },
+  { tab:'seq', el:'mlTagGo', title:'SAY WHICH PAD IS WHICH INSTRUMENT',
+    body:'Tap a pad to select it, type a name here — <b>bass</b>, <b>keys</b>, anything — and press <b>TAG IT</b>. Do both pads.<br><br>A tag is what turns a pad into a voice this can write for. Without one the panel has nothing to aim at, and nothing else in the app creates one.',
+    waitFor:'tag two pads.', didIt:'Two instruments.',
+    done:()=>new Set(S.pads.filter(p=>p.inst&&p.bufId>=0&&p.srcNote!=null).map(p=>p.inst)).size>=2 },
+  { tab:'seq', el:'mlTonic', title:'DECLARE THE KEY',
+    body:'Choose a tonic and a mode. <b>F</b> and <b>dorian</b> is a good one to hear.<br><br>Declaring it is half the value. Nothing here guesses the key from the notes, because guessing the harmony is exactly what makes a wrong note look correct.',
+    waitFor:'pick a tonic.', didIt:'Key declared.',
+    done:()=>!!S.key },
+  { tab:'seq', el:'mlProgPick', title:'AND THE CHORDS',
+    body:'Pick a family from this list and it fills the box with one chord per bar; then press <b>SET</b> to put them on this pattern.<br><br>Chords belong to the <i>pattern</i>, not to the song, so the pattern stays harmonically closed and can be dropped anywhere in an arrangement.',
+    waitFor:'press SET.', didIt:'The pattern has a progression.',
+    tap:'mlSet',
+    done:()=>!!(S.chords[S.pattern] && S.chords[S.pattern].length) },
+  { tab:'seq', el:'mlOffer', title:'ASK FOR SOME OPTIONS',
+    body:'Tick <b>ALL</b> to write every instrument at once, then press <b>OFFER</b>.<br><br>It writes <i>nothing</i> yet. It comes back with several whole arrangements and the numbers each one scores on — clashes between voices, how independently they move — and you choose. The ranking is by <b>fault</b>, not by worth: nothing here can hear them, so if the third one sounds best it <i>is</i> best.',
+    waitFor:'press OFFER.', didIt:'Options ready.',
+    done:()=>{ const r=$('mlPickRow'); return !!r && !r.hidden; } },
+  { tab:'seq', el:'mlApply', title:'CHOOSE ONE, AND WRITE IT',
+    body:'Pick from the list and press <b>WRITE IT</b>. Press <b>OFFER</b> again for a different set any time — and <b>UNDO</b> puts it back.',
+    waitFor:'press WRITE IT.', didIt:'It is written.',
+    base:()=>patHits(), done:b=>patHits()>b },
+  { el:'btnPlay', title:'HEAR IT',
+    body:'That is a part you chose rather than one you were given.<br><br>Two more things on this tab when you want them: <b>FEEL</b> and <b>POLY</b> put a cross-rhythm or a second tempo under what you just wrote, and <b>BUILD ME A TRACK</b> does all six of these steps in one tap, in any of sixteen styles, on the pads you already have.',
     waitFor:'press PLAY.', didIt:'It is playing.',
     base:()=>playing, done:b=>playing&&!b }]},
 
@@ -28584,8 +28661,29 @@ addEventListener('appinstalled', () => { window.__jbhInstall = null;
 
 /* ---------------- boot ---------------- */
 buildPads(); fillAssignFrom(); drawEdit(); drawSeq(); setBpm(100); drawFader(); drawTrax(); drawLive(); drawSidechain();
+/* THE OFFLINE SHELL, AND IT REPORTS. `.catch(()=>{})` was here, which is
+   the bare swallow this repo has a rule against, and it hid a real
+   failure for as long as it existed: `cache.addAll` is atomic, `'./'`
+   404s on any server without a directory index, so the precache rejected,
+   the install failed, the worker never activated and the shell stayed
+   EMPTY. The app simply did not open without a connection and nothing
+   anywhere said why. Both halves are fixed — the worker caches each entry
+   on its own now — and this half is the half that makes the next failure
+   of that shape visible instead of silent. */
 if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
-  navigator.serviceWorker.register('./sw.js').catch(()=>{});   // offline shell — network-first, so updates land when online
+  navigator.serviceWorker.addEventListener('message', ev=>{
+    const d=ev.data; if(!d || !d.jbhSw) return;
+    if(d.jbhSw==='shell-status') swShell=d;
+    if(d.jbhSw==='shell-partial') logErr('offline shell: '+d.says);
+  });
+  navigator.serviceWorker.register('./sw.js').then(async reg=>{
+    /* ask the active worker what it actually got, so "will this work
+       offline" is a question the app can answer rather than one you
+       discover the answer to on a train */
+    const ask=()=>{ const w=navigator.serviceWorker.controller||reg.active;
+      if(w) try{ w.postMessage({jbhSw:'shell-status'}); }catch(e){} };
+    ask(); setTimeout(ask, 1500); setTimeout(ask, 6000);
+  }).catch(e=>logErr('service worker did not register: '+(e&&e.message||e)));
 }
 
 /* ---------------- OFFLINE STATE ---------------------------------------------

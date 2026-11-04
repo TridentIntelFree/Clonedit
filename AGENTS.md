@@ -1065,6 +1065,121 @@ With the kit tuned and the knob counted, `harmony()` passes clean on
 three of four genre builds and the fourth has one voice-pair semitone in
 the whole arrangement.
 
+## The MCP server had never been started by anything
+
+Asked to check the handshake carried everything, the answer was that
+**there had never been a handshake.** `@modelcontextprotocol/sdk` was in
+neither `dependencies` nor `devDependencies` and was not installed, so
+the first line of `mcp/server.mjs` threw MODULE_NOT_FOUND. The whole
+agent interface this repo documents could not boot.
+
+`tests/mcp-coverage.test.mjs` is why nobody knew. It reads the server
+with `readFileSync` and checks its TEXT — every analyser exposed, every
+forwarded option real — which is a good check that has caught real
+drift. What it cannot see is whether the file RUNS, because it never
+imports it. A suite named after the server, green, over a server that
+could not start: the same shape as `offline.test.mjs` asserting the
+instrument keeps playing while the app could not open.
+
+`tests/mcp-handshake.test.mjs` spawns it over stdio and completes the
+handshake for real. The browser boots lazily on the first tool CALL, so
+initialize and tools/list cost nothing but a node process.
+
+### What the handshake was not saying
+
+- **No `instructions` at all.** That field is part of the initialize
+  result and is what a client puts in front of the model BEFORE its
+  first call. The tool list cannot do that job: `jbh_howto`'s
+  description has read "START HERE" from the beginning and nothing made
+  anyone start there, which is how a track got bounced with six of
+  seventeen checks run. It now carries six things, each one measured
+  elsewhere in this file.
+- **`version: '1.0.0'`** while the app was on R255 — information a
+  client cannot use and cannot notice is wrong. It is parsed out of the
+  built file now, so the handshake says which app it is driving.
+
+### Six calls had no tool, and one of them was the headline feature
+
+`jbh_ensemble` did not exist. "Write every layer at once", asked for in
+those words, had no tool — nor did `chop`, `bass`, `instPads`, `phrase`
+or `checkMix`. And `jbh_infill`'s schema forwarded **nine of the sixteen
+options infill() reads**: `density`, `octave`, `feel`, `gate`, `scale`,
+`shape` and `against` were all unreachable, including both levers added
+in the session before this one.
+
+The coverage test checks one direction — no forwarded name that the
+function does not read. Nothing checked the other: no option the
+function reads that is never forwarded, and no CALL that has no tool.
+That check exists now, and it is driven off the **dispatch** rather than
+tool names, because the mapping is not derivable from the name
+(`jbh_load_preset` calls `preset()`, `jbh_inst_pads` calls `instPads()`)
+and a name-matching first draft reported ten false gaps. Deliberate
+omissions go in an `API_ONLY` map with the reason, and the test also
+fails when that map goes stale — a name listed as unexposed that since
+got a tool is a reason nobody will reread.
+
+`jbh_call` can reach anything by name, so nothing was strictly
+unreachable. That is not the point. A tool is what makes a call
+discoverable and gives it a schema, and a headline feature behind an
+escape hatch is a headline feature nobody finds.
+
+**And three of the six schemas were invented.** Written from the call
+signature rather than the body, `jbh_bass` got `note` and `secs` (it
+reads `midi` and `seconds`), `jbh_chop` got `to` and `mode` (it reads
+`floorDb`, `boredom`, `window`) and `jbh_phrase` was described as
+copying steps when it shapes velocity and timing. All five bogus names
+passed `mcp-coverage`, because its reverse check only walks the sound
+GENERATORS. Read the options off `o.` in the body; the signature tells
+you nothing.
+
+### It loaded the app as a FILE, so no pack could ever load
+
+This is the one that mattered most. The server did
+`page.goto(pathToFileURL(findApp()))`, and **Chromium blocks `fetch()`
+to a `file://` URL**. The app fetches its pack manifest and then each
+sound, so over MCP:
+
+```
+jbh_pack -> pack did not load: file:///…/samples/salamander.json
+```
+
+and that took `jbh_packs`, `jbh_instrument` and `jbh_load_sound` with
+it. An agent connecting to this server could use the 31 synthesised
+presets and nothing else — including `nakeddrums`, the recorded kit this
+file insists on for drums and says to load with `instrument()`. **The
+central recommendation here was unreachable through the documented
+interface**, and no test had started the server to find out.
+
+It serves the app over HTTP from a tiny static server now, rooted at the
+app's own directory so `samples/` sits beside it exactly as deployed,
+bound to 127.0.0.1, path-confined. The browser suites have done this
+from the start — it is the same few lines. 127.0.0.1 is also a secure
+context, so the service worker registers and the offline behaviour
+matches the real thing. Measured after: `jbh_instrument` lays four
+salamander pads, `jbh_ensemble` offers three arrangements and writes 42
+notes with 0 clashes, `gate` and `feel` and `poly` all arriving.
+
+### The written layer had no onboarding either
+
+Seven guided walkthroughs and not one touched `mlTonic`, `mlChords`,
+`mlTagGo`, `mlOffer`, `mlApply`, `mlDemo` or `mlGenre`. The key, the
+progression, TAG IT, OFFER/WRITE IT and the sixteen recipes were
+invisible to the tour — and it is the panel that needs one most, because
+by its own documentation it takes six decisions before it does anything.
+`BUILD ME A TRACK` does those six for you, but a button that does
+everything teaches nothing about doing it yourself, so the eighth recipe
+walks the six. The guides suite had `cover.recipes === 7` hard-coded,
+which is the right kind of test to have and the kind that has to be
+updated rather than loosened.
+
+**And the README did not mention the written layer at all.** Zero
+occurrences of chords, progression, TAG IT, OFFER, infill, ensemble,
+genre or recipe — the headline work of several sessions, absent from the
+document a reader starts at. It also claimed 1.3 MB (it is 2), 81 unit
+tests (144) and eighteen browser suites (27), and left `mcp/` and
+`songs/` out of its own what-is-what table. Numbers in prose rot
+silently; the suite count is in three places and was wrong in all three.
+
 ## Driving the controls is the only way to find these, and it misleads
 
 Every fault in the two sections above was found by working the panel the
@@ -1098,6 +1213,73 @@ So: tap with a real `MouseEvent('mousedown')`, read back what the app
 selected instead of what you asked for, and **before reporting a fault,
 reproduce it from the other direction** — the failing walkthrough above
 had every genuine finding sitting underneath three phantom ones.
+
+## Writing works with no connection. The app did not OPEN with no connection
+
+Asked to guarantee the WRITE panel offline, the answer turned out to be
+"almost everything already is, and the one thing that was not was the
+app itself". Measured with the network really cut at the browser, not
+mocked, because the failures are in the service worker and IndexedDB and
+a mock exercises neither.
+
+**What needs nothing.** Driven from a cold board with the network off:
+the 31 presets load (they are generated in code, not fetched), TAG IT,
+`key()`, `chords()`, `infill()`, `ensemble()` — OFFER and WRITE IT both
+— and all five free checks, whose norms are baked constants
+(`CP_NORMS`, `MELODY_NORMS`, `MOTIF_NORMS`), and `render()`, so a bounce
+is possible too. Measured: 3 candidates offered, 40 notes written, pulse
+0.778, oblique 90, harmony clean.
+
+**What needs a connection: downloading a pack, and only the first time.**
+Samples go into IndexedDB and `packHaveKeys` gates the fetch, the
+manifest is cached under `__manifest`, and the worker caches every
+successful GET — so a pack fetched once reloads offline. Measured: 183
+sounds served with the network down. `pack()` throwing offline now names
+the presets, because "no sounds available" is wrong by thirty-one.
+
+**AND THE OFFLINE SHELL WAS EMPTY, for a reason worth the whole
+section.** `cache.addAll()` is ATOMIC. `SHELL` contained `'./'`, which
+404s on any server that does not serve a directory index — every
+`python3 -m http.server`, and the test harness here — so the precache
+rejected, that rejection went to `install`'s `waitUntil`, the install
+failed, **the worker never activated** and the cache stayed empty:
+
+```
+cacheNames  ["jbh88-shell-v5"]          rootStatus  404
+cached      { "jbh88-shell-v5": [] }    state "none" · controlled false
+reload with the network off  ->  net::ERR_INTERNET_DISCONNECTED
+```
+
+GitHub Pages *does* serve `/` as an index, so the deployed site was
+getting away with it. The failure mode is what matters: **one renamed
+icon silently costs every bit of offline capability the app has**, and
+the only symptom is that it does not open on a train.
+
+And nothing could say so, because the page had
+`navigator.serviceWorker.register('./sw.js').catch(()=>{})` — the bare
+swallow this file already has a rule against, hiding the exact failure it
+would have been added for. Each entry is cached on its own now
+(`Promise.allSettled` over `cache.put`), a partial shell is REPORTED to
+the page and into `errLog`, and DIAG carries an `offline:` line — shell
+*n*/9, stored samples, cached pack — so "will this work offline" is a
+question you can answer before losing the connection rather than by
+losing it. After: `activated`, 8 of 9 cached with `'./'` still 404ing,
+and the app reloads.
+
+**Two lessons, both already in this file and both paid for again.** An
+atomic operation over a list of files fails WHOLLY for one missing item,
+so never precache with `addAll` — and `swShell` was first declared beside
+the registration at the bottom of the file while DIAG reads it a thousand
+lines above, which is the `refSpec` temporal dead zone for the third time.
+A read before initialisation throws, and the throw would have taken the
+rest of DIAG with it: the one output a person pastes when something is
+wrong. It is declared next to `firedBad` now.
+
+**The suite had an `offline.test.mjs` all along**, and it asserted that
+the instrument keeps PLAYING with the network cut — sounds loaded, the
+sequencer runs, the bounce is not silent. It never asked whether the app
+opens. That is the shape to watch for: a suite named after the risk,
+covering the half of it that was easy to reach.
 
 ## Check while you build, not after
 
@@ -1519,7 +1701,48 @@ twenty-minute render and nowhere else, so a backgrounded run reports it
 after the wait rather than before.
 
 `scripts/lint-comments.mjs` is the check and `npm run build` now runs
-it. Its first draft flagged seven places and all seven were object
+it.
+
+**AND IT HAS A FALSE POSITIVE THAT COSTS MORE THAN THE BUG IT CATCHES.**
+Its scanner sees a quote character and skips to the matching one, so a
+**regex literal carrying quote characters** can leave it inside a string
+for the rest of the file. It then walks past the next comment opener
+without opening a comment, an apostrophe in that comment's prose ends
+the stale string, and the comment's CLOSER is reported as *"a comment
+was closed that was never opened"* — in a comment that is perfectly well
+formed, a hundred lines from the cause.
+
+Two of those were reported in one new test file, from
+`/^import .*?from '([^']+)'/` and `/jbh\('([a-zA-Z0-9_]+)'/`. The first
+thing tried was rewording the prose at the reported line, which is
+treating the symptom and moved the report somewhere else. **Do not trust
+the line number.** This locates the real one:
+
+```js
+/* paste into node: prints the comment opener that got skipped, and the
+   line where the quote that swallowed it was opened */
+let inBlock=false,inLine=false,quote='',line=1,qline=0;
+for(let i=0;i<src.length;i++){ const c=src[i],d=src[i+1];
+  if(c==='\n'){line++;inLine=false;continue;} if(inLine)continue;
+  if(inBlock){ if(c==='*'&&d==='/'){inBlock=false;i++;} continue; }
+  if(quote){ if(c==='\\'){i++;continue;}
+    if(c==='/'&&d==='*') console.log('skipped opener line',line,'- quote open since',qline);
+    if(c===quote) quote=''; continue; }
+  if(c==='"'||c==="'"||c==='`'){ quote=c; qline=line; continue; }
+  if(c==='/'&&d==='/'){ inLine=true; i++; continue; }
+  if(c==='/'&&d==='*'){ inBlock=true; i++; continue; } }
+```
+
+The fix in the file is `\x27` in place of a literal apostrophe inside a
+regex, which carries no quote character at all. The linter itself is
+left alone: narrowing it further risks the real fault it was written for,
+and it catches that one reliably.
+
+**And writing the closing marker into a comment to EXPLAIN any of this
+ends the comment.** That happened here, inside the fix for the linter,
+and turned the rest of the paragraph into code — the exact fault the
+checker exists to catch, committed while documenting the checker.
+Describe the marker; never quote it. Its first draft flagged seven places and all seven were object
 properties sitting under a comment — `mEqLo:0,` and friends — so it was
 narrowed until it caught every real case and none of those. It carries
 `--self-test` with the five real failures and nine known-good lines in
