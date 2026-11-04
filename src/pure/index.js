@@ -35,6 +35,10 @@ export * from './pitch.js';
    whether a beat can be found at a tempo the app already set, and says
    nothing about a recording that arrived with a tempo of its own. */
 export * from './tempo.js';
+/* DOES THE PIECE HAVE A SHAPE. Every other check looks inside a
+   pattern; this looks at the chain of them, which AGENTS.md records as
+   measurable only outside the app from exported MIDI. */
+export * from './form.js';
 /* recipes: slots with a measurable brief, and a seeded generator */
 export * from './recipes.js';
 /* the measured drum figures the recipes draw from. Exported rather than

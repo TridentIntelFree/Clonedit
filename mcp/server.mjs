@@ -684,6 +684,27 @@ const TOOLS = [
       since: { type: 'integer', description: 'the seq you last saw; 0 or omitted for everything held' },
       limit: { type: 'integer', description: 'at most this many, most recent' } } } },
 
+  { name: 'jbh_form', description:
+      'DOES THE PIECE HAVE A SHAPE. FREE \u2014 it renders nothing, so run it beside '
+      + 'jbh_review quick. Every other check here looks INSIDE a pattern: jbh_pulse at '
+      + 'the steps, jbh_melody and jbh_motif at one voice, jbh_harmony at the chords of '
+      + 'a bar. None of them can see the chain of patterns, which is the form, so a '
+      + 'track can pass all of them and be one loop for three minutes \u2014 the same '
+      + 'failure as the bounce whose verdict was "drone machine noise", one level up. '
+      + 'Reports the sequence as letters (A B A C), its length in bars and seconds, '
+      + 'whether anything comes back, and the three things that are brokenness rather '
+      + 'than taste: one pattern looping, nothing ever returning, and two pattern '
+      + 'numbers whose steps are identical so the letters claim a change nobody can '
+      + 'hear. IT NEVER JUDGES A SECTION LENGTH: the only form norms this repo measured '
+      + 'are Bach phrase lengths by fermata, most of that file is flagged UNSOUND and '
+      + 'must not be used as a norm, and inventing an eight-bar target from it would be '
+      + 'the Goodhart failure AGENTS.md is longest about.',
+    inputSchema: { type: 'object', properties: {
+      song: { type: 'array', description:
+        'an arrangement to measure instead of the one loaded: [{pat, reps}, ...]',
+        items: { type: 'object', properties: {
+          pat: { type: 'integer' }, reps: { type: 'integer' } } } } } } },
+
   { name: 'jbh_tempo', description:
       'HOW FAST IS THE SOUND ON THIS PAD. The one measurement needed to build around '
       + 'something the person brought with them: an uploaded loop could already be '
@@ -1306,6 +1327,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_tell':        return ok(await jbh('tell', [a.text]));
       case 'jbh_messages':    return ok(await jbh('messages', []));
       case 'jbh_events':      return ok(await jbh('events', [{ since: a.since, limit: a.limit }]));
+      case 'jbh_form':        return ok(await jbh('form', [{ song: a.song }]));
       case 'jbh_tempo':       return ok(await jbh('tempo', [a.pad, { min: a.min,
                                 max: a.max, centre: a.centre, win: a.win }]));
       case 'jbh_take':        return ok(await jbh('take', [a.track, { bpm: a.bpm,

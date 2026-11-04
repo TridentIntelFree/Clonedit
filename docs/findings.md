@@ -2327,3 +2327,84 @@ every platform, and more easily on Windows where the separator differs.
 Confining to a directory means `root + sep`. Found while reading the
 path handling for platform assumptions, which is the kind of thing that
 only turns up when you go looking at paths for another reason.
+
+## A piece can pass every check in this repo and be one loop
+
+Every analyser here looks INSIDE a pattern. `pulse()` at the steps,
+`melody()` and `motif()` at one voice's notes, `counterpoint()` at two,
+`harmony()` at the chords of a bar, and the whole mixing half at a
+render. Not one of them can see `S.song` — the chain of
+`{pat, reps}` that is the arrangement.
+
+So a track could pass all of them and be one pattern looping for three
+minutes. That is the same failure as the bounce whose verdict was
+"drone machine noise", exactly one level up: that one passed nine bands
+of spectral analysis because nothing measured whether the HARMONY
+moved, and this one passes everything because nothing measured whether
+the ARRANGEMENT moves.
+
+AGENTS.md had already recorded the gap — *form is measured outside the
+app, by one script* — and `scripts/midi-structure.mjs` measures it from
+exported MIDI, which means it cannot be part of the loop a person or an
+agent actually works in.
+
+`form()` closes it and is FREE in the same sense as the other four: it
+reads the chain the app already knows exactly and renders nothing, so
+`review({quick:true})` runs it after every pattern rather than once at
+the end.
+
+### Three faults, and the third is invisible in the summary
+
+- **one pattern** — the loop-for-three-minutes case
+- **nothing comes back** — every section new, which reads as wandering
+  rather than as a form; a listener needs something to recognise
+- **two pattern numbers whose steps are identical** — and this is the
+  one worth having. The sequence prints as letters, `A B A C`, which is
+  how anybody describes a form out loud; but two patterns can differ by
+  index and not by content, so the string reads `A B` while the
+  listener hears `A A`. Jaccard over the played steps catches it, and
+  it is free because the app knows every step it will play.
+
+### And it refuses to judge a section length
+
+This is the part that took the most thought, and the answer was in the
+repo already. `samples/form-norms.json` is what this project measured
+when it last went looking at form, and most of its fields carry a
+warning in the file itself:
+
+> Every field named UNSOUND_* is kept as evidence and must NOT be used
+> as a norm.
+
+What survived is Bach phrase length by fermata: commonest 2 bars, 67.8%
+of 2,538 phrases across 433 scores. That is a fact about chorales, not
+about how long a section of a groovebox track should be. The same file
+records that only **6.7%** of those phrases are four or eight bars — so
+even the familiar "eight-bar section" is unsupported by the one corpus
+here.
+
+Inventing a target from that would be the exact Goodhart failure the
+longest section of AGENTS.md is about, where a track was pushed to a
+12dB dynamic arc to satisfy a sentence in a document and came out worse
+than the one it was trying to beat. So nothing is judged, the refusal is
+stated in the output so nobody later reads its absence as an oversight,
+and a test asserts that reps of 1, 2, 3, 7, 16 and 64 all draw no
+comment.
+
+### A chain that is switched off is not a form problem
+
+`S.songOn` can be false with a perfectly good arrangement sitting
+there, and then the selected pattern loops instead — which sounds
+exactly like having no form and needs a completely different fix. The
+result says so rather than letting the numbers imply the wrong cause.
+
+### The test's own cap failed as if the function were gone
+
+`tests/mcp-coverage.test.mjs` finds `howto()` with a regex capped at
+16000 characters. Documenting the writing, producing and checks
+sections pushed the body to 16647, the lazy match could no longer reach
+the closing brace, and the failure read *"howto() not found or no
+longer returns an object literal"* — which sends the first reader
+hunting for a syntax error in a function that is perfectly fine. The
+cap is a runaway guard, not a budget for the document; it is 40000 now
+and the message says to check the cap before believing the function is
+broken.

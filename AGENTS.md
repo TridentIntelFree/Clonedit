@@ -539,6 +539,20 @@ the schedule, which the app already knows exactly:
 | `melody(inst, {src})` | is this a tune or a scale with a rhythm |
 | `counterpoint([inst,inst], {src})` | are these two voices actually one voice |
 | `harmony({chords, src})` | do the notes fit the chords — see below |
+| `form({src})` | does the PIECE have a shape, or is it one loop |
+
+**`form()` is the one that sees what the others cannot.** Every check
+above looks INSIDE a pattern, so a track can pass all of them and be one
+pattern looping for three minutes — the "drone machine noise" failure
+one level up. It reads the song chain, renders nothing, reports the
+sequence as letters, and names three faults: one pattern, nothing ever
+coming back, and two pattern numbers whose steps are identical so the
+letters claim a change nobody can hear. **It does not judge section
+length.** The only form norms measured here are Bach phrase lengths by
+fermata, most of `samples/form-norms.json` is flagged `UNSOUND_*` and
+says so in the file, and only 6.7% of those phrases are four or eight
+bars — so even "an eight-bar section" is unsupported, and inventing it
+would be the Goodhart failure this file is longest about.
 
 Three of them take an instrument tag POSITIONALLY, not in the options
 object — `melody('rh', {src:'song'})`, not `melody({instrument:'rh'})`.
@@ -1183,6 +1197,7 @@ thing they are about:
 - [Eighteen calls an agent could use and would never hear about](docs/findings.md#eighteen-calls-an-agent-could-use-and-would-never-hear-about)
 - [An agent could, and the person could not](docs/findings.md#an-agent-could-and-the-person-could-not)
 - [The MCP server could not start on a Mac or on Windows](docs/findings.md#the-mcp-server-could-not-start-on-a-mac-or-on-windows)
+- [A piece can pass every check in this repo and be one loop](docs/findings.md#a-piece-can-pass-every-check-in-this-repo-and-be-one-loop)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

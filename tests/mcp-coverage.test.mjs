@@ -94,8 +94,17 @@ test('the two calls that teach the workflow are exposed, and first', () => {
 });
 
 test('howto() carries the traps, not just the happy path', () => {
-  const m = /howto\(\)\s*\{\s*return\s*\{([\s\S]{0,16000}?)\n  \},/.exec(legacy);
-  assert.ok(m, 'howto() not found or no longer returns an object literal');
+  /* THE CAP IS A PARSER DETAIL AND IT FAILED AS IF howto() WERE GONE.
+     At 16000 the lazy match could not reach the closing brace once
+     howto() grew past it, and the message read "not found or no longer
+     returns an object literal" — which sent the first reader looking
+     for a syntax error in a function that was perfectly fine. It is a
+     bound to stop the regex running away on a mangled file, not a
+     budget for the document; 40000 leaves room and still catches a
+     missing terminator. */
+  const m = /howto\(\)\s*\{\s*return\s*\{([\s\S]{0,40000}?)\n  \},/.exec(legacy);
+  assert.ok(m, 'howto() not found, or its object literal has no closing "  }," — '
+    + 'if howto() looks fine, check it has not grown past the cap in this regex');
   const body = m[1];
   assert.ok(/order:/.test(body), 'howto() should give the order to work in');
   assert.ok(/traps:/.test(body), 'howto() should name the traps');

@@ -866,6 +866,13 @@ immediately.</p>
     <button id="btnSongOn">SONG</button>
     <button id="btnSongLoop">LOOP</button>
     <button id="btnSongClr" aria-label="Clear the song">CLR</button>
+    <!-- THE CHECK THAT LOOKS AT THIS LIST. Everything else in the app
+         looks INSIDE a pattern, so a track can pass every check and be
+         one loop for three minutes. It is free: it reads the chain and
+         renders nothing. It does not judge how long a section should
+         be, because the only form norms measured here are Bach phrase
+         lengths and an eight-bar target would be invented. -->
+    <button id="btnForm" title="Does this have a shape? Reads the chain, renders nothing">SHAPE?</button>
     <span id="songInfo" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
   </div>
   <div class="adv" id="songlist"></div>

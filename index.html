@@ -882,6 +882,13 @@ immediately.</p>
     <button id="btnSongOn">SONG</button>
     <button id="btnSongLoop">LOOP</button>
     <button id="btnSongClr" aria-label="Clear the song">CLR</button>
+    <!-- THE CHECK THAT LOOKS AT THIS LIST. Everything else in the app
+         looks INSIDE a pattern, so a track can pass every check and be
+         one loop for three minutes. It is free: it reads the chain and
+         renders nothing. It does not judge how long a section should
+         be, because the only form norms measured here are Bach phrase
+         lengths and an eight-bar target would be invented. -->
+    <button id="btnForm" title="Does this have a shape? Reads the chain, renders nothing">SHAPE?</button>
     <span id="songInfo" style="font-size:10px;color:var(--txt-dim);flex:1"></span>
   </div>
   <div class="adv" id="songlist"></div>
@@ -2958,6 +2965,7 @@ var __JBH_PURE = (() => {
     euclid: () => euclid,
     figureFor: () => figureFor,
     fitSlot: () => fitSlot,
+    formOf: () => formOf,
     fromRoman: () => fromRoman,
     hzToMidi: () => hzToMidi,
     installSteps: () => installSteps,
@@ -2980,6 +2988,7 @@ var __JBH_PURE = (() => {
     packFromNames: () => packFromNames,
     parseSfz: () => parseSfz,
     patLen: () => patLen,
+    patternDistance: () => patternDistance,
     pickContour: () => pickContour,
     pitchOfWindow: () => pitchOfWindow,
     pitchTrack: () => pitchTrack,
@@ -3007,6 +3016,7 @@ var __JBH_PURE = (() => {
     sampleFromName: () => sampleFromName,
     scalePcs: () => scalePcs,
     scalesFitting: () => scalesFitting,
+    sequenceLetters: () => sequenceLetters,
     sfzAssemble: () => sfzAssemble,
     sfzIncludes: () => sfzIncludes,
     sfzMacros: () => sfzMacros,
@@ -4286,6 +4296,97 @@ var __JBH_PURE = (() => {
              — it is a question they answer in a second. Given `min` and
              `max`, this is exact: 6 of 6, the same as beatd told the same. */
       says: "about " + bpm.toFixed(1) + "bpm" + (alt.filter((x) => Math.abs(x / bpm - 2) < 0.08 || Math.abs(x / bpm - 0.5) < 0.04).length ? " \u2014 or " + alt.filter((x) => Math.abs(x / bpm - 2) < 0.08 || Math.abs(x / bpm - 0.5) < 0.04).join(" or ") + "bpm, which is the same rhythm counted half or twice as fast. Nothing in the audio settles which a person would tap, so if you know roughly what it should be, pass min and max and this is exact." : ", with no half-or-double reading close behind it.") + " First beat at " + beatPhase(flux, winSec, lag) + "s."
+    };
+  }
+
+  // src/pure/form.js
+  function patternDistance(a, b) {
+    const A = new Set(a || []), B = new Set(b || []);
+    if (!A.size && !B.size) return 0;
+    let inter = 0;
+    for (const k of A) if (B.has(k)) inter++;
+    const union = A.size + B.size - inter;
+    return union ? +(1 - inter / union).toFixed(3) : 0;
+  }
+  function sequenceLetters(song) {
+    const seen = /* @__PURE__ */ new Map();
+    return (song || []).map((s) => {
+      if (!seen.has(s.pat)) {
+        const n = seen.size;
+        seen.set(s.pat, n < 26 ? String.fromCharCode(65 + n) : "P" + (n + 1));
+      }
+      return seen.get(s.pat);
+    });
+  }
+  function formOf(song, prints, opt) {
+    const o = opt || {};
+    const list = Array.isArray(song) ? song.filter((s) => s && s.pat != null) : [];
+    const barsOf = (p) => o.barsPerPattern && o.barsPerPattern[p] || 1;
+    const bpm = Math.abs(o.bpm || 120);
+    if (!list.length) {
+      return {
+        sections: 0,
+        bars: 0,
+        seconds: 0,
+        sequence: "",
+        distinct: 0,
+        faults: ["no-arrangement"],
+        says: "there is no arrangement \u2014 the song chain is empty, so the piece is whichever pattern is selected, looping forever. That is a fine way to sketch and it is not a form. Add sections to the SONG chain."
+      };
+    }
+    const letters = sequenceLetters(list);
+    const pats = list.map((s) => s.pat);
+    const distinct = new Set(pats).size;
+    const bars = list.reduce((a, s) => a + barsOf(s.pat) * Math.max(1, s.reps | 0), 0);
+    const seconds = +(bars * 4 * 60 / bpm).toFixed(1);
+    const counts = /* @__PURE__ */ new Map();
+    for (const p of pats) counts.set(p, (counts.get(p) || 0) + 1);
+    const returns = [...counts.values()].some((c) => c > 1);
+    let longestRun = 1, run = 1;
+    for (let i = 1; i < pats.length; i++) {
+      run = pats[i] === pats[i - 1] ? run + 1 : 1;
+      if (run > longestRun) longestRun = run;
+    }
+    const joins = [];
+    for (let i = 1; i < pats.length; i++) {
+      if (pats[i] === pats[i - 1]) continue;
+      joins.push({
+        at: i,
+        from: letters[i - 1],
+        to: letters[i],
+        distance: patternDistance(prints && prints[pats[i - 1]], prints && prints[pats[i]])
+      });
+    }
+    const sameContent = joins.filter((j) => j.distance < 0.05);
+    const faults = [];
+    if (distinct === 1) faults.push("one-pattern");
+    if (!returns && list.length > 2) faults.push("no-return");
+    if (sameContent.length) faults.push("sections-identical");
+    const seq = letters.join(" ");
+    const repsSpread = (() => {
+      const r = list.map((s) => Math.max(1, s.reps | 0));
+      return { min: Math.min(...r), max: Math.max(...r) };
+    })();
+    let says;
+    if (distinct === 1) {
+      says = seq + " \u2014 one pattern, " + list.length + " section" + (list.length === 1 ? "" : "s") + ", " + bars + " bars. Every check in this app looks inside a pattern, so a piece built this way passes all of them and is a loop. Whatever else is true of it, nothing about it changes.";
+    } else {
+      says = seq + " \u2014 " + distinct + " patterns over " + list.length + " sections, " + bars + " bars, about " + seconds + "s at " + bpm + "bpm." + (returns ? " Something comes back, so it has a shape rather than just a sequence." : " NOTHING COMES BACK: every section is new, which reads as wandering rather than as a form. A listener needs something to recognise.") + (longestRun >= 4 ? " " + longestRun + " of the same pattern run back to back, which is a long time on one idea." : "") + (sameContent.length ? " And " + sameContent.length + " join" + (sameContent.length === 1 ? " is" : "s are") + " between patterns whose steps are identical (" + sameContent.map((j) => j.from + "\u2192" + j.to).join(", ") + "), so the letters claim a change the listener cannot hear." : "");
+    }
+    says += " No section length is judged here \u2014 the only form norms this repo measured are Bach phrase lengths, which say nothing about a groovebox.";
+    return {
+      sections: list.length,
+      bars,
+      seconds,
+      sequence: seq,
+      letters,
+      distinct,
+      returns,
+      longestRun,
+      joins,
+      repsSpread,
+      faults,
+      says
     };
   }
 
@@ -10511,7 +10612,7 @@ Object.assign(globalThis, __JBH_PURE);})();
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R264 · 2026-11-04 · it can tell how fast your loop is';
+const BUILD = 'JBH-88 · R265 · 2026-11-04 · it can see whether the piece has a shape';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -21126,6 +21227,18 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           if(f.severity!=='note') findings.push({tool:'harmony', severity:'harmony',
             says:f.says, fix:''});
       }
+      /* FORM IS FREE AND NOTHING RAN IT. A piece can pass every other
+         check here and be one pattern looping, because every other
+         check looks inside a pattern. */
+      const fm=await run('form',()=>window.MVX.form({src}));
+      for(const f of ((fm&&fm.faults)||[]))
+        findings.push({tool:'form', severity:'form',
+          says:fm.says, fix: f==='one-pattern'
+            ? 'Write a second pattern and put it in the SONG chain.'
+            : f==='no-arrangement'
+              ? 'Add sections to the SONG chain, or this is a sketch rather than a piece.'
+              : f==='no-return' ? 'Bring an earlier pattern back, so there is something '
+                +'to recognise.' : 'Make those two patterns actually differ, or drop one.'});
       const notApplicable=[];
       if(!(Array.isArray(o.chords) && o.chords.length))
         notApplicable.push('harmony — no progression was given, so nothing checked whether '
@@ -21138,6 +21251,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       else if(lines.length<2) notApplicable.push('counterpoint — it compares voices and there '
         +'is only one line ('+lines[0]+').');
       return {src, quick:true, lines, findings, ran, skipped, notApplicable,
+        form:fm?{sequence:fm.sequence, bars:fm.bars, distinct:fm.distinct,
+          faults:fm.faults}:null,
         pulse:pu?{strength:pu.pulseStrength, onBeat:pu.onGrid&&pu.onGrid.beat}:null,
         says:(findings.length?findings.length+' thing'+(findings.length>1?'s':'')+' to look at'
           :'nothing flagged')+' — '+ran.length+' free check'+(ran.length===1?'':'s')
@@ -23785,6 +23900,14 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        SCHEDULE, which the app knows exactly. A take is audio off the
        mic bus and none of them can see it. */
     producing: [
+      'form() asks whether the piece has a SHAPE, and it is free \u2014 it reads the '
+        + 'song chain and renders nothing. Every other check here looks inside a '
+        + 'pattern, so a track can pass all of them and be one loop for three minutes, '
+        + 'which is the "drone machine noise" failure one level up. It reports the '
+        + 'sequence as letters, whether anything comes back, and two pattern numbers '
+        + 'whose steps are identical. It does NOT judge section length: the only form '
+        + 'norms measured here are Bach phrase lengths, most of that file is flagged '
+        + 'unsound, and an eight-bar target would be invented.',
       'tempo(pad) is how fast a sound somebody brought with them actually is, and '
         + 'the one measurement that makes building around their own loop possible: it '
         + 'could be played, chopped and pitched and never lined up, because nothing '
@@ -24838,6 +24961,38 @@ window.MVX.tempo=function(which, opt){
               : (rel>1?'faster':'slower')+' by a factor of '
                 +(rel>1?rel:1/rel).toFixed(2)+'.'))
       : '') });
+};
+/* DOES THE PIECE HAVE A SHAPE. The free check that was missing: every
+   other one looks INSIDE a pattern, and the chain of patterns -- which
+   is the form -- could only be measured outside the app, from exported
+   MIDI, by one script.
+
+   Free in the same sense as pulse() and motif(): it reads the
+   arrangement the app already knows exactly and renders nothing. */
+window.MVX.form=function(opt){
+  const o=opt||{};
+  /* the steps each pattern plays, as keys the pure side can compare.
+     Taken from the real grid rather than from a summary, so two
+     patterns that merely LOOK different are caught. */
+  const prints={}, barsPer={};
+  S.patterns.forEach((pat,i)=>{
+    const keys=[];
+    for(const p in pat.steps){
+      const row=pat.steps[p]||[];
+      for(let st=0;st<row.length;st++) if(row[st]>0) keys.push(p+':'+st);
+    }
+    prints[i]=keys;
+    barsPer[i]=Math.max(1, Math.round(patLen(pat)/16));
+  });
+  const song=(o.song||S.song||[]).map(x=>({pat:x.pat, reps:x.reps}));
+  const r=formOf(song, prints, {bpm:Math.abs(S.bpm||120), barsPerPattern:barsPer});
+  return Object.assign({songOn:!!S.songOn}, r,
+    /* A CHAIN THAT IS NOT SWITCHED ON IS NOT PLAYING. The arrangement
+       can be perfectly good and never heard, which reads exactly like
+       a track with no form -- and is a different fix. */
+    (!S.songOn && song.length) ? { says: r.says
+      + ' NOTE: the song chain is not switched on, so none of this is what '
+      + 'plays \u2014 the selected pattern loops instead. Set songOn.' } : {});
 };
 window.MVX.events=function(opt){
   const o=opt||{};
@@ -33089,6 +33244,20 @@ function drawSong(){
   a11yPass(el);
 }
 $('btnSongAdd').addEventListener('click',()=>{ S.song.push({pat:S.pattern,reps:4}); drawSong(); dirty(); lcd('SECTION ADDED · PTN '+(S.pattern+1)+' ×4'); });
+if($('btnForm')) $('btnForm').addEventListener('click',()=>{
+  const b=$('btnForm'); const was=b.textContent;
+  try{
+    const f=window.MVX.form({});
+    const info=$('songInfo');
+    if(info) info.textContent=f.says;
+    lcd((f.sequence?('FORM '+f.sequence+' \u00b7 '):'')+f.says.slice(0,60));
+    b.textContent=f.faults.length?('\u2014 '+f.faults[0].toUpperCase()):(f.sequence||'OK');
+  }catch(e){
+    const info=$('songInfo'); if(info) info.textContent=e.message;
+    b.textContent='\u2014 '+String(e.message).slice(0,20);
+  }
+  finally{ setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 6000); }
+});
 $('btnSongClr').addEventListener('click',()=>{ S.song=[]; S.songOn=false; songPos=0; songRep=0; drawSong(); dirty(); lcd('SONG CLEARED'); });
 $('btnSongLoop').addEventListener('click',()=>{ S.songLoop=!S.songLoop; drawSong(); dirty(); lcd(S.songLoop?'SONG LOOPS':'SONG PLAYS ONCE then stops'); });
 $('btnSongOn').addEventListener('click',()=>{

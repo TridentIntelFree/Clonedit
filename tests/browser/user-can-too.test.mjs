@@ -184,6 +184,46 @@ export default async function ({ browser, base }) {
       && /Groove corpus/.test(take.got),
       take.got.slice(0, 220));
 
+    t.head('DOES THIS HAVE A SHAPE');
+    const form = await page.evaluate(async () => {
+      await window.JBH.clear();
+      const out = {};
+      /* nothing in the chain at all */
+      document.getElementById('btnForm').click();
+      await new Promise(r => setTimeout(r, 200));
+      out.empty = document.getElementById('songInfo').textContent;
+      /* one pattern looping — the fault every other check is blind to */
+      S.song = [{ pat: 0, reps: 4 }, { pat: 0, reps: 4 }];
+      document.getElementById('btnForm').click();
+      await new Promise(r => setTimeout(r, 200));
+      out.loop = document.getElementById('songInfo').textContent;
+      /* a real shape */
+      S.patterns[1].steps[0] = [];
+      S.patterns[1].steps[0][3] = 0.9;
+      S.patterns[1].steps[0][11] = 0.9;
+      S.patterns[0].steps[0] = [];
+      S.patterns[0].steps[0][0] = 0.9;
+      S.patterns[0].steps[0][8] = 0.9;
+      S.song = [{ pat: 0, reps: 4 }, { pat: 1, reps: 4 }, { pat: 0, reps: 4 }];
+      document.getElementById('btnForm').click();
+      await new Promise(r => setTimeout(r, 200));
+      out.shape = document.getElementById('songInfo').textContent;
+      return out;
+    });
+    t.ok('an empty chain is named as a sketch, not passed',
+      /no arrangement/.test(form.empty) && /sketch/.test(form.empty),
+      form.empty.slice(0, 120));
+    t.ok('ONE PATTERN LOOPING IS CAUGHT, which no other check can see',
+      /one pattern/.test(form.loop) && /nothing about it changes|passes all of them/.test(form.loop),
+      form.loop.slice(0, 150));
+    t.ok('and a real shape reads back as one',
+      /A B A/.test(form.shape) && /comes back/.test(form.shape),
+      form.shape.slice(0, 130));
+    t.ok('it never judges how long a section should be',
+      !/too long|too short|should be/i.test(form.shape)
+      && /No section length is judged/.test(form.shape),
+      form.shape.slice(-110));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

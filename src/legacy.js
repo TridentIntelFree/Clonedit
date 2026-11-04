@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R264 · 2026-11-04 · it can tell how fast your loop is';
+const BUILD = 'JBH-88 · R265 · 2026-11-04 · it can see whether the piece has a shape';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -13453,6 +13453,18 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           if(f.severity!=='note') findings.push({tool:'harmony', severity:'harmony',
             says:f.says, fix:''});
       }
+      /* FORM IS FREE AND NOTHING RAN IT. A piece can pass every other
+         check here and be one pattern looping, because every other
+         check looks inside a pattern. */
+      const fm=await run('form',()=>window.MVX.form({src}));
+      for(const f of ((fm&&fm.faults)||[]))
+        findings.push({tool:'form', severity:'form',
+          says:fm.says, fix: f==='one-pattern'
+            ? 'Write a second pattern and put it in the SONG chain.'
+            : f==='no-arrangement'
+              ? 'Add sections to the SONG chain, or this is a sketch rather than a piece.'
+              : f==='no-return' ? 'Bring an earlier pattern back, so there is something '
+                +'to recognise.' : 'Make those two patterns actually differ, or drop one.'});
       const notApplicable=[];
       if(!(Array.isArray(o.chords) && o.chords.length))
         notApplicable.push('harmony — no progression was given, so nothing checked whether '
@@ -13465,6 +13477,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       else if(lines.length<2) notApplicable.push('counterpoint — it compares voices and there '
         +'is only one line ('+lines[0]+').');
       return {src, quick:true, lines, findings, ran, skipped, notApplicable,
+        form:fm?{sequence:fm.sequence, bars:fm.bars, distinct:fm.distinct,
+          faults:fm.faults}:null,
         pulse:pu?{strength:pu.pulseStrength, onBeat:pu.onGrid&&pu.onGrid.beat}:null,
         says:(findings.length?findings.length+' thing'+(findings.length>1?'s':'')+' to look at'
           :'nothing flagged')+' — '+ran.length+' free check'+(ran.length===1?'':'s')
@@ -16112,6 +16126,14 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        SCHEDULE, which the app knows exactly. A take is audio off the
        mic bus and none of them can see it. */
     producing: [
+      'form() asks whether the piece has a SHAPE, and it is free \u2014 it reads the '
+        + 'song chain and renders nothing. Every other check here looks inside a '
+        + 'pattern, so a track can pass all of them and be one loop for three minutes, '
+        + 'which is the "drone machine noise" failure one level up. It reports the '
+        + 'sequence as letters, whether anything comes back, and two pattern numbers '
+        + 'whose steps are identical. It does NOT judge section length: the only form '
+        + 'norms measured here are Bach phrase lengths, most of that file is flagged '
+        + 'unsound, and an eight-bar target would be invented.',
       'tempo(pad) is how fast a sound somebody brought with them actually is, and '
         + 'the one measurement that makes building around their own loop possible: it '
         + 'could be played, chopped and pitched and never lined up, because nothing '
@@ -17165,6 +17187,38 @@ window.MVX.tempo=function(which, opt){
               : (rel>1?'faster':'slower')+' by a factor of '
                 +(rel>1?rel:1/rel).toFixed(2)+'.'))
       : '') });
+};
+/* DOES THE PIECE HAVE A SHAPE. The free check that was missing: every
+   other one looks INSIDE a pattern, and the chain of patterns -- which
+   is the form -- could only be measured outside the app, from exported
+   MIDI, by one script.
+
+   Free in the same sense as pulse() and motif(): it reads the
+   arrangement the app already knows exactly and renders nothing. */
+window.MVX.form=function(opt){
+  const o=opt||{};
+  /* the steps each pattern plays, as keys the pure side can compare.
+     Taken from the real grid rather than from a summary, so two
+     patterns that merely LOOK different are caught. */
+  const prints={}, barsPer={};
+  S.patterns.forEach((pat,i)=>{
+    const keys=[];
+    for(const p in pat.steps){
+      const row=pat.steps[p]||[];
+      for(let st=0;st<row.length;st++) if(row[st]>0) keys.push(p+':'+st);
+    }
+    prints[i]=keys;
+    barsPer[i]=Math.max(1, Math.round(patLen(pat)/16));
+  });
+  const song=(o.song||S.song||[]).map(x=>({pat:x.pat, reps:x.reps}));
+  const r=formOf(song, prints, {bpm:Math.abs(S.bpm||120), barsPerPattern:barsPer});
+  return Object.assign({songOn:!!S.songOn}, r,
+    /* A CHAIN THAT IS NOT SWITCHED ON IS NOT PLAYING. The arrangement
+       can be perfectly good and never heard, which reads exactly like
+       a track with no form -- and is a different fix. */
+    (!S.songOn && song.length) ? { says: r.says
+      + ' NOTE: the song chain is not switched on, so none of this is what '
+      + 'plays \u2014 the selected pattern loops instead. Set songOn.' } : {});
 };
 window.MVX.events=function(opt){
   const o=opt||{};
@@ -25416,6 +25470,20 @@ function drawSong(){
   a11yPass(el);
 }
 $('btnSongAdd').addEventListener('click',()=>{ S.song.push({pat:S.pattern,reps:4}); drawSong(); dirty(); lcd('SECTION ADDED · PTN '+(S.pattern+1)+' ×4'); });
+if($('btnForm')) $('btnForm').addEventListener('click',()=>{
+  const b=$('btnForm'); const was=b.textContent;
+  try{
+    const f=window.MVX.form({});
+    const info=$('songInfo');
+    if(info) info.textContent=f.says;
+    lcd((f.sequence?('FORM '+f.sequence+' \u00b7 '):'')+f.says.slice(0,60));
+    b.textContent=f.faults.length?('\u2014 '+f.faults[0].toUpperCase()):(f.sequence||'OK');
+  }catch(e){
+    const info=$('songInfo'); if(info) info.textContent=e.message;
+    b.textContent='\u2014 '+String(e.message).slice(0,20);
+  }
+  finally{ setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 6000); }
+});
 $('btnSongClr').addEventListener('click',()=>{ S.song=[]; S.songOn=false; songPos=0; songRep=0; drawSong(); dirty(); lcd('SONG CLEARED'); });
 $('btnSongLoop').addEventListener('click',()=>{ S.songLoop=!S.songLoop; drawSong(); dirty(); lcd(S.songLoop?'SONG LOOPS':'SONG PLAYS ONCE then stops'); });
 $('btnSongOn').addEventListener('click',()=>{
