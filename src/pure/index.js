@@ -20,6 +20,11 @@ export * from './sfz.js';
    playable on it at a given tempo. Pure maths over a channel of audio,
    so it is tested in Node against signals whose answers are known. */
 export * from './timbre.js';
+/* what a RECORDED take did: onsets off the buffer, timing against the
+   grid, and the three faults that make a take unusable. The schedule
+   checks next door cannot see a take at all -- they read the sequencer,
+   and a take is audio off the mic bus. */
+export * from './take.js';
 /* recipes: slots with a measurable brief, and a seeded generator */
 export * from './recipes.js';
 /* the measured drum figures the recipes draw from. Exported rather than

@@ -1893,3 +1893,139 @@ now follows an options object passed wholesale into a function exported
 from `src/pure` and counts that function's reads as the method's,
 verified the way the `jumble` case was: by taking `style` back out and
 watching it fail.
+
+## An AI that is never told reads exactly like an AI with nothing to say
+
+The app could already hold a conversation. `MVX.say()` carries a line
+from the person to whatever is driving, `MVX.tell()` carries one back and
+shows it in a transcript and on the LCD "because a reply nobody notices
+is not a reply", `MVX.peers()` refuses to report "sent" when nothing is
+on the other end, and the whole link is off until switched on and off
+again on reload. It is a careful piece of work.
+
+Two things stopped it being a producer, and both were absences rather
+than bugs.
+
+**It could not notice.** `jbhEmit()` had exactly two callers — `say` and
+`ping` — so nothing about a take finishing, the transport rolling or a
+pattern changing ever reached the other end. An AI asked to produce
+would have had to ask "did you record something?" every few seconds,
+which is interviewing, not watching. It is the same shape as a check
+that silently did not run: an AI that is never told reads exactly like
+an AI with nothing to say.
+
+`jbhNotify()` now delivers twice, because the two kinds of client cannot
+both be served by one. A same-origin tab gets a push over the link,
+which is what live feedback wants. An MCP client cannot be pushed to at
+all — request/response, in another process — so the same events land in
+a 200-entry ring buffer it polls with `events({since})`. Writing only
+the push would have left the MCP half with no way in.
+
+**And none of it was reachable from a tool.** There was no `jbh_say`,
+`jbh_tell`, `jbh_messages`, `jbh_listen` or `jbh_peers`. The entire
+conversational surface of the app was reachable from the browser console
+and from nowhere an agent actually lives.
+
+### Why the test that exists to catch that did not
+
+`tests/mcp-handshake.test.mjs` asserts that every app call has a tool or
+sits in `API_ONLY` with a stated reason. It finds the API by slicing
+`src/legacy.js` between `window.MVX={` and `window.JBH=window.MVX;`.
+
+Ten methods are added after that line as `window.MVX.name = function`,
+and the slice contains none of them: `say`, `tell`, `messages`, `peers`,
+`listen`, `ping` and the rest. So the check saw an API with a hole in it
+exactly the shape of the feature that was missing, and stayed green.
+
+Widened to include the later assignments, it immediately named five
+calls with no tool and no reason — `calls`, `say`, `ping`, `sessionFile`,
+`loadFile` — and the widening carries its own assertion that four known
+late methods are in the parsed set, so a future narrowing cannot quietly
+undo it.
+
+Four of those five are deliberate omissions and now say why. `say` is
+the interesting one: it writes into the person's own transcript labelled
+as them, so an agent calling it would be putting words in their mouth in
+their own UI. `jbh_tell` is the agent's half; this half is theirs.
+
+This is the second blind spot found in that one test in a day. The other
+was options read one layer down in `src/pure`. Both are the same
+mistake: a parser that is wrong about where the thing it checks ENDS
+does not report faults, it reports nothing.
+
+## Fifteen green tests on synthesised audio, and wrong anyway
+
+`src/pure/take.js` measures a take somebody played, which the rest of
+the check layer cannot: `pulse()`, `melody()`, `motif()` and `harmony()`
+read the SCHEDULE — the steps the sequencer is going to play — and a
+TRAX take is audio off the mic bus.
+
+The first onset detector asked whether an RMS window was 1.8x louder
+than the window before it. It passed fifteen tests built on synthesised
+hits, including ones for a sustained note, a ragged attack and room
+tone. Then it was run against twelve real ESC-50 clips whose onsets
+`samples/foundkit.json` declares, and put the declared onset among those
+it found **four times out of nine** discrete events.
+
+A single neighbouring window is not a baseline. A hit arriving over
+three windows never shows a big step between any adjacent pair, and a
+noisy floor produces enormous ratios between two quiet ones. Replaced
+with the rise in LOG energy, peak-picked against a LOCAL median plus a
+margin, it gets six of nine — and the three it still "misses" turned out
+to be the point.
+
+### The manifest was wrong, not the detector
+
+At the onset `fk:snare` declares, the audio is 73dB below that file's
+own peak and the real attack is 107ms later. `fk:can` is 68dB down with
+its attack 150ms later. `fk:hat` has no transient within 400ms of its
+declared value. `fk:tom` points past its own first event, and in
+`darkkit`, `dk:glass` lands in digital silence.
+
+AGENTS.md tells you to read that field and set a pad's `start` from it,
+because an ESC-50 clip is five seconds long with the event somewhere
+inside. That advice is right, and a pad trimmed to one of those five
+values opens on room tone and measures about −70dB in the mix — which is
+the exact fault the section two above it describes, produced by
+following the section. The cure was the cause.
+
+`scripts/audit-onsets.mjs` measures a manifest against its own audio and
+exits non-zero if any declared onset sits in near-silence while the file
+becomes audible clearly elsewhere. Both conditions are required: a clip
+can be quiet at its onset and rise smoothly, and a clip that is loud
+from sample zero has no onset to trim to, which the script reports as
+its own answer rather than as a fault — six of the twelve are field
+recordings that simply start. The five real ones are fixed in the
+manifests.
+
+**Synthetic tests assert the thing you already believe.** Fifteen of
+them agreed with me and the detector was still not good enough to ship;
+one directory of real recordings disagreed, and the disagreement was
+worth more than all fifteen. Where a corpus or a pack is reachable, test
+against it.
+
+## A take is late or it is loose, and those are different problems
+
+`takeTiming()` reports a constant offset and a spread separately, and
+collapsing them would waste the measurement.
+
+A player sitting 30ms behind the click for a whole pass is TIGHT: the
+offset can be nudged in one move and nothing needs playing again. A
+player averaging zero with a 60ms spread cannot be fixed by moving
+anything. Reporting a single "average error" would rank those two the
+same, and they call for opposite advice.
+
+This is the lesson `scripts/study-groove.py` had already learned on the
+corpus. Its first run reported every metrical position early by about
+the same 9.3ms, which is not a micro-timing pattern — it is a constant,
+either a drummer sitting ahead of the click for a take or latency in the
+capture, and it swamps the shape being looked for. De-meaning each
+performance against itself is what left only the thing being asked
+about.
+
+And tight is judged against **0.075 of a sixteenth**, the median human
+micro-timing across those 1,150 performances, rather than against zero.
+Zero is a machine. This repo already knows the neighbouring version of
+that mistake: `pulse()` scores a human drummer ~100% because its
+tolerance is five times wider than the deviation being measured, so
+"sixteenth 100%" was never evidence a track was robotic.

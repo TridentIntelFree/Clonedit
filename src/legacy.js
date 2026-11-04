@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R258 · 2026-11-04 · the drum figures are measured now';
+const BUILD = 'JBH-88 · R259 · 2026-11-04 · it notices what you just played';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -16864,6 +16864,96 @@ window.MVX.tell=function(text){
   lcd('AGENT: '+t.slice(0,140));
   return {shown:true, text:t};
 };
+/* WHAT THE PERSON JUST DID, so an AI can produce rather than interview.
+
+   The link could already carry a conversation -- say() one way, tell()
+   the other -- and it could be asked to do anything on window.JBH. What
+   it could not do was NOTICE. jbhEmit() had exactly two callers, `say`
+   and `ping`, so nothing about a take finishing or the transport
+   rolling ever reached the other end, and a producer that has to ask
+   "did you record something?" every few seconds is not watching. It is
+   the same shape as a check that silently did not run: an AI that is
+   never told reads exactly like an AI with nothing to say.
+
+   TWO DELIVERIES, because the two kinds of client cannot both be
+   served by one. A same-origin tab gets a push over the link, which is
+   what live feedback wants. An MCP client cannot be pushed to at all --
+   it is a request/response transport in another process -- so the same
+   events go into a ring buffer it can poll with events({since}).
+   Writing only the push would have left the MCP half with no way in,
+   which is this repo's most repeated mistake.
+
+   Bounded on purpose. 200 entries is minutes of ordinary work, and a
+   producer that has not looked in minutes has lost the thread anyway;
+   an unbounded log of every pad press is a memory leak with a
+   plausible excuse. */
+const JBH_EV_MAX=200;
+let JBH_EVENTS=[], jbhEvSeq=0;
+function jbhNotify(what, data){
+  const ev=Object.assign({seq:++jbhEvSeq, at:Date.now(), what:what}, data||{});
+  JBH_EVENTS.push(ev);
+  if(JBH_EVENTS.length>JBH_EV_MAX) JBH_EVENTS=JBH_EVENTS.slice(-JBH_EV_MAX);
+  /* only pushed when the link is open; the buffer fills either way so a
+     client that connects late can still read what it missed */
+  if(jbhBus||jbhPorts.size) jbhEmit({event:'did', did:ev});
+  return ev;
+}
+/* THE TRANSPORT, wrapped rather than edited into startSeq/stopSeq.
+
+   Those two are called from a dozen places -- buttons, the chain, the
+   song player, panics -- and adding a line inside each would be one
+   more thing for every future caller to keep in step. Wrapping names
+   the behaviour once, where the rest of the link lives. */
+(function(){
+  const s0=startSeq, p0=stopSeq;
+  startSeq=function(){ const r=s0.apply(this,arguments);
+    try{ jbhNotify('play', {bpm:Math.abs(S.bpm||120), pattern:S.pattern+1,
+      song:!!S.songOn}); }catch(e){}
+    return r; };
+  stopSeq=function(){ const r=p0.apply(this,arguments);
+    try{ jbhNotify('stop', {}); }catch(e){}
+    return r; };
+})();
+/* MEASURE A TAKE THE PERSON JUST PLAYED.
+
+   This is the half the instant checks cannot reach. pulse(), melody(),
+   motif() and harmony() read the SCHEDULE -- the steps the sequencer is
+   going to play, which the app knows exactly -- and a TRAX take is
+   audio off the mic bus, so none of them have a word to say about
+   something sung or played.
+
+   Reports and does not grade. The long warning in AGENTS.md is that
+   every measure here is a fault detector and a bad target, and a take
+   20ms behind the click may be exactly the feel that was wanted;
+   `faults` carries only the three that are brokenness -- silence,
+   clipping, a DC offset. Everything else is a number for a person to
+   agree or disagree with. */
+window.MVX.take=function(which, opt){
+  const o=opt||{};
+  const i=(which==null)?S.trax.findIndex(t=>t&&t.bufId>=0):((+which|0)-1);
+  if(i<0 || i>=S.trax.length) throw new Error('no track '+which
+    +' \u2014 TRAX has '+S.trax.length+' lanes, numbered from 1.');
+  const trk=S.trax[i];
+  if(!trk || trk.bufId<0) throw new Error('track '+(i+1)+' has no take on it. '
+    +'Arm the lane, press PLAY, play something, then STOP.');
+  const buf=S.buffers[trk.bufId];
+  if(!buf) throw new Error('track '+(i+1)+' points at buffer '+trk.bufId
+    +' and it is not there any more.');
+  const bpm=o.bpm!=null?Math.abs(+o.bpm):Math.abs(S.bpm||120);
+  const m=measureTake(buf.getChannelData(0), buf.sampleRate, bpm, o);
+  return Object.assign({track:i+1, name:trk.name||('take'+(i+1)), bpm}, m);
+};
+window.MVX.events=function(opt){
+  const o=opt||{};
+  const since=o.since!=null?(+o.since||0):0;
+  const list=JBH_EVENTS.filter(e=>e.seq>since);
+  const out=o.limit!=null?list.slice(-Math.max(1,o.limit|0)):list;
+  return { seq:jbhEvSeq, events:out,
+    says: out.length ? (out.length+' thing(s) happened since '+since+': '
+        +out.map(e=>e.what).join(', '))
+      : (jbhEvSeq ? 'nothing new since '+since+'.'
+        : 'nothing has happened yet \u2014 no takes, no transport, no edits.') };
+};
 window.MVX.messages=function(){ return AGENT_LOG.slice(); };
 window.MVX.peers=function(){ return jbhPeers(); };
 /* Asks whoever is out there to say they exist. Anything implementing the
@@ -20131,6 +20221,16 @@ function traxCommit(){
     lcd('TAKE \u2192 TRACK '+(i+1)+' \u00b7 '+buf.duration.toFixed(1)+'s from '+srcName
       +' — it plays with the transport; find it in TRAX.');
   }
+  /* THE MOMENT FEEDBACK IS WORTH MOST. Announced with the peak and the
+     source already computed above rather than a bare "something
+     happened", so a producer can open its mouth without a round trip --
+     and with silent:true when the guard fired, because the first thing
+     worth saying about a silent take is that it is silent. */
+  try{
+    jbhNotify('take', { track:i+1, seconds:+buf.duration.toFixed(2),
+      source:srcName, peak:+tpk.toFixed(4), silent:tpk<0.004,
+      punched:punched, bpm:Math.abs(S.bpm||120) });
+  }catch(e){}
   /* A take that ran into the length limit stopped on its own, mid-song, and
      used to be reported exactly like one you stopped. Say so. (R202) */
   if(cap.hitMax){

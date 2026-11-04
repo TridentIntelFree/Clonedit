@@ -140,9 +140,35 @@ test('every app call has a tool, or is listed as deliberately not exposed', asyn
   const leg = readFileSync(resolve(ROOT, 'src', 'legacy.js'), 'utf8');
   const a = leg.indexOf('window.MVX={'), b = leg.indexOf('window.JBH=window.MVX;');
   assert.ok(a > 0 && b > a, 'could not find the API object');
-  const api = [...new Set([...leg.slice(a, b)
-    .matchAll(/^ {2}(?:async +)?([a-zA-Z][a-zA-Z0-9_]*)\s*[(:]/gm)].map(m => m[1]))];
+  /* THE API IS NOT ONLY THE OBJECT LITERAL, and taking it to be one hid
+     a whole feature.
+
+     Methods added later as `window.MVX.name = function` sit after the
+     `window.JBH=window.MVX;` line, outside this slice. There are ten of
+     them, and this test saw none: say, tell, messages, events, peers,
+     listen, ping and the rest. So the entire conversational surface of
+     the app — the thing that lets a person and an agent talk to each
+     other — could be reachable from the browser console and reachable
+     from no tool at all, while the suite that exists to catch exactly
+     that stayed green.
+
+     It is the same blind spot as the one below, where an option read
+     one layer down in src/pure was invisible: a parser that is wrong
+     about where the thing it is checking ENDS reports faults that are
+     its own, and worse, reports none. */
+  const api = [...new Set([
+    ...[...leg.slice(a, b)
+      .matchAll(/^ {2}(?:async +)?([a-zA-Z][a-zA-Z0-9_]*)\s*[(:]/gm)].map(m => m[1]),
+    ...[...leg.matchAll(/^window\.MVX\.([a-zA-Z][a-zA-Z0-9_]*)\s*=/gm)].map(m => m[1]),
+  ])];
   assert.ok(api.length > 50, 'expected the whole API, parsed ' + api.length);
+  /* the later assignments must actually be in there, or this widening
+     silently did nothing and we are back where we started */
+  for (const late of ['tell', 'messages', 'events', 'take']) {
+    assert.ok(api.includes(late),
+      'the parser is still missing window.MVX.' + late + ' — widen it, do not '
+      + 'add it to API_ONLY');
+  }
 
   const mcp = readFileSync(SERVER, 'utf8');
   const reachable = new Set([...mcp.matchAll(/jbh\('([a-zA-Z0-9_]+)'/g)].map(m => m[1]));
@@ -156,6 +182,18 @@ test('every app call has a tool, or is listed as deliberately not exposed', asyn
     bowAttack: 'same — a bowed note is held, not triggered',
     sounds: 'returned by jbh_pack already, which is where an agent is looking',
     load: 'the older one-way song-document flow; jbh_save_session / jbh_load_session is the live path',
+    /* The five the widened parser exposed. Each is a decision, and the
+       first one is the only interesting one. */
+    say: 'this is the PERSON speaking to the agent, and it writes into their '
+      + 'own transcript as "you". An agent calling it would be putting words in '
+      + 'their mouth in their own UI. jbh_tell is the agent\x27s half; this half '
+      + 'is deliberately theirs alone',
+    calls: 'returns the list of available calls, which an MCP client already has '
+      + 'as its tool list and in more detail',
+    sessionFile: 'the file-based save; jbh_save_session is the live path and does '
+      + 'not make the person handle a download',
+    loadFile: 'the other half of sessionFile, and it needs a File object, which '
+      + 'cannot cross a JSON boundary',
   };
   const missing = api.filter(n => !reachable.has(n) && !API_ONLY[n]);
   assert.deepEqual(missing, [],

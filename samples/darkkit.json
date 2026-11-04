@@ -1,5 +1,5 @@
 {
- "name": "Dark Kit \u2014 ESC-50 industrial and low-end sources (CC0 clips only)",
+ "name": "Dark Kit — ESC-50 industrial and low-end sources (CC0 clips only)",
  "license": "Every clip is individually CC0 in the ESC-50 LICENSE file; the dataset as a whole is CC BY-NC, so the CC0 subset was selected deliberately.",
  "source": "https://github.com/karolpiczak/ESC-50",
  "note": "Selected on energy below 160Hz relative to total, not on category: the engine reads -3.4dB and the deep bell -2.0dB, where the door creaks read -26 and are carried for the opposite reason. \"onset\" is where the sound starts.",
@@ -21,8 +21,9 @@
    "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/2-141563-A-39.wav",
    "note": 38,
    "vel": 0.8,
-   "onset": 0.128,
-   "src": "glass_breaking"
+   "onset": 0.19,
+   "src": "glass_breaking",
+   "onsetNote": "was 0.128, which sat in near-silence; remeasured with scripts/audit-onsets.mjs"
   },
   {
    "id": "dk:creak",

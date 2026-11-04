@@ -140,6 +140,18 @@ nothing sent anywhere. Envelope in: `{jbh:1, id, call, args}`. Out:
 `{jbh:1, id, ok, result}`. `JBH.say()` and `JBH.tell()` carry a line of text
 each way so you can talk to whatever is driving it.
 
+**It notices now, which is what makes an AI a producer rather than an
+interviewer.** `jbhEmit()` had two callers, so nothing about a take
+landing or the transport rolling ever reached the other end. The app
+keeps a buffer of what you just did — `JBH.events({since})`, also
+pushed over the link — and `JBH.take(lane)` measures a take you
+actually played: onsets off the buffer, how it sits against the click,
+and the three faults that are brokenness rather than taste. Timing
+comes back as a constant offset and a spread separately, because a
+player steadily behind the click is tight and can be nudged in one
+move, and the spread is judged against the 0.075 of a sixteenth human
+playing measures in the Groove corpus rather than against zero.
+
 It is **off until you switch it on, and off again on reload** — an app that
 answers to any tab on its origin the moment it loads is a different
 proposition. Text arriving over the link is rendered as text, never as markup.
@@ -161,7 +173,7 @@ link above is the live path.
 | Path | What it is |
 | --- | --- |
 | `src/` | **The source.** Edit here. `index.html` (markup), `app.css`, `legacy.js` (the engine), `pure/` (logic, unit-tested), `lib/*.svelte` (components). |
-| `tests/` | Node unit tests for `src/pure/` (no browser, under a second), plus `tests/browser/` — 28 suites that drive the real app in Chromium, including a stress suite that property-tests, soaks and fuzzes rather than asking questions somebody already thought of. |
+| `tests/` | Node unit tests for `src/pure/` (no browser, under a second), plus `tests/browser/` — 29 suites that drive the real app in Chromium, including a stress suite that property-tests, soaks and fuzzes rather than asking questions somebody already thought of. |
 | `index.html` | **The app — generated.** One self-contained file: open it, serve it, or install it as a PWA. Built from `src/`; do not edit by hand. |
 | `standalone.html` | A frozen, hand-written snapshot of R96, kept as a build-free fallback. See below. |
 | `samples/` | CC0 sound packs, served **beside** the app rather than inside it. Loading one is a network fetch and each sound is downloaded to IndexedDB before it can be used — the app itself ships no audio. |
@@ -209,8 +221,8 @@ A plain `file://` open works too, except that service-worker install and a few
 ### Testing
 
 ```sh
-npm test                      # 182 unit tests, about a second, no browser
-node scripts/browser-tests.mjs   # 28 suites against the built index.html, ~20 min
+npm test                      # 198 unit tests, about a second, no browser
+node scripts/browser-tests.mjs   # 29 suites against the built index.html, ~20 min
 node scripts/browser-tests.mjs guides   # or just one
 ```
 

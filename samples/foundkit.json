@@ -1,5 +1,5 @@
 {
- "name": "Found Kit \u2014 ESC-50 field recordings (CC0 clips only)",
+ "name": "Found Kit — ESC-50 field recordings (CC0 clips only)",
  "license": "Every clip here is individually CC0 in the ESC-50 LICENSE file. The dataset as a whole is CC BY-NC, so the CC0 subset was selected deliberately.",
  "source": "https://github.com/karolpiczak/ESC-50",
  "note": "Chosen by measurement, not by category name: crest factor for the percussive roles (water drop 38.6dB, footstep 36.8dB), low crest for the sustained ones (washing machine 11.1dB). \"onset\" is where the sound actually starts in its five seconds, so a pad can be trimmed to it.",
@@ -21,8 +21,9 @@
    "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/2-173559-A-39.wav",
    "note": 38,
    "vel": 0.8,
-   "onset": 0.028,
-   "src": "glass_breaking"
+   "onset": 0.125,
+   "src": "glass_breaking",
+   "onsetNote": "was 0.028, which sat in near-silence; remeasured with scripts/audit-onsets.mjs"
   },
   {
    "id": "fk:hat",
@@ -31,8 +32,9 @@
    "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-50623-A-15.wav",
    "note": 42,
    "vel": 0.8,
-   "onset": 0.258,
-   "src": "water_drops"
+   "onset": 1.125,
+   "src": "water_drops",
+   "onsetNote": "was 0.258, which sat in near-silence; remeasured with scripts/audit-onsets.mjs"
   },
   {
    "id": "fk:click",
@@ -51,8 +53,9 @@
    "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/1-155858-C-25.wav",
    "note": 45,
    "vel": 0.8,
-   "onset": 0.906,
-   "src": "footsteps"
+   "onset": 0.2,
+   "src": "footsteps",
+   "onsetNote": "was 0.906, which sat in near-silence; remeasured with scripts/audit-onsets.mjs"
   },
   {
    "id": "fk:bell",
@@ -121,8 +124,9 @@
    "file": "https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/2-144031-A-34.wav",
    "note": 43,
    "vel": 0.8,
-   "onset": 0.1,
-   "src": "can_opening"
+   "onset": 0.24,
+   "src": "can_opening",
+   "onsetNote": "was 0.1, which sat in near-silence; remeasured with scripts/audit-onsets.mjs"
   }
  ]
 }

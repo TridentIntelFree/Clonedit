@@ -594,6 +594,83 @@ const TOOLS = [
       seed: { type: 'integer' },
       apply: { type: 'integer', description: 'the seed of the arrangement to write' } } } },
 
+  /* ---- PRODUCING WHILE SOMEBODY PLAYS -----------------------------
+     The app could hold a conversation and could be told to do anything,
+     and none of it was reachable from here: say, tell, messages, peers,
+     listen and the event buffer had no tool at all, so an agent on the
+     one transport it actually uses could not speak to the person, read
+     what they said, or notice that they had done something. */
+
+  { name: 'jbh_tell', description:
+      'SAY SOMETHING TO THE PERSON. Appears in the agent transcript in the app and on '
+      + 'the LCD, because a reply nobody notices is not a reply. This is how you produce: '
+      + 'after they record a take, measure it with jbh_take and tell them what you heard. '
+      + 'One line at a time, in their language, not a report — and remember a take that '
+      + 'is late or sparse may be exactly what they wanted, so say what you hear and let '
+      + 'them decide.',
+    inputSchema: { type: 'object', properties: {
+      text: { type: 'string', description: 'one line, shown as text and never as markup' } },
+      required: ['text'] } },
+
+  { name: 'jbh_messages', description:
+      'READ THE CONVERSATION so far — what they typed to you and what you said back, '
+      + 'oldest first. Poll this to pick up anything they said while you were working.',
+    inputSchema: { type: 'object', properties: {} } },
+
+  { name: 'jbh_events', description:
+      'WHAT THE PERSON JUST DID. A take landing, the transport starting or stopping, each '
+      + 'with the numbers already attached — a take carries its length, source, peak, '
+      + 'whether the silent-take guard fired, and the tempo it was played at. Pass `since` '
+      + 'with the `seq` from your last call to get only what is new; the buffer holds the '
+      + 'last 200 and fills whether or not anything is listening, so you can connect late '
+      + 'and still read what you missed. This is the call that makes producing possible '
+      + 'rather than interviewing: poll it instead of asking them whether they recorded.',
+    inputSchema: { type: 'object', properties: {
+      since: { type: 'integer', description: 'the seq you last saw; 0 or omitted for everything held' },
+      limit: { type: 'integer', description: 'at most this many, most recent' } } } },
+
+  { name: 'jbh_take', description:
+      'MEASURE A TAKE THEY RECORDED. The instant checks — jbh_pulse, jbh_melody, '
+      + 'jbh_motif, jbh_harmony — read the SEQUENCER schedule and say nothing about '
+      + 'audio somebody sang or played, so this is the only call that can. Finds onsets in '
+      + 'the buffer, measures how it sits against the click, and reports the three faults '
+      + 'that are brokenness rather than taste: silence, clipping and a DC offset. '
+      + 'Timing comes back as two separate numbers on purpose — a constant offset is a '
+      + 'player sitting ahead of or behind the click and can be nudged in one move, while '
+      + 'the spread is the only one that says whether the playing is tight, and it is '
+      + 'judged against the 0.075 of a sixteenth that human playing measures in the Groove '
+      + 'corpus rather than against zero. Omit `track` for the first lane holding a take.',
+    inputSchema: { type: 'object', properties: {
+      track: { type: 'integer', description: 'TRAX lane, numbered from 1' },
+      bpm: { type: 'number', description: 'the grid to measure against; defaults to the app tempo' },
+      refractory: { type: 'number', description: 'shortest believable gap between two attacks, seconds (default 0.03)' },
+      delta: { type: 'number', description: 'how far an onset must clear its local threshold (default 0.22)' },
+      floor: { type: 'number', description: 'ignore anything below this fraction of the take peak (default 0.02)' },
+      win: { type: 'number', description: 'envelope window in seconds (default 0.005)' },
+      div: { type: 'integer', description: 'grid division: 4 = sixteenths (default)' } } } },
+
+  { name: 'jbh_listen', description:
+      'OPEN OR CLOSE THE APP’S AGENT LINK. Off by default and never persisted, because '
+      + 'an app that answers to any tab on its origin the moment it loads is a different '
+      + 'proposition. You do not need this to drive the app over MCP — you already are '
+      + '— but say() only reaches a peer when the link is open, so open it if you want '
+      + 'what the person types to be delivered rather than only logged.',
+    inputSchema: { type: 'object', properties: {
+      on: { type: 'boolean', description: 'true opens it, false closes it' } } } },
+
+  { name: 'jbh_ping', description:
+      'ASK ANY SAME-ORIGIN TAB TO ANNOUNCE ITSELF, which is how jbh_peers gets a fresh '
+      + 'answer rather than a cached one. Note that none of ping, peers or listen are about '
+      + 'YOU \u2014 you drive the page directly and are already connected; they are about a '
+      + 'second client on the app\u2019s own origin, such as a controller tab playing along.',
+    inputSchema: { type: 'object', properties: {} } },
+
+  { name: 'jbh_peers', description:
+      'IS ANYTHING ACTUALLY ON THE OTHER END of the link. Returns 1 if something has been '
+      + 'heard from in the last thirty seconds, 0 otherwise — the app refuses to report '
+      + '"sent" when nobody is there, which is the worst shape a feature can take.',
+    inputSchema: { type: 'object', properties: {} } },
+
   { name: 'jbh_recipe', description:
       'LOAD A RECIPE AS SLOTS AND LEAVE THE PADS EMPTY. The other build call writes onto '
       + 'whatever pads are already loaded, so the recipe is shaped by the board; this is the '
@@ -1142,6 +1219,15 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
                                 gate: a.gate, scale: a.scale, shape: a.shape,
                                 poly: a.poly, converse: a.converse,
                                 seed: a.seed, apply: a.apply }]));
+      case 'jbh_tell':        return ok(await jbh('tell', [a.text]));
+      case 'jbh_messages':    return ok(await jbh('messages', []));
+      case 'jbh_events':      return ok(await jbh('events', [{ since: a.since, limit: a.limit }]));
+      case 'jbh_take':        return ok(await jbh('take', [a.track, { bpm: a.bpm,
+                                refractory: a.refractory, delta: a.delta, floor: a.floor,
+                                win: a.win, div: a.div }]));
+      case 'jbh_listen':      return ok(await jbh('listen', [a.on]));
+      case 'jbh_peers':       return ok(await jbh('peers', []));
+      case 'jbh_ping':        return ok(await jbh('ping', []));
       case 'jbh_recipe':      return ok(await jbh('recipe', [{ seed: a.seed,
                                 family: a.family, bpm: a.bpm, feel: a.feel,
                                 density: a.density, style: a.style }]));

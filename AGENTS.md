@@ -470,6 +470,35 @@ is the bass whatever it is called, so they come from each instrument's
 mean sampled pitch: lowest takes bass, highest takes arp, the rest carry
 the tune.
 
+## Producing while somebody plays
+
+The checks in the next section read the SCHEDULE, which the app knows
+exactly. A TRAX take is audio off the mic bus, so not one of them has a
+word to say about something sung or played. Two calls close that:
+
+```
+events({since})     what the person just did — takes, transport — polled
+                    or pushed over the link; a 200-entry ring buffer
+take(lane)          measures a take: onsets, timing against the click,
+                    and the faults that are brokenness not taste
+```
+
+`take()` reports the timing as a constant OFFSET and a SPREAD
+separately, and that distinction is the whole measurement: steadily
+behind the click is tight and moves in one nudge, while spread is the
+only one that needs playing again. Tight is judged against the 0.075 of
+a sixteenth human playing measures in the Groove corpus — **not against
+zero**, which is a machine.
+
+`tell()` is the agent's line to the person and shows in the transcript
+and on the LCD. `say()` is THEIRS and has no tool on purpose: it writes
+into their own transcript labelled as them.
+
+And the rule from the longest section in this file applies hardest here.
+A take that is late, sparse or thin may be exactly what they wanted. Say
+what you measured and let them decide; only silence, clipping and a DC
+offset are faults.
+
 ## Check while you build, not after
 
 Everything in this file was being run once, at the end, on a finished
@@ -736,8 +765,21 @@ set `start` from it. The onsets in use here are
 | `fk:type` | 0.20 | 0.040 |
 | `fk:fire` | 0.222 | 0.044 |
 | `dk:train` | 0.208 | 0.042 |
-| `dk:glass` | 0.128 | 0.026 |
+| `dk:glass` | 0.190 | 0.038 |
 | `dk:creak` | 0.02 | 0.004 |
+
+**AND FIVE OF THOSE FIELDS WERE WRONG, so the cure was the cause.**
+`scripts/audit-onsets.mjs` measures a manifest against its own audio and
+caught them: `fk:snare` declared 0.028 with the attack 107ms later and
+the file 73dB below its own peak at that point, `fk:can` 68dB down,
+`fk:tom` pointing past its first event, `fk:hat` with no transient
+within 400ms, and `dk:glass` landing in digital silence. A pad trimmed
+to one of those opens on room tone and measures about −70dB — the exact
+fault this section is about, produced by following this section. They
+are fixed in the manifests; run the audit before trusting a pack you
+have not measured, and note that a clip which is loud from sample zero
+has no onset to trim to and the script says so rather than calling it
+a fault.
 
 `scripts/timbre-atlas.mjs` will not save you here: it groups by the
 manifest's `cat`, and all twelve found sounds declare `DRUMS`, so it
@@ -1110,6 +1152,9 @@ thing they are about:
 - [Nothing in this app looks at the time axis](docs/findings.md#nothing-in-this-app-looks-at-the-time-axis)
 - [Making sounds, not just judging them](docs/findings.md#making-sounds-not-just-judging-them)
 - [This file has been tested by use, and that is how it should be read](docs/findings.md#this-file-has-been-tested-by-use-and-that-is-how-it-should-be-read)
+- [An AI that is never told reads exactly like an AI with nothing to say](docs/findings.md#an-ai-that-is-never-told-reads-exactly-like-an-ai-with-nothing-to-say)
+- [Fifteen green tests on synthesised audio, and wrong anyway](docs/findings.md#fifteen-green-tests-on-synthesised-audio-and-wrong-anyway)
+- [A take is late or it is loose, and those are different problems](docs/findings.md#a-take-is-late-or-it-is-loose-and-those-are-different-problems)
 - [The corpus does not reduce to a table, and two shapes had to fail first](docs/findings.md#the-corpus-does-not-reduce-to-a-table-and-two-shapes-had-to-fail-first)
 - [Counting up from 1 explored one corner of the space](docs/findings.md#counting-up-from-1-explored-one-corner-of-the-space)
 
