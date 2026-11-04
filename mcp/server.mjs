@@ -1118,7 +1118,13 @@ const INSTRUCTIONS = [
   '(jbh_save_session writes a .json they open with PROJ, jbh_render writes a .wav).',
   'It cannot reach a copy of the app on their phone; there is no server in this project.',
   '',
-  'Call jbh_howto first. It costs nothing and it is the order to work in.',
+  'Call jbh_howto first. It costs nothing and it is the order to work in. Its '
+  + 'writing, producing and checks sections name the calls easiest to miss: '
+  + 'jbh_infill and jbh_ensemble write parts for you, jbh_recipe makes empty '
+  + 'named pads with a measurable brief and jbh_fit says whether a sound suits '
+  + 'one, jbh_take measures something the person played, jbh_events says what '
+  + 'they just did and jbh_tell talks to them. jbh_poly gives one pad its own '
+  + 'tempo and went unused for six tracks.',
   '',
   'The things that cost the most when they were not known:',
   '1. Write MUSIC, not texture. Chords that change and a melody with contour. Nothing',

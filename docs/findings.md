@@ -2103,3 +2103,71 @@ read on every turn carrying a claim that is no longer true is worse than
 one that says nothing, because the next session will believe it and
 rebuild what already exists. It is corrected, and the correction says
 when it changed and what the measurement was.
+
+## Eighteen calls an agent could use and would never hear about
+
+The MCP server exposes 73 tools, each with a careful description, and no
+agent reads 73 descriptions before deciding what to do. It reads the
+handshake instructions, which say *call jbh_howto first*, and then it
+reads `howto()`. That chain is the only path by which a capability
+becomes something an agent KNOWS it has.
+
+Audited: the handshake named none of `infill`, `ensemble`, `recipe`,
+`fit`, `take`, `events` or `tell`, and `howto()` named none of them
+either. `howto()` is excellent on sound and on the order to work in — it
+names `pad`, `chop`, `tape`, `mutate`, `paint`, `resynth`, `note`,
+`step`, `place`, `review`, `reference`, `render` — and it stopped there.
+So the chain led an agent to make sounds and mix them and never told it
+the app can write parts, hold a conversation, or measure something
+somebody played.
+
+Eighteen reachable calls were in neither place:
+
+```
+live  poly  euclid  params  schedule  automate  autoTargets  export
+critique  infill  ensemble  tell  events  take  recipe  phrase
+continuity  dynamics
+```
+
+`poly` is the one that stings. AGENTS.md has a whole section about it —
+*Reach for what is already there* — recording that six tracks were
+written in this repo before anyone used it, every one on a single
+16-step grid at a single tempo. The rule in that section is to check
+whether the thing you want already exists and has simply never been
+reached for. **An agent cannot follow that rule about a call nobody
+told it exists.** The lament and the cause were in the same repository,
+one document apart.
+
+### The fix is a test, not a paragraph
+
+Three sections were added to `howto()` — `writing`, `producing`,
+`checks` — and the handshake now names the six easiest to miss. But
+prose rots: that is how this happened, since every one of those
+eighteen was added by somebody who updated the tool list and not the
+document.
+
+`tests/discoverable.test.mjs` asserts the CHAIN. Every call an MCP tool
+forwards to must be named in the handshake instructions or in
+`howto()`, or carry a stated reason for being too small to mention.
+Adding a name to `EXEMPT` is a decision; leaving a call out of both is
+an oversight, and the test is what forces the distinction — the same
+shape as the `API_ONLY` list in the handshake test one layer down.
+
+A second assertion names the headline capabilities positively —
+`infill`, `ensemble`, `recipe`, `fit`, `take`, `events`, `tell`,
+`timbre`, `key`, `chords`, `place`, `pulse`, `harmony`, `render` —
+because `EXEMPT` is an escape hatch and an edit that quietly moved one
+into it rather than documenting it would otherwise pass.
+
+### And three capabilities are still AI-only
+
+The same audit against the UI found no control at all for `recipe()`,
+`fit()` or `timbre()`, and none for measuring a take — the `take`
+matches in the markup are TRAX's recording controls, which is a
+different thing from measuring what was recorded. `src/pure/pitch.js`
+is wired to nothing yet by design, being validated before anything is
+built on it.
+
+That asymmetry is worth stating rather than quietly carrying: an agent
+can load a recipe, check whether a sound fits its slot, and measure
+what a sample can do, and a person sitting in front of the app cannot.

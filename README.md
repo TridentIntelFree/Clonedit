@@ -221,7 +221,7 @@ A plain `file://` open works too, except that service-worker install and a few
 ### Testing
 
 ```sh
-npm test                      # 207 unit tests, about a second, no browser
+npm test                      # 209 unit tests, about a second, no browser
 node scripts/browser-tests.mjs   # 30 suites against the built index.html, ~20 min
 node scripts/browser-tests.mjs guides   # or just one
 ```

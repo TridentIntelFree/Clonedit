@@ -1169,6 +1169,7 @@ thing they are about:
 - [The corpus does not reduce to a table, and two shapes had to fail first](docs/findings.md#the-corpus-does-not-reduce-to-a-table-and-two-shapes-had-to-fail-first)
 - [Counting up from 1 explored one corner of the space](docs/findings.md#counting-up-from-1-explored-one-corner-of-the-space)
 - [WRITE never listened to the pad it was writing for](docs/findings.md#write-never-listened-to-the-pad-it-was-writing-for)
+- [Eighteen calls an agent could use and would never hear about](docs/findings.md#eighteen-calls-an-agent-could-use-and-would-never-hear-about)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

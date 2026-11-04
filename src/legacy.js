@@ -2838,7 +2838,7 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R260 · 2026-11-04 · write listens to the pad first';
+const BUILD = 'JBH-88 · R261 · 2026-11-04 · eighteen calls nobody was told about';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -16060,6 +16060,91 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         + 'for one pad, in two renders.',
       'INDEPENDENT IS NOT THE SAME AS UNRELATED. Voices need shared material as well as '
         + 'separate motion — counterpoint() measures the second, motif() the first.',
+    ],
+    /* WHAT CAN WRITE A PART FOR YOU, which this document did not
+       mention for a long time while all of it was reachable from a
+       tool. An agent reads the handshake, the handshake says to call
+       this, and this listed how to make SOUNDS and how to MIX them and
+       stopped. So the half of the app that writes music was findable
+       only by reading seventy-three tool descriptions, and AGENTS.md's
+       own rule — check whether the thing you want already exists and
+       has never been reached for — cannot be followed by somebody who
+       was never told. tests/discoverable.test.mjs fails now if a
+       reachable call is named in neither place. */
+    writing: [
+      'DECLARE THE HARMONY FIRST or none of this has anything to write against: '
+        + 'key("D","major") and chords(0,["Bm7","Gmaj7","Dmaj7","A"]) — one symbol per '
+        + 'BAR of that pattern, because a pattern is the reusable block and chords '
+        + 'written against absolute song bars break the moment the arrangement moves.',
+      'infill(inst,{from,bars,role,n}) OFFERS ways to play one voice over one span and '
+        + 'writes nothing; infill(inst,{apply:seed}) writes the one you chose. The '
+        + 'constraint to one voice and one span is deliberate and comes from the '
+        + 'co-creative research: a model that hands over a finished arrangement '
+        + 'overwhelms you with content and frustrates you with randomness. Candidates '
+        + 'are ranked by FAULT — minor ninths, bars with no third, distance from the '
+        + 'Essen norms — which is NOT ranked by worth. Nothing here can hear them, so '
+        + 'if the fifth one sounds best the ranking is wrong and your ear is right.',
+      'IT LISTENS TO THE PAD BEFORE IT WRITES FOR IT. timbre(inst) measures how long a '
+        + 'sound takes to speak and infill() offers only the figures it can play: at '
+        + '150bpm a 5ms pluck fits every arp figure and a 235ms swell fits none and is '
+        + 'told it needs 500ms between notes. It still writes — the sound is your '
+        + 'choice — and the result carries what it heard.',
+      'ensemble(voices,{bars,n}) writes every layer, foundation first, each one knowing '
+        + 'what the earlier ones already play, and offers whole ARRANGEMENTS to choose '
+        + 'between. It calls infill() per voice, so it inherits the listening and the '
+        + 'filters. Order matters: the bass states the harmony and goes first.',
+      'recipe({seed}) sets a tempo and a feel and makes EMPTY NAMED PADS — low end '
+        + 'here, a hat here, a synth here — writes the kit pattern onto them before any '
+        + 'sound is chosen, and fit(slot) says whether the sound you dropped in can do '
+        + 'that job. The drum figures are measured from the Groove corpus, one bar of '
+        + 'one voice as ten drummers played it; every pitched part is composed and '
+        + '`measured` says which per voice.',
+      'phrase(name,from,to) copies a written phrase somewhere else, which is how a '
+        + 'part becomes a form instead of a loop.',
+      'poly(pad,{bpm,cells}) gives ONE PAD ITS OWN TEMPO and is the most ignored call '
+        + 'here: six tracks were written in this repo before anyone used it, every one '
+        + 'on a single 16-step grid at a single tempo. 3:4:5 inside one bar is real '
+        + 'cross-rhythm and no amount of step editing produces it. euclid() spreads n '
+        + 'hits over k steps as evenly as they will go, which is where most '
+        + 'non-four-four rhythm in the world comes from.',
+    ],
+    /* PRODUCING WHILE SOMEBODY PLAYS. The checks above read the
+       SCHEDULE, which the app knows exactly. A take is audio off the
+       mic bus and none of them can see it. */
+    producing: [
+      'events({since}) is what the person just did — a take landing, the transport '
+        + 'starting or stopping — with the numbers already attached. Poll it with the '
+        + 'seq you last saw instead of asking them whether they recorded something. The '
+        + 'buffer holds 200 and fills whether or not anyone is listening, so you can '
+        + 'connect late and still read what you missed.',
+      'take(lane) measures a take they played: onsets found in the audio, how it sits '
+        + 'against the click, and the three faults that are brokenness rather than '
+        + 'taste — silence, clipping, a DC offset. The timing comes back as a constant '
+        + 'OFFSET and a SPREAD separately because they call for opposite advice: '
+        + 'steadily behind the click is TIGHT and moves in one nudge, while spread is '
+        + 'the only one that needs playing again. Tight is judged against the 0.075 of '
+        + 'a sixteenth human playing measures in the Groove corpus, not against zero, '
+        + 'which is a machine.',
+      'tell(text) says one line to them, shown in the transcript and on the LCD. '
+        + 'messages() reads the conversation back and peers() says whether anything is '
+        + 'actually on the other end. say() is THEIRS and has no tool on purpose: it '
+        + 'writes into their own transcript labelled as them.',
+      'A TAKE THAT IS LATE, SPARSE OR THIN MAY BE EXACTLY WHAT THEY WANTED. Say what '
+        + 'you measured and let them decide. Only silence, clipping and an offset are '
+        + 'faults; everything else is a number somebody is allowed to disagree with.',
+    ],
+    /* THE CHECKS THAT REVIEW RUNS AND NOBODY NAMES INDIVIDUALLY. */
+    checks: [
+      'critique() is the one-call verdict on the mix; it reads levels() and says what '
+        + 'it cannot judge without a reference loaded.',
+      'dynamics() and continuity() are the time axis: whether the level moves over the '
+        + 'piece, and whether anything lurches. schedule() prints what the sequencer is '
+        + 'actually going to play, which settles "is it even written" before you render.',
+      'automate(target,points) draws automation and autoTargets() lists what can be '
+        + 'automated; params() is every knob on a pad with its range, which is the only '
+        + 'way to know what mutate() was allowed to turn.',
+      'export() writes MIDI out, live() plays the keyboard instruments, and '
+        + 'render({wav_path}) is the bounce.',
     ],
     norms: { counterpoint:CP_NORMS, melody:MELODY_NORMS, motif:MOTIF_NORMS },
     makes: [
