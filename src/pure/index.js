@@ -25,6 +25,11 @@ export * from './timbre.js';
    PAD INDEX, so a hat on A01 got the kick figure and every check in the
    repo passed. Identity is spectral and nothing here was looking. */
 export * from './padprofile.js';
+/* THE TRANSLATOR AT THE UI BOUNDARY. A `says` string serves an agent
+   over MCP, which can call slot("kick", 0), and a person in a panel,
+   who cannot. This swaps the call for the control that does it and
+   explains a measurement term once, leaving every other word alone. */
+export * from './plain.js';
 /* WHERE MELODIC NOTES FALL AND HOW LONG THEY ARE, measured from 78,556
    Essen bars by scripts/study-cells.py. The rhythm cell library was
    hand-authored and was the last unmeasured thing in the write path.

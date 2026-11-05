@@ -748,6 +748,16 @@ tested. The tell is the word `published` in the output; without it,
 `index.html` is whatever it was before. The wider rule: check that the
 thing you are measuring is the thing you just changed.
 
+**A `says` STRING HAS TWO READERS AND ONLY ONE CAN TYPE.** The same
+sentence goes to an agent over MCP, which can call `slot("kick", 0)`,
+and to a person in a panel, for whom it is a function signature. Keep
+the call in the string and let `plainly()` in src/pure/plain.js
+translate at the UI seam -- it names the control instead, explains a
+measurement term once, and leaves every other word alone. Any new
+user-facing message goes through it; `npm run lint` fails on a call with
+no entry in `CONTROL_FOR`. Never name a control you have not found in
+src/index.html.
+
 **A sample pack can lie about pitch.** VSCO-2 CE names every file an
 octave below what it sounds, and is not consistent with itself: one solo
 violin folder uses scientific pitch and another folder of the same
@@ -1278,6 +1288,7 @@ thing they are about:
 - [Bend to my will: the knob search was the wrong mechanism](docs/findings.md#bend-to-my-will-the-knob-search-was-the-wrong-mechanism)
 - [Higher-order Markov and pink noise: measured, and already there](docs/findings.md#higher-order-markov-and-pink-noise-measured-and-already-there)
 - [Duration and placement, measured — and the guarantee they broke](docs/findings.md#duration-and-placement-measured--and-the-guarantee-they-broke)
+- [One message, two audiences — and only one of them can type](docs/findings.md#one-message-two-audiences--and-only-one-of-them-can-type)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

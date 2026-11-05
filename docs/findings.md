@@ -3178,3 +3178,96 @@ aborted on a unit test broken a minute earlier, and `tail -3` showed a
 test summary rather than a build summary. The second time it would have
 produced a false PASS for the very fix being tested. The tell is the word
 `published` in the build output; if it is not there, nothing was built.
+
+## One message, two audiences — and only one of them can type
+
+Reported: "the language can be a little confusing... a lot of the
+language used in the app for the user is written in a way that most
+humans don't understand. The hints and stuff can be confusing."
+
+True, and the cause is structural rather than careless. Every `says`
+string in this app is read by TWO readers. An agent gets it back over
+MCP, and for an agent `slot("kick", 0)` is exactly the right next step —
+it can make that call. A person reads the same sentence in a panel,
+where it is a function signature in a music app with no keyboard
+anywhere near it.
+
+Measured by driving the real app and collecting what seventeen calls
+actually print, **4 of 17 told a person to type code**:
+
+```
+harmony   "Pitched parts come from note(), not step()."
+fit       "slot(\"kick\", 0) puts one in"
+critique  "reference(url) takes a finished recording"
+mutate    "It is a sample now — pad() it, chop() it, mutate() it"
+```
+
+A static scan of the source had found only 6 in 89, because these
+messages are assembled by concatenation and a regex over one literal
+sees only the first fragment. `scripts/lint-language.mjs` walks the whole
+concatenation instead and found **40**.
+
+### The fix is a seam, not a rewrite
+
+Rewriting the strings would take the call away from the agent that can
+use it. So the strings stay and the UI translates: eight places render a
+`says` into the DOM, plus the LCD, and `src/pure/plain.js` sits there.
+`slot("kick", 0)` becomes "the USE PAD button"; `reference(url)` becomes
+"loading a reference track". It is deliberately conservative — it
+rewrites only what is in its tables and leaves every other word alone,
+because plenty here is good and a translator that guessed would make it
+worse:
+
+```
+BEFORE  the mix loses 14.1dB on a phone speaker. Anything below about
+        400Hz is simply not reproduced there, so energy that lives only
+        in the sub is energy most listeners never hear.
+AFTER   (the capital, and nothing else)
+```
+
+Three other rules: a measurement term is explained the FIRST time it
+appears and not the second, so a person who learns "centroid (how
+bright it is, in Hz)" can read every later message; a sentence starting
+lower-case mid-message is capitalised, because an assembled message
+otherwise reads as something broken off; and the result is idempotent,
+so the UI never has to track whether it ran.
+
+Wiring it took three passes, because the writes come in three shapes —
+`$('mlInfo').textContent =`, the same across several lines, and a local
+`const info = $('mlInfo')` captured first. 27 sites in the end. Chasing
+the shapes one at a time is how the first two passes left the recipe
+panel still saying `harmony()`.
+
+### Two faults the tests caught in the translator itself
+
+**A noun substituted into a verb frame is circular.** "Pitched parts
+come from note(), not step()" with `note → 'a pitched part'` becomes
+"Pitched parts come from a pitched part, not a drum step" — worse than
+the code it replaced. Those two are named as actions now, "writing
+notes" and "writing steps".
+
+**And it invented a button.** `chop → 'CHOP'` looked obvious and there
+is no button with that label, only a section heading, "SAMPLING,
+CHOPPING AND WARPING". That is the `stage()` fabrication this repo has
+a section about, and the test that checks every claimed label against
+`src/index.html` caught it before it shipped. It reads "the CHOP tool in
+SMPL" now. Every other label in the table was read out of the markup
+rather than recalled.
+
+A third was in the capitaliser: "Tempo. bpm now 120." came out as
+"Bpm now 120.", because a unit is lower-case on purpose.
+
+### What the lint gates on, and what it only reports
+
+CODE went 40 → 0. The lint imports `CONTROL_FOR` rather than restating
+it, so a call the translator handles is not a fault — adding a
+translation retires the warning automatically, where a second copy would
+drift. Five more mappings came out of its residual, and three genuinely
+agent-only strings are exempt with a reason.
+
+It gates on CODE **only**. JARGON, LONG and LOWER are printed and stop
+nothing, because a build that refused to run until a sentence was
+shortened would end with sentences trimmed to satisfy a word count —
+the Goodhart failure the longest section of AGENTS.md is about. The
+`translate()` message above is 36 words and is the best sentence in the
+app.

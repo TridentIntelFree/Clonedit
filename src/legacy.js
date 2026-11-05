@@ -2875,7 +2875,14 @@ function expandable(el){
   requestAnimationFrame(mark);
   addEventListener('resize',mark);
 }
-const lcd = m => { const e=$('lcdmsg'); e.textContent = m;
+/* EVERY LINE THE LCD SHOWS GOES THROUGH THE TRANSLATOR. A `says` string
+   is written for two readers at once — an agent over MCP, which can
+   call slot("kick", 0), and a person here, who cannot. plainlyShort()
+   swaps the call for the control that does it and leaves every other
+   word alone. Glossing is left to the panels, where there is room for a
+   parenthesis; the LCD is one line. */
+const lcd = m => { const e=$('lcdmsg');
+  e.textContent = (typeof plainlyShort==='function') ? plainlyShort(m) : m;
   if(e._jbhMark) requestAnimationFrame(e._jbhMark); };
 expandable($('build')); expandable($('lcdmsg'));
 /* clamp, posMod, clampBpm, mulberry32 → src/pure/math.js */
@@ -6472,7 +6479,7 @@ function drawMorph(){
   const glyph=(pat,p)=>{ const L=trackLen(pat,p); let out=''; for(let i=0;i<L;i++) out+=(pat.steps[p][i]>0?'●':'·'); return out; };
   $('mfPreview').textContent = glyph(A,S.seqPad)+'  →  '+glyph(blend,S.seqPad)+'  →  '+glyph(B,S.seqPad);
   const bar=m.on?(' · bar '+Math.min(m.pos+1,m.bars)+'/'+m.bars):'';
-  $('mfInfo').textContent = (m.on?'RUNNING':'idle')+bar+' · '+padName(S.seqPad)+' shown';
+  $('mfInfo').textContent = plainly((m.on?'RUNNING':'idle')+bar+' · '+padName(S.seqPad)+' shown');
 }
 $('mfFrom').addEventListener('change',e=>{ S.morph.from=parseInt(e.target.value,10)|0; if(S.morph.on){ S.morph.pos=0; S.morph.amt=0; selectPattern(S.morph.from); } morphBuild(); drawSeq(); dirty(); });
 $('mfTo').addEventListener('change',e=>{ S.morph.to=parseInt(e.target.value,10)|0; morphBuild(); drawSteps(); dirty(); });
@@ -8760,8 +8767,8 @@ function drawWave(){
     cx.stroke(); cx.lineWidth=1;
     if(shapeMode){ cx.fillStyle='#4aa3ff'; cx.font='16px ui-monospace'; cx.fillText('DRAW GAIN',10,22); }
   }
-  $('selInfo').textContent = selSlice>=0 && slices[selSlice]
-    ? (selSlice+1)+'/'+slices.length+' · '+((slices[selSlice].e-slices[selSlice].s)*workBuf.duration).toFixed(2)+'s' : '—';
+  $('selInfo').textContent =plainly( plainly(selSlice>=0 && slices[selSlice]
+    ? (selSlice+1)+'/'+slices.length+' · '+((slices[selSlice].e-slices[selSlice].s)*workBuf.duration).toFixed(2)+'s' : '—'));
   try{ shapeLenInfo(); }catch(e){}
 }
 function auditionRegion(s,e){
@@ -15120,7 +15127,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       shape:rep.shape, peak:rep.peak, bands:rep.bands,
       says:'painted '+parts.length+' partials from '+Math.round(parts[0].hz)+'Hz to '
         +Math.round(parts[parts.length-1].hz)+'Hz onto '+padName(target)
-        +'. It is a sample now — pad() it, chop() it, mutate() it like any other.' };
+        +'. It is an ordinary sample now, so every pad tool works on it.' };
   },
 
   /* ENSEMBLE: EVERY LAYER AT ONCE, EACH WRITTEN AGAINST THE OTHERS.
@@ -19008,9 +19015,9 @@ async function drawDownloadsInner(el){
     const sz=(rec.bytes&&rec.bytes.byteLength)||0; total+=sz;
     rows.push({k,rec,sz});
   }
-  $('dlInfo').textContent = rows.length
+  $('dlInfo').textContent =plainly( plainly(rows.length
     ? rows.length+' sound'+(rows.length>1?'s':'')+' · '+fmtBytes(total)+' on this device'
-    : 'Nothing downloaded yet — tap GET on a pack sample above.';
+    : 'Nothing downloaded yet — tap GET on a pack sample above.'));
   $('btnDlClear').disabled = !rows.length;
   if(!rows.length){ el.innerHTML='<div style="font-size:11px;color:var(--txt-dim);padding:4px">Sounds you GET from a pack are saved here for offline use. They stay until you delete them.</div>'; return; }
   rows.sort((a,b)=>(a.rec.cat||'').localeCompare(b.rec.cat||'')||(a.rec.name||'').localeCompare(b.rec.name||''));
@@ -20411,11 +20418,11 @@ if($('btnTakeMeasure')) $('btnTakeMeasure').addEventListener('click',async()=>{
     const arm=(typeof traxArm==='number' && traxArm>=0
       && S.trax[traxArm] && S.trax[traxArm].bufId>=0) ? traxArm+1 : null;
     const m=await window.MVX.take(arm);
-    if(info) info.textContent='TRACK '+m.track+': '+m.says;
+    if(info) info.textContent=plainly('TRACK '+m.track+': '+m.says);
     lcd(('T'+m.track+' '+(m.timing?m.timing.says:m.health.says)).slice(0,70));
     b.textContent=m.faults.length?('\u2014 '+m.faults.join(', ').toUpperCase()):'MEASURED';
   }catch(e){
-    if(info) info.textContent=e.message;
+    if(info) info.textContent=plainly(e.message);
     lcd(String(e.message).slice(0,60));
     b.textContent='\u2014 '+String(e.message).slice(0,24);
   }
@@ -20432,11 +20439,11 @@ if($('btnTempo')) $('btnTempo').addEventListener('click',async()=>{
   const info=$('timbreInfo');
   try{
     const r=await window.MVX.tempo(S.editPad);
-    if(info) info.textContent='PAD '+r.pad+': '+r.says;
+    if(info) info.textContent=plainly('PAD '+r.pad+': '+r.says);
     lcd(('PAD '+r.pad+' '+(r.bpm?r.bpm+'bpm':'no tempo')).slice(0,70));
     b.textContent=r.bpm?(r.bpm+' BPM'):'NO TEMPO';
   }catch(e){
-    if(info) info.textContent=e.message;
+    if(info) info.textContent=plainly(e.message);
     lcd(String(e.message).slice(0,60));
     b.textContent='\u2014 '+String(e.message).slice(0,24);
   }
@@ -20451,13 +20458,13 @@ if($('btnTimbre')) $('btnTimbre').addEventListener('click',async()=>{
     const t=await window.MVX.timbre(S.editPad);
     const gap=t.minGap>1 ? ('needs '+t.minGap+' sixteenths between notes at '
       +Math.abs(S.bpm||120)+'bpm') : 'can play sixteenths at '+Math.abs(S.bpm||120)+'bpm';
-    if(info) info.textContent='PAD '+(S.editPad+1)+': speaks in '+t.attackMs
+    if(info) info.textContent=plainly('PAD '+(S.editPad+1)+': speaks in '+t.attackMs
       +'ms, rings '+t.ringMs+'ms, peaks '+t.peakDb+'dBFS \u2014 '+gap+'. '
-      +(t.says||(t.playable&&t.playable.says)||'');
+      +(t.says||(t.playable&&t.playable.says)||''));
     lcd(('PAD '+(S.editPad+1)+' '+t.attackMs+'ms attack, '+t.ringMs+'ms ring').slice(0,70));
     b.textContent='MEASURED';
   }catch(e){
-    if(info) info.textContent=e.message;
+    if(info) info.textContent=plainly(e.message);
     lcd(String(e.message).slice(0,60));
     b.textContent='\u2014 '+String(e.message).slice(0,24);
   }
@@ -20504,7 +20511,7 @@ if($('btnBend')) $('btnBend').addEventListener('click',async()=>{
     lcd(String(r.says).slice(0,70));
     b.textContent=(r.after!=null&&r.after>=0.9)?'BENT':(r.moved?'PART WAY':'NO CHANGE');
   }catch(e){
-    if(info) info.textContent=e.message;
+    if(info) info.textContent=plainly(e.message);
     lcd(String(e.message).slice(0,60));
     b.textContent='\u2014 '+String(e.message).slice(0,24);
   }
@@ -24762,9 +24769,10 @@ function drawMusicalLayer(){
     $('mlChords').value = list ? list.join(', ') : '';
   const info=$('mlInfo');
   if(!list || !list.length){
-    info.textContent='No chords on pattern '+(S.pattern+1)
-      +'. Without them harmony() has nothing to check against, and it will not '
-      +'infer them from the notes — that is what makes a wrong note look correct.';
+    info.textContent=plainly('No chords on pattern '+(S.pattern+1)
+      +'. Without them nothing can tell whether your notes fit, and the app will '
+      +'not guess the chords from the notes — which is what makes a wrong note '
+      +'look correct.');
   } else {
     let t='Pattern '+(S.pattern+1)+': '+list.join(' ');
     if(list.length!==bars) t+='  — '+list.length+' chord'+(list.length===1?'':'s')
@@ -24773,7 +24781,7 @@ function drawMusicalLayer(){
       const pr=window.MVX.progression({src:S.song&&S.song.length?'song':'pat'});
       if(pr.bars) t+='   ·   '+pr.says;
     }catch(e){}
-    info.textContent=t;
+    info.textContent=plainly(t);
   }
   /* the instruments there are to write for */
   const sel=$('mlInst'); if(sel){
@@ -24869,15 +24877,15 @@ if($('mlTonic')){
     if(typeof chordInfo==='function'){
       const bad=list.filter(x=>!chordInfo(x));
       if(bad.length){ lcd('CANNOT READ: '+bad.join(' ')+' — m7 is minor, M7 is major');
-        $('mlInfo').textContent='Not written. These are not chords I can read: '
+        $('mlInfo').textContent=plainly('Not written. These are not chords I can read: '
           +bad.join(', ')+'. Nothing was changed, so a typo in one symbol does not '
-          +'leave the others half-applied.'; return; }
+          +'leave the others half-applied.'); return; }
     }
     try{
       const r=window.MVX.chords(S.pattern,list);
       drawMusicalLayer();
       lcd('CHORDS SET on pattern '+(S.pattern+1)+(r.warning?' (see note)':''));
-    }catch(e){ lcd(e.message); $('mlInfo').textContent=e.message; }
+    }catch(e){ lcd(e.message); $('mlInfo').textContent=plainly(e.message); }
   });
   /* THERE WAS A BLUR LISTENER HERE AND IT ATE EVERY PROGRESSION TYPED.
      drawMusicalLayer rewrites the chord box from S.chords, guarded by
@@ -24905,9 +24913,9 @@ if($('mlTonic')){
     const got=progChords(p);
     if(!got){ lcd('DECLARE A KEY FIRST — the degrees need one to spell.'); return; }
     $('mlChords').value=got.join(', ');
-    $('mlInfo').textContent='Not written yet. '+p.n+', '+got.length+' bar'
+    $('mlInfo').textContent=plainly('Not written yet. '+p.n+', '+got.length+' bar'
       +(got.length===1?'':'s')+': '+got.join(' ')+'. Tap SET to put it on this pattern, '
-      +'or edit it first.';
+      +'or edit it first.');
     lcd('PROGRESSION READY: '+got.join(' ')+' — tap SET');
   };
   $('mlProgPick').addEventListener('change',fillFromProg);
@@ -24945,22 +24953,22 @@ if($('mlTonic')){
       const r=await window.MVX.pattern(S.pattern,{plen:want,select:true});
       if(r && r.warning) throw new Error(r.warning);
       drawSteps(); drawNotes(); drawMusicalLayer(); dirty();
-      $('mlInfo').textContent='Pattern '+(S.pattern+1)+' is now '+want+' steps — '
-        +(want/16)+' bar'+(want/16===1?'':'s')+'. Spans up to that now fit.';
+      $('mlInfo').textContent=plainly('Pattern '+(S.pattern+1)+' is now '+want+' steps — '
+        +(want/16)+' bar'+(want/16===1?'':'s')+'. Spans up to that now fit.');
       /* the length the SEQ tab shows has to follow, or two controls on one
          pattern disagree */
       const ps=$('patLenSel'); if(ps) ps.value=String(want);
-    }catch(e){ $('mlInfo').textContent=e.message; }
+    }catch(e){ $('mlInfo').textContent=plainly(e.message); }
   });
   if($('mlAll')) $('mlAll').addEventListener('change',()=>{
     mlEnsemble=null; mlCands=null; $('mlPickRow').hidden=true;
     const vs=mlVoices();
-    $('mlInfo').textContent = $('mlAll').checked
+    $('mlInfo').textContent =plainly( plainly($('mlAll').checked
       ? (vs.length<2 ? 'ALL needs at least two tagged instruments.'
          : 'ALL LAYERS: ' + vs.map(v=>v.inst+' as '+v.role).join(', ')
            + '. Roles come from register — OFFER writes them foundation-first, '
            + 'each part against the ones under it.')
-      : '';
+      : ''));
     if($('mlOffer')) $('mlOffer').disabled = $('mlAll').checked ? vs.length<2 : !$('mlInst').value;
   });
 
@@ -25782,7 +25790,7 @@ if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
   const b=$('mlDemo'); b.disabled=true; const was=b.textContent; b.textContent='writing…';
   try{
     const said=await writeSurprise();
-    $('mlInfo').textContent=said;
+    $('mlInfo').textContent=plainly(said);
     /* FEEDBACK WHERE THE BUTTON IS. The info line is up in the panel
        above and the notes land on the grid, so with the button on screen
        both results are out of view — which is why the first version read
@@ -25791,7 +25799,7 @@ if($('mlDemo')) $('mlDemo').addEventListener('click',async()=>{
     b.textContent='WROTE IT \u2014 AGAIN?';
     lcd(said.slice(0,70));
   }catch(e){
-    $('mlInfo').textContent=e.message;
+    $('mlInfo').textContent=plainly(e.message);
     b.textContent='\u2014 '+String(e.message).slice(0,28);
     lcd(String(e.message).slice(0,60));
   }
@@ -25840,7 +25848,7 @@ function drawRecipeSlots(r, fits, note){
     const bits=['PAD '+(sl.pad+1)+' \u00b7 '+sl.label];
     if(f && f.empty===false) bits.push(f.fits?'fits':'does not fit');
     else bits.push('empty');
-    d.textContent=bits.join(' \u2014 ')+'. '+((f&&f.says)||sl.says);
+    d.textContent=plainly(bits.join(' \u2014 ')+'. '+((f&&f.says)||sl.says));
     d.style.marginTop='2px';
     if(f && f.empty===false) d.style.color=f.fits?'var(--ok,#7c7)':'var(--warn,#d94)';
     box.appendChild(d);
@@ -25886,12 +25894,12 @@ if($('mlRecipe')) $('mlRecipe').addEventListener('click',async()=>{
     uiRecipe=r;
     drawRecipeSlots(r,null);
     if($('mlFit')) $('mlFit').disabled=false;
-    $('mlInfo').textContent=r.says;
+    $('mlInfo').textContent=plainly(r.says);
     drawPads(); drawSeq();
     b.textContent='ANOTHER RECIPE?';
     lcd(r.name+' \u2014 '+r.slots.length+' empty pads named for their jobs.');
   }catch(e){
-    $('mlInfo').textContent=e.message;
+    $('mlInfo').textContent=plainly(e.message);
     b.textContent='\u2014 '+String(e.message).slice(0,28);
     lcd(String(e.message).slice(0,60));
   }
@@ -25920,11 +25928,11 @@ if($('mlFit')) $('mlFit').addEventListener('click',async()=>{
       : empty ? (empty+' slot'+(empty===1?'':'s')+' still empty \u2014 '
         +'put a sound in and check again.')
       : 'every sound fits the slot it is in.';
-    $('mlInfo').textContent=said;
+    $('mlInfo').textContent=plainly(said);
     lcd(said.slice(0,70));
     b.textContent=bad?('\u2014 '+bad+' DO NOT FIT'):'ALL GOOD';
   }catch(e){
-    $('mlInfo').textContent=e.message;
+    $('mlInfo').textContent=plainly(e.message);
     b.textContent='\u2014 '+String(e.message).slice(0,28);
   }
   finally{ b.disabled=!uiRecipe;
@@ -25962,7 +25970,7 @@ if($('mlLearn')) $('mlLearn').addEventListener('click',async()=>{
     lcd(L.says.slice(0,70));
     b.textContent='LEARNED \u2014 NOW BUILD';
   }catch(e){
-    if($('mlLearnInfo')) $('mlLearnInfo').textContent=e.message;
+    if($('mlLearnInfo')) $('mlLearnInfo').textContent=plainly(e.message);
     b.textContent='\u2014 '+String(e.message).slice(0,28);
   }
   finally{ b.disabled=false;
@@ -26013,7 +26021,7 @@ if($('mlLearn')) $('mlLearn').addEventListener('click',async()=>{
            has said so all along; this one did not, so a person choosing
            between five sixteen-bar arrangements was choosing between five
            four-bar ones and had no way to know. */
-        $('mlInfo').textContent=r.says
+        $('mlInfo').textContent=plainly(r.says)
           + (span>chunk
             ? '  These are the first '+chunk+' bars; WRITE IT fills '+span
               +' bars across '+Math.ceil(span/chunk)+' patterns from this one, '
@@ -26111,14 +26119,14 @@ if($('mlLearn')) $('mlLearn').addEventListener('click',async()=>{
         pick.appendChild(o);
       });
       $('mlPickRow').hidden=false;
-      $('mlInfo').textContent=r.says
+      $('mlInfo').textContent=plainly(r.says)
         + (mlSpanBars>mlChunkBars
           ? '  These are the first '+mlChunkBars+' bars; WRITE IT fills '+mlSpanBars
             +' bars across '+Math.ceil(mlSpanBars/mlChunkBars)+' patterns from this one, '
             +'each with its own variation of the same idea.'
           : '');
       lcd(r.candidates.length+' WAYS TO PLAY '+inst.toUpperCase()+' — nothing written yet');
-    }catch(e){ $('mlInfo').textContent=e.message; lcd('INFILL: '+String(e.message).slice(0,60)); }
+    }catch(e){ $('mlInfo').textContent=plainly(e.message); lcd('INFILL: '+String(e.message).slice(0,60)); }
     finally{ b.disabled=false; b.textContent=was; }
   });
 
@@ -26173,12 +26181,12 @@ if($('mlLearn')) $('mlLearn').addEventListener('click',async()=>{
         }
         if(chunks>1){ await window.MVX.pattern(startPat,{select:true}); }
         drawSteps(); drawNotes(); drawMusicalLayer(); dirty();
-        $('mlInfo').textContent=(chunks>1
+        $('mlInfo').textContent=plainly((chunks>1
           ? ('Wrote '+mlSpanBars+' bars across pattern'+(wrote.length>1?'s ':' ')
              +wrote.join(', ')+' — pattern '+wrote[0]+' is the arrangement you '
              +'chose; the others are variations of it on their own seeds, which '
              +'nothing ranked. ')
-          : '') + r.says+' Press OFFER again for another set, or undo.';
+          : '') + r.says+' Press OFFER again for another set, or undo.');
         lcd('WROTE '+r.wrote+' NOTES across '+r.voices.length+' voices');
         return;
       }
@@ -26228,12 +26236,12 @@ if($('mlLearn')) $('mlLearn').addEventListener('click',async()=>{
       }
       if(chunks>1){ await window.MVX.pattern(startPat,{select:true}); }
       drawSteps(); drawNotes(); drawMusicalLayer(); dirty();
-      $('mlInfo').textContent=(chunks>1
+      $('mlInfo').textContent=plainly((chunks>1
         ? ('Wrote '+mlSpanBars+' bars across pattern'+(wrote.length>1?'s ':' ')
            +wrote.join(', ')+'. ')
-        : '') + r.says+' Press OFFER again for another set, or undo.';
+        : '') + r.says+' Press OFFER again for another set, or undo.');
       lcd('WROTE '+r.wrote+' NOTES for '+r.inst);
-    }catch(e){ $('mlInfo').textContent=e.message; lcd(String(e.message).slice(0,60)); }
+    }catch(e){ $('mlInfo').textContent=plainly(e.message); lcd(String(e.message).slice(0,60)); }
     finally{ b.disabled=false; }
   });
 }
@@ -26480,7 +26488,7 @@ function drawSong(){
   $('btnSongOn').classList.toggle('on',S.songOn);
   $('btnSongLoop').classList.toggle('on',S.songLoop);
   const bars=S.song.reduce((a,x)=>a+Math.max(1,x.reps||1),0);
-  $('songInfo').textContent=S.song.length? S.song.length+' sec · '+bars+' bars'+(S.songOn&&playing?' · @'+(songPos+1):'') : 'empty — +SEC to build';
+  $('songInfo').textContent=plainly(S.song.length? S.song.length+' sec · '+bars+' bars'+(S.songOn&&playing?' · @'+(songPos+1):'') : 'empty — +SEC to build');
   const el=$('songlist'); if(!el) return; el.innerHTML='';
   S.song.forEach((sec,i)=>{
     const row=document.createElement('div'); row.className='row'; row.style.gap='4px';
@@ -26517,11 +26525,11 @@ if($('btnForm')) $('btnForm').addEventListener('click',()=>{
   try{
     const f=window.MVX.form({});
     const info=$('songInfo');
-    if(info) info.textContent=f.says;
+    if(info) info.textContent=plainly(f.says);
     lcd((f.sequence?('FORM '+f.sequence+' \u00b7 '):'')+f.says.slice(0,60));
     b.textContent=f.faults.length?('\u2014 '+f.faults[0].toUpperCase()):(f.sequence||'OK');
   }catch(e){
-    const info=$('songInfo'); if(info) info.textContent=e.message;
+    const info=$('songInfo'); if(info) info.textContent=plainly(e.message);
     b.textContent='\u2014 '+String(e.message).slice(0,20);
   }
   finally{ setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 6000); }

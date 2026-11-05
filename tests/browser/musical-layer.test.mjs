@@ -488,7 +488,10 @@ export default async function ({ browser, base }) {
       /ways to play/.test(virgin.offered) && virgin.nOpts >= 2,
       virgin.offered.slice(0, 80));
     t.ok('AND WRITE IT PUTS NOTES ON THE BOARD',
-      virgin.hits > 0 && /wrote \d+ notes/.test(virgin.said),
+      /* case-insensitive: the UI runs every message through plainly(),
+         which capitalises a sentence that began lower-case. "Wrote 4
+         notes" is the improvement, not a regression. */
+      virgin.hits > 0 && /wrote \d+ notes/i.test(virgin.said),
       virgin.hits + ' hits · ' + virgin.said.slice(0, 70));
 
     /* ---- ALL LAYERS, THROUGH THE TWO BUTTONS -------------------------
