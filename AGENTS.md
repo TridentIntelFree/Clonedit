@@ -1303,6 +1303,7 @@ thing they are about:
 - ["I've been stuck on version 267 for several sessions"](docs/findings.md#ive-been-stuck-on-version-267-for-several-sessions)
 - ["I can't find master volume for each pad separate from gains"](docs/findings.md#i-cant-find-master-volume-for-each-pad-separate-from-gains)
 - [A check that cannot fail](docs/findings.md#a-check-that-cannot-fail)
+- [A suggestion has to stop being made once it has been taken](docs/findings.md#a-suggestion-has-to-stop-being-made-once-it-has-been-taken)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

@@ -2852,7 +2852,7 @@
    check by construction. scripts/check-build-label.mjs therefore CHECKS
    it instead, in CI, where HEAD is the commit being shipped and the
    arithmetic is exact. R = commits on main minus 9. */
-const BUILD = 'JBH-88 · R277 · 2026-11-05 · dragging a control no longer highlights the words around it';
+const BUILD = 'JBH-88 · R278 · 2026-11-05 · a tip goes away when you do the thing it asks, and HIDE means hidden';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -27985,7 +27985,28 @@ async function autosave(){
    finish, so lifecycle saves alone lose the last minute of work. Save
    shortly after every edit instead — the vault is never more than ~2s stale. */
 let dirtyT=0;
-function dirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(autosave,1500); scheduleUndo(); }
+/* A SUGGESTION HAS TO STOP BEING MADE ONCE IT HAS BEEN TAKEN.
+
+   Reported: "the tips that suggest I do something like add sound to a pad
+   don't go away and flash report to user that pad is empty."
+
+   Every tip's `when()` is a live predicate — `padsLoaded()===0` is false the
+   instant a sound lands. The rules were never wrong. They were simply never
+   asked again: coachRefresh() had four callers and all four were navigation
+   or settings, so the bar held whatever was true when you last changed tab.
+   Load a sound while standing on SMPL — which is exactly what the tip tells
+   you to do, on the tab it sends you to — and it keeps saying every pad is
+   empty.
+
+   dirty() is the one funnel for "the project changed", so the re-ask goes
+   here. Coalesced on a timer because dirty() fires on every frame of a
+   fader drag, and re-running ten predicates per frame to redraw a bar that
+   almost never changes is not free. 250ms is under the threshold where a
+   person reads it as lag and well over a drag's frame rate. */
+let coachT=0;
+function coachSoon(){ clearTimeout(coachT);
+  coachT=setTimeout(()=>{ try{ coachRefresh(); }catch(e){} },250); }
+function dirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(autosave,1500); scheduleUndo(); coachSoon(); }
 
 /* ---------------- undo / redo (snapshot of the editable state, no buffers) ---------------- */
 let undoStack=[], redoStack=[], _committed=null, undoTimer=0;
@@ -30230,8 +30251,13 @@ function guideMenu(focus){
     b.addEventListener('click',()=>sizeApply(b.dataset.sz,true)));
   $('coachOn').addEventListener('change',e=>{
     try{ localStorage.setItem(COACH_KEY, e.target.checked?'on':'off'); }catch(err){}
+    /* turning them back on is also the way to un-dismiss: a tip you hid for
+       good has no other route back, and a permanent choice with no undo is
+       a trapdoor rather than a setting. */
+    if(e.target.checked) coachRemindMe();
     coachRefresh();
-    lcd(e.target.checked?'SUGGESTIONS ON.':'SUGGESTIONS OFF — the ? button turns them back on.');
+    lcd(e.target.checked?'SUGGESTIONS ON — including any you hid before.'
+      :'SUGGESTIONS OFF — the ? button turns them back on.');
   });
   if(focus==='size'){
     const row=$('tourBody').querySelector('.szrow');
@@ -30439,7 +30465,23 @@ sizeApply(sizeRead(), false);
 
 const COACH_KEY='jbh_coach_v1';
 const coachEnabled=()=>{ try{ return localStorage.getItem(COACH_KEY)!=='off'; }catch(e){ return true; } };
-const coachSeen={};
+/* HIDE MEANT "UNTIL YOU RELOAD", WHICH IS NOT WHAT HIDE MEANS.
+
+   `coachSeen` was a bare object, so every dismissal was forgotten on the
+   next open and the same suggestions came back for somebody who had been
+   using the app for months. Half of "the tips don't go away" is that: they
+   did go away, and then they came back.
+
+   Turning suggestions off and on again in the menu clears the list, which
+   is the way back for anyone who dismissed one and wants it again. Without
+   that, a permanent dismissal is a trapdoor. */
+const COACH_SEEN_KEY='jbh_coach_seen_v1';
+const coachSeen=(()=>{ try{ return JSON.parse(localStorage.getItem(COACH_SEEN_KEY)||'{}')||{}; }
+  catch(e){ return {}; } })();
+function coachForget(id){ if(!id) return; coachSeen[id]=1;
+  try{ localStorage.setItem(COACH_SEEN_KEY, JSON.stringify(coachSeen)); }catch(e){} }
+function coachRemindMe(){ for(const k of Object.keys(coachSeen)) delete coachSeen[k];
+  try{ localStorage.removeItem(COACH_SEEN_KEY); }catch(e){} }
 let coachCur=null;
 const COACH_TIPS=[
   /* First, because a screen the app does not fit on makes every other
@@ -30516,12 +30558,12 @@ function coachRefresh(){
   bar.style.display='flex';
 }
 $('coachHide').addEventListener('click',()=>{
-  if(coachCur) coachSeen[coachCur.id]=1;
+  if(coachCur) coachForget(coachCur.id);
   $('coachBar').style.display='none';
 });
 $('coachGo').addEventListener('click',()=>{
   const t=coachCur; if(!t||!t.go) return;
-  coachSeen[t.id]=1;
+  coachForget(t.id);
   $('coachBar').style.display='none';
   guideRecipe=null; guideLabel='SUGGESTION';
   if(t.go.menu){ guideMenu(t.go.menu); return; }   // the setting lives behind ?, not on a tab

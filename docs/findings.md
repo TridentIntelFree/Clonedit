@@ -3517,3 +3517,57 @@ selection survives only while the whole drag stays inside selectable
 content. Start in a hint, carry on down into the controls, and Chromium
 hands back nothing. Small, and better than highlighting the interface
 every time somebody misses a fader by four pixels.
+
+## A suggestion has to stop being made once it has been taken
+
+"The tips that suggest I do something like add sound to a pad don't go
+away and flash report to user that pad is empty."
+
+Two separate faults wearing one complaint, and neither was in the
+rules.
+
+**The tip was never re-asked.** Every entry in `COACH_TIPS` carries a
+live predicate — `when: () => padsLoaded() === 0` is false the instant
+a sound lands. The rules were right the whole time. `coachRefresh()`
+simply had four callers and all four were navigation or settings, so
+the bar held whatever was true when you last changed tab. The worst
+case is the one reported: the tip says every pad is empty and sends
+you to SMPL, you load a sound *on that tab*, and nothing on screen
+moves. The advice you just followed is still sitting there telling you
+to follow it.
+
+`dirty()` is this app's one funnel for "the project changed", so the
+re-ask goes there, coalesced on a 250ms timer — `dirty()` fires on
+every frame of a fader drag and re-running ten predicates per frame to
+redraw a bar that almost never changes is not free.
+
+**And HIDE meant "until you reload".** `coachSeen` was a bare object,
+so a dismissal lasted the session and somebody who had used the app
+for months met the same suggestions every morning. That is the other
+half of "they don't go away": they went away, and came back. It
+persists now, and turning suggestions off and on again in the ? menu
+clears the list — a permanent choice with no undo is a trapdoor rather
+than a setting.
+
+**What the test cost, which was more than the fix.** Three attempts,
+each failing for a reason that had nothing to do with the code:
+
+- Run at the end of the guides suite, the bar read `""`. The first
+  reading of that was "the tip is not showing"; the truth was that the
+  suite above walks the tour, opens the menu and clicks a suggestion's
+  GO, all of which write to `coachSeen`. The bar is session state, so
+  the only honest way to ask what a person sees is a fresh page. It has
+  its own `boot()` now.
+- `JBH.export().pads.filter(p => p).length` returned 12 for one loaded
+  sound — it counts pad objects, not loaded pads. The app's own
+  `padsLoaded()` was right there.
+- The "is there a way back" check reported *no way back* because it
+  reached straight for `#coachOn`. That checkbox is built when the ?
+  menu opens and does not exist before. A control that has to be opened
+  to exist cannot be tested as though it were always there — the test
+  clicks `btnTour` first, like a person.
+
+The through-line with the VOL finding above: in both cases the
+behaviour was correct and the person's experience was not, and no
+amount of testing the behaviour harder would have found it. What found
+it was somebody using the thing.

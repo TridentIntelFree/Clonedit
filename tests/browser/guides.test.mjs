@@ -264,5 +264,100 @@ export default async function ({ browser, base }) {
   } finally {
     await ctx.close();
   }
+
+  /* A SUGGESTION HAS TO STOP BEING MADE ONCE IT HAS BEEN TAKEN.
+
+     "The tips that suggest I do something like add sound to a pad don't go
+     away and flash report to user that pad is empty."
+
+     Every `when()` is a live predicate, so the rules were never wrong —
+     coachRefresh() had four callers and all four were navigation. The bar
+     held whatever was true when you last changed tab, so doing the thing it
+     asked for, on the tab it sent you to, changed nothing on screen.
+
+     ON ITS OWN PAGE. The suite above walks the tour, opens the menu and
+     clicks a suggestion's GO, all of which write to `coachSeen` and move
+     the view. Run after that, this read "" and the first reading of that
+     was "the tip is not showing" when it was "this page has been used".
+     The bar is session state, so the only honest way to ask what a person
+     sees is to start where they do. */
+  const fresh = await boot(browser, base, { viewport: { width: 430, height: 932 } });
+  try {
+    t.head('A TIP GOES AWAY WHEN YOU DO THE THING IT ASKS');
+    const coach = await fresh.page.evaluate(async () => {
+      const read = () => { const b = document.getElementById('coachBar');
+        return (b && getComputedStyle(b).display !== 'none')
+          ? document.getElementById('coachText').textContent.trim() : ''; };
+      await JBH.clear();
+      document.querySelector('#tabs button[data-v="smpl"]').click();
+      await new Promise(r => setTimeout(r, 400));
+      const before = read();
+      await JBH.pack('samples/jbh-drums.json');
+      await JBH.sound('jbh:kick_909', 0);
+      /* no tab change and no click — only the state moved, which is the
+         whole point. The re-ask is coalesced on a 250ms timer. */
+      await new Promise(r => setTimeout(r, 700));
+      return { before, after: read(),
+        loaded: padsLoaded() };
+    });
+    t.ok('an empty board is told that it is empty',
+      /every pad is empty/i.test(coach.before),
+      'bar reads: ' + JSON.stringify(coach.before.slice(0, 56)));
+    t.ok('the sound really did land', coach.loaded === 1, coach.loaded + ' pad loaded');
+    t.ok('AND THE TIP IS GONE WITHOUT CHANGING TAB',
+      !/every pad is empty/i.test(coach.after),
+      'bar still reads: ' + JSON.stringify(coach.after.slice(0, 56)));
+
+    /* THE OTHER HALF OF "THEY DON'T GO AWAY": they did, and then they came
+       back. `coachSeen` was a bare object, so HIDE lasted until the next
+       reload and somebody who had used the app for months met the same
+       suggestions every morning. */
+    t.head('AND HIDE MEANS HIDDEN, NOT HIDDEN UNTIL YOU RELOAD');
+    const hid = await fresh.page.evaluate(() => {
+      const txt = document.getElementById('coachText').textContent.trim();
+      document.getElementById('coachHide').click();
+      return { txt, stored: localStorage.getItem('jbh_coach_seen_v1') };
+    });
+    await fresh.page.reload();
+    await fresh.page.waitForFunction(() => {
+      const l = document.getElementById('lcdmsg');
+      return l && /Amber|READY|SESSION/.test(l.textContent);
+    }, null, { timeout: 45000 });
+    const back = await fresh.page.evaluate(async () => {
+      document.querySelector('#tabs button[data-v="smpl"]').click();
+      await new Promise(r => setTimeout(r, 400));
+      const b = document.getElementById('coachBar');
+      return getComputedStyle(b).display === 'none' ? ''
+        : document.getElementById('coachText').textContent.trim();
+    });
+    t.ok('dismissing one writes it down', !!hid.stored && hid.stored !== '{}',
+      'stored: ' + hid.stored);
+    t.ok('and it does not come back after a reload', back !== hid.txt,
+      'was ' + JSON.stringify(hid.txt.slice(0, 36)) + ', now ' + JSON.stringify(back.slice(0, 36)));
+
+    /* a permanent choice with no undo is a trapdoor, so there has to be a
+       way back, and it has to be one a person can find */
+    const undone = await fresh.page.evaluate(async () => {
+      /* THROUGH THE ? BUTTON, because that is the only way there is. The
+         checkbox is built when the menu opens and does not exist until
+         then, so a test that reaches straight for it reports "no way
+         back" when the way back is simply shut. */
+      document.getElementById('btnTour').click();
+      await new Promise(r => setTimeout(r, 200));
+      const cb = document.getElementById('coachOn');
+      if (!cb) return { reachable: false };
+      cb.checked = false; cb.dispatchEvent(new Event('change', { bubbles: true }));
+      cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 200));
+      return { reachable: true, stored: localStorage.getItem('jbh_coach_seen_v1') };
+    });
+    t.ok('turning suggestions off and on again brings the hidden ones back',
+      undone.reachable && !undone.stored, 'stored after: ' + undone.stored);
+
+    t.head('JS ERRORS');
+    t.ok('none', fresh.errors.length === 0, fresh.errors.join(' | '));
+  } finally {
+    await fresh.ctx.close();
+  }
   return t;
 }
