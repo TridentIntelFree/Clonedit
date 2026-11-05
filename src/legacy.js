@@ -2852,7 +2852,7 @@
    check by construction. scripts/check-build-label.mjs therefore CHECKS
    it instead, in CI, where HEAD is the commit being shipped and the
    arithmetic is exact. R = commits on main minus 9. */
-const BUILD = 'JBH-88 · R275 · 2026-11-05 · a volume fader per pad, and the app explains itself in plain words';
+const BUILD = 'JBH-88 · R276 · 2026-11-05 · VOL is on the pad editor and every mixer slider says what it is';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -5574,6 +5574,13 @@ function drawEdit(){
   // percent, to match the mixer and the master — a level is a level wherever
   // you touch it, and 0-200% is easier to reason about than 0.00-2.00
   $('epGain').value=p.gain; $('epGainV').textContent=Math.round(p.gain*100)+'%';
+  /* A PER-PAD CONTROL IS LOOKED FOR ON THE PAD, which is where this was
+     missing. It shipped only as an unlabelled mini slider in the mixer
+     strip, under another unlabelled mini slider (pan), and the report was
+     "I can't find master volume for each pad separate from gains" — which
+     is what an unlabelled control in a second tab amounts to. */
+  { const v=(p.vol==null?1:p.vol);
+    $('epVol').value=v; $('epVolV').textContent=Math.round(v*100)+'%'; }
   $('epPitch').value=p.pitch; $('epPitchV').textContent=(p.pitch>0?'+':'')+p.pitch+' st';
   $('epFine').value=p.fine; $('epFineV').textContent=(p.fine>0?'+':'')+p.fine+' ct';
   { const sp=padSpeed(p); $('epSpeed').value=sp; $('epSpeedV').textContent=sp.toFixed(2)+'×';
@@ -5649,6 +5656,12 @@ function bindEdit(id, key, fmt, applyLive){
   });
 }
 bindEdit('epGain','gain',null,(n,p)=>{ logGain(S.editPad,p.gain,'EDIT fader'); n.ch.gain.setTargetAtTime(p.gain,AC.currentTime,0.01); });
+/* `vol` is a second gain node downstream of `ch`, so it is not logged through
+   logGain() and nothing in the engine writes it back. drawMixer() redraws so
+   the strip's VOL follows this one; they are two views of one field. */
+bindEdit('epVol','vol',null,(n,p)=>{ if(n.vol) n.vol.gain.setTargetAtTime(p.vol,AC.currentTime,0.01); });
+$('epVol').addEventListener('input',()=>{ const v=mixVolInput[S.editPad];
+  if(v) v.value=(S.pads[S.editPad].vol==null?1:S.pads[S.editPad].vol); });
 bindEdit('epPitch','pitch',null,null);
 bindEdit('epFine','fine',null,null);
 /* SPEED — varispeed is instant (next hit); keepPitch rebuilds the stretch when
@@ -6241,6 +6254,12 @@ $('epClear').addEventListener('click',()=>{ const i=S.editPad; stopPadVoices(i);
 
 /* ---------------- per-pad channel MIXER ---------------- */
 let mixMeters=[];   // [{idx, fill}] for the meter loop (idx=-1 => master)
+/* THE SAME FIELD IN TWO PLACES, so each has to follow the other. VOL is on
+   the pad editor and on the mixer strip; a redraw of the whole mixer on every
+   `input` event rebuilds forty strips mid-drag, so the editor pokes the one
+   input instead. Keyed by pad index; stale entries are harmless because the
+   node is simply detached. */
+const mixVolInput={};
 function padInUse(i){
   if(S.pads[i].bufId>=0) return true;
   for(let q=0;q<NPAT;q++){ const st=S.patterns[q].steps[i]; for(let s=0;s<MAXSTEPS;s++) if(st[s]>0) return true; }
@@ -6280,9 +6299,21 @@ function drawMixer(){
       else{ p.gain=v; logGain(idx,v,'MIXER fader'); if(LIVE) LIVE.pads[idx].ch.gain.setTargetAtTime(v,AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); }
       dirty(); });
     farea.append(mtr,fader); el.appendChild(farea);
+    /* and the big fader is named for the same reason. On the master strip it
+       IS the master volume; on a pad it is `gain`, the field half the app
+       writes, which is exactly the distinction that was invisible. */
+    const cap=document.createElement('div'); cap.className='mcap';
+    cap.textContent=idx<0?'MASTER':'GAIN'; el.appendChild(cap);
     mixMeters.push({idx,fill});
     if(idx>=0){
+      /* LABELLED, BECAUSE AN UNLABELLED SLIDER IS A HIDDEN ONE. PAN and VOL
+         shipped as two bare mini sliders stacked 22px apart under a fader
+         that is also unlabelled, with the only explanation in a `title`
+         tooltip no touch device shows. Reported, correctly, as "I can't find
+         master volume for each pad separate from gains". The sends beside
+         them have carried a label since they were written. */
       const pan=document.createElement('div'); pan.className='mpan';
+      const pl=document.createElement('span'); pl.textContent='PAN'; pan.appendChild(pl);
       const pr=document.createElement('input'); pr.type='range'; pr.min=-1; pr.max=1; pr.step=0.05; pr.value=p.pan; pr.title='pan';
       pr.setAttribute('aria-label','Pan, '+chan);
       pr.addEventListener('input',e=>{ p.pan=parseFloat(e.target.value); if(LIVE&&LIVE.pads[idx].pan) LIVE.pads[idx].pan.pan.setTargetAtTime(p.pan,AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); dirty(); });
@@ -6296,16 +6327,18 @@ function drawMixer(){
          the fader to balance, and the staging you just computed is gone.
          `vol` is downstream of all of it and nothing else writes it. */
       const vol=document.createElement('div'); vol.className='mvol';
+      const vl=document.createElement('span'); vl.textContent='VOL'; vol.appendChild(vl);
       const vr=document.createElement('input'); vr.type='range';
       vr.min=0; vr.max=1.5; vr.step=0.01;
       vr.value=(p.vol==null?1:p.vol);
-      vr.title='volume — a fader nothing else writes (the one above is GAIN)';
+      vr.title='volume — a fader nothing else writes (the big one is GAIN)';
       vr.setAttribute('aria-label','Volume, '+chan);
       vr.addEventListener('input',e=>{ p.vol=parseFloat(e.target.value);
         if(LIVE&&LIVE.pads[idx]&&LIVE.pads[idx].vol)
           LIVE.pads[idx].vol.gain.setTargetAtTime(p.vol,AC.currentTime,0.01);
         if(idx===S.editPad) drawEdit(); dirty(); });
       vol.appendChild(vr); el.appendChild(vol);
+      mixVolInput[idx]=vr;
       const btns=document.createElement('div'); btns.className='mbtns';
       const mb=document.createElement('button'); mb.textContent='M';
       mb.setAttribute('aria-label','Mute '+chan); mb.classList.toggle('on',p.mute);

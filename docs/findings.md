@@ -3392,3 +3392,65 @@ mentioned it**, so there was nothing to notice. A first attempt at
 printing it matched the page `<title>` instead and proudly announced
 `JBH-88 Groovebox</title>`, which is its own small lesson about regexes
 over HTML.
+
+## "I can't find master volume for each pad separate from gains"
+
+The fader was built, measured, tested and shipped. The report came
+anyway, and it was right.
+
+`p.vol` answers a real gap: `p.gain` has four writers — the EDIT
+slider, the AMP slider, the mixer fader, a per-step lock — plus the
+volume LFO, MUTATE PAD and BEND TO MY WILL, so "turn this pad down and
+leave it there" had nowhere to live. `vol` is a second GainNode
+downstream of `ch` that nothing else touches. Eleven browser checks
+covered it: the attenuation in decibels, independence from gain,
+compounding, zero being true silence, the doc round-trip, and
+`pulse()`'s weighting. All green.
+
+Every one of them asked *does it work*. None asked *can it be found*.
+
+What shipped was a 13px slider in the MIXER tab, stacked 22px under an
+equally bare pan slider, beneath a vertical fader that is also
+unlabelled, with the only naming in a `title` tooltip — which no touch
+device ever shows. The three sliders on a strip that *were* labelled
+were the sends, because `mkSend()` happened to take a label argument
+and `mpan`/`mvol` did not.
+
+So the honest description of the state before this fix is: a control
+that exists, works perfectly, is in the wrong tab, and has no name.
+
+Two changes, and the second is the one that matters:
+
+- **It is on the pad editor now**, under GAIN, labelled, with a percent
+  readout like every other level in the app. That is where a per-pad
+  setting is looked for. The mixer copy stays and the two follow each
+  other — one field, two views, so the editor pokes the single strip
+  input rather than redrawing forty strips on every `input` event.
+- **Every slider on a strip says what it is**: `GAIN` captioned under
+  the big fader (`MASTER` on the master strip), `PAN` and `VOL` beside
+  the mini rows.
+
+The test that would have caught it is not a harder audio test. It is:
+
+```js
+const own = (row.textContent || '').trim();   // text a person can SEE
+if (!own && !cap) bare.push(...);             // aria-label and title are not labels
+```
+
+which fails on any unlabelled slider added to a strip from now on.
+
+**The pattern this is the third instance of.** "An agent could, and the
+person could not" was about calls with no button. "A CONTROL MUST NOT
+OFFER WHAT CANNOT WORK" was about a button that lied. This is a button
+that exists, works, and says nothing — and from the far side of the
+screen those three are the same failure: the capability is real and
+unreachable. A green test suite distinguishes none of them, because
+every check in this repo drives the thing by its id.
+
+**And the test for it failed first, on the trap this file already
+documents.** The new check asserted `gain === 1` and got 0.9: loading
+sounds onto pads 1 and 2 had moved `S.editPad`, which is the
+`loadIntoTarget` trap in AGENTS.md, surfacing inside a test written
+after reading it. The claim was never "gain is 1" but "VOL does not
+move gain", so it reads both ends now. Assert the change, not the
+value you expect the world to be in.

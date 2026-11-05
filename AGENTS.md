@@ -1301,6 +1301,7 @@ thing they are about:
 - [Duration and placement, measured — and the guarantee they broke](docs/findings.md#duration-and-placement-measured--and-the-guarantee-they-broke)
 - [One message, two audiences — and only one of them can type](docs/findings.md#one-message-two-audiences--and-only-one-of-them-can-type)
 - ["I've been stuck on version 267 for several sessions"](docs/findings.md#ive-been-stuck-on-version-267-for-several-sessions)
+- ["I can't find master volume for each pad separate from gains"](docs/findings.md#i-cant-find-master-volume-for-each-pad-separate-from-gains)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

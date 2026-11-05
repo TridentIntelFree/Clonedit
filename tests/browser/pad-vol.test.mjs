@@ -101,6 +101,100 @@ export default async function ({ browser, base }) {
     t.ok('it can push above unity, since a fader that only cuts is half a fader',
       +ui.max > 1, 'max ' + ui.max);
 
+    /* "I CAN'T FIND MASTER VOLUME FOR EACH PAD SEPARATE FROM GAINS."
+
+       Reported after all of the above was shipped and passing. The audio
+       was right and the control was real; it was a bare 13px slider in
+       the MIXER tab, stacked under an equally bare pan slider, beneath a
+       fader that is also unlabelled, and the only thing naming it was a
+       `title` tooltip — which a touch device never shows. Every check
+       above passes on a control nobody can find, which is the same shape
+       as the silent-check problem in AGENTS.md: "a check that finds
+       nothing to look at reads exactly like a check that passed."
+
+       So these two ask the discoverability question instead of the
+       wiring question: can it be reached from the pad editor, where a
+       per-pad setting is looked for, and does every slider on a strip
+       say out loud what it is. */
+    t.head('IT IS ON THE PAD EDITOR TOO, WHERE A PER-PAD CONTROL IS LOOKED FOR');
+    const ed = await page.evaluate(async () => {
+      /* driven through the controls, not the API: the tab, then EDIT */
+      document.querySelector('#tabs button[data-v="pads"]').click();
+      if (!S.edit) $('btnEdit').click();
+      await new Promise(r => setTimeout(r, 120));
+      const el = $('epVol'), lab = el && el.previousElementSibling;
+      const out = {
+        exists: !!el,
+        visible: !!(el && el.offsetParent !== null),
+        label: lab ? lab.textContent.trim() : null,
+        readout: $('epVolV') ? $('epVolV').textContent : null,
+      };
+      if (!el) return out;
+      /* GAIN IS READ BEFORE, NOT ASSUMED. The first version of this check
+         asserted gain === 1 and failed at 0.9, because loading a sound onto
+         pads 1 and 2 had moved S.editPad — the loadIntoTarget trap in
+         AGENTS.md, surfacing inside a test written after reading it. The
+         claim is that VOL does not MOVE gain, so measure both ends. */
+      out.chBefore = LIVE && LIVE.pads[S.editPad]
+        ? +LIVE.pads[S.editPad].ch.gain.value.toFixed(3) : null;
+      el.value = '0.6';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 250));
+      const i = S.editPad;
+      out.pad = i;
+      out.state = S.pads[i].vol;
+      out.node = LIVE && LIVE.pads[i] && LIVE.pads[i].vol
+        ? +LIVE.pads[i].vol.gain.value.toFixed(3) : 'no node';
+      out.ch = LIVE && LIVE.pads[i] ? +LIVE.pads[i].ch.gain.value.toFixed(3) : null;
+      out.after = $('epVolV').textContent;
+      /* THE TWO VIEWS ARE ONE FIELD, so the strip has to follow. Matched
+         by value rather than by pad name because padName() is inside the
+         engine's scope and not a page global — exactly the trap AGENTS.md
+         records about legacy.js not being one flat scope. */
+      out.matching = [...document.querySelectorAll('.mstrip .mvol input[type=range]')]
+        .filter(r => +r.value === 0.6).length;
+      return out;
+    });
+    t.ok('there is a VOL slider on the pad editor', ed.exists && ed.visible,
+      'exists ' + ed.exists + ', visible ' + ed.visible);
+    t.ok('with a visible label, not a tooltip', ed.label === 'VOL', 'label ' + ed.label);
+    t.ok('and a readout in percent like every other level in the app',
+      /%$/.test(ed.readout || ''), 'reads "' + ed.readout + '"');
+    t.ok('dragging it writes the pad and reaches the graph',
+      ed.state === 0.6 && ed.node === 0.6, 'state ' + ed.state + ', node ' + ed.node);
+    t.ok('while leaving gain exactly where it was',
+      ed.ch != null && ed.ch === ed.chBefore,
+      'live ch (gain) ' + ed.chBefore + ' -> ' + ed.ch);
+    t.ok('and exactly one mixer strip follows it, because they are one field',
+      ed.matching === 1, ed.matching + ' strips read 0.6');
+    t.ok('the readout moved with it', ed.after === '60%', 'reads "' + ed.after + '"');
+
+    t.head('AND EVERY SLIDER ON A STRIP SAYS WHAT IT IS');
+    const named = await page.evaluate(() => {
+      document.querySelector('#tabs button[data-v="mix"]').click();
+      const strip = document.querySelector('.mstrip:not(.master)');
+      if (!strip) return { bare: ['no strip'] };
+      const bare = [];
+      for (const r of strip.querySelectorAll('input[type=range]')) {
+        const row = r.parentElement;
+        /* a label is text a person can SEE in the row, or the caption
+           under the fader — an aria-label or a title is not one */
+        const own = (row.textContent || '').trim();
+        const cap = r.classList.contains('vf')
+          ? (strip.querySelector('.mcap') || {}).textContent : '';
+        if (!own && !(cap || '').trim())
+          bare.push(r.className || r.getAttribute('aria-label') || '?');
+      }
+      return { bare, cap: (strip.querySelector('.mcap') || {}).textContent,
+        pan: (strip.querySelector('.mpan span') || {}).textContent,
+        vol: (strip.querySelector('.mvol span') || {}).textContent };
+    });
+    t.ok('no unlabelled slider is left on the strip', named.bare.length === 0,
+      named.bare.length ? 'bare: ' + named.bare.join(', ') : 'all named');
+    t.ok('the big fader is named GAIN, the two mini rows PAN and VOL',
+      named.cap === 'GAIN' && named.pan === 'PAN' && named.vol === 'VOL',
+      [named.cap, named.pan, named.vol].join(' / '));
+
     t.head('IT SURVIVES A SONG DOC, AND OLD DOCS ARE UNCHANGED');
     const doc = await page.evaluate(() => {
       JBH.pad(0, { vol: 0.4 });

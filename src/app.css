@@ -203,6 +203,22 @@ body.sz-sm #fxPip,body.sz-xs #fxPip{font-size:9px;padding:1px 4px;letter-spacing
   writing-mode:vertical-lr;direction:rtl;width:24px;height:120px;background:transparent}
 .mstrip input[type=range].vf::-webkit-slider-runnable-track{width:5px;height:auto;background:var(--edge);border-radius:3px}
 .mstrip input[type=range].vf::-webkit-slider-thumb{margin-top:0;margin-left:-10px}
+/* PAN and VOL get the same labelled-row shape the sends have always had.
+   They were bare sliders: two identical grey slots, 22px apart, under an
+   unlabelled fader, with the explanation only in a `title` tooltip — which
+   a touch device never shows. That is a control nobody can find. */
+.mstrip .mpan,
+.mstrip .mvol{display:flex;align-items:center;gap:3px;width:100%}
+.mstrip .mpan>span,
+.mstrip .mvol>span{font-size:9px;letter-spacing:.04em;width:22px;flex:none}
+.mstrip .mpan>input[type=range],
+.mstrip .mvol>input[type=range]{flex:1;min-width:0}
+.mstrip .mpan>span{color:var(--txt-dim)}
+.mstrip .mvol>span{color:var(--amber)}
+/* the big fader is named too: MASTER on the master strip, GAIN on a pad */
+.mstrip .mcap{font-size:9px;letter-spacing:.06em;color:var(--amber);
+  width:100%;text-align:center;margin-top:1px}
+.mstrip.master .mcap{color:var(--txt-dim)}
 .mstrip .mpan{width:100%}
 /* The mini rows carried the app-wide 24px thumb inside a 14px box, stacked 19px
    apart: four pairs of thumbs physically overlapped, which is most of why the

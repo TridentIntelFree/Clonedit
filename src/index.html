@@ -245,6 +245,8 @@ oscillators and noise when you ask for it.</p>
 it, filter it, resample it. Nothing stays attached to the preset it came from.</p>
   </div></details>
     <div class="pslider"><span class="lbl">GAIN</span><input type="range" id="epGain" min="0" max="2" step="0.01"><span class="val" id="epGainV"></span></div>
+    <div class="pslider"><span class="lbl">VOL</span><input type="range" id="epVol" min="0" max="1.5" step="0.01"><span class="val" id="epVolV"></span></div>
+    <div class="row" style="margin:-2px 0 2px"><span class="rowhint">GAIN is the one everything else moves: the AMP tab's GAIN, the mixer's GAIN, a step lock, the volume LFO, MUTATE PAD and BEND TO MY WILL. VOL comes after all of it, and nothing but this slider and the mixer's VOL writes it, so a level you set here stays put.</span></div>
     <div class="pslider"><span class="lbl">PITCH</span><input type="range" id="epPitch" min="-12" max="12" step="1"><span class="val" id="epPitchV"></span></div>
     <div class="pslider"><span class="lbl">FINE</span><input type="range" id="epFine" min="-100" max="100" step="1"><span class="val" id="epFineV"></span></div>
     <div class="row" style="margin:-2px 0 2px"><button id="epKeepTime" class="on">KEEP TIME</button><span class="rowhint">ON = PITCH holds the sound's length &middot; OFF = pitching up also makes it shorter, like tape</span></div>
@@ -2172,7 +2174,7 @@ technology because it still works.</p>
   <div class="hint-lead" data-lead-short><b>MIXER</b> — one strip per in-use pad. Tap a strip’s name to edit that pad.</div>
   <button class="hint-more" type="button" aria-expanded="false" aria-controls="learn-mix">MIXING — BALANCE, SENDS AND HEADROOM</button>
   <div class="hint-body" id="learn-mix" hidden>
-<p class="lead-was"><b>MIXER</b> — one strip per in-use pad: live meter, fader, pan, <b>M</b>ute / <b>S</b>olo, and REV/DLY sends. Tap a strip's name to edit that pad. Master + global FX below. Everything bakes into the bounce.</p>
+<p class="lead-was"><b>MIXER</b> — one strip per in-use pad: live meter, the big GAIN fader, PAN, a second <b>VOL</b> fader that nothing else in the app writes, <b>M</b>ute / <b>S</b>olo, and REV/DLY sends. Tap a strip's name to edit that pad. Master + global FX below. Everything bakes into the bounce.</p>
 <h4>Mixing is mostly just level</h4>
 <p>Before any effect, mixing is deciding how loud each thing is relative to
 everything else. Most amateur mixes have too much of everything at once. The
