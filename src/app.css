@@ -210,12 +210,22 @@ body.sz-sm #fxPip,body.sz-xs #fxPip{font-size:9px;padding:1px 4px;letter-spacing
    DRAWING of one. The input keeps a finger-sized box (the whole box is the hit
    area) and the visible thumb shrinks to fit the row. */
 .mstrip .mpan input[type=range],
+.mstrip .mvol input[type=range],
 .mstrip .msend input[type=range]{height:22px}
 .mstrip .mpan input[type=range]::-webkit-slider-thumb,
+.mstrip .mvol input[type=range]::-webkit-slider-thumb,
 .mstrip .msend input[type=range]::-webkit-slider-thumb{
   width:13px;height:13px;border-width:2px;margin-top:-4px}
 .mstrip .mpan input[type=range]::-webkit-slider-runnable-track,
+.mstrip .mvol input[type=range]::-webkit-slider-runnable-track,
 .mstrip .msend input[type=range]::-webkit-slider-runnable-track{height:4px}
+/* VOL reads as the fader it is rather than as another pan: the track is
+   tinted so the two mini rows are not two identical grey slots, which is
+   the confusion that prompted it — "a master volume for each pad that is
+   not either of the gain values". */
+.mstrip .mvol{width:100%}
+.mstrip .mvol input[type=range]::-webkit-slider-runnable-track{
+  background:linear-gradient(90deg,var(--edge),var(--amber))}
 /* One colour for everything meant nothing read as more or less important: the
    fader, the pan, both sends and three EQ bands were the same amber ring at the
    same size. Three jobs, three weights.

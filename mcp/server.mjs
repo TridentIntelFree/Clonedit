@@ -282,8 +282,17 @@ const TOOLS = [
 
   { name: 'jbh_pad', description:
       'Read a pad, or write to it. With no props it returns everything the pad holds. Useful '
-      + 'fields: gain, pan, pitch, fine, ftype ("off"/"lowpass"/"highpass"/"bandpass"), fcut, '
-      + 'fres, att, dec, sus, rel, rev, dly, reverse, keepTime, choke, mute.',
+      + 'fields: gain, vol, pan, pitch, fine, ftype ("off"/"lowpass"/"highpass"/"bandpass"), '
+      + 'fcut, fres, att, dec, sus, rel, rev, dly, reverse, keepTime, choke, mute. '
+      + 'gain AND vol ARE BOTH LEVELS AND THEY ARE NOT THE SAME CONTROL. `gain` is the one '
+      + 'everything else writes: it has three sliders on it (EDIT, AMP and the mixer strip), '
+      + 'a per-step lock can override it, the vol-LFO modulates it, and jbh_mutate and '
+      + 'jbh_bend both search it — so it is where you STAGE a pad from its measured peak, '
+      + 'and anything you set by hand there may be moved later. `vol` is a second fader '
+      + 'downstream of all of that which nothing else touches, so it is where you simply turn '
+      + 'a pad up or down and have it stay. It is post-fader, feeding the reverb and delay '
+      + 'sends, so pulling a pad down takes its sends with it. Range 0-1.5, default 1, and it '
+      + 'is only written to a song doc when it has been moved.',
     inputSchema: { type: 'object', required: ['pad'], properties: {
       pad: { type: 'integer' }, props: { type: 'object' } } } },
 

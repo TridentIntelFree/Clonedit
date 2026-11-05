@@ -2900,7 +2900,7 @@ function panText(v){
 /* NPADS/NSTEPS/NPAT/MAXSTEPS/PATLENS, patLen → src/pure/pattern.js */
 function curPatLen(){ return patLen(typeof curPat==='function' ? curPat() : S.patterns[S.pattern]); }
 function newPad(i){ return { bufId:-1, name:'', start:0, end:1,
-  gain:0.9, pitch:0, fine:0, speed:1, keepPitch:false, keepTime:true, pan:0, rev:0, dly:0,
+  gain:0.9, vol:1, pitch:0, fine:0, speed:1, keepPitch:false, keepTime:true, pan:0, rev:0, dly:0,
   att:0.002, dec:0.12, sus:1, rel:0.06,
   grSize:0.12, grDens:18, grSpread:0.05, grPitch:0, grPos:0, grBurst:0.45,
   choke:0, note:36+i, reverse:false, mode:'one', bowSlur:0.045, bowMaxSt:7, bowIn:0.30,
@@ -3425,8 +3425,22 @@ function buildGraph(ctx){
     const fxg=ctx.createGain(); fxg.gain.value=1;
     drv.connect(crush); crush.connect(flt); flt.connect(eqLo); eqLo.connect(eqMid); eqMid.connect(eqHi);
     eqHi.connect(fxg); fxg.connect(ch);
-    let tail=ch;
-    if(pan){ pan.pan.value=p.pan; ch.connect(pan); tail=pan; }
+    /* A SECOND FADER THAT NOTHING ELSE WRITES.
+       `p.gain` already has three controls on it (EDIT, AMP and the
+       MIXER strip), a per-step lock can override it, the vol-LFO
+       modulates it, and mutate() and bend() both search it. So there was
+       nowhere to simply set a pad's level and have it stay set: staging
+       a pad from its measured peak — which is how AGENTS.md says to set
+       levels — and then riding the fader to balance the mix destroys the
+       staging you just computed.
+       `p.vol` is that missing place. Downstream of `ch`, so gain, locks
+       and the LFO all still do exactly what they did; upstream of `mute`
+       and the two sends, so it is POST-fader like a real console and
+       pulling a pad down takes its reverb with it. */
+    const volN=ctx.createGain(); volN.gain.value=(p.vol==null?1:p.vol);
+    ch.connect(volN);
+    let tail=volN;
+    if(pan){ pan.pan.value=p.pan; volN.connect(pan); tail=pan; }
     // mixer mute/solo gate — downstream of the fader (ch.gain) and its vol-LFO,
     // so a muted channel is truly silent; also the per-channel meter tap point
     const mute=ctx.createGain(); mute.gain.value=1; tail.connect(mute);
@@ -3440,7 +3454,7 @@ function buildGraph(ctx){
     // per-pad LFO — one oscillator + depth gain, routed to the chosen param
     const lfoOsc=ctx.createOscillator(), lfoAmp=ctx.createGain(); lfoAmp.gain.value=0;
     lfoOsc.connect(lfoAmp); try{ lfoOsc.start(); }catch(e){}
-    const node={in:drv,drv,crush,flt,eqLo,eqMid,eqHi,fxg,ch,pan,rev,dly,dryDuck,dryDir,mute,meterAn,lfoOsc,lfoAmp};
+    const node={in:drv,drv,crush,flt,eqLo,eqMid,eqHi,fxg,ch,vol:volN,pan,rev,dly,dryDuck,dryDir,mute,meterAn,lfoOsc,lfoAmp};
     applyPadFx(node,p,ctx);
     applyPadLfo(node,p,ctx);
     g.pads.push(node);
@@ -6252,6 +6266,25 @@ function drawMixer(){
       pr.setAttribute('aria-label','Pan, '+chan);
       pr.addEventListener('input',e=>{ p.pan=parseFloat(e.target.value); if(LIVE&&LIVE.pads[idx].pan) LIVE.pads[idx].pan.pan.setTargetAtTime(p.pan,AC.currentTime,0.01); if(idx===S.editPad) drawEdit(); dirty(); });
       pan.appendChild(pr); el.appendChild(pan);
+      /* THE SECOND FADER, AND THE POINT IS THAT IT IS VISIBLY SEPARATE.
+         The strip fader above writes `p.gain`, which is also what the
+         EDIT and AMP sliders write, what a step lock can override, what
+         the vol-LFO modulates and what mutate() and bend() search. So
+         "turn this pad down" had nowhere to live that something else
+         would not later move: stage a pad from its measured peak, ride
+         the fader to balance, and the staging you just computed is gone.
+         `vol` is downstream of all of it and nothing else writes it. */
+      const vol=document.createElement('div'); vol.className='mvol';
+      const vr=document.createElement('input'); vr.type='range';
+      vr.min=0; vr.max=1.5; vr.step=0.01;
+      vr.value=(p.vol==null?1:p.vol);
+      vr.title='volume — a fader nothing else writes (the one above is GAIN)';
+      vr.setAttribute('aria-label','Volume, '+chan);
+      vr.addEventListener('input',e=>{ p.vol=parseFloat(e.target.value);
+        if(LIVE&&LIVE.pads[idx]&&LIVE.pads[idx].vol)
+          LIVE.pads[idx].vol.gain.setTargetAtTime(p.vol,AC.currentTime,0.01);
+        if(idx===S.editPad) drawEdit(); dirty(); });
+      vol.appendChild(vr); el.appendChild(vol);
       const btns=document.createElement('div'); btns.className='mbtns';
       const mb=document.createElement('button'); mb.textContent='M';
       mb.setAttribute('aria-label','Mute '+chan); mb.classList.toggle('on',p.mute);
@@ -9881,7 +9914,7 @@ async function loadSongDoc(doc){
       const buf=await renderPreset(def,note);
       assignBufToPad(i,buf,def.name);
       S.pads[i].srcPreset=def.id; S.pads[i].srcNote=note;
-      ['gain','pan','rev','dly','choke','eqLo','eqMid','eqHi','att','rel','mode'].forEach(k=>{ if(pd[k]!=null) S.pads[i][k]=pd[k]; });
+      ['gain','vol','pan','rev','dly','choke','eqLo','eqMid','eqHi','att','rel','mode'].forEach(k=>{ if(pd[k]!=null) S.pads[i][k]=pd[k]; });
       loadedPads++;
     }
     if(loadedPads===0){   // don't silently say LOADED when nothing landed — the #1 AI-jam failure
@@ -9970,7 +10003,11 @@ function exportSongDoc(){
     const o={preset:p.srcPreset||null};
     if(p.srcNote!=null) o.note=p.srcNote;
     if(!o.preset) o.name=p.name;    // sampled/recorded pads can't be re-synthesized from text
-    o.gain=+p.gain.toFixed(2); if(p.pan)o.pan=+p.pan.toFixed(2);
+    o.gain=+p.gain.toFixed(2);
+    /* only when it has been moved, so every doc written before the
+       second fader existed still round-trips byte for byte */
+    if(p.vol!=null && p.vol!==1) o.vol=+p.vol.toFixed(2);
+    if(p.pan)o.pan=+p.pan.toFixed(2);
     if(p.rev)o.rev=+p.rev.toFixed(2); if(p.dly)o.dly=+p.dly.toFixed(2);
     if(p.choke)o.choke=p.choke; if(p.eqLo)o.eqLo=p.eqLo; if(p.eqMid)o.eqMid=p.eqMid; if(p.eqHi)o.eqHi=p.eqHi;
     pads.push(o);
@@ -13477,8 +13514,14 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       srcCache.set(p.bufId, lvl);
       return lvl;
     };
+    /* AND THE SECOND FADER, or this measures a beat the listener cannot
+       hear. `vol` sits downstream of `ch` in the live graph and feeds the
+       sends, so a pad pulled to silence with it contributes nothing — and
+       an onset weighting that ignored it would keep counting the pad at
+       full strength and report a pulse that is not there. */
     const wOf=(e)=>{ const p=S.pads[e.pad]; const g=p&&p.gain!=null?p.gain:1;
-      return Math.max(0, (e.vel==null?0.8:e.vel)) * g * srcLevel(e.pad); };
+      const v=p&&p.vol!=null?p.vol:1;
+      return Math.max(0, (e.vel==null?0.8:e.vel)) * g * v * srcLevel(e.pad); };
     const SRH=100;                                   // envelope samples per second
     const n=Math.max(16, Math.ceil(dur*SRH));
     const build=(list)=>{
@@ -27112,7 +27155,11 @@ function hardSet(param,v){ // plain .value writes lose to earlier setTargetAtTim
 function reapplyLivePads(){   // push S.pads channel state onto the live graph (restore + NEW)
   if(!AC||!LIVE||!LIVE.pads) return;
   for(let i=0;i<NPADS;i++){ const p=S.pads[i], n=LIVE.pads[i]; if(!n) continue;
-    hardSet(n.ch.gain,p.gain); if(n.pan)hardSet(n.pan.pan,p.pan); hardSet(n.rev.gain,p.rev); hardSet(n.dly.gain,p.dly);
+    hardSet(n.ch.gain,p.gain);
+    /* the second fader restores with the rest; a project loaded without
+       one reads 1, which is what every pad saved before it had */
+    if(n.vol) hardSet(n.vol.gain, p.vol==null?1:p.vol);
+    if(n.pan)hardSet(n.pan.pan,p.pan); hardSet(n.rev.gain,p.rev); hardSet(n.dly.gain,p.dly);
     applyPadFx(n,p,AC,true); applyPadLfo(n,p,AC); }
   applyMixMutes();
 }
@@ -28481,7 +28528,7 @@ const MIXRANGE={
 const PADDB=['eqLo','eqMid','eqHi'];
 /* The ranges the document loader will clamp a pad field to, so pad() can
    say so at the time rather than letting a reload change the mix. */
-const PADRANGE={ gain:[0,2], pan:[-1,1], rev:[0,1], dly:[0,1],
+const PADRANGE={ gain:[0,2], vol:[0,1.5], pan:[-1,1], rev:[0,1], dly:[0,1],
   att:[0,2], dec:[0.001,10], sus:[0,1], rel:[0.005,1],
   fcut:[0,1], fres:[0,20], drv:[0,1], crush:[1,16],
   eqLo:[-12,12], eqMid:[-12,12], eqHi:[-12,12],
