@@ -11,7 +11,7 @@
     "test": "node --test 'tests/*.test.mjs'",
     "test:browser": "node scripts/browser-tests.mjs",
     "verify": "npm run build && npm run test:browser",
-    "lint": "node scripts/lint-comments.mjs --self-test && node scripts/lint-comments.mjs src/*.js songs/*.mjs tests/*.mjs tests/browser/*.mjs scripts/*.mjs && node scripts/lint-language.mjs && node scripts/check-build-label.mjs"
+    "lint": "node scripts/lint-comments.mjs --self-test && node scripts/lint-comments.mjs src/*.js songs/*.mjs tests/*.mjs tests/browser/*.mjs scripts/*.mjs && node scripts/lint-language.mjs && node scripts/check-build-label.mjs && node scripts/build-sample-index.mjs --check && node scripts/check-sample-kits.mjs"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

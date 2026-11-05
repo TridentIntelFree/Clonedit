@@ -2852,7 +2852,7 @@
    check by construction. scripts/check-build-label.mjs therefore CHECKS
    it instead, in CI, where HEAD is the commit being shipped and the
    arithmetic is exact. R = commits on main minus 9. */
-const BUILD = 'JBH-88 · R280 · 2026-11-05 · find a sound in any pack, and the pack list builds itself';
+const BUILD = 'JBH-88 · R281 · 2026-11-05 · three premade kits made of real recordings, cast into roles';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -9850,6 +9850,93 @@ async function loadKit(kit, layBeat){
   }catch(err){ lcd('KIT FAILED: '+(err&&err.message?err.message:'error')); }
   finally{ kitBusy=false; }
 }
+/* ============ KITS MADE OF RECORDINGS ============================
+
+   Every KIT above is synthesised: a slot is [presetId, note] and loading
+   one calls renderPreset(). That is why they need no connection, and it
+   is also why a track built from one sounds like an oscillator with a
+   filter on it.
+
+   A sample kit is a CASTING instead of a library. VCSL Wide is 1,045
+   samples and nothing in it says which one is the kick; a kit says this
+   recording plays the downbeat and this one carries the harmony, which
+   is the thing WRITE needs and could never be told. `learn()` exists to
+   guess exactly this from the spectrum, and guessing is only necessary
+   when nobody wrote it down.
+
+   The definitions are in src/pure/samplekits.js and every voice in them
+   is re-resolved against its manifest by scripts/check-sample-kits.mjs,
+   which `npm run lint` runs — a kit whose bass matches nothing does not
+   throw, it loads with no bass. */
+async function loadSampleKit(kit, layBeat){
+  if(kitBusy) return; kitBusy=true;
+  const done=[], failed=[];
+  try{
+    lcd(kit.name+' — fetching '+kit.voices.length+' voices…');
+    await window.MVX.clear();
+    for(const v of kit.voices){
+      try{
+        await window.MVX.pack(v.pack);
+        const ss=(packManifest&&packManifest.samples)||[];
+        const re=new RegExp(v.match,'i');
+        const anyId=ss.filter(s=>!s.rel && re.test(s.id));
+        if(!anyId.length) throw new Error('no sample matches '+v.match);
+        const pitched=anyId.filter(s=>sampleNote(s)!=null);
+        let pads=[];
+        if(pitched.length){
+          /* instrument() does the work: thins the range evenly by note,
+             puts several dynamics of one note on one pad as velocity
+             layers, and tags every pad so motif() and balance() see it */
+          const r=await window.MVX.instrument(v.inst,
+            {match:v.match, lo:v.lo, hi:v.hi, max:v.max});
+          pads=r.pads||[];
+        }else{
+          /* UNPITCHED, which instrument() cannot place at all — it needs
+             a note per sample. A timpani or a brake drum has none in the
+             manifest, so it goes on one pad directly and the takes that
+             differ only by velocity or round robin ride along as layers,
+             which is what makes a ghost note a different recording from
+             an accent rather than the same one turned down. */
+          const base=id=>id.replace(/_v\d+/ig,'').replace(/_rr\d+/ig,'');
+          const first=anyId.map(s=>s.id).sort()[0];
+          const group=anyId.filter(s=>base(s.id)===base(first))
+            .sort((a,b)=>((a.vel==null?0.5:a.vel)-(b.vel==null?0.5:b.vel)))
+            .slice(0,1+LAY_MAX);
+          const pad=firstEmptyPad();
+          if(pad<0) throw new Error('no empty pad left');
+          await window.MVX.sound(group[0].id, pad);
+          for(let k=1;k<group.length;k++){
+            try{ await window.MVX.layer(pad, group[k].id); }catch(e){}
+          }
+          pads=[pad];
+        }
+        /* THE DECLARATION. An 808 kick and an 808 bass note are the same
+           signal and pitchedness() refuses to choose between them, which
+           is correct and is why this has to be written down rather than
+           measured. */
+        for(const p of pads){ S.pads[p].role=v.role; S.pads[p].inst=v.inst; }
+        done.push({role:v.role, inst:v.inst, pads:pads.length});
+      }catch(err){
+        failed.push(v.role+' ('+(err&&err.message?err.message:'failed')+')');
+      }
+    }
+    if(kit.bpm) setBpm(kit.bpm);
+    if(kit.swing!=null){ S.swing=kit.swing; $('swing').value=String(kit.swing);
+      $('swingV').textContent=Math.round(kit.swing*100)+'%'; }
+    S.bank=0; S.editPad=0; S.seqPad=0;
+    buildPads(); drawPads(); drawEdit(); drawSeq(); drawFader(); drawMixer(); dirty();
+    /* SAY WHAT ARRIVED AND WHAT DID NOT. Every voice here is fetched over
+       the network, so a partial kit is the normal failure and it has to
+       read as one — a kit that quietly came back without its bass looks
+       exactly like a kit that never had one. */
+    const pads=done.reduce((a,d)=>a+d.pads,0);
+    lcd(kit.name+' READY · '+done.length+' of '+kit.voices.length+' voices on '
+      +pads+' pads'+(failed.length? ' · MISSING: '+failed.join(', ') : '')
+      +(failed.length? '' : ' · try WRITE SONG'));
+  }catch(err){ lcd('KIT FAILED: '+(err&&err.message?err.message:'error')); }
+  finally{ kitBusy=false; }
+}
+
 (function(){
   const row=$('kitRow');
   const cs=document.createElement('button'); cs.textContent="CLAUDE'S SONG ♪"; cs.dataset.kit='claude';
@@ -9860,6 +9947,18 @@ async function loadKit(kit, layBeat){
   mr.style.cssText='background:var(--lcd-bg);color:var(--lcd);border-color:var(--amber)';
   mr.addEventListener('click',()=>loadSongDoc(MIRRORS_DOC));
   row.appendChild(mr);
+  /* THE RECORDED KITS GO FIRST, because they are the better answer to
+     "give me a kit" and the synth ones were the only answer for a long
+     time. Marked with a dot so the two kinds are tellable apart: these
+     download, the ones after them are generated on the spot. */
+  if(typeof SAMPLE_KITS!=='undefined') SAMPLE_KITS.forEach(kit=>{
+    const b=document.createElement('button');
+    b.textContent='● '+kit.name; b.dataset.kit='smp-'+kit.id;
+    b.className='needsnet';
+    b.title=kit.note+' — real recordings, downloaded once';
+    b.addEventListener('click',()=>loadSampleKit(kit, $('kitBeat').checked));
+    row.appendChild(b);
+  });
   KITS.forEach(kit=>{
     const b=document.createElement('button'); b.textContent=kit.name; b.dataset.kit=kit.id;
     b.addEventListener('click',()=>loadKit(kit, $('kitBeat').checked));
