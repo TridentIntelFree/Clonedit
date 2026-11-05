@@ -2982,6 +2982,7 @@ var __JBH_PURE = (() => {
     LOCK_FX: () => LOCK_FX,
     MAGENTA_CONTOURS: () => MAGENTA_CONTOURS,
     MAXSTEPS: () => MAXSTEPS,
+    MELODY_CELLS: () => MELODY_CELLS,
     NOTE_NAMES: () => NOTE_NAMES,
     NPADS: () => NPADS,
     NPAT: () => NPAT,
@@ -3032,6 +3033,8 @@ var __JBH_PURE = (() => {
     mainBpmOf: () => mainBpmOf,
     makeRecipe: () => makeRecipe,
     measureTake: () => measureTake,
+    melodyCellSource: () => melodyCellSource,
+    melodyCellsFor: () => melodyCellsFor,
     midiName: () => midiName,
     midiToHz: () => midiToHz,
     minGap: () => minGap,
@@ -4139,6 +4142,938 @@ var __JBH_PURE = (() => {
       says: role + " wants " + T.says + ". " + (miss.length ? "This one " + miss.join(" and ") + "." : "This one already measures like one.")
     };
   }
+
+  // src/pure/cells.js
+  var MELODY_CELLS = {
+    "source": "Essen Folksong Collection (music21 corpus, 31 ABC files)",
+    "measured": {
+      "tunes": 8514,
+      "bars": 78556,
+      "notes": 277508,
+      "steps": 16
+    },
+    "skipped": {
+      "empty_bar": 161,
+      "meter_changes": 927,
+      "no_meter": 218,
+      "odd_meter": 3249,
+      "unquantizable_bar": 636
+    },
+    "onsetPct": [
+      27.99,
+      0.06,
+      2.6,
+      0.42,
+      14.92,
+      0.06,
+      6.76,
+      0.3,
+      20.75,
+      0.06,
+      2.48,
+      0.28,
+      17.42,
+      0.05,
+      5.47,
+      0.37
+    ],
+    "durationPct": [
+      {
+        "steps": 4,
+        "pct": 49.49
+      },
+      {
+        "steps": 2,
+        "pct": 29.47
+      },
+      {
+        "steps": 8,
+        "pct": 11.56
+      },
+      {
+        "steps": 6,
+        "pct": 3.94
+      },
+      {
+        "steps": 1,
+        "pct": 2.14
+      },
+      {
+        "steps": 16,
+        "pct": 1.26
+      },
+      {
+        "steps": 12,
+        "pct": 1.11
+      },
+      {
+        "steps": 3,
+        "pct": 1.01
+      },
+      {
+        "steps": 64,
+        "pct": 0
+      },
+      {
+        "steps": 5,
+        "pct": 0
+      },
+      {
+        "steps": 14,
+        "pct": 0
+      },
+      {
+        "steps": 42,
+        "pct": 0
+      }
+    ],
+    "bars": [
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            1
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            12,
+            1
+          ]
+        ],
+        "notes": 4,
+        "pct": 19.109
+      },
+      {
+        "cells": [
+          [
+            0,
+            2
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            12,
+            1
+          ]
+        ],
+        "notes": 3,
+        "pct": 6.58
+      },
+      {
+        "cells": [
+          [
+            0,
+            2
+          ],
+          [
+            8,
+            2
+          ]
+        ],
+        "notes": 2,
+        "pct": 6.36
+      },
+      {
+        "cells": [
+          [
+            0,
+            1.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            12,
+            1
+          ]
+        ],
+        "notes": 4,
+        "pct": 5.097
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            1
+          ],
+          [
+            8,
+            2
+          ]
+        ],
+        "notes": 3,
+        "pct": 4.785
+      },
+      {
+        "cells": [
+          [
+            0,
+            4
+          ]
+        ],
+        "notes": 1,
+        "pct": 4.447
+      },
+      {
+        "cells": [
+          [
+            0,
+            2
+          ]
+        ],
+        "notes": 1,
+        "pct": 4.198
+      },
+      {
+        "cells": [
+          [
+            0,
+            2
+          ],
+          [
+            12,
+            1
+          ]
+        ],
+        "notes": 2,
+        "pct": 3.023
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ]
+        ],
+        "notes": 1,
+        "pct": 2.837
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            0.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            12,
+            1
+          ]
+        ],
+        "notes": 5,
+        "pct": 2.591
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            1
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            12,
+            0.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 5,
+        "pct": 2.523
+      },
+      {
+        "cells": [
+          [
+            0,
+            3
+          ],
+          [
+            12,
+            1
+          ]
+        ],
+        "notes": 2,
+        "pct": 2.095
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            0.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            12,
+            0.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 6,
+        "pct": 1.536
+      },
+      {
+        "cells": [
+          [
+            0,
+            1.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            0.5
+          ],
+          [
+            10,
+            0.5
+          ],
+          [
+            12,
+            0.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 6,
+        "pct": 1.324
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            0.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            2
+          ]
+        ],
+        "notes": 4,
+        "pct": 1.186
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            1
+          ],
+          [
+            8,
+            1
+          ]
+        ],
+        "notes": 3,
+        "pct": 1.18
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            1
+          ],
+          [
+            8,
+            0.5
+          ],
+          [
+            10,
+            0.5
+          ],
+          [
+            12,
+            0.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 6,
+        "pct": 1.109
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            2
+          ],
+          [
+            12,
+            1
+          ]
+        ],
+        "notes": 3,
+        "pct": 1.079
+      },
+      {
+        "cells": [
+          [
+            0,
+            0.5
+          ],
+          [
+            2,
+            0.5
+          ],
+          [
+            4,
+            0.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            12,
+            1
+          ]
+        ],
+        "notes": 6,
+        "pct": 1.065
+      },
+      {
+        "cells": [
+          [
+            0,
+            2
+          ],
+          [
+            8,
+            1
+          ]
+        ],
+        "notes": 2,
+        "pct": 0.973
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            1
+          ]
+        ],
+        "notes": 2,
+        "pct": 0.955
+      },
+      {
+        "cells": [
+          [
+            0,
+            1.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            2
+          ]
+        ],
+        "notes": 3,
+        "pct": 0.914
+      },
+      {
+        "cells": [
+          [
+            0,
+            1.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            1.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 4,
+        "pct": 0.908
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            1
+          ],
+          [
+            8,
+            1.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 4,
+        "pct": 0.84
+      },
+      {
+        "cells": [
+          [
+            0,
+            2
+          ],
+          [
+            12,
+            0.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 3,
+        "pct": 0.838
+      },
+      {
+        "cells": [
+          [
+            0,
+            0.5
+          ],
+          [
+            2,
+            0.5
+          ],
+          [
+            4,
+            0.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            2
+          ]
+        ],
+        "notes": 5,
+        "pct": 0.833
+      },
+      {
+        "cells": [
+          [
+            0,
+            1.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            12,
+            0.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 5,
+        "pct": 0.833
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            1
+          ],
+          [
+            8,
+            0.5
+          ],
+          [
+            10,
+            0.5
+          ],
+          [
+            12,
+            1
+          ]
+        ],
+        "notes": 5,
+        "pct": 0.78
+      },
+      {
+        "cells": [
+          [
+            0,
+            0.5
+          ],
+          [
+            2,
+            0.5
+          ],
+          [
+            4,
+            0.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            0.5
+          ],
+          [
+            10,
+            0.5
+          ],
+          [
+            12,
+            0.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 8,
+        "pct": 0.764
+      },
+      {
+        "cells": [
+          [
+            0,
+            3
+          ]
+        ],
+        "notes": 1,
+        "pct": 0.738
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            0.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            0.5
+          ],
+          [
+            10,
+            0.5
+          ],
+          [
+            12,
+            0.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 7,
+        "pct": 0.673
+      },
+      {
+        "cells": [
+          [
+            0,
+            0.5
+          ],
+          [
+            2,
+            0.5
+          ],
+          [
+            4,
+            0.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            12,
+            0.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 7,
+        "pct": 0.661
+      },
+      {
+        "cells": [
+          [
+            0,
+            0.5
+          ],
+          [
+            2,
+            0.5
+          ]
+        ],
+        "notes": 2,
+        "pct": 0.568
+      },
+      {
+        "cells": [
+          [
+            0,
+            2
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            12,
+            0.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 4,
+        "pct": 0.486
+      },
+      {
+        "cells": [
+          [
+            4,
+            1
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            12,
+            1
+          ]
+        ],
+        "notes": 3,
+        "pct": 0.465
+      },
+      {
+        "cells": [
+          [
+            0,
+            2
+          ],
+          [
+            8,
+            1.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 3,
+        "pct": 0.42
+      },
+      {
+        "cells": [
+          [
+            0,
+            3
+          ],
+          [
+            12,
+            0.5
+          ],
+          [
+            14,
+            0.5
+          ]
+        ],
+        "notes": 3,
+        "pct": 0.418
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            3
+          ]
+        ],
+        "notes": 2,
+        "pct": 0.406
+      },
+      {
+        "cells": [
+          [
+            0,
+            0.5
+          ],
+          [
+            2,
+            0.5
+          ],
+          [
+            4,
+            1
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            12,
+            1
+          ]
+        ],
+        "notes": 5,
+        "pct": 0.4
+      },
+      {
+        "cells": [
+          [
+            0,
+            1
+          ],
+          [
+            4,
+            0.5
+          ],
+          [
+            6,
+            0.5
+          ],
+          [
+            8,
+            0.5
+          ],
+          [
+            10,
+            0.5
+          ],
+          [
+            12,
+            1
+          ]
+        ],
+        "notes": 6,
+        "pct": 0.382
+      }
+    ]
+  };
 
   // src/pure/roleshapes.js
   var ROLE_SHAPES = {
@@ -5846,6 +6781,31 @@ var __JBH_PURE = (() => {
       source: DRUM_CORPUS.source,
       name: name2,
       says: name2 + ". " + motion.says + ". " + slots.length + " slots: " + slots.map((s) => ROLES[s].label).join(", ") + ". Drums measured off " + style.id + " in the Groove corpus (" + style.takes + " performances, " + style.bars + " bars" + (style.thin ? ", THIN \u2014 few enough players that this is their habit rather than the style" : "") + "): " + (Object.keys(drew).length ? Object.keys(drew).map((k) => ROLES[k].label + " " + drew[k].g + " (" + Math.round(drew[k].share * 100) + "% of bars" + (drew[k].voice !== k ? ", played on the " + drew[k].voice : "") + ")").join(", ") : "none \u2014 no voice had a figure the corpus states clearly enough") + ". Composed: " + slots.filter((x) => !measured[x]).map((x) => ROLES[x].label).join(", ") + " (every pitched part, and any drum voice this style plays too variably to name a figure for)."
+    };
+  }
+  function melodyCellsFor(dens, opt) {
+    const o = opt || {};
+    const rows = MELODY_CELLS && MELODY_CELLS.bars || [];
+    if (!rows.length) return [];
+    const want = String(dens || "normal");
+    const MIN_FOR_HARMONY = o.minNotes == null ? 4 : Math.max(1, o.minNotes | 0);
+    if (want === "sparse") return [];
+    const band = want === "busy" ? ((n) => n >= 5) : ((n) => n >= 3 && n <= 4);
+    const strong = (cells) => cells.filter((c) => c[0] % 4 === 0).length;
+    const pool = rows.filter((r) => band(r.notes) && r.notes >= MIN_FOR_HARMONY && strong(r.cells) >= 2);
+    if (!pool.length) return [];
+    const cap = o.max == null ? 12 : Math.max(1, o.max | 0);
+    return pool.slice(0, cap).map((r) => r.cells.map((c) => [c[0], c[1]]));
+  }
+  function melodyCellSource() {
+    const m = MELODY_CELLS && MELODY_CELLS.measured || {};
+    return {
+      source: MELODY_CELLS && MELODY_CELLS.source,
+      tunes: m.tunes,
+      bars: m.bars,
+      notes: m.notes,
+      onsetPct: MELODY_CELLS && MELODY_CELLS.onsetPct || [],
+      durationPct: MELODY_CELLS && MELODY_CELLS.durationPct || []
     };
   }
 
@@ -19906,6 +20866,44 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       return Math.max(1, m);
     };
     const needGap = tb && tb.minGap ? tb.minGap : 1;
+    /* ---- THE MEASURED CELLS ARE NOT WIRED IN HERE, AND THAT IS THE
+       FINDING ----------------------------------------------------------
+       CELLS above is hand-authored and said so, and it was the last
+       unmeasured thing in the write path. scripts/study-cells.py now
+       measures the same thing properly — 78,556 duple-meter bars and
+       277,508 notes of the Essen Folksong Collection, as whole bars of
+       [step, beats], placement and duration together — and
+       melodyCellsFor() offers them. They are deliberately NOT added to
+       this pool.
+
+       Adding them broke a measured harmonic guarantee. Two browser
+       checks went red, against the norm that 94.6% of Bach sonorities
+       state a third:
+
+         and no bar is left without a third             3 bars of 12 candidates
+         and turning it off is still harmonically clean  2 bars with no third
+
+       Disabling the wiring and re-running confirmed the cause rather
+       than leaving it a suspicion. The reason is below this line: the
+       pitch assignment places a third on a strong beat, and with the
+       slots a different rhythm gives it, it runs out of places to put
+       one. THE GUARANTEE WAS IMPLICITLY COUPLED TO THE HAND-AUTHORED
+       LIBRARY IT WAS TUNED AGAINST. Nothing here states that it needs a
+       minimum number of slots, or slots on particular beats, and nothing
+       failed until a different set of rhythms arrived.
+
+       Two filters were tried on the cells — a four-note floor, then a
+       floor plus two strong beats. The first fixed the contour-on path
+       and left the contour-off one dropping thirds; the second fixed
+       neither. At that point the filters were chasing a number rather
+       than fixing a cause, which is the failure the longest section of
+       AGENTS.md is about, so this stops.
+
+       The fix belongs in the pitch assignment: state a third per bar
+       whatever slots exist, rather than relying on the rhythm to
+       cooperate. Until then melodyCellsFor() is reachable from the API
+       and from the page, the measurement stands on its own, and this
+       pool is the hand-authored one it always was. */
     const allCells = CELLS[role]||[];
     const fitCells = allCells.filter(c=>tightestGap(c)>=needGap);
     /* the loosest available, so a sound that fits nothing still gets

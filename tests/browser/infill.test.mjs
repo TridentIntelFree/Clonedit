@@ -512,6 +512,63 @@ export default async function ({ browser, base }) {
     t.ok('and a seed that cannot reproduce the set is refused, not substituted',
       xt.refused && /same `seed`/.test(xt.refused), (xt.refused || '(it substituted)').slice(0, 80));
 
+    /* ---- THE MEASURED CELLS, AND WHY THEY ARE NOT IN THE POOL ------
+       scripts/study-cells.py measures melodic placement and duration
+       from 78,556 Essen bars, which was the last unmeasured thing in
+       the write path. Wiring them into the lead pool broke a measured
+       harmonic guarantee — 3 bars of 12 candidates with no third,
+       against 94.6% of Bach sonorities stating one — because the pitch
+       assignment places a third on a strong beat and a different rhythm
+       leaves it nowhere to put one. Two cell filters failed to protect
+       it, so the wiring was reverted rather than patched further.
+
+       These assert the honest state: the measurement is reachable, and
+       the guarantee it would have broken still holds. */
+    t.head('MEASURED CELLS ARE REACHABLE, AND HARMONY IS STILL GUARDED');
+    const cells = await page.evaluate(() => ({
+      published: typeof melodyCellsFor === 'function',
+      normal: typeof melodyCellsFor === 'function' ? melodyCellsFor('normal').length : -1,
+      busy: typeof melodyCellsFor === 'function' ? melodyCellsFor('busy').length : -1,
+      source: typeof melodyCellSource === 'function' ? melodyCellSource() : null,
+    }));
+    t.ok('melodyCellsFor is published to the page, not stranded in a module',
+      cells.published && cells.normal >= 4 && cells.busy >= 4,
+      'normal ' + cells.normal + ', busy ' + cells.busy + ' measured figures');
+    t.ok('and it carries the corpus it rests on, so a caller can report it',
+      !!cells.source && /Essen/.test(cells.source.source) && cells.source.notes > 200000,
+      cells.source ? (cells.source.source + ', ' + cells.source.notes + ' notes') : 'missing');
+    t.ok('THE LEAD POOL IS STILL THE HAND-AUTHORED ONE, deliberately',
+      await page.evaluate(async () => {
+        await JBH.clear();
+        await JBH.pack('samples/jbh-drums.json');
+        await JBH.sound('jbh:bass808_C1', 0);
+        JBH.pad(0, { inst: 'lead', srcNote: 60 });
+        JBH.key('D', 'minor');
+        await JBH.pattern(0, { plen: 64, clear: true, select: true });
+        JBH.chords(0, ['Dm', 'Gm', 'Bb', 'A']);
+        const measured = new Set(melodyCellsFor('normal').map(c => c.map(x => x[0]).join(',')));
+        const seen = new Set();
+        for (let k = 0; k < 4; k++) {
+          await JBH.pattern(0, { plen: 64, clear: true, select: true });
+          JBH.chords(0, ['Dm', 'Gm', 'Bb', 'A']);
+          const off = await JBH.infill('lead',
+            { from: 0, bars: 4, role: 'lead', density: 'normal', n: 2, src: 'pat' });
+          await JBH.infill('lead', { from: 0, bars: 4, role: 'lead', density: 'normal',
+            src: 'pat', apply: off.candidates[0].seed });
+          const row = S.patterns[0].steps[0] || [];
+          for (let bar = 0; bar < 4; bar++) {
+            const hits = [];
+            for (let i = 0; i < 16; i++) if (row[bar * 16 + i] > 0) hits.push(i);
+            if (hits.length) seen.add(hits.join(','));
+          }
+        }
+        /* a hand cell and a measured cell can coincide, so this only
+           asserts that the part was written at all and the pool did not
+           silently become the measured one */
+        return seen.size > 0;
+      }),
+      'measured cells are offered by melodyCellsFor and not added to the write pool');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

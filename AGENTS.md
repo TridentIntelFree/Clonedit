@@ -740,6 +740,14 @@ on to measure and report the untouched one. Pin `S.editPad` around the
 call and put it back. It also clears `inst` and `srcNote` — the tape()
 trap below — so restore those too.
 
+**`npm run build` RUNS THE TESTS FIRST AND ABORTS ON A FAILURE, so a
+build that printed a test summary built nothing.** Three times in one
+session a browser suite was run against a stale `index.html` because of
+this, and once it would have produced a false PASS for the fix being
+tested. The tell is the word `published` in the output; without it,
+`index.html` is whatever it was before. The wider rule: check that the
+thing you are measuring is the thing you just changed.
+
 **A sample pack can lie about pitch.** VSCO-2 CE names every file an
 octave below what it sounds, and is not consistent with itself: one solo
 violin folder uses scientific pitch and another folder of the same
@@ -1269,6 +1277,7 @@ thing they are about:
 - [The kit was assigned by pad index, and A01 never played](docs/findings.md#the-kit-was-assigned-by-pad-index-and-a01-never-played)
 - [Bend to my will: the knob search was the wrong mechanism](docs/findings.md#bend-to-my-will-the-knob-search-was-the-wrong-mechanism)
 - [Higher-order Markov and pink noise: measured, and already there](docs/findings.md#higher-order-markov-and-pink-noise-measured-and-already-there)
+- [Duration and placement, measured — and the guarantee they broke](docs/findings.md#duration-and-placement-measured--and-the-guarantee-they-broke)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

@@ -36,6 +36,8 @@ import { DRUM_CORPUS } from './grooves.js';
 /* the measured colour of each job — see ROLE_TARGETS for the numbers
    and where they came from */
 import { ROLE_TARGETS, roleFit } from './padprofile.js';
+/* measured melodic placement and duration — see melodyCellsFor below */
+import { MELODY_CELLS } from './cells.js';
 
 /* ---- THE SLOT VOCABULARY ------------------------------------------
    Each slot says what job it does and what a sound has to be able to do
@@ -507,4 +509,107 @@ export function makeRecipe(seed, opt) {
       + ' (every pitched part, and any drum voice this style plays too '
       + 'variably to name a figure for).',
   };
+}
+
+/* ---- MELODIC RHYTHM CELLS, MEASURED ---------------------------------
+
+   The cell library in mlWrite() is hand-authored and its own comment
+   says so: "each is something a player would actually do". It was the
+   last unmeasured thing in the write path — melody intervals come from
+   8,514 Essen folksongs, harmony from 370 Bach chorales, counterpoint
+   from 70 Palestrina scores, drum figures from 1,138 Groove MIDI takes,
+   and the rhythm of a melodic part came from somebody's judgement.
+
+   scripts/study-cells.py measures it: 78,556 duple-meter bars and
+   277,508 notes of the same Essen collection, as whole bars of
+   [step, beats] — placement and duration TOGETHER, because separately
+   they mean nothing. A duration drawn from any distribution, pink noise
+   included, has the right histogram and does not know where the
+   downbeat is, which is the mistake AGENTS.md records as HOLLOWAY's
+   audible stumble.
+
+   What the corpus says about the hand library, per note, is uncomfortable
+   and is not a verdict:
+
+     role   mean placement support   mean duration support
+     lead            12.5%                   19.9%
+     bass            16.1%                   29.9%
+     arp             13.7%                   22.8%
+
+   against a corpus that puts 81.1% of its onsets on the four quarter
+   positions. The lead cells lean on 0.75-beat notes (1.01% of real
+   notes), step 11 (0.28%) and step 3 (0.42%).
+
+   IT IS NOT A VERDICT BECAUSE THE CORPUS IS GERMAN FOLK SONG, which is
+   rhythmically plainer than almost anything this app is used for.
+   Syncopation being rare in Essen is a fact about Essen. Its commonest
+   bar is four quarter notes at 19.1% of all bars, and a library that
+   replaced the hand cells with the corpus favourites would make every
+   lead plainer, not better — the Goodhart failure the longest section of
+   AGENTS.md is about, arrived at by diligence.
+
+   SO THIS WIDENS THE POOL RATHER THAN REPLACING IT. The hand cells stay,
+   these are added, and the choice is banded by DENSITY so a busy part
+   cannot be handed the commonest-and-plainest bar just because it is
+   commonest. Nothing is optimised toward a number; the pool gets more
+   figures that humans actually played. */
+export function melodyCellsFor(dens, opt) {
+  const o = opt || {};
+  const rows = (MELODY_CELLS && MELODY_CELLS.bars) || [];
+  if (!rows.length) return [];
+  const want = String(dens || 'normal');
+
+  /* A BAR NEEDS ENOUGH NOTES TO STATE A CHORD, and this floor was
+     learnt the hard way. infill() puts a third on a strong beat, and
+     with two or three slots it can run out of places to put one:
+     offering these cells without a floor left 3 bars of 12 candidates
+     with NO THIRD AT ALL, against the measured norm that 94.6% of Bach
+     sonorities state one. The browser suite caught it, and disabling the
+     wiring confirmed the cause rather than leaving it a suspicion.
+
+     The guarantee turned out to be implicitly coupled to the
+     hand-authored library it was tuned against — that is a real
+     fragility in infill() and worth fixing there one day. Until then
+     this does not hand it rhythms it cannot harmonise.
+
+     Two notes in a bar is a legitimate MELODIC bar and not a legitimate
+     HARMONIC one, so the floor lives here and not in the table, which
+     stays a record of what was measured. */
+  const MIN_FOR_HARMONY = o.minNotes == null ? 4 : Math.max(1, o.minNotes | 0);
+
+  /* BANDED BY NOTES PER BAR, not by share. Choosing by share alone
+     returns the same two bars for every part in every track.
+
+     SPARSE GETS NOTHING ON PURPOSE. Its band is bars of one or two
+     notes, every one of which is under the harmonic floor, so rather
+     than quietly widening the band — which is what an earlier version
+     did, handing `sparse` six-note bars and making it busier than
+     `normal` — it returns nothing and the hand-authored cells cover
+     that density by themselves. */
+  if (want === 'sparse') return [];
+  const band = want === 'busy' ? (n => n >= 5) : (n => n >= 3 && n <= 4);
+  /* AND TWO STRONG BEATS, so a root and a third can both land where
+     infill() wants to put them. The note floor alone fixed the
+     contour-on path and left the contour-off one still dropping thirds,
+     which says the problem is WHERE the slots are and not only how many.
+     A bar with notes on two of the four quarter positions has somewhere
+     to state a chord; one that syncopates across all of them does not,
+     however many notes it has. */
+  const strong = cells => cells.filter(c => c[0] % 4 === 0).length;
+  const pool = rows.filter(r => band(r.notes) && r.notes >= MIN_FOR_HARMONY
+    && strong(r.cells) >= 2);
+  if (!pool.length) return [];
+  const cap = o.max == null ? 12 : Math.max(1, o.max | 0);
+  return pool.slice(0, cap).map(r => r.cells.map(c => [c[0], c[1]]));
+}
+
+/* WHAT THE MEASUREMENT RESTS ON, for anything that wants to report it
+   rather than just use it. A table nobody can print is this repo's
+   recurring fault wearing another hat. */
+export function melodyCellSource() {
+  const m = (MELODY_CELLS && MELODY_CELLS.measured) || {};
+  return { source: MELODY_CELLS && MELODY_CELLS.source,
+    tunes: m.tunes, bars: m.bars, notes: m.notes,
+    onsetPct: (MELODY_CELLS && MELODY_CELLS.onsetPct) || [],
+    durationPct: (MELODY_CELLS && MELODY_CELLS.durationPct) || [] };
 }

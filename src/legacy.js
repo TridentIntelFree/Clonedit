@@ -11395,6 +11395,44 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       return Math.max(1, m);
     };
     const needGap = tb && tb.minGap ? tb.minGap : 1;
+    /* ---- THE MEASURED CELLS ARE NOT WIRED IN HERE, AND THAT IS THE
+       FINDING ----------------------------------------------------------
+       CELLS above is hand-authored and said so, and it was the last
+       unmeasured thing in the write path. scripts/study-cells.py now
+       measures the same thing properly — 78,556 duple-meter bars and
+       277,508 notes of the Essen Folksong Collection, as whole bars of
+       [step, beats], placement and duration together — and
+       melodyCellsFor() offers them. They are deliberately NOT added to
+       this pool.
+
+       Adding them broke a measured harmonic guarantee. Two browser
+       checks went red, against the norm that 94.6% of Bach sonorities
+       state a third:
+
+         and no bar is left without a third             3 bars of 12 candidates
+         and turning it off is still harmonically clean  2 bars with no third
+
+       Disabling the wiring and re-running confirmed the cause rather
+       than leaving it a suspicion. The reason is below this line: the
+       pitch assignment places a third on a strong beat, and with the
+       slots a different rhythm gives it, it runs out of places to put
+       one. THE GUARANTEE WAS IMPLICITLY COUPLED TO THE HAND-AUTHORED
+       LIBRARY IT WAS TUNED AGAINST. Nothing here states that it needs a
+       minimum number of slots, or slots on particular beats, and nothing
+       failed until a different set of rhythms arrived.
+
+       Two filters were tried on the cells — a four-note floor, then a
+       floor plus two strong beats. The first fixed the contour-on path
+       and left the contour-off one dropping thirds; the second fixed
+       neither. At that point the filters were chasing a number rather
+       than fixing a cause, which is the failure the longest section of
+       AGENTS.md is about, so this stops.
+
+       The fix belongs in the pitch assignment: state a third per bar
+       whatever slots exist, rather than relying on the rhythm to
+       cooperate. Until then melodyCellsFor() is reachable from the API
+       and from the page, the measurement stands on its own, and this
+       pool is the hand-authored one it always was. */
     const allCells = CELLS[role]||[];
     const fitCells = allCells.filter(c=>tightestGap(c)>=needGap);
     /* the loosest available, so a sound that fits nothing still gets

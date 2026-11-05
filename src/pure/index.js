@@ -25,6 +25,12 @@ export * from './timbre.js';
    PAD INDEX, so a hat on A01 got the kick figure and every check in the
    repo passed. Identity is spectral and nothing here was looking. */
 export * from './padprofile.js';
+/* WHERE MELODIC NOTES FALL AND HOW LONG THEY ARE, measured from 78,556
+   Essen bars by scripts/study-cells.py. The rhythm cell library was
+   hand-authored and was the last unmeasured thing in the write path.
+   Placement and duration together, because separately they mean
+   nothing. */
+export * from './cells.js';
 /* THE MEAN SPECTRUM OF EACH JOB, measured from a labelled pack by
    scripts/study-role-shapes.mjs. ROLE_TARGETS recognises a sound with
    two numbers, which cannot specify nine bands — making one needs

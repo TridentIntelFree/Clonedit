@@ -3028,3 +3028,153 @@ What would actually help there is a measured duration-and-placement
 distribution from a real corpus, the way `grooves.js` was measured for
 drums. The Groove MIDI Dataset is already local and already carries
 timing.
+
+## Duration and placement, measured — and the guarantee they broke
+
+The pink-noise suggestion pointed at a real gap even though pink noise
+was the wrong tool for it. The rhythm cell library in `mlWrite()` was
+hand-authored and said so — "each is something a player would actually
+do" — and it was the last unmeasured thing in the write path. Melody
+intervals come from 8,514 Essen folksongs, harmony from 370 Bach
+chorales, counterpoint from 70 Palestrina scores, drum figures from
+1,138 Groove MIDI takes. The rhythm of a melodic part came from
+somebody's judgement.
+
+**The corpus had to be the right one, and the one I suggested was
+wrong.** I proposed the Groove MIDI Dataset because it was already
+local. Groove MIDI is DRUMS: a hit has an onset and no played duration —
+a kick's note-off means nothing — so it can answer placement and cannot
+answer duration. The Essen Folksong Collection is monophonic melody with
+notated durations, and it ships inside music21's corpus as ABC, which is
+what `scripts/study-melody.py` already parses.
+
+`scripts/study-cells.py` measures both together, as whole bars:
+**8,514 tunes, 78,556 duple-meter bars, 277,508 notes.**
+
+```
+ONSET BY STEP (% of notes)
+   0  27.99  ##################
+   4  14.92  ##########
+   8  20.75  ##############
+  12  17.42  ############
+   2   2.60   6   6.76   10   2.48   14   5.47
+  odd sixteenths: 1.6% in total
+  on the quarter: 81.1%
+
+DURATION (% of notes)
+   4 steps (quarter)  49.49
+   2 steps (eighth)   29.47
+   8 steps (half)     11.56
+   6 steps            3.94
+   3 steps            1.01
+
+COMMONEST WHOLE BARS
+  19.109%  0:1 4:1 8:1 12:1
+   6.580%  0:2 8:1 12:1
+   6.360%  0:2 8:2
+   5.097%  0:1.5 6:0.5 8:1 12:1
+```
+
+Only duple meters are in there. A 16-step bar divides into 2, 4, 8 and
+16 and does not divide into 3, so 3,249 odd-meter tunes were counted and
+excluded rather than squeezed onto a grid that cannot hold them — a 3/4
+bar stretched over 16 steps is a bar nobody played. Triple feels are
+what `poly()` and the FEEL cross-rhythm are for.
+
+### What it says about the hand library, and why that is not a verdict
+
+Per note, against a corpus that puts 81.1% of its onsets on the four
+quarter positions:
+
+```
+role   mean placement support   mean duration support
+lead            12.5%                   19.9%
+bass            16.1%                   29.9%
+arp             13.7%                   22.8%
+```
+
+The lead cells lean on 0.75-beat notes (1.01% of real notes), step 11
+(0.28%) and step 3 (0.42%).
+
+**That is a fact about Essen, not a verdict on the cells.** The corpus is
+German folk song, which is rhythmically plainer than almost anything this
+app gets used for; syncopation being rare in it is a property of it. Its
+commonest bar is four quarter notes at 19.1% of all bars, so a library
+that replaced the hand cells with the corpus favourites would make every
+lead plainer rather than better — the Goodhart failure the longest
+section of AGENTS.md is about, arrived at by diligence.
+
+The intent was to ADD the measured cells to the pool rather than
+substitute them, banded by density so a busy part could not be handed
+the commonest-and-plainest bar for being commonest, and for the lead
+role only — the corpus is monophonic folk MELODY, which is what a tune
+is and is not what a bass line or an arpeggio is.
+
+It worked, briefly and verifiably: a lead part played `0,6,8,12`, which
+is the Essen figure `0:1.5 6:0.5 8:1 12:1` at 5.1% of real bars and is
+not any hand cell. **And then it turned out to cost something that
+matters more, so it is not wired in. The next section is why.**
+
+### THE INTERESTING PART: it broke a measured harmonic guarantee
+
+Wiring the cells in turned two browser checks red:
+
+```
+✗ and no bar is left without a third                 3 bars across 12 candidates
+✗ and turning it off is still harmonically clean     1 bar with no third
+```
+
+Against the measured norm that 94.6% of Bach sonorities state a third.
+Disabling the wiring and re-running confirmed the cause rather than
+leaving it a suspicion.
+
+`infill()` places a third on a strong beat, and with the slots a
+different rhythm gives it, it runs out of places to put one. **The
+guarantee was implicitly coupled to the hand-authored library it had
+been tuned against** — nothing in `infill()` states that it needs a
+minimum number of slots, or slots on particular beats, and nothing
+failed until a different set of rhythms arrived.
+
+**Two filters were tried on the cells, and neither was the fix.**
+
+A four-note floor, on the reasoning that a bar needs slots to state a
+chord, cleared the contour-on path and left the contour-off one still
+dropping thirds. Then a floor plus a requirement of two strong beats, on
+the reasoning that it is WHERE the slots are and not only how many —
+that fixed neither.
+
+And the first of those was briefly worse than the bug it chased:
+applying the floor as a filter on top of the density bands collided with
+`sparse`, whose bars are all one or two notes. Every candidate failed
+the floor, the empty-band fallback widened the search, and `sparse` came
+back with SIX-note bars, busier than `normal`. Its own unit test caught
+that.
+
+**So the wiring was reverted rather than patched a third time.** Two
+attempts in, the filters had stopped fixing a cause and started chasing
+a red check, which is exactly the failure the longest section of
+AGENTS.md is about — and the thing being traded away was a measured
+harmonic norm in exchange for rhythmic variety, which is the wrong
+direction. A sparser lead that always states its harmony beats a
+more interesting one that sometimes does not.
+
+What stands: the corpus, `scripts/study-cells.py`, `src/pure/cells.js`,
+`melodyCellsFor()` and `melodyCellSource()` published to the page, and
+11 unit tests over the table and the selector. What does not: the line
+in `mlWrite()` that added them to the pool. The comment there says why,
+at length, so the next person does not rediscover it.
+
+**The real fix is in `infill()`**, not in the cells: state a third per
+bar whatever slots exist, rather than relying on the rhythm to
+cooperate. That is a change to the pitch assignment with its own
+regression risk and it deserves its own pass, not a corner of this
+one.
+
+### And the build-aborts-look-like-builds trap, for the third time
+
+`npm run build` runs the unit tests first. Twice more in this session a
+browser suite was run against a stale `index.html` because the build had
+aborted on a unit test broken a minute earlier, and `tail -3` showed a
+test summary rather than a build summary. The second time it would have
+produced a false PASS for the very fix being tested. The tell is the word
+`published` in the build output; if it is not there, nothing was built.
