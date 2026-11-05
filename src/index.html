@@ -434,18 +434,14 @@ someone else's.</p>
   </label>
   <h3>SAMPLE PACKS <span style="color:var(--txt-dim);letter-spacing:0">&mdash; downloaded once, stored on-device, used offline</span></h3>
   <div class="row">
+    <!-- GENERATED AT STARTUP from src/pure/sampleindex.js, which is itself
+         generated from the manifests in samples/. It used to be twelve
+         hand-written options, and two packs that existed in samples/ were
+         simply never added to it — so foundkit and darkkit, which AGENTS.md
+         documents at length, could not be loaded by anybody. The <option>
+         below is a placeholder so the control is never empty. -->
     <select aria-label="Sample pack" id="packPick" class="grow">
-      <option value="samples/salamander.json">&#9733; Salamander Grand Piano &mdash; 6 dynamics (CC-BY)</option>
-      <option value="samples/vsco-orch.json">&#9733; VSCO-2 Orchestra &mdash; 18 instruments, velocity layers (CC0)</option>
-      <option value="samples/vcsl-mallets.json">&#9733; Mallets, Bells &amp; Metal &mdash; vibraphone, glass, kalimba (CC0)</option>
-      <option value="samples/vcsl-wide.json">&#9733; VCSL Wide &mdash; Steinway, harpsichord, harps, sax, timpani, congas (CC0)</option>
-      <option value="samples/vsco-real.json">Cello + Acoustic Drums (CC0)</option>
-      <option value="samples/real-cc0-full.json">Full Kit &mdash; Drums + Real Instruments (CC0)</option>
-      <option value="samples/real-cc0.json">Real Instruments &middot; Core (CC0)</option>
-      <option value="samples/nakeddrums.json">Naked Drums &mdash; velocity layers + 3 takes (CC BY)</option>
-      <option value="samples/jbh-drums.json">JBH Drums &mdash; Kit One (synth, CC0)</option>
-      <option value="samples/manifest.json">JBH Studio (synth)</option>
-      <option value="custom">From a URL&hellip;</option>
+      <option value="samples/salamander.json">Loading the pack list&hellip;</option>
     </select>
     <button id="btnPackLoad" class="needsnet" title="Fetch the pack index">LOAD</button>
   </div>
@@ -478,6 +474,17 @@ so a wrong guess is visible.</p>
     <p>A pack&rsquo;s own <span class="lit">.json</span> manifest still works.
 Imported audio is stored on this device only; it is not uploaded anywhere.</p>
   </div></details>
+  <!-- FIND A SOUND. There was no filter anywhere: VCSL Wide renders 1,045
+       rows into this box, and because only one pack is loaded at a time,
+       nothing told you which of the twelve held a cello. This searches the
+       loaded pack AND every other one, from a baked index, so it answers
+       both questions and works with no connection. -->
+  <div class="row">
+    <input type="search" id="packFind" class="grow" placeholder="find a sound &mdash; cello, kick, harp&hellip;"
+      aria-label="Find a sound in any pack" spellcheck="false" autocapitalize="off">
+    <button id="btnPackFindX" title="clear the search">&#215;</button>
+  </div>
+  <div id="packFindOther"></div>
   <div id="packList" style="max-height:210px;overflow-y:auto;margin:6px 0"></div>
   <h3>MY DOWNLOADS <span style="color:var(--txt-dim);letter-spacing:0">— every sound saved on this device, from any pack</span></h3>
   <div class="row">

@@ -2852,7 +2852,7 @@
    check by construction. scripts/check-build-label.mjs therefore CHECKS
    it instead, in CI, where HEAD is the commit being shipped and the
    arithmetic is exact. R = commits on main minus 9. */
-const BUILD = 'JBH-88 · R279 · 2026-11-05 · a flaky check made exact — no app change in this one';
+const BUILD = 'JBH-88 · R280 · 2026-11-05 · find a sound in any pack, and the pack list builds itself';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -18858,16 +18858,107 @@ async function updateStoreMeter(){
   }catch(e){ txt=packHaveKeys.size+' samples on device'; }
   $('packStore').textContent=txt;
 }
+/* THE PICKER IS GENERATED, AND THAT IS THE WHOLE POINT.
+
+   Twelve <option> elements were written by hand in the markup, and adding a
+   manifest to samples/ and adding an option here are two separate acts.
+   Nobody did the second one twice, so `foundkit` and `darkkit` — which
+   AGENTS.md devotes a section to, down to their onset fields — existed on
+   disk, loaded fine over the API, and could not be reached by a person at
+   all.
+
+   Built from SAMPLE_PACKS, which scripts/build-sample-index.mjs generates
+   from samples/ and refuses to generate for a manifest it has no shelf
+   for. A new pack now either appears here or fails the build; it cannot
+   quietly do neither. Counts are measured rather than typed, so a name
+   like "18 instruments" cannot drift from the file it describes. */
+function buildPackPicker(){
+  const sel=$('packPick'); if(!sel || typeof SAMPLE_PACKS==='undefined') return;
+  const want=sel.value;
+  sel.innerHTML='';
+  for(const shelf of SHELF_ORDER){
+    const mine=SAMPLE_PACKS.filter(p=>p.shelf===shelf);
+    if(!mine.length) continue;
+    const g=document.createElement('optgroup'); g.label=shelf;
+    /* starred first, then biggest: the recommended one should be the one
+       your eye lands on, and after that more sounds is the better guess */
+    for(const p of mine.sort((a,b)=>(b.star?1:0)-(a.star?1:0) || b.n-a.n)){
+      const o=document.createElement('option');
+      o.value=p.file;
+      o.textContent=(p.star?'★ ':'')+p.name+' · '+p.n+' sounds — '+p.note;
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
+  }
+  const o=document.createElement('option'); o.value='custom';
+  o.textContent='From a URL… (.json or .sfz)'; sel.appendChild(o);
+  if(want && [...sel.options].some(x=>x.value===want)) sel.value=want;
+}
+
+/* What the FIND box holds. Kept out of the manifest so clearing the box
+   restores the full list without a reload. */
+let packQuery='';
+
+/* SOUNDS IN THE PACKS YOU HAVE NOT LOADED.
+
+   Only one manifest is in memory at a time, so before this the answer to
+   "which pack has a cello" was to load each of twelve and look. This reads
+   the baked index instead and offers the pack, because the useful answer
+   to that question is a pack as much as it is a sound. */
+function drawPackFindOther(){
+  const box=$('packFindOther'); if(!box) return;
+  box.innerHTML='';
+  if(!packQuery || typeof findInstruments!=='function') return;
+  const here=packManifest&&packManifest._url;
+  const hits=findInstruments(packQuery,40).filter(h=>h.pack.file!==here);
+  if(!hits.length) return;
+  /* one row per PACK, naming what matched in it — twenty rows all saying
+     "VCSL Wide" is a list of one fact repeated */
+  const byPack=new Map();
+  for(const h of hits){
+    const e=byPack.get(h.pack.file)||{pack:h.pack,inst:[],n:0};
+    if(e.inst.length<4) e.inst.push(h.inst);
+    e.n+=h.n; byPack.set(h.pack.file,e);
+  }
+  const hd=document.createElement('div'); hd.className='packhdr';
+  hd.textContent='IN OTHER PACKS — '+byPack.size+(byPack.size===1?' pack':' packs');
+  box.appendChild(hd);
+  for(const e of byPack.values()){
+    const row=document.createElement('div'); row.className='packrow';
+    const cat=document.createElement('span'); cat.className='pcat'; cat.textContent=e.n;
+    const nm=document.createElement('span'); nm.className='pnm';
+    nm.textContent=e.pack.name+' — '+e.inst.join(', ');
+    const go=document.createElement('button'); go.textContent='LOAD';
+    go.addEventListener('click',()=>{ $('packPick').value=e.pack.file;
+      $('packUrl').value=e.pack.file; loadPack(); });
+    row.append(cat,nm,go); box.appendChild(row);
+  }
+}
+
 function drawPackList(){
   const el=$('packList'); el.innerHTML='';
+  try{ drawPackFindOther(); }catch(e){}
   if(!packManifest || !packManifest.samples || !packManifest.samples.length){
     el.innerHTML='<div class="packhdr">No pack loaded. Enter a manifest URL and tap LOAD PACK (online), or reopen to see downloaded samples.</div>';
     return;
   }
+  /* FILTERED, because a pack can be a thousand rows. VCSL Wide put 1,045
+     of them in a 210px box with no way to narrow it. */
+  const q=packQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown=packManifest.samples.filter(sm=>!q.length || q.every(w=>
+    (sm.name||'').toLowerCase().includes(w) || (sm.cat||'').toLowerCase().includes(w)
+    || (sm.id||'').toLowerCase().includes(w)));
   const hd=document.createElement('div'); hd.className='packhdr';
-  hd.textContent=(packManifest.name||'PACK')+' — '+packManifest.samples.length+' samples';
+  hd.textContent=(packManifest.name||'PACK')+' — '
+    +(q.length? shown.length+' of '+packManifest.samples.length+' samples match'
+             : packManifest.samples.length+' samples');
   el.appendChild(hd);
-  packManifest.samples.forEach(sm=>{
+  if(q.length && !shown.length){
+    const d=document.createElement('div'); d.className='packhdr';
+    d.textContent='Nothing in this pack matches. Any match in another pack is listed above.';
+    el.appendChild(d);
+  }
+  shown.forEach(sm=>{
     const have=packHaveKeys.has(LIBKEY(sm.id));
     const row=document.createElement('div'); row.className='packrow'+(have?' have':'');
     const cat=document.createElement('span'); cat.className='pcat'; cat.textContent=sm.cat||'';
@@ -18976,6 +19067,19 @@ $('packPick').addEventListener('change',e=>{
   else{ $('packUrlRow').style.display='none'; $('packUrl').value=v; }
 });
 $('btnPackLoad').addEventListener('click',loadPack);
+/* Built once the page is up. Not at module top level: SAMPLE_PACKS arrives
+   with the pure bundle, which is assigned onto globalThis before the engine
+   runs, but the <select> has to exist too. */
+try{ buildPackPicker(); }catch(e){}
+{
+  /* FIND A SOUND. Debounced lightly — each keystroke rebuilds two lists,
+     and on a thousand-row pack that is enough work to feel on a phone. */
+  let findT=0;
+  const run=()=>{ packQuery=$('packFind').value.trim();
+    try{ drawPackList(); }catch(e){} };
+  $('packFind').addEventListener('input',()=>{ clearTimeout(findT); findT=setTimeout(run,120); });
+  $('btnPackFindX').addEventListener('click',()=>{ $('packFind').value=''; run(); $('packFind').focus(); });
+}
 /* ---------------- IMPORTING A PACK FROM THE DEVICE ------------------------
 
    Every instrument added here so far cost an afternoon of working out where
