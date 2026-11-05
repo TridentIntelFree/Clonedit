@@ -95,6 +95,33 @@ export default async function ({ browser, base }) {
       notes.length + ' pads, notes ' + (notes.join(',') || 'none'));
     t.ok('and the tempo came with the kit', kit.bpm === 100, 'bpm ' + kit.bpm);
 
+    t.head('AND THE KIT STAGES ITS OWN LEVELS');
+    /* CHAMBER first shipped with a 22dB peak spread across its own pads —
+       cello at -20.5dBFS against a glockenspiel at -42.2 — so a part
+       written on it was fifteen decibels out of balance before anybody
+       touched a fader. Gain is a multiplier on whatever the pad holds and
+       these sources differ enormously on disk, so a kit that does not
+       stage itself has shipped a mixing problem as a feature. */
+    const lev = await page.evaluate(() => {
+      const rows = [];
+      for (let i = 0; i < 64; i++) { const p = S.pads[i];
+        if (p.bufId >= 0 && p.role) {
+          const raw = 20 * Math.log10(Math.max(bufPeak(S.buffers[p.bufId]), 1e-9));
+          rows.push({ raw, after: raw + 20 * Math.log10(Math.max(p.gain, 1e-9)), gain: p.gain });
+        } }
+      return rows;
+    });
+    const sp = a => Math.max(...a) - Math.min(...a);
+    const before = sp(lev.map(r => r.raw)), after = sp(lev.map(r => r.after));
+    t.ok('the staged spread is tighter than the raw one', after < before - 3,
+      before.toFixed(1) + 'dB raw -> ' + after.toFixed(1) + 'dB staged');
+    t.ok('and no pad was given a gain the engine cannot set',
+      lev.every(r => r.gain > 0 && r.gain <= 2),
+      'gains ' + lev.map(r => r.gain.toFixed(2)).join(', ').slice(0, 60));
+    t.ok('a kit that had to clamp says so rather than looking staged',
+      !/too quiet on disk/.test(kit.lcd) || /spread closed/.test(kit.lcd),
+      (kit.lcd || '').slice(0, 130));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {

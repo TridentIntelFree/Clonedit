@@ -90,3 +90,6 @@ export * from './sampleindex.js';
    instead of guessing it from the spectrum. Validated against the
    manifests by scripts/check-sample-kits.mjs. */
 export * from './samplekits.js';
+/* stage every pad in a kit from its own measured peak, so a kit does
+   not arrive with a 22dB spread across its own sounds */
+export * from './staging.js';

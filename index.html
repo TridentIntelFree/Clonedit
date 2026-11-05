@@ -2988,6 +2988,7 @@ var __JBH_PURE = (() => {
     BANDS: () => BANDS,
     CONTROL_FOR: () => CONTROL_FOR,
     DRUM_CORPUS: () => DRUM_CORPUS,
+    GAIN_MAX: () => GAIN_MAX,
     GLOSS: () => GLOSS,
     GROOVES: () => GROOVES,
     KIT_DRUM_ROLES: () => KIT_DRUM_ROLES,
@@ -3109,6 +3110,7 @@ var __JBH_PURE = (() => {
     sfzRoundRobin: () => sfzRoundRobin,
     sixteenthSec: () => sixteenthSec,
     snapSemitone: () => snapSemitone,
+    stagePads: () => stagePads,
     stepHasLock: () => stepHasLock,
     stepLock: () => stepLock,
     stepMs: () => stepMs,
@@ -5491,17 +5493,17 @@ var __JBH_PURE = (() => {
     const out = new Float64Array(nBins);
     for (let k = 0; k < nBins; k++) {
       const x = oct(Math.max(binHz, k * binHz));
-      let db;
-      if (x <= pts[0].at) db = pts[0].db;
-      else if (x >= pts[pts.length - 1].at) db = pts[pts.length - 1].db;
+      let db2;
+      if (x <= pts[0].at) db2 = pts[0].db;
+      else if (x >= pts[pts.length - 1].at) db2 = pts[pts.length - 1].db;
       else {
         let j = 1;
         while (j < pts.length && pts[j].at < x) j++;
         const a = pts[j - 1], b = pts[j];
         const t = (x - a.at) / Math.max(1e-9, b.at - a.at);
-        db = a.db + (b.db - a.db) * t;
+        db2 = a.db + (b.db - a.db) * t;
       }
-      out[k] = Math.pow(10, db / 20);
+      out[k] = Math.pow(10, db2 / 20);
     }
     return out;
   }
@@ -5666,18 +5668,18 @@ var __JBH_PURE = (() => {
     }
     const rms = Math.sqrt(sumsq / n);
     const dc = sum / n;
-    const db = (x) => x > 0 ? +(20 * Math.log10(x)).toFixed(1) : -Infinity;
+    const db2 = (x) => x > 0 ? +(20 * Math.log10(x)).toFixed(1) : -Infinity;
     const faults = [];
     const silent = peak < 1e-3;
     if (silent) faults.push("silent");
     if (clipRuns > 0) faults.push("clipped");
     if (Math.abs(dc) > 0.01) faults.push("dc");
-    const says = silent ? "nothing audible in the take \u2014 peak is " + db(peak) + "dBFS. Check the input, the arm and the mic permission before playing it again." : faults.length ? "usable but faulty: " + (clipRuns ? clipRuns + " clipped runs (longest " + longest + " samples) \u2014 that is distortion, not loudness. " : "") + (Math.abs(dc) > 0.01 ? "a DC offset of " + dc.toFixed(3) + " is eating headroom and will skew every level reading. " : "") : "the take is clean: peak " + db(peak) + "dBFS, rms " + db(rms) + "dBFS, no clipping and no offset.";
+    const says = silent ? "nothing audible in the take \u2014 peak is " + db2(peak) + "dBFS. Check the input, the arm and the mic permission before playing it again." : faults.length ? "usable but faulty: " + (clipRuns ? clipRuns + " clipped runs (longest " + longest + " samples) \u2014 that is distortion, not loudness. " : "") + (Math.abs(dc) > 0.01 ? "a DC offset of " + dc.toFixed(3) + " is eating headroom and will skew every level reading. " : "") : "the take is clean: peak " + db2(peak) + "dBFS, rms " + db2(rms) + "dBFS, no clipping and no offset.";
     return {
       seconds: +(n / sampleRate).toFixed(3),
       peak: +peak.toFixed(4),
-      peakDb: db(peak),
-      rmsDb: db(rms),
+      peakDb: db2(peak),
+      rmsDb: db2(rms),
       dc: +dc.toFixed(4),
       clipRuns,
       longestClipRun: longest,
@@ -9917,6 +9919,40 @@ var __JBH_PURE = (() => {
   function sampleKit(id) {
     return SAMPLE_KITS.find((k) => k.id === id) || null;
   }
+
+  // src/pure/staging.js
+  var GAIN_MAX = 2;
+  var db = (x) => 20 * Math.log10(Math.max(x, 1e-9));
+  function stagePads(pads, opt) {
+    const o = opt || {};
+    const maxGain = o.maxGain || GAIN_MAX;
+    const floorDb = o.floorDb != null ? o.floorDb : -60;
+    const live = (pads || []).filter((p) => p && p.peak > 0 && db(p.peak) > floorDb);
+    if (!live.length) return { target: null, gains: {}, short: [], says: "nothing to stage" };
+    const peaks = live.map((p) => db(p.peak)).sort((a, b) => a - b);
+    const target = o.targetDb != null ? o.targetDb : peaks[Math.floor(peaks.length / 2)];
+    const gains = {}, short = [];
+    for (const p of pads || []) {
+      if (!p || !(p.peak > 0)) continue;
+      const have = db(p.peak);
+      const want = Math.pow(10, (target - have) / 20);
+      if (want > maxGain) {
+        gains[p.pad] = maxGain;
+        short.push({
+          pad: p.pad,
+          peakDb: +have.toFixed(1),
+          shortBy: +(target - have - db(maxGain)).toFixed(1)
+        });
+      } else {
+        gains[p.pad] = +Math.max(0.02, want).toFixed(3);
+      }
+    }
+    const spread = +(peaks[peaks.length - 1] - peaks[0]).toFixed(1);
+    let says = "staged " + Object.keys(gains).length + " pads to " + target.toFixed(1) + "dB peak, closing a " + spread + "dB spread";
+    if (short.length) says += ". " + short.length + " could not reach it: " + short.map((s) => "pad " + s.pad + " is " + s.shortBy + "dB short").join(", ") + " \u2014 those samples are quiet on disk and gain stops at " + maxGain;
+    says += ". Peak is not loudness, so a long sound will still read louder than a short one at the same number.";
+    return { target: +target.toFixed(1), gains, short, spread, says };
+  }
   return __toCommonJS(index_exports);
 })();
 Object.assign(globalThis, __JBH_PURE);})();
@@ -12777,7 +12813,7 @@ Object.assign(globalThis, __JBH_PURE);})();
    check by construction. scripts/check-build-label.mjs therefore CHECKS
    it instead, in CI, where HEAD is the commit being shipped and the
    arithmetic is exact. R = commits on main minus 9. */
-const BUILD = 'JBH-88 · R281 · 2026-11-05 · three premade kits made of real recordings, cast into roles';
+const BUILD = 'JBH-88 · R282 · 2026-11-05 · a kit stages its own levels instead of arriving 22dB apart';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -19845,6 +19881,23 @@ async function loadSampleKit(kit, layBeat){
         failed.push(v.role+' ('+(err&&err.message?err.message:'failed')+')');
       }
     }
+    /* STAGED FROM THE MEASURED PEAK, which the first three kits were not.
+       CHAMBER loaded with a 22dB spread across its own pads — cello at
+       -20.5dBFS against a glockenspiel at -42.2 — so a part written on
+       it was fifteen decibels out of balance before anybody touched a
+       fader. AGENTS.md puts this first: gain is a multiplier on whatever
+       the pad holds, sources here differ by 35dB on disk, and staging
+       from each sample's own peak comes before balancing by ear. */
+    let staged=null;
+    try{
+      const peaks=[];
+      for(let i=0;i<NPADS;i++){
+        const p=S.pads[i];
+        if(p.bufId>=0 && p.role) peaks.push({pad:i, peak:bufPeak(S.buffers[p.bufId])});
+      }
+      staged=stagePads(peaks);
+      for(const k in staged.gains) S.pads[k|0].gain=clamp(staged.gains[k],0,2);
+    }catch(e){ staged=null; }
     if(kit.bpm) setBpm(kit.bpm);
     if(kit.swing!=null){ S.swing=kit.swing; $('swing').value=String(kit.swing);
       $('swingV').textContent=Math.round(kit.swing*100)+'%'; }
@@ -19857,6 +19910,9 @@ async function loadSampleKit(kit, layBeat){
     const pads=done.reduce((a,d)=>a+d.pads,0);
     lcd(kit.name+' READY · '+done.length+' of '+kit.voices.length+' voices on '
       +pads+' pads'+(failed.length? ' · MISSING: '+failed.join(', ') : '')
+      +(staged&&staged.spread!=null? ' · levels staged, '+staged.spread
+        +'dB spread closed'+(staged.short.length? ' ('+staged.short.length
+        +' too quiet on disk to reach it)' : '') : '')
       +(failed.length? '' : ' · try WRITE SONG'));
   }catch(err){ lcd('KIT FAILED: '+(err&&err.message?err.message:'error')); }
   finally{ kitBusy=false; }

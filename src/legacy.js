@@ -2852,7 +2852,7 @@
    check by construction. scripts/check-build-label.mjs therefore CHECKS
    it instead, in CI, where HEAD is the commit being shipped and the
    arithmetic is exact. R = commits on main minus 9. */
-const BUILD = 'JBH-88 · R281 · 2026-11-05 · three premade kits made of real recordings, cast into roles';
+const BUILD = 'JBH-88 · R282 · 2026-11-05 · a kit stages its own levels instead of arriving 22dB apart';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -9920,6 +9920,23 @@ async function loadSampleKit(kit, layBeat){
         failed.push(v.role+' ('+(err&&err.message?err.message:'failed')+')');
       }
     }
+    /* STAGED FROM THE MEASURED PEAK, which the first three kits were not.
+       CHAMBER loaded with a 22dB spread across its own pads — cello at
+       -20.5dBFS against a glockenspiel at -42.2 — so a part written on
+       it was fifteen decibels out of balance before anybody touched a
+       fader. AGENTS.md puts this first: gain is a multiplier on whatever
+       the pad holds, sources here differ by 35dB on disk, and staging
+       from each sample's own peak comes before balancing by ear. */
+    let staged=null;
+    try{
+      const peaks=[];
+      for(let i=0;i<NPADS;i++){
+        const p=S.pads[i];
+        if(p.bufId>=0 && p.role) peaks.push({pad:i, peak:bufPeak(S.buffers[p.bufId])});
+      }
+      staged=stagePads(peaks);
+      for(const k in staged.gains) S.pads[k|0].gain=clamp(staged.gains[k],0,2);
+    }catch(e){ staged=null; }
     if(kit.bpm) setBpm(kit.bpm);
     if(kit.swing!=null){ S.swing=kit.swing; $('swing').value=String(kit.swing);
       $('swingV').textContent=Math.round(kit.swing*100)+'%'; }
@@ -9932,6 +9949,9 @@ async function loadSampleKit(kit, layBeat){
     const pads=done.reduce((a,d)=>a+d.pads,0);
     lcd(kit.name+' READY · '+done.length+' of '+kit.voices.length+' voices on '
       +pads+' pads'+(failed.length? ' · MISSING: '+failed.join(', ') : '')
+      +(staged&&staged.spread!=null? ' · levels staged, '+staged.spread
+        +'dB spread closed'+(staged.short.length? ' ('+staged.short.length
+        +' too quiet on disk to reach it)' : '') : '')
       +(failed.length? '' : ' · try WRITE SONG'));
   }catch(err){ lcd('KIT FAILED: '+(err&&err.message?err.message:'error')); }
   finally{ kitBusy=false; }
