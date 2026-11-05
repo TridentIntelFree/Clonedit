@@ -17,7 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { detectPitch, pitchOfWindow, pitchTrack, hzToMidi, midiToHz,
-  midiName, centsOff } from '../src/pure/pitch.js';
+  noteName, centsOff } from '../src/pure/pitch.js';
 
 const SR = 44100;
 
@@ -38,9 +38,9 @@ function tone(hz, secs, harmonics = [[1, 1], [2, 0.5], [3, 0.3], [4, 0.2]],
 test('Hz and MIDI convert both ways, with A4 where it belongs', () => {
   assert.equal(Math.round(hzToMidi(440)), 69);
   assert.equal(Math.round(midiToHz(69)), 440);
-  assert.equal(midiName(69), 'A4');
-  assert.equal(midiName(60), 'C4');
-  assert.equal(midiName(61), 'C#4');
+  assert.equal(noteName(69), 'A4');
+  assert.equal(noteName(60), 'C4');
+  assert.equal(noteName(61), 'C#4');
   /* a round trip over the whole range, because an off-by-one in the 69
      or a 12 in the wrong place is a whole-octave error that looks
      plausible in every log it appears in */
@@ -58,11 +58,11 @@ test('cents are signed and sharp is positive', () => {
 test('it finds the note it was given, across the whole useful range', () => {
   for (const midi of [31, 36, 40, 45, 52, 57, 64, 69, 76, 81, 88]) {
     const p = detectPitch(tone(midiToHz(midi), 1.2), SR);
-    assert.ok(p, 'refused ' + midiName(midi));
+    assert.ok(p, 'refused ' + noteName(midi));
     assert.equal(p.midi, midi,
-      midiName(midi) + ' read as ' + p.note + ' (' + p.hz + 'Hz)');
-    assert.ok(Math.abs(p.cents) <= 10, midiName(midi) + ' off by ' + p.cents + ' cents');
-    assert.equal(p.stable, true, midiName(midi) + ': ' + p.says);
+      noteName(midi) + ' read as ' + p.note + ' (' + p.hz + 'Hz)');
+    assert.ok(Math.abs(p.cents) <= 10, noteName(midi) + ' off by ' + p.cents + ' cents');
+    assert.equal(p.stable, true, noteName(midi) + ': ' + p.says);
   }
 });
 
@@ -72,7 +72,7 @@ test('A BASS NOTE IS IN RANGE, which the first default got wrong', () => {
   for (const midi of [23, 28, 31]) {
     const p = detectPitch(tone(midiToHz(midi), 1.4), SR);
     assert.ok(p && p.midi === midi,
-      midiName(midi) + ' (' + midiToHz(midi).toFixed(1) + 'Hz) read as '
+      noteName(midi) + ' (' + midiToHz(midi).toFixed(1) + 'Hz) read as '
       + (p ? p.note : 'refused'));
   }
 });

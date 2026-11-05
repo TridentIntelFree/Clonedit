@@ -2936,6 +2936,8 @@ var __JBH_PURE = (() => {
   // src/pure/index.js
   var index_exports = {};
   __export(index_exports, {
+    DRUM_CORPUS: () => DRUM_CORPUS,
+    GROOVES: () => GROOVES,
     LOCK_FX: () => LOCK_FX,
     MAGENTA_CONTOURS: () => MAGENTA_CONTOURS,
     MAXSTEPS: () => MAXSTEPS,
@@ -2964,6 +2966,7 @@ var __JBH_PURE = (() => {
     envelopeRms: () => envelopeRms,
     euclid: () => euclid,
     figureFor: () => figureFor,
+    figureSteps: () => figureSteps,
     fitSlot: () => fitSlot,
     formOf: () => formOf,
     fromRoman: () => fromRoman,
@@ -2977,12 +2980,14 @@ var __JBH_PURE = (() => {
     mainBpmOf: () => mainBpmOf,
     makeRecipe: () => makeRecipe,
     measureTake: () => measureTake,
+    midiName: () => midiName,
     midiToHz: () => midiToHz,
     minGap: () => minGap,
     morphPattern: () => morphPattern,
     morphRanker: () => morphRanker,
     mulberry32: () => mulberry32,
     newPattern: () => newPattern,
+    noteName: () => noteName,
     onsetStrength: () => onsetStrength,
     onsets: () => onsets,
     packFromNames: () => packFromNames,
@@ -3986,7 +3991,7 @@ var __JBH_PURE = (() => {
     return 440 * Math.pow(2, (m - 69) / 12);
   }
   var NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  function midiName(m) {
+  function noteName(m) {
     const r = Math.round(m);
     return NAMES[(r % 12 + 12) % 12] + (Math.floor(r / 12) - 1);
   }
@@ -4098,7 +4103,7 @@ var __JBH_PURE = (() => {
     return {
       hz: p.hz,
       midi: Math.round(m),
-      note: midiName(m),
+      note: noteName(m),
       cents: centsOff(p.hz),
       confidence: p.confidence
     };
@@ -4129,7 +4134,7 @@ var __JBH_PURE = (() => {
           at: +run[0].t.toFixed(3),
           seconds: +dur.toFixed(3),
           midi: Math.round(med),
-          note: midiName(med),
+          note: noteName(med),
           cents: Math.round((med - Math.round(med)) * 100),
           confidence: +(run.reduce((a, f) => a + f.conf, 0) / run.length).toFixed(3),
           frames: run.length
@@ -4391,7 +4396,7 @@ var __JBH_PURE = (() => {
   }
 
   // src/pure/grooves.js
-  var GROOVES2 = {
+  var DRUM_CORPUS = {
     source: "Groove MIDI Dataset v1.0.0, CC BY 4.0 (magenta.tensorflow.org/datasets/groove)",
     note: "Drums only. Every pitched part is still composed.",
     measured: { takes: 1138, skipped: 12, bars: 20528, steps: 16 },
@@ -5031,7 +5036,7 @@ var __JBH_PURE = (() => {
     { id: "four-bar", bars: 4, says: "a chord a bar" }
   ];
   function stylesFor(bpm, { allowThin = false } = {}) {
-    const all4 = Object.entries(GROOVES2.styles).map(([id, e]) => ({ id, ...e })).filter((e) => allowThin || !e.thin);
+    const all4 = Object.entries(DRUM_CORPUS.styles).map(([id, e]) => ({ id, ...e })).filter((e) => allowThin || !e.thin);
     const inRange = all4.filter((e) => bpm >= e.bpm[0] && bpm <= e.bpm[2]);
     if (inRange.length) {
       return inRange.sort((a, b) => Math.abs(a.bpm[1] - bpm) - Math.abs(b.bpm[1] - bpm));
@@ -5190,7 +5195,7 @@ var __JBH_PURE = (() => {
       drew,
       style: style.id,
       styleThin: !!style.thin,
-      source: GROOVES2.source,
+      source: DRUM_CORPUS.source,
       name: name2,
       says: name2 + ". " + motion.says + ". " + slots.length + " slots: " + slots.map((s) => ROLES[s].label).join(", ") + ". Drums measured off " + style.id + " in the Groove corpus (" + style.takes + " performances, " + style.bars + " bars" + (style.thin ? ", THIN \u2014 few enough players that this is their habit rather than the style" : "") + "): " + (Object.keys(drew).length ? Object.keys(drew).map((k) => ROLES[k].label + " " + drew[k].g + " (" + Math.round(drew[k].share * 100) + "% of bars" + (drew[k].voice !== k ? ", played on the " + drew[k].voice : "") + ")").join(", ") : "none \u2014 no voice had a figure the corpus states clearly enough") + ". Composed: " + slots.filter((x) => !measured[x]).map((x) => ROLES[x].label).join(", ") + " (every pitched part, and any drum voice this style plays too variably to name a figure for)."
     };
@@ -5419,8 +5424,8 @@ var __JBH_PURE = (() => {
     9,
     11
   ];
-  function parse2(noteName) {
-    const tokens = tokenizeNote(noteName);
+  function parse2(noteName2) {
+    const tokens = tokenizeNote(noteName2);
     if (tokens[0] === "" || tokens[3] !== "") return NoNote;
     const letter = tokens[0];
     const acc = tokens[1];
@@ -5435,14 +5440,14 @@ var __JBH_PURE = (() => {
     });
     const name2 = letter + acc + octStr;
     const pc2 = letter + acc;
-    const chroma3 = (SEMI[step] + alt + 120) % 12;
+    const chroma4 = (SEMI[step] + alt + 120) % 12;
     const height = oct === void 0 ? mod(SEMI[step] + alt, 12) - 1188 : SEMI[step] + alt + 12 * (oct + 1);
     const midi2 = height >= 0 && height <= 127 ? height : null;
     return {
       empty: false,
       acc,
       alt,
-      chroma: chroma3,
+      chroma: chroma4,
       coord,
       freq: oct === void 0 ? null : Math.pow(2, (height - 69) / 12) * 440,
       height,
@@ -5463,8 +5468,8 @@ var __JBH_PURE = (() => {
   }
 
   // node_modules/@tonaljs/pitch-distance/dist/index.mjs
-  function transpose(noteName, intervalName) {
-    const note$1 = note(noteName);
+  function transpose(noteName2, intervalName) {
+    const note$1 = note(noteName2);
     const intervalCoord = Array.isArray(intervalName) ? intervalName : interval(intervalName).coord;
     if (note$1.empty || !intervalCoord || intervalCoord.length < 2) return "";
     const noteCoord = note$1.coord;
@@ -5541,7 +5546,7 @@ var __JBH_PURE = (() => {
     intervals: []
   };
   var setNumToChroma = (num) => Number(num).toString(2).padStart(12, "0");
-  var chromaToNumber = (chroma3) => parseInt(chroma3, 2);
+  var chromaToNumber = (chroma4) => parseInt(chroma4, 2);
   var REGEX3 = /^[01]{12}$/;
   function isChroma(set) {
     return REGEX3.test(set);
@@ -5550,8 +5555,8 @@ var __JBH_PURE = (() => {
   var isPcset = (set) => set && isChroma(set.chroma);
   var cache3 = { [EmptyPcset.chroma]: EmptyPcset };
   function get(src) {
-    const chroma3 = isChroma(src) ? src : isPcsetNum(src) ? setNumToChroma(src) : Array.isArray(src) ? listToChroma(src) : isPcset(src) ? src.chroma : EmptyPcset.chroma;
-    return cache3[chroma3] = cache3[chroma3] || chromaToPcset(chroma3);
+    const chroma4 = isChroma(src) ? src : isPcsetNum(src) ? setNumToChroma(src) : Array.isArray(src) ? listToChroma(src) : isPcset(src) ? src.chroma : EmptyPcset.chroma;
+    return cache3[chroma4] = cache3[chroma4] || chromaToPcset(chroma4);
   }
   var chroma = (set) => get(set).chroma;
   var IVLS = [
@@ -5568,9 +5573,9 @@ var __JBH_PURE = (() => {
     "7m",
     "7M"
   ];
-  function chromaToIntervals(chroma3) {
+  function chromaToIntervals(chroma4) {
     const intervals = [];
-    for (let i = 0; i < 12; i++) if (chroma3.charAt(i) === "1") intervals.push(IVLS[i]);
+    for (let i = 0; i < 12; i++) if (chroma4.charAt(i) === "1") intervals.push(IVLS[i]);
     return intervals;
   }
   function modes(set, normalize = true) {
@@ -5597,8 +5602,8 @@ var __JBH_PURE = (() => {
   function rotateChroma(v) {
     return (v << 1 | v >>> 11) & 4095;
   }
-  function chromaToPcset(chroma3) {
-    const setNum = chromaToNumber(chroma3);
+  function chromaToPcset(chroma4) {
+    const setNum = chromaToNumber(chroma4);
     if (setNum === 0) return EmptyPcset;
     let normalizedNum = Infinity;
     let r = setNum;
@@ -5610,9 +5615,9 @@ var __JBH_PURE = (() => {
       empty: false,
       name: "",
       setNum,
-      chroma: chroma3,
+      chroma: chroma4,
       normalized: setNumToChroma(normalizedNum),
-      intervals: chromaToIntervals(chroma3)
+      intervals: chromaToIntervals(chroma4)
     };
   }
   function listToChroma(set) {
@@ -6221,11 +6226,11 @@ var __JBH_PURE = (() => {
   // node_modules/@tonaljs/chord-detect/dist/index.mjs
   var namedSet = (notes2) => {
     const pcToName = notes2.reduce((record, n) => {
-      const chroma3 = note(n).chroma;
-      if (chroma3 !== void 0) record[chroma3] = record[chroma3] || note(n).name;
+      const chroma4 = note(n).chroma;
+      if (chroma4 !== void 0) record[chroma4] = record[chroma4] || note(n).name;
       return record;
     }, {});
-    return (chroma3) => pcToName[chroma3];
+    return (chroma4) => pcToName[chroma4];
   };
   function detect(source, options = {}) {
     const notes2 = source.map((n) => note(n).pc).filter((x) => x);
@@ -6247,14 +6252,14 @@ var __JBH_PURE = (() => {
     const chromaNumber = parseInt(chordType.chroma, 2);
     return hasAnyThird(chromaNumber) && hasPerfectFifth(chromaNumber) && hasAnySeventh(chromaNumber);
   }
-  function withPerfectFifth(chroma3) {
-    const chromaNumber = parseInt(chroma3, 2);
-    return hasNonPerfectFifth(chromaNumber) ? chroma3 : (chromaNumber | 16).toString(2);
+  function withPerfectFifth(chroma4) {
+    const chromaNumber = parseInt(chroma4, 2);
+    return hasNonPerfectFifth(chromaNumber) ? chroma4 : (chromaNumber | 16).toString(2);
   }
   function findMatches(notes2, weight, options) {
     const tonic = notes2[0];
     const tonicChroma = note(tonic).chroma;
-    const noteName = namedSet(notes2);
+    const noteName2 = namedSet(notes2);
     const allModes = modes(notes2, false);
     const found = [];
     allModes.forEach((mode, index4) => {
@@ -6264,7 +6269,7 @@ var __JBH_PURE = (() => {
         return chordType.chroma === mode;
       }).forEach((chordType) => {
         const chordName = chordType.aliases[0];
-        const baseNote = noteName(index4);
+        const baseNote = noteName2(index4);
         if (index4 !== tonicChroma) found.push({
           weight: 0.5 * weight,
           name: `${baseNote}${chordName}/${tonic}`
@@ -6771,8 +6776,8 @@ var __JBH_PURE = (() => {
   }
 
   // node_modules/@tonaljs/key/dist/index.mjs
-  var dist_exports3 = {};
-  __export(dist_exports3, {
+  var dist_exports4 = {};
+  __export(dist_exports4, {
     default: () => key_default,
     majorKey: () => majorKey,
     majorKeyChords: () => majorKeyChords,
@@ -6782,11 +6787,11 @@ var __JBH_PURE = (() => {
   });
 
   // node_modules/@tonaljs/note/dist/index.mjs
-  var dist_exports2 = {};
-  __export(dist_exports2, {
+  var dist_exports3 = {};
+  __export(dist_exports3, {
     accidentals: () => accidentals,
     ascending: () => ascending,
-    chroma: () => chroma2,
+    chroma: () => chroma3,
     default: () => note_default,
     descending: () => descending,
     distance: () => distance2,
@@ -6817,6 +6822,31 @@ var __JBH_PURE = (() => {
   });
 
   // node_modules/@tonaljs/midi/dist/index.mjs
+  var dist_exports2 = {};
+  __export(dist_exports2, {
+    chroma: () => chroma2,
+    default: () => midi_default,
+    freqToMidi: () => freqToMidi,
+    isMidi: () => isMidi,
+    midiToFreq: () => midiToFreq,
+    midiToNoteName: () => midiToNoteName,
+    pcset: () => pcset,
+    pcsetDegrees: () => pcsetDegrees,
+    pcsetNearest: () => pcsetNearest,
+    pcsetSteps: () => pcsetSteps,
+    toMidi: () => toMidi
+  });
+  function isMidi(arg) {
+    return +arg >= 0 && +arg <= 127;
+  }
+  function toMidi(note$1) {
+    if (isMidi(note$1)) return +note$1;
+    const n = note(note$1);
+    return n.empty ? null : n.midi;
+  }
+  function midiToFreq(midi2, tuning = 440) {
+    return Math.pow(2, (midi2 - 69) / 12) * tuning;
+  }
   var L2 = Math.log(2);
   var L440 = Math.log(440);
   function freqToMidi(freq2) {
@@ -6832,6 +6862,61 @@ var __JBH_PURE = (() => {
     if (options.pitchClass) return pc2;
     return pc2 + (Math.floor(midi2 / 12) - 1);
   }
+  function chroma2(midi2) {
+    return midi2 % 12;
+  }
+  function pcsetFromChroma(chroma4) {
+    return chroma4.split("").reduce((pcset2, val, index4) => {
+      if (index4 < 12 && val === "1") pcset2.push(index4);
+      return pcset2;
+    }, []);
+  }
+  function pcsetFromMidi(midi2) {
+    return midi2.map(chroma2).sort((a, b) => a - b).filter((n, i, a) => i === 0 || n !== a[i - 1]);
+  }
+  function pcset(notes2) {
+    return Array.isArray(notes2) ? pcsetFromMidi(notes2) : pcsetFromChroma(notes2);
+  }
+  function pcsetNearest(notes2) {
+    const set = pcset(notes2);
+    return (midi2) => {
+      const ch = chroma2(midi2);
+      for (let i = 0; i < 12; i++) {
+        const chUp = (ch + i) % 12;
+        const chDown = (ch - i + 12) % 12;
+        if (set.includes(chUp)) return midi2 + i;
+        if (set.includes(chDown)) return midi2 - i;
+      }
+    };
+  }
+  function pcsetSteps(notes2, tonic) {
+    const set = pcset(notes2);
+    const len = set.length;
+    return (step) => {
+      const index4 = step < 0 ? (len - -step % len) % len : step % len;
+      const octaves = Math.floor(step / len);
+      return set[index4] + octaves * 12 + tonic;
+    };
+  }
+  function pcsetDegrees(notes2, tonic) {
+    const steps3 = pcsetSteps(notes2, tonic);
+    return (degree) => {
+      if (degree === 0) return void 0;
+      return steps3(degree > 0 ? degree - 1 : degree);
+    };
+  }
+  var midi_default = {
+    chroma: chroma2,
+    freqToMidi,
+    isMidi,
+    midiToFreq,
+    midiToNoteName,
+    pcsetNearest,
+    pcset,
+    pcsetDegrees,
+    pcsetSteps,
+    toMidi
+  };
 
   // node_modules/@tonaljs/note/dist/index.mjs
   var NAMES2 = [
@@ -6857,7 +6942,7 @@ var __JBH_PURE = (() => {
   var octave = (note2) => get5(note2).oct;
   var midi = (note2) => get5(note2).midi;
   var freq = (note2) => get5(note2).freq;
-  var chroma2 = (note2) => get5(note2).chroma;
+  var chroma3 = (note2) => get5(note2).chroma;
   function fromMidi(midi2) {
     return midiToNoteName(midi2);
   }
@@ -6877,12 +6962,12 @@ var __JBH_PURE = (() => {
   var trBy = transposeBy;
   var transposeFrom = (note2) => (interval2) => transpose3(note2, interval2);
   var trFrom = transposeFrom;
-  function transposeFifths(noteName, fifths) {
-    return transpose3(noteName, [fifths, 0]);
+  function transposeFifths(noteName2, fifths) {
+    return transpose3(noteName2, [fifths, 0]);
   }
   var trFifths = transposeFifths;
-  function transposeOctaves(noteName, octaves) {
-    return transpose3(noteName, [0, octaves]);
+  function transposeOctaves(noteName2, octaves) {
+    return transpose3(noteName2, [0, octaves]);
   }
   var ascending = (a, b) => a.height - b.height;
   var descending = (a, b) => b.height - a.height;
@@ -6893,16 +6978,16 @@ var __JBH_PURE = (() => {
   function sortedUniqNames(notes2) {
     return sortedNames(notes2, ascending).filter((n, i, a) => i === 0 || n !== a[i - 1]);
   }
-  var simplify = (noteName) => {
-    const note2 = get5(noteName);
+  var simplify = (noteName2) => {
+    const note2 = get5(noteName2);
     if (note2.empty) return "";
     return midiToNoteName(note2.midi || note2.chroma, {
       sharps: note2.alt > 0,
       pitchClass: note2.midi === null
     });
   };
-  function enharmonic(noteName, destName) {
-    const src = get5(noteName);
+  function enharmonic(noteName2, destName) {
+    const src = get5(noteName2);
     if (src.empty) return "";
     const dest = get5(destName || midiToNoteName(src.midi || src.chroma, {
       sharps: src.alt < 0,
@@ -6934,7 +7019,7 @@ var __JBH_PURE = (() => {
     freq,
     fromFreq,
     fromFreqSharps,
-    chroma: chroma2,
+    chroma: chroma3,
     transpose: transpose3,
     tr,
     transposeBy,
@@ -7252,13 +7337,13 @@ var __JBH_PURE = (() => {
   function toMode(mode) {
     const [modeNum, setNum, alt, name2, triad, seventh, alias] = mode;
     const aliases = alias ? [alias] : [];
-    const chroma3 = Number(setNum).toString(2);
+    const chroma4 = Number(setNum).toString(2);
     return {
       empty: false,
       intervals: get3(name2).intervals,
       modeNum,
-      chroma: chroma3,
-      normalized: chroma3,
+      chroma: chroma4,
+      normalized: chroma4,
       name: name2,
       setNum,
       alt,
@@ -7280,8 +7365,8 @@ var __JBH_PURE = (() => {
   var seventhChords = chords(MODES.map((x) => x[5]));
 
   // node_modules/@tonaljs/progression/dist/index.mjs
-  var dist_exports4 = {};
-  __export(dist_exports4, {
+  var dist_exports5 = {};
+  __export(dist_exports5, {
     default: () => progression_default,
     fromRomanNumerals: () => fromRomanNumerals,
     toRomanNumerals: () => toRomanNumerals
@@ -7301,8 +7386,8 @@ var __JBH_PURE = (() => {
   };
 
   // node_modules/@tonaljs/scale/dist/index.mjs
-  var dist_exports5 = {};
-  __export(dist_exports5, {
+  var dist_exports6 = {};
+  __export(dist_exports6, {
     default: () => scale_default,
     degrees: () => degrees2,
     detect: () => detect2,
@@ -7389,17 +7474,17 @@ var __JBH_PURE = (() => {
     return all2().filter((scale2) => isSubset(scale2.chroma)).map((scale2) => scale2.name);
   }
   function scaleNotes(notes2) {
-    const pcset = notes2.map((n) => note(n).pc).filter((x) => x);
-    const tonic = pcset[0];
-    const scale2 = sortedUniqNames(pcset);
+    const pcset2 = notes2.map((n) => note(n).pc).filter((x) => x);
+    const tonic = pcset2[0];
+    const scale2 = sortedUniqNames(pcset2);
     return rotate(scale2.indexOf(tonic), scale2);
   }
   function modeNames(name2) {
     const s = get8(name2);
     if (s.empty) return [];
     const tonics = s.tonic ? s.notes : s.intervals;
-    return modes(s.chroma).map((chroma3, i) => {
-      const modeName = get8(chroma3).name;
+    return modes(s.chroma).map((chroma4, i) => {
+      const modeName = get8(chroma4).name;
       return modeName ? [tonics[i], modeName] : ["", ""];
     }).filter((x) => x[0]);
   }
@@ -7410,8 +7495,8 @@ var __JBH_PURE = (() => {
       const currNote = typeof noteOrMidi === "number" ? note(fromMidi(noteOrMidi)) : note(noteOrMidi);
       const height = currNote.height;
       if (height === void 0) return void 0;
-      const chroma3 = height % 12;
-      const position = chromas.indexOf(chroma3);
+      const chroma4 = height % 12;
+      const position = chromas.indexOf(chroma4);
       if (position === -1) return void 0;
       return enharmonic(currNote.name, names4[position]);
     };
@@ -7530,7 +7615,7 @@ var __JBH_PURE = (() => {
 
   // src/pure/theory.js
   var pc = (n) => {
-    const c = dist_exports2.chroma(n);
+    const c = dist_exports3.chroma(n);
     return c == null ? null : c;
   };
   function canonical(tail) {
@@ -7578,9 +7663,9 @@ var __JBH_PURE = (() => {
     const t = String(tonic || "").trim();
     if (!t) return [];
     const m = String(mode || "major").toLowerCase();
-    if (m === "major") return dist_exports3.majorKey(t).chords.slice();
-    if (m === "minor") return dist_exports3.minorKey(t).natural.chords.slice();
-    const sc = dist_exports5.get(t + " " + m);
+    if (m === "major") return dist_exports4.majorKey(t).chords.slice();
+    if (m === "minor") return dist_exports4.minorKey(t).natural.chords.slice();
+    const sc = dist_exports6.get(t + " " + m);
     if (!sc.notes.length) return [];
     return sc.notes.map((_, i) => {
       const pick = [0, 2, 4].map((k) => sc.notes[(i + k) % sc.notes.length]);
@@ -7591,7 +7676,7 @@ var __JBH_PURE = (() => {
   function toTriad(sym) {
     const info = chordInfo(sym);
     if (!info) return sym;
-    const root = dist_exports2.pitchClass(dist_exports2.fromMidi(60 + info.root));
+    const root = dist_exports3.pitchClass(dist_exports3.fromMidi(60 + info.root));
     if (info.intervals.includes(3) && info.intervals.includes(6)) return root + "dim";
     if (info.intervals.includes(4) && info.intervals.includes(8)) return root + "aug";
     if (info.intervals.includes(3)) return root + "m";
@@ -7600,24 +7685,28 @@ var __JBH_PURE = (() => {
   }
   function fromRoman(tonic, numerals) {
     if (!tonic || !Array.isArray(numerals) || !numerals.length) return [];
-    return dist_exports4.fromRomanNumerals(String(tonic), numerals.map(String));
+    return dist_exports5.fromRomanNumerals(String(tonic), numerals.map(String));
   }
   function toRoman(tonic, chords2) {
     if (!tonic || !Array.isArray(chords2) || !chords2.length) return [];
-    return dist_exports4.toRomanNumerals(String(tonic), chords2.map(String));
+    return dist_exports5.toRomanNumerals(String(tonic), chords2.map(String));
   }
   function scalePcs(tonic, mode) {
     const t = String(tonic || "").trim();
     if (!t) return [];
     const m = String(mode || "major").toLowerCase();
     const name2 = m === "minor" ? "aeolian" : m;
-    const sc = dist_exports5.get(t + " " + name2);
-    const notes2 = sc.notes.length ? sc.notes : dist_exports5.get(t + " major").notes;
+    const sc = dist_exports6.get(t + " " + name2);
+    const notes2 = sc.notes.length ? sc.notes : dist_exports6.get(t + " major").notes;
     return [...new Set(notes2.map(pc).filter((x) => x != null))];
   }
   function scalesFitting(notes2) {
     if (!Array.isArray(notes2) || !notes2.length) return [];
-    return dist_exports5.detect(notes2.map(String)).slice(0, 8);
+    return dist_exports6.detect(notes2.map(String)).slice(0, 8);
+  }
+  function midiName(m) {
+    const n = dist_exports2.midiToNoteName(m | 0, { sharps: true });
+    return n || String(m);
   }
   function rubsAgainst(midiOrPc, chord2) {
     const info = typeof chord2 === "string" ? chordInfo(chord2) : chord2;
@@ -32332,7 +32421,40 @@ if($('mlTonic')){
    measurable ways: GAMELAN is pentatonic with 5:4 and 7:4 lanes, MOTORIK
    is one chord at 142 for as long as you can stand it, HAUNTOLOGY is
    slow and wet with tape wobble, MATH is 7-over-8 on a 48-step pattern,
-   DUB is mostly delay and silence. */
+   DUB is mostly delay and silence.
+
+   `style` NAMES A MEASURED STYLE IN THE DRUM CORPUS, and most rows do
+   not have one on purpose.
+
+   src/pure/grooves.js holds 336 drum figures measured from 1,138 takes
+   and 20,528 bars of the Groove MIDI Dataset, and until now it was
+   reachable only from recipe(). The kick/snare/hat arrays below are
+   hand-written, so the one-tap builder was inventing drums beside a
+   corpus it never opened — the exact "reach for what is already there"
+   failure AGENTS.md keeps a section for.
+
+   But wiring all sixteen to it would have been worse than leaving it
+   alone, and the measurement says so. The corpus is one drummer at a
+   time on an electronic kit in thirteen ACOUSTIC idioms; most genres
+   here are electronic, and asking it for them returns something that
+   is real and is not the genre:
+
+     motorik -> rock      x...x...x...x...   four on the floor. Motorik
+                                             IS straight eighths; the
+                                             corpus bar deletes it.
+     dub     -> reggae    x...x...x...x...   not a one drop, and reggae
+                                             refuses snare and hat
+                                             anyway (1.8% best share)
+     house   -> dance     7 takes            one or two drummers, which
+     afro    -> afrobeat  13 takes           grooves.js flags as `thin`
+     gospel  -> soul      76bpm vs [80,148]  outside the measured range
+
+   So a row declares a style only where the idiom genuinely is in the
+   corpus, and kitFrom() gates on top of that: a `thin` style or a tempo
+   outside the style's measured range falls back to the table and says
+   it did. Two of sixteen pass, and two honest draws beat sixteen
+   dishonest ones — the hand tables are not laziness, they are the
+   definition of idioms nobody recorded for this dataset. */
 const GENRES={
   house:      { bpm:124, swing:0.02, human:0.06, drift:0.10, dens:'normal',
                 feel:'straight', poly:'none',  wet:[0.06,0.18,0.10],
@@ -32343,6 +32465,7 @@ const GENRES={
                 feel:'straight', poly:'none',  wet:[0.10,0.22,0.14],
                 fams:['mixolydian borrow','borrowed iv','blues turn','two-chord vamp'],
                 kick:[0,20,32,52], snare:[8,24,40,56], hat:4, lufs:-11,
+                style:'hiphop',        /* 95 takes, 67-140bpm */
                 says:'swung sixteenths, dragged behind the beat' },
   dnb:        { bpm:174, swing:0,    human:0.05, drift:0.06, dens:'busy',
                 feel:'straight', poly:'none',  wet:[0.04,0.14,0.08],
@@ -32358,6 +32481,10 @@ const GENRES={
                 feel:'straight', poly:'none',  wet:[0.12,0.30,0.16], sevenths:true,
                 fams:['secondary ii-V','circle','turnaround','minor ii-V-i'],
                 kick:[0,32], snare:[8,24,40,56], hat:4, lufs:-13,
+                style:'jazz',          /* 99 takes, 88-290bpm; its snare
+                                          is comping, not a figure, and
+                                          the corpus refuses it — the
+                                          table covers that voice */
                 says:'sevenths, secondary dominants, brushes' },
   /* ---- the strange ones ---------------------------------------------- */
   gamelan:    { bpm:108, swing:0,    human:0.08, drift:0.12, dens:'busy',
@@ -32456,33 +32583,112 @@ const GENRES={
 
    Both are per-bar and both need at least two bars to mean anything, so
    they are skipped on a one-bar pattern rather than emptying it. */
+/* ONE VOICE'S BAR, FROM THE CORPUS, OR NOTHING.
+
+   Returns {kick,snare,hat} maps of step -> velocity for a single 16-step
+   bar, holding only the voices the measurement will stand behind, plus
+   `drew` describing what it drew from. Everything it declines is left to
+   the hand-written table in GENRES, which is the right answer for an
+   idiom the Groove MIDI Dataset does not contain — see the note above
+   GENRES for why that is most of them.
+
+   Three gates, and each one rejected a mapping that looked fine until it
+   was measured:
+
+     no style declared   the genre has no counterpart in the corpus
+     style.thin          under twenty takes is one or two drummers, not
+                         a genre (dance has 7, afrobeat 13)
+     bpm out of range    soul is [80,148] and gospel here runs at 76
+
+   figureFor() then applies its own refusals — loopability, and an
+   evidence floor that drops a voice whose best bar holds under 4% of its
+   style's bars. Jazz's snare goes that way and should: 97% of the time
+   the drummer played something else, and calling the remaining 3% "the
+   measured jazz snare" is the overclaiming this repo keeps apologising
+   for. A refused voice is not a failure, it is the corpus declining to
+   answer, and the table covers it. */
+function kitFrom(G, dens, rnd){
+  const out={drew:null, voices:{}};
+  if(typeof DRUM_CORPUS==='undefined' || typeof figureFor!=='function') return out;
+  const st=G.style && DRUM_CORPUS.styles[G.style];
+  if(!st || st.thin) return out;
+  if(G.bpm<st.bpm[0] || G.bpm>st.bpm[2]) return out;
+  const took=[];
+  for(const v of ['kick','snare','hat']){
+    const f=figureFor(v, Object.assign({id:G.style}, st), dens, rnd);
+    if(!f) continue;
+    /* figureSteps(), not f.v read raw: velocity is comparable WITHIN a
+       voice and never across voices, and the scaling that makes it so
+       belongs in one place. */
+    out.voices[v]=figureSteps(f); took.push(v);
+  }
+  if(took.length) out.drew={style:G.style, takes:st.takes, bars:st.bars, voices:took};
+  return out;
+}
+
 function writeKit(drums, G, PLEN, opt){
   const o=opt||{}, bars=Math.max(1,Math.floor(PLEN/16));
   const r=mulberry32((o.seed||1)>>>0);
   const thin=!!o.thin, brk=!!o.brk && bars>=2, fill=!!o.fill && bars>=2;
   const lastBar=bars-1;
   const barOf=st=>Math.floor(st/16);
-  if(drums[0]) for(const st of (G.kick||[])) if(st<PLEN){
-    if(brk && barOf(st)===lastBar) continue;                 // the break
-    const down=(st%16)===0;
-    window.JBH.step(drums[0], st, thin?(down?0.85:0.68):(down?1:0.82));
+
+  /* A QUIET SECTION ASKS THE CORPUS FOR A SPARSER BAR rather than
+     deleting hits out of a busy one. figureFor() bands its candidates by
+     hit count, so 'sparse' draws from the thinner half of what that
+     style actually played — a bar a drummer played, where the table
+     path's `st%32!==8` is a bar nobody played. */
+  const K=kitFrom(G, thin?'sparse':(o.dens||G.dens||'normal'), r);
+  const measured=v=>K.voices[v]||null;
+  /* tile the one measured bar across the pattern */
+  const layMeasured=(pad, fig, soft)=>{
+    for(let b=0;b<bars;b++) for(const s in fig){
+      const st=b*16+(+s); if(st>=PLEN) continue;
+      if(brk && pad===drums[0] && b===lastBar) continue;       // the break
+      window.JBH.step(pad, st, +Math.min(1, fig[s].v*(soft||1)).toFixed(2));
+    }
+  };
+
+  if(drums[0]){
+    const f=measured('kick');
+    if(f) layMeasured(drums[0], f, thin?0.85:1);
+    else for(const st of (G.kick||[])) if(st<PLEN){
+      if(brk && barOf(st)===lastBar) continue;                 // the break
+      const down=(st%16)===0;
+      window.JBH.step(drums[0], st, thin?(down?0.85:0.68):(down?1:0.82));
+    }
   }
-  if(drums[1]) for(const st of (G.snare||[])) if(st<PLEN){
-    if(thin && st%32!==8) continue;
-    window.JBH.step(drums[1], st, thin?0.52:0.8);
+  if(drums[1]){
+    const f=measured('snare');
+    if(f) layMeasured(drums[1], f, thin?0.7:1);
+    else{
+      for(const st of (G.snare||[])) if(st<PLEN){
+        if(thin && st%32!==8) continue;
+        window.JBH.step(drums[1], st, thin?0.52:0.8);
+      }
+      /* GHOST NOTES. A snare at 0.22 on a layered kit is a different
+         recording — a stick resting on the head, not a backbeat — which
+         is the whole argument for velocity layers. Sparse and seeded, so
+         the same genre twice is not the same ghosts.
+
+         Only on the TABLE path: a measured bar already carries whatever
+         ghosts that drummer played, at the velocities they played them,
+         and sprinkling invented ones over a measurement buries it under
+         a guess. */
+      if(!thin && (G.snare||[]).length) for(let st=0;st<PLEN;st+=2)
+        if(!(G.snare||[]).includes(st) && r()<0.14)
+          window.JBH.step(drums[1], st, 0.2+r()*0.12);
+    }
   }
-  /* GHOST NOTES. A snare at 0.22 on a layered kit is a different
-     recording — a stick resting on the head, not a backbeat — which is
-     the whole argument for velocity layers. Sparse and seeded, so the
-     same genre twice is not the same ghosts. */
-  if(drums[1] && !thin && (G.snare||[]).length) for(let st=0;st<PLEN;st+=2)
-    if(!(G.snare||[]).includes(st) && r()<0.14)
-      window.JBH.step(drums[1], st, 0.2+r()*0.12);
-  if(drums[2] && G.hat) for(let st=0;st<PLEN;st+=(thin?G.hat*2:G.hat)){
-    /* alternating weight is what a hand on a hat does, and it is the
-       difference between a pulse and a metronome */
-    const beat=(st%16)===0, half=(st%8)===0;
-    window.JBH.step(drums[2], st, thin?0.26:(beat?0.52:half?0.38:0.28));
+  if(drums[2]){
+    const f=measured('hat');
+    if(f) layMeasured(drums[2], f, thin?0.6:1);
+    else if(G.hat) for(let st=0;st<PLEN;st+=(thin?G.hat*2:G.hat)){
+      /* alternating weight is what a hand on a hat does, and it is the
+         difference between a pulse and a metronome */
+      const beat=(st%16)===0, half=(st%8)===0;
+      window.JBH.step(drums[2], st, thin?0.26:(beat?0.52:half?0.38:0.28));
+    }
   }
   if(fill && drums[1]){
     const base=lastBar*16;
@@ -32490,6 +32696,7 @@ function writeKit(drums, G, PLEN, opt){
       if(st<PLEN) window.JBH.step(drums[1], st, +(0.34+k*0.08).toFixed(2)); }
     if(drums[0] && base+15<PLEN) window.JBH.step(drums[0], base+15, 0.6);
   }
+  return K.drew;
 }
 
 /* ---- THE DROPDOWN IS THE TABLE, not a copy of it --------------------
@@ -32722,14 +32929,15 @@ async function writeSurprise(){
     {pat:2, dens:'busy',   poly:G.poly,  conv:false,        thin:false,
      seed:(SEED+2027)>>>0, fill:true }
   ].slice(0, Math.min(3, S.patterns.length));
-  const made=[];
+  const made=[]; let kitDrew=null;
   for(const sec of sections){
     const pr=await window.MVX.pattern(sec.pat,{plen:PLEN, clear:true, select:true});
     if(pr && pr.warning) throw new Error(pr.warning);
     window.MVX.chords(sec.pat, spelled.length?spelled.slice(0,bars||1):null);
     /* the kit, thinned in the quiet section, with a break at the end of
        it and a fill at the end of the busy one */
-    writeKit(drums, G, PLEN, sec);
+    const drew=writeKit(drums, G, PLEN, sec);
+    if(drew && !kitDrew) kitDrew=drew;
     /* FEEL AND SCALE WERE DECLARED IN THE GENRE TABLE AND READ BY
        NOTHING. The panel was being set to show them while the build
        passed neither, so gamelan's five-cycle and math's seven never
@@ -32770,6 +32978,32 @@ async function writeSurprise(){
   }
   await window.MVX.pattern(made[0]!=null?made[0]:0,{select:true});
 
+  /* ---- AND THEN CHECK THE ONE THING ONLY THIS CALL MAKES -----------
+     Applying an infill() or ensemble() candidate already runs the free
+     MATERIAL checks — melody, motif, counterpoint, harmony — and that
+     is deliberately all of them: a one-bar sketch told "there is no
+     arrangement" is being scolded for the normal state of a project
+     somebody just started.
+
+     This is the call where that stops being true. writeSurprise() is
+     the only thing in the app that writes a SONG CHAIN, so it is the
+     only place where form() has anything to read, and it was the one
+     check nothing ever ran. A piece can pass every other check in this
+     repo and be one pattern looping — the "drone machine noise" verdict
+     one level up — and the builder was in a position to notice that
+     about its own output and did not look.
+
+     It renders nothing, so it is free. Reported, never corrected: if
+     the board only had two patterns to work with, A B A B is what it
+     could build and quietly reshaping the arrangement to clear a fault
+     is how a measurement becomes a target. */
+  let formSays='';
+  try{
+    const f=window.MVX.form({src:'song'});
+    if(f && f.faults && f.faults.length) formSays=f.sequence+' — '+f.faults.join(', ')+'. ';
+    else if(f && f.sequence) formSays=f.sequence+'. ';
+  }catch(e){}
+
   /* the panel shows what was used, so OFFER is a variation of this */
   const set=(id,v)=>{ const e=$(id); if(e) e.value=String(v); };
   set('mlSpan',bars); set('mlDens',G.dens); set('mlPoly',G.poly);
@@ -32796,6 +33030,13 @@ async function writeSurprise(){
     +'. '+vs.length+' voice'+(vs.length===1?'':'s')+' over '+made.length
     +' pattern'+(made.length===1?'':'s')+', arranged'
     +(made.length>=3?' with a break and a fill':'')+'. '
+    +formSays
+    /* WHICH DRUMS THESE ARE, because "measured" is a claim and a claim
+       nobody can check is worth nothing. Said only when the corpus
+       actually answered; a table kit says nothing rather than implying
+       one. */
+    +(kitDrew?('Kit: '+kitDrew.voices.join('/')+' drawn from '+kitDrew.takes
+      +' measured '+kitDrew.style+' takes. '):'')
     /* `lufs` SAT IN THE GENRE TABLE READ BY NOTHING, which is this
        repo's most-repeated trap and I had just written a test for it.
        It cannot be applied here — a loudness is only reachable by

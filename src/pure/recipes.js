@@ -32,7 +32,7 @@
    have arrived as undefined with nothing said. Callers that want it
    call minGap() themselves. */
 import { playable, stepMs } from './timbre.js';
-import { GROOVES } from './grooves.js';
+import { DRUM_CORPUS } from './grooves.js';
 
 /* ---- THE SLOT VOCABULARY ------------------------------------------
    Each slot says what job it does and what a sound has to be able to do
@@ -163,7 +163,7 @@ const MOTION = [
    nothing else brackets the tempo, and the recipe says which style it
    drew from either way. */
 export function stylesFor(bpm, { allowThin = false } = {}) {
-  const all = Object.entries(GROOVES.styles)
+  const all = Object.entries(DRUM_CORPUS.styles)
     .map(([id, e]) => ({ id, ...e }))
     .filter(e => allowThin || !e.thin);
   const inRange = all.filter(e => bpm >= e.bpm[0] && bpm <= e.bpm[2]);
@@ -302,8 +302,13 @@ export function composeSteps(voice, fam, dens, rnd) {
    becomes the right reference again and this should change back.
 
    The absolute level is then the pad's gain, which is where this repo
-   stages levels anyway: from a measured peak, not from taste. */
-function figureSteps(f) {
+   stages levels anyway: from a measured peak, not from taste.
+
+   EXPORTED because the song generator draws kits too, and it was
+   reading a figure's raw `v` map straight off the table. Two readings
+   of the same numbers is how "velocity is comparable within a voice,
+   never across voices" gets quietly forgotten in one of them. */
+export function figureSteps(f) {
   let ref = 0;
   for (const v of Object.values(f.v)) if (v > ref) ref = v;
   const scale = ref > 0 ? 0.95 / ref : 1;
@@ -437,7 +442,7 @@ export function makeRecipe(seed, opt) {
     patternsMeasured: anyMeasured,
     measured, drew,
     style: style.id, styleThin: !!style.thin,
-    source: GROOVES.source,
+    source: DRUM_CORPUS.source,
     name,
     says: name + '. ' + motion.says + '. ' + slots.length + ' slots: '
       + slots.map(s => ROLES[s].label).join(', ')

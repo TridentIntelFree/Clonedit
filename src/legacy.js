@@ -24558,7 +24558,40 @@ if($('mlTonic')){
    measurable ways: GAMELAN is pentatonic with 5:4 and 7:4 lanes, MOTORIK
    is one chord at 142 for as long as you can stand it, HAUNTOLOGY is
    slow and wet with tape wobble, MATH is 7-over-8 on a 48-step pattern,
-   DUB is mostly delay and silence. */
+   DUB is mostly delay and silence.
+
+   `style` NAMES A MEASURED STYLE IN THE DRUM CORPUS, and most rows do
+   not have one on purpose.
+
+   src/pure/grooves.js holds 336 drum figures measured from 1,138 takes
+   and 20,528 bars of the Groove MIDI Dataset, and until now it was
+   reachable only from recipe(). The kick/snare/hat arrays below are
+   hand-written, so the one-tap builder was inventing drums beside a
+   corpus it never opened — the exact "reach for what is already there"
+   failure AGENTS.md keeps a section for.
+
+   But wiring all sixteen to it would have been worse than leaving it
+   alone, and the measurement says so. The corpus is one drummer at a
+   time on an electronic kit in thirteen ACOUSTIC idioms; most genres
+   here are electronic, and asking it for them returns something that
+   is real and is not the genre:
+
+     motorik -> rock      x...x...x...x...   four on the floor. Motorik
+                                             IS straight eighths; the
+                                             corpus bar deletes it.
+     dub     -> reggae    x...x...x...x...   not a one drop, and reggae
+                                             refuses snare and hat
+                                             anyway (1.8% best share)
+     house   -> dance     7 takes            one or two drummers, which
+     afro    -> afrobeat  13 takes           grooves.js flags as `thin`
+     gospel  -> soul      76bpm vs [80,148]  outside the measured range
+
+   So a row declares a style only where the idiom genuinely is in the
+   corpus, and kitFrom() gates on top of that: a `thin` style or a tempo
+   outside the style's measured range falls back to the table and says
+   it did. Two of sixteen pass, and two honest draws beat sixteen
+   dishonest ones — the hand tables are not laziness, they are the
+   definition of idioms nobody recorded for this dataset. */
 const GENRES={
   house:      { bpm:124, swing:0.02, human:0.06, drift:0.10, dens:'normal',
                 feel:'straight', poly:'none',  wet:[0.06,0.18,0.10],
@@ -24569,6 +24602,7 @@ const GENRES={
                 feel:'straight', poly:'none',  wet:[0.10,0.22,0.14],
                 fams:['mixolydian borrow','borrowed iv','blues turn','two-chord vamp'],
                 kick:[0,20,32,52], snare:[8,24,40,56], hat:4, lufs:-11,
+                style:'hiphop',        /* 95 takes, 67-140bpm */
                 says:'swung sixteenths, dragged behind the beat' },
   dnb:        { bpm:174, swing:0,    human:0.05, drift:0.06, dens:'busy',
                 feel:'straight', poly:'none',  wet:[0.04,0.14,0.08],
@@ -24584,6 +24618,10 @@ const GENRES={
                 feel:'straight', poly:'none',  wet:[0.12,0.30,0.16], sevenths:true,
                 fams:['secondary ii-V','circle','turnaround','minor ii-V-i'],
                 kick:[0,32], snare:[8,24,40,56], hat:4, lufs:-13,
+                style:'jazz',          /* 99 takes, 88-290bpm; its snare
+                                          is comping, not a figure, and
+                                          the corpus refuses it — the
+                                          table covers that voice */
                 says:'sevenths, secondary dominants, brushes' },
   /* ---- the strange ones ---------------------------------------------- */
   gamelan:    { bpm:108, swing:0,    human:0.08, drift:0.12, dens:'busy',
@@ -24682,33 +24720,112 @@ const GENRES={
 
    Both are per-bar and both need at least two bars to mean anything, so
    they are skipped on a one-bar pattern rather than emptying it. */
+/* ONE VOICE'S BAR, FROM THE CORPUS, OR NOTHING.
+
+   Returns {kick,snare,hat} maps of step -> velocity for a single 16-step
+   bar, holding only the voices the measurement will stand behind, plus
+   `drew` describing what it drew from. Everything it declines is left to
+   the hand-written table in GENRES, which is the right answer for an
+   idiom the Groove MIDI Dataset does not contain — see the note above
+   GENRES for why that is most of them.
+
+   Three gates, and each one rejected a mapping that looked fine until it
+   was measured:
+
+     no style declared   the genre has no counterpart in the corpus
+     style.thin          under twenty takes is one or two drummers, not
+                         a genre (dance has 7, afrobeat 13)
+     bpm out of range    soul is [80,148] and gospel here runs at 76
+
+   figureFor() then applies its own refusals — loopability, and an
+   evidence floor that drops a voice whose best bar holds under 4% of its
+   style's bars. Jazz's snare goes that way and should: 97% of the time
+   the drummer played something else, and calling the remaining 3% "the
+   measured jazz snare" is the overclaiming this repo keeps apologising
+   for. A refused voice is not a failure, it is the corpus declining to
+   answer, and the table covers it. */
+function kitFrom(G, dens, rnd){
+  const out={drew:null, voices:{}};
+  if(typeof DRUM_CORPUS==='undefined' || typeof figureFor!=='function') return out;
+  const st=G.style && DRUM_CORPUS.styles[G.style];
+  if(!st || st.thin) return out;
+  if(G.bpm<st.bpm[0] || G.bpm>st.bpm[2]) return out;
+  const took=[];
+  for(const v of ['kick','snare','hat']){
+    const f=figureFor(v, Object.assign({id:G.style}, st), dens, rnd);
+    if(!f) continue;
+    /* figureSteps(), not f.v read raw: velocity is comparable WITHIN a
+       voice and never across voices, and the scaling that makes it so
+       belongs in one place. */
+    out.voices[v]=figureSteps(f); took.push(v);
+  }
+  if(took.length) out.drew={style:G.style, takes:st.takes, bars:st.bars, voices:took};
+  return out;
+}
+
 function writeKit(drums, G, PLEN, opt){
   const o=opt||{}, bars=Math.max(1,Math.floor(PLEN/16));
   const r=mulberry32((o.seed||1)>>>0);
   const thin=!!o.thin, brk=!!o.brk && bars>=2, fill=!!o.fill && bars>=2;
   const lastBar=bars-1;
   const barOf=st=>Math.floor(st/16);
-  if(drums[0]) for(const st of (G.kick||[])) if(st<PLEN){
-    if(brk && barOf(st)===lastBar) continue;                 // the break
-    const down=(st%16)===0;
-    window.JBH.step(drums[0], st, thin?(down?0.85:0.68):(down?1:0.82));
+
+  /* A QUIET SECTION ASKS THE CORPUS FOR A SPARSER BAR rather than
+     deleting hits out of a busy one. figureFor() bands its candidates by
+     hit count, so 'sparse' draws from the thinner half of what that
+     style actually played — a bar a drummer played, where the table
+     path's `st%32!==8` is a bar nobody played. */
+  const K=kitFrom(G, thin?'sparse':(o.dens||G.dens||'normal'), r);
+  const measured=v=>K.voices[v]||null;
+  /* tile the one measured bar across the pattern */
+  const layMeasured=(pad, fig, soft)=>{
+    for(let b=0;b<bars;b++) for(const s in fig){
+      const st=b*16+(+s); if(st>=PLEN) continue;
+      if(brk && pad===drums[0] && b===lastBar) continue;       // the break
+      window.JBH.step(pad, st, +Math.min(1, fig[s].v*(soft||1)).toFixed(2));
+    }
+  };
+
+  if(drums[0]){
+    const f=measured('kick');
+    if(f) layMeasured(drums[0], f, thin?0.85:1);
+    else for(const st of (G.kick||[])) if(st<PLEN){
+      if(brk && barOf(st)===lastBar) continue;                 // the break
+      const down=(st%16)===0;
+      window.JBH.step(drums[0], st, thin?(down?0.85:0.68):(down?1:0.82));
+    }
   }
-  if(drums[1]) for(const st of (G.snare||[])) if(st<PLEN){
-    if(thin && st%32!==8) continue;
-    window.JBH.step(drums[1], st, thin?0.52:0.8);
+  if(drums[1]){
+    const f=measured('snare');
+    if(f) layMeasured(drums[1], f, thin?0.7:1);
+    else{
+      for(const st of (G.snare||[])) if(st<PLEN){
+        if(thin && st%32!==8) continue;
+        window.JBH.step(drums[1], st, thin?0.52:0.8);
+      }
+      /* GHOST NOTES. A snare at 0.22 on a layered kit is a different
+         recording — a stick resting on the head, not a backbeat — which
+         is the whole argument for velocity layers. Sparse and seeded, so
+         the same genre twice is not the same ghosts.
+
+         Only on the TABLE path: a measured bar already carries whatever
+         ghosts that drummer played, at the velocities they played them,
+         and sprinkling invented ones over a measurement buries it under
+         a guess. */
+      if(!thin && (G.snare||[]).length) for(let st=0;st<PLEN;st+=2)
+        if(!(G.snare||[]).includes(st) && r()<0.14)
+          window.JBH.step(drums[1], st, 0.2+r()*0.12);
+    }
   }
-  /* GHOST NOTES. A snare at 0.22 on a layered kit is a different
-     recording — a stick resting on the head, not a backbeat — which is
-     the whole argument for velocity layers. Sparse and seeded, so the
-     same genre twice is not the same ghosts. */
-  if(drums[1] && !thin && (G.snare||[]).length) for(let st=0;st<PLEN;st+=2)
-    if(!(G.snare||[]).includes(st) && r()<0.14)
-      window.JBH.step(drums[1], st, 0.2+r()*0.12);
-  if(drums[2] && G.hat) for(let st=0;st<PLEN;st+=(thin?G.hat*2:G.hat)){
-    /* alternating weight is what a hand on a hat does, and it is the
-       difference between a pulse and a metronome */
-    const beat=(st%16)===0, half=(st%8)===0;
-    window.JBH.step(drums[2], st, thin?0.26:(beat?0.52:half?0.38:0.28));
+  if(drums[2]){
+    const f=measured('hat');
+    if(f) layMeasured(drums[2], f, thin?0.6:1);
+    else if(G.hat) for(let st=0;st<PLEN;st+=(thin?G.hat*2:G.hat)){
+      /* alternating weight is what a hand on a hat does, and it is the
+         difference between a pulse and a metronome */
+      const beat=(st%16)===0, half=(st%8)===0;
+      window.JBH.step(drums[2], st, thin?0.26:(beat?0.52:half?0.38:0.28));
+    }
   }
   if(fill && drums[1]){
     const base=lastBar*16;
@@ -24716,6 +24833,7 @@ function writeKit(drums, G, PLEN, opt){
       if(st<PLEN) window.JBH.step(drums[1], st, +(0.34+k*0.08).toFixed(2)); }
     if(drums[0] && base+15<PLEN) window.JBH.step(drums[0], base+15, 0.6);
   }
+  return K.drew;
 }
 
 /* ---- THE DROPDOWN IS THE TABLE, not a copy of it --------------------
@@ -24948,14 +25066,15 @@ async function writeSurprise(){
     {pat:2, dens:'busy',   poly:G.poly,  conv:false,        thin:false,
      seed:(SEED+2027)>>>0, fill:true }
   ].slice(0, Math.min(3, S.patterns.length));
-  const made=[];
+  const made=[]; let kitDrew=null;
   for(const sec of sections){
     const pr=await window.MVX.pattern(sec.pat,{plen:PLEN, clear:true, select:true});
     if(pr && pr.warning) throw new Error(pr.warning);
     window.MVX.chords(sec.pat, spelled.length?spelled.slice(0,bars||1):null);
     /* the kit, thinned in the quiet section, with a break at the end of
        it and a fill at the end of the busy one */
-    writeKit(drums, G, PLEN, sec);
+    const drew=writeKit(drums, G, PLEN, sec);
+    if(drew && !kitDrew) kitDrew=drew;
     /* FEEL AND SCALE WERE DECLARED IN THE GENRE TABLE AND READ BY
        NOTHING. The panel was being set to show them while the build
        passed neither, so gamelan's five-cycle and math's seven never
@@ -24996,6 +25115,32 @@ async function writeSurprise(){
   }
   await window.MVX.pattern(made[0]!=null?made[0]:0,{select:true});
 
+  /* ---- AND THEN CHECK THE ONE THING ONLY THIS CALL MAKES -----------
+     Applying an infill() or ensemble() candidate already runs the free
+     MATERIAL checks — melody, motif, counterpoint, harmony — and that
+     is deliberately all of them: a one-bar sketch told "there is no
+     arrangement" is being scolded for the normal state of a project
+     somebody just started.
+
+     This is the call where that stops being true. writeSurprise() is
+     the only thing in the app that writes a SONG CHAIN, so it is the
+     only place where form() has anything to read, and it was the one
+     check nothing ever ran. A piece can pass every other check in this
+     repo and be one pattern looping — the "drone machine noise" verdict
+     one level up — and the builder was in a position to notice that
+     about its own output and did not look.
+
+     It renders nothing, so it is free. Reported, never corrected: if
+     the board only had two patterns to work with, A B A B is what it
+     could build and quietly reshaping the arrangement to clear a fault
+     is how a measurement becomes a target. */
+  let formSays='';
+  try{
+    const f=window.MVX.form({src:'song'});
+    if(f && f.faults && f.faults.length) formSays=f.sequence+' — '+f.faults.join(', ')+'. ';
+    else if(f && f.sequence) formSays=f.sequence+'. ';
+  }catch(e){}
+
   /* the panel shows what was used, so OFFER is a variation of this */
   const set=(id,v)=>{ const e=$(id); if(e) e.value=String(v); };
   set('mlSpan',bars); set('mlDens',G.dens); set('mlPoly',G.poly);
@@ -25022,6 +25167,13 @@ async function writeSurprise(){
     +'. '+vs.length+' voice'+(vs.length===1?'':'s')+' over '+made.length
     +' pattern'+(made.length===1?'':'s')+', arranged'
     +(made.length>=3?' with a break and a fill':'')+'. '
+    +formSays
+    /* WHICH DRUMS THESE ARE, because "measured" is a claim and a claim
+       nobody can check is worth nothing. Said only when the corpus
+       actually answered; a table kit says nothing rather than implying
+       one. */
+    +(kitDrew?('Kit: '+kitDrew.voices.join('/')+' drawn from '+kitDrew.takes
+      +' measured '+kitDrew.style+' takes. '):'')
     /* `lufs` SAT IN THE GENRE TABLE READ BY NOTHING, which is this
        repo's most-repeated trap and I had just written a test for it.
        It cannot be applied here — a loudness is only reachable by

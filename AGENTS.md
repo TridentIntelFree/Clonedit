@@ -701,6 +701,18 @@ existed and never that its arguments connected to anything.
 and checks every forwarded name against the options the function
 actually reads. Verified by putting `jumble` back and watching it fail.
 
+**Two files in `src/pure/` exporting one name silently loses BOTH.** The
+folder is published to the page by `export *` and `Object.assign`, and an
+ambiguous star export is omitted rather than resolved — no error, no
+warning, the global is just never assigned. `grooves.js` was added beside
+`groove.js` with both exporting `GROOVES`, and the GROOVE panel threw
+`ReferenceError` in the shipped build while both files' unit tests stayed
+green, because a test that imports a module by path says nothing about
+whether the page receives it. `tests/pure-globals.test.mjs` bundles the
+way the build does and asserts every declared name arrives. Name a new
+export so it cannot collide, and run that test before assuming a global
+is there.
+
 **A sample pack can lie about pitch.** VSCO-2 CE names every file an
 octave below what it sounds, and is not consistent with itself: one solo
 violin folder uses scientific pitch and another folder of the same
@@ -1225,6 +1237,8 @@ thing they are about:
 - [The loop this file prescribes was never automated](docs/findings.md#the-loop-this-file-prescribes-was-never-automated)
 - [A recipe that cannot use the sounds you already have](docs/findings.md#a-recipe-that-cannot-use-the-sounds-you-already-have)
 - [The arp role never asked whether the sound could play one](docs/findings.md#the-arp-role-never-asked-whether-the-sound-could-play-one)
+- [Two files exported the same name, and the app lost both](docs/findings.md#two-files-exported-the-same-name-and-the-app-lost-both)
+- [Is every tool we have to write actually used before a song is made?](docs/findings.md#is-every-tool-we-have-to-write-actually-used-before-a-song-is-made)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

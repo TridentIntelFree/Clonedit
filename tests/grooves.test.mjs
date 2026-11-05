@@ -18,19 +18,19 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { GROOVES } from '../src/pure/grooves.js';
+import { DRUM_CORPUS } from '../src/pure/grooves.js';
 
 const STEPS = 16;
-const styles = Object.entries(GROOVES.styles);
+const styles = Object.entries(DRUM_CORPUS.styles);
 
 test('it says where it came from and what it does not cover', () => {
-  assert.match(GROOVES.source, /Groove MIDI Dataset/);
-  assert.match(GROOVES.source, /CC BY 4\.0/);
+  assert.match(DRUM_CORPUS.source, /Groove MIDI Dataset/);
+  assert.match(DRUM_CORPUS.source, /CC BY 4\.0/);
   /* the pitched half being unmeasured is the thing most likely to be
      forgotten by whatever reads this, so the file has to say it */
-  assert.match(GROOVES.note, /[Dd]rums only/);
-  assert.ok(GROOVES.measured.bars > 10000, 'bars: ' + GROOVES.measured.bars);
-  assert.equal(GROOVES.measured.steps, STEPS);
+  assert.match(DRUM_CORPUS.note, /[Dd]rums only/);
+  assert.ok(DRUM_CORPUS.measured.bars > 10000, 'bars: ' + DRUM_CORPUS.measured.bars);
+  assert.equal(DRUM_CORPUS.measured.steps, STEPS);
 });
 
 test('every figure is sixteen steps with a share and real velocities', () => {
@@ -86,7 +86,7 @@ test('each style states its tempo range in order and its sample size', () => {
 /* ---- KNOWN ANSWERS ------------------------------------------------ */
 
 test('rock is a backbeat, which is what proves the bar alignment', () => {
-  const r = GROOVES.styles.rock;
+  const r = DRUM_CORPUS.styles.rock;
   assert.ok(r, 'rock is the best-sampled style here and must be present');
   assert.equal(r.voices.snare.figures[0].g, '....x.......x...',
     'if this is not the backbeat, tick 0 is not a bar line and the whole table is noise');
@@ -100,13 +100,13 @@ test('the figures nobody told it to look for are there', () => {
   /* These three were not sought and are not used by the generator's own
      check, so they are evidence the method finds real playing rather
      than the two patterns it was told to expect. */
-  const jazz = GROOVES.styles.jazz;
+  const jazz = DRUM_CORPUS.styles.jazz;
   assert.equal(jazz.voices.hat.figures[0].g, '....x.......x...',
     'jazz hi-hat belongs on 2 and 4');
   assert.match(jazz.voices.ride.figures[0].g, /^x\.\.\.x\.\.x/,
     'the jazz ride should come out swung, got ' + jazz.voices.ride.figures[0].g);
   /* reggae's one drop: the kick on beat three and nothing on beat one */
-  const reggae = GROOVES.styles.reggae.voices.kick.figures;
+  const reggae = DRUM_CORPUS.styles.reggae.voices.kick.figures;
   assert.ok(reggae.some(f => f.g === '........x.......' && f.p > 0.1),
     'the one drop should be a fifth of reggae kick bars: '
     + reggae.map(f => f.g + ' ' + f.p).join(' '));
@@ -116,19 +116,19 @@ test('silence is reported, because a style that drops a voice is telling you som
   /* Punk drummers in this corpus are on the ride, not the closed hat.
      Offering a punk hat figure as the norm would be wrong, and only
      `silent` says so — the figures themselves look perfectly ordinary. */
-  assert.ok(GROOVES.styles.punk.voices.hat.silent > 0.5,
-    'punk hat silent share: ' + GROOVES.styles.punk.voices.hat.silent);
+  assert.ok(DRUM_CORPUS.styles.punk.voices.hat.silent > 0.5,
+    'punk hat silent share: ' + DRUM_CORPUS.styles.punk.voices.hat.silent);
   /* and a voice every style plays must NOT read as mostly absent, or
      the field is measuring something else */
-  assert.ok(GROOVES.styles.rock.voices.snare.silent < 0.1,
-    'rock snare silent share: ' + GROOVES.styles.rock.voices.snare.silent);
+  assert.ok(DRUM_CORPUS.styles.rock.voices.snare.silent < 0.1,
+    'rock snare silent share: ' + DRUM_CORPUS.styles.rock.voices.snare.silent);
 });
 
 test('a ghost note is quieter than a backbeat, in the data', () => {
   /* The reason velocities are carried at all. A sixteenth-note kick
      figure is played lighter than four on the floor, and if the table
      flattened that it would be a step list with extra bytes. */
-  const k = GROOVES.styles.rock.voices.kick.figures;
+  const k = DRUM_CORPUS.styles.rock.voices.kick.figures;
   const four = k.find(f => f.g === 'x...x...x...x...');
   const busy = k.find(f => [...f.g].filter(c => c === 'x').length >= 6);
   assert.ok(four && busy, 'expected both a four-on-the-floor and a busy kick figure');

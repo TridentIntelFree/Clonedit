@@ -66,8 +66,16 @@
 export function hzToMidi(hz) { return 69 + 12 * Math.log2(hz / 440); }
 export function midiToHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 
+/* `noteName`, not `midiName`, and the rename is not cosmetic. theory.js
+   already exports midiName, and src/pure/ is published to the page as
+   globals by `export *` — which silently DROPS a name two files both
+   export, so the clash cost the page both of them rather than picking
+   one. tests/pure-globals.test.mjs is the check; this is one of the two
+   it found. Kept local to this file rather than imported from theory.js
+   so the detector stays dependency-free: theory.js pulls in tonal, and
+   this is DSP that should be testable without it. */
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-export function midiName(m) {
+export function noteName(m) {
   const r = Math.round(m);
   return NAMES[((r % 12) + 12) % 12] + (Math.floor(r / 12) - 1);
 }
@@ -274,7 +282,7 @@ export function detectPitch(data, sampleRate, opt) {
 
 function withNote(p) {
   const m = hzToMidi(p.hz);
-  return { hz: p.hz, midi: Math.round(m), note: midiName(m),
+  return { hz: p.hz, midi: Math.round(m), note: noteName(m),
     cents: centsOff(p.hz), confidence: p.confidence };
 }
 
@@ -322,7 +330,7 @@ export function pitchTrack(data, sampleRate, opt) {
       const med = ms[Math.floor(ms.length / 2)];
       notes.push({
         at: +run[0].t.toFixed(3), seconds: +dur.toFixed(3),
-        midi: Math.round(med), note: midiName(med),
+        midi: Math.round(med), note: noteName(med),
         cents: Math.round((med - Math.round(med)) * 100),
         confidence: +(run.reduce((a, f) => a + f.conf, 0) / run.length).toFixed(3),
         frames: run.length,

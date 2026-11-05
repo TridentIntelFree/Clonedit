@@ -128,7 +128,7 @@ def jsnum(x):
 
 
 def emit(out, path):
-    L = [HEADER, 'export const GROOVES = {\n']
+    L = [HEADER, 'export const DRUM_CORPUS = {\n']
     L.append('  source: %s,\n' % json.dumps(out['source']))
     L.append('  note: %s,\n' % json.dumps(out['note']))
     m = out['measured']

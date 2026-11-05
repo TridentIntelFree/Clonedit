@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { ROLES, fitSlot, suggestFor, makeRecipe, figureFor } from '../src/pure/recipes.js';
-import { GROOVES } from '../src/pure/grooves.js';
+import { DRUM_CORPUS } from '../src/pure/grooves.js';
 import { timbreOf } from '../src/pure/timbre.js';
 
 const SR = 44100;
@@ -138,7 +138,7 @@ test('a measured figure is reported with the share of bars it holds', () => {
       assert.equal(r.measured[voice], true, voice + ' drew a figure but is not measured');
       assert.match(d.g, /^[x.]{16}$/);
       assert.ok(d.share > 0 && d.share <= 1, voice + ' share ' + d.share);
-      assert.ok(GROOVES.styles[d.style], 'drew from an unknown style ' + d.style);
+      assert.ok(DRUM_CORPUS.styles[d.style], 'drew from an unknown style ' + d.style);
       /* and the steps it wrote must BE that figure, or the provenance
          is decoration */
       const wrote = Array.from({ length: 16 },
@@ -176,7 +176,7 @@ test('the style it drew from can play at the tempo it chose', () => {
      blur at 170, and nothing downstream would catch it. */
   for (let seed = 1; seed < 80; seed++) {
     const r = makeRecipe(seed);
-    const st = GROOVES.styles[r.style];
+    const st = DRUM_CORPUS.styles[r.style];
     assert.ok(st, 'seed ' + seed + ' drew from unknown style ' + r.style);
     if (!Object.keys(r.drew).length) continue;
     assert.ok(r.bpm >= st.bpm[0] && r.bpm <= st.bpm[2],
@@ -190,9 +190,9 @@ test('a voice the corpus cannot speak for is composed and SAYS so', () => {
      jazz's 2.9%, so 97% of the time the drummer played something
      else. Claiming either as the measured figure is the overclaiming
      this whole layer is built to avoid. */
-  const thin = figureFor('snare', { voices: GROOVES.styles.reggae.voices }, 'normal', () => 0.5);
+  const thin = figureFor('snare', { voices: DRUM_CORPUS.styles.reggae.voices }, 'normal', () => 0.5);
   assert.equal(thin, null, 'reggae snare should be refused, not reported');
-  const solid = figureFor('snare', { voices: GROOVES.styles.rock.voices }, 'normal', () => 0.5);
+  const solid = figureFor('snare', { voices: DRUM_CORPUS.styles.rock.voices }, 'normal', () => 0.5);
   assert.ok(solid && solid.g === '....x.......x...',
     'rock snare is a quarter of its bars and must be accepted');
   /* and when it is refused the recipe still writes a part, rather than

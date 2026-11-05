@@ -2566,3 +2566,126 @@ the highest that can, and says why — a role that moved for a reason
 nobody can see is worse than the wrong role. Bass is left alone: a slow
 sound is fine down there, where the notes are far apart anyway. An
 instrument whose timbre cannot be measured is not demoted on a guess.
+
+## Two files exported the same name, and the app lost both
+
+`src/pure/` is published to the page as globals: `vite.config.js`
+bundles `src/pure/index.js` — which is nothing but `export *` lines — to
+an IIFE and does `Object.assign(globalThis, __JBH_PURE)`. The engine
+then calls `euclid()`, `SCALES`, `GROOVES` and the rest as bare names.
+
+`export *` has one rule that bites here. When two re-exported modules
+export the SAME name, that name is AMBIGUOUS and the star export
+silently omits it. Not an error, not a warning: the key is simply not on
+the namespace object, so the global is never assigned.
+
+`src/pure/groove.js` exports `GROOVES` — the swing and feel templates
+the GROOVE panel is built from, STRAIGHT and SWING 58% and OFF-GRID and
+LATIN PUSH and REGGAE DRAG. The commit that added the measured drum
+corpus added `src/pure/grooves.js`, one letter apart, exporting
+`GROOVES` as well. From that commit on, in the shipped `index.html`:
+
+```
+grooveApply()  ->  ReferenceError: GROOVES is not defined
+```
+
+The whole feel panel threw on every use, and the measured corpus it
+collided with was not reachable either. Both were lost, which is worse
+than either one winning.
+
+**Nothing failed.** The unit tests import each module DIRECTLY by path,
+so `tests/groove.test.mjs` and `tests/grooves.test.mjs` were both green
+the entire time, each testing a table the page could not see. No browser
+test drove that control. The comment in `src/pure/index.js` explaining
+why the corpus was exported — "the whole point of measuring something is
+that you can go and read the numbers" — described something that did not
+happen.
+
+A second one was sitting beside it: `midiName`, exported by both
+`pitch.js` and `theory.js`. That one cost nothing only because
+`legacy.js` happens to define a third copy of the same function locally.
+
+The fix is two renames — `DRUM_CORPUS` for the measurement, `noteName`
+for pitch.js's local helper. The check that matters is
+`tests/pure-globals.test.mjs`, which bundles `src/pure/index.js` exactly
+the way the build does and asserts that every name any file declares
+actually arrives on the namespace. Testing a module by its path says
+nothing about whether the page receives it, and for a folder whose
+entire job is to be published as globals, the published surface is the
+thing worth asserting.
+
+## Is every tool we have to write actually used before a song is made?
+
+`tests/discoverable.test.mjs` asks whether an agent can FIND each call.
+The next question is different: when the app builds a track by itself —
+SURPRISE ME, `writeSurprise()` — does it REACH for what it has?
+
+The audit found the generator in better shape than expected. It already
+reaches `ensemble()`, `infill()`, `phrase()` (through ensemble, for the
+dynamic arc), `poly`, `key()`, `chords()`, `gate`, `feel`, pentatonic
+scales, `converse`, `timbre()` (through `mlVoices`, for the arp
+playability check), `tape()` and the song chain. Two things it did not:
+
+**The measured drum corpus.** `src/pure/grooves.js` holds 336 figures
+from 1,138 Groove MIDI takes and 20,528 bars, and it was reachable only
+from `recipe()`. `writeKit()` was writing drums from hand-authored
+`kick`/`snare`/`hat` arrays in the GENRES table, next to a corpus it
+never opened.
+
+**`form()`.** `writeSurprise()` writes the only song chain in the app, so
+it is the only caller for which `form()` has anything to read — and it
+never ran it. A piece can pass every other check in this repo and be one
+loop; the builder was in a position to notice that about its own output
+and did not look.
+
+**But wiring all sixteen genres to the corpus would have been worse than
+leaving it alone, and the measurement says so.** The corpus is one
+drummer at a time on an electronic kit in thirteen ACOUSTIC idioms. Most
+genres here are electronic, and asking it for them returns something
+that is real and is not the genre:
+
+```
+motorik -> rock      x...x...x...x...   four on the floor. Motorik IS
+                                        straight eighths; the corpus bar
+                                        deletes the genre.
+dub     -> reggae    x...x...x...x...   not a one drop, and reggae
+                                        refuses snare and hat anyway
+house   -> dance     7 takes            one or two drummers, which
+afro    -> afrobeat  13 takes           grooves.js already flags `thin`
+gospel  -> soul      76bpm vs [80,148]  outside the measured range
+```
+
+Two of sixteen pass: boombap from 95 hiphop takes, noir from 99 jazz
+takes. `kitFrom()` gates on `thin` and on the style's measured tempo
+range, and `figureFor()` applies its own refusals on top — noir gets
+kick and hat and is refused a snare, correctly, because jazz's best
+loopable snare bar holds 2.9% of its bars and the other 97% of the time
+the drummer played something else. The build says which voices are
+measured and from how many takes, and says nothing at all when it drew
+from the table, because a claim nobody can check is worth nothing:
+
+```
+BOOMBAP — ... Kit: kick/snare/hat drawn from 95 measured hiphop takes.
+NOIR    — ... Kit: kick/hat drawn from 99 measured jazz takes.
+HOUSE   — ... (no claim)
+```
+
+The hand tables are not laziness. They are the definition of idioms
+nobody recorded for this dataset, and two honest draws beat sixteen
+dishonest ones.
+
+**The ratchet is `tests/generator-reach.test.mjs`**: a writing capability
+is either reached by the generator or named in `EXEMPT` with a reason
+saying why the generator is RIGHT not to call it. `euclid()`, `figure()`,
+`recipe()`/`fit()`/`slot()`, the sound-rewriting tools and `live()`/`hit()`
+are exempt; the test rejects an exemption that reads like a to-do.
+
+**And the first draft of that test was reading a vocabulary and calling
+it a call graph.** It joined a fixed list of function bodies, so when
+`writeKit()` was made to stop calling `kitFrom()` — the exact regression
+of unwiring the corpus — every test still passed: `kitFrom`'s body was in
+the list whether or not anything reached it, and `DRUM_CORPUS` still
+appeared in the joined text. It walks now, starting at `writeSurprise()`
+and admitting a function only once its name appears in text already
+admitted. Three known-bad inputs were tried against it; the fixed-list
+version caught two.

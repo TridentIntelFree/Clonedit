@@ -54,7 +54,7 @@
    composed, which is why a recipe reports what was measured per voice
    rather than carrying one flag for the whole thing. */
 
-export const GROOVES = {
+export const DRUM_CORPUS = {
   source: "Groove MIDI Dataset v1.0.0, CC BY 4.0 (magenta.tensorflow.org/datasets/groove)",
   note: "Drums only. Every pitched part is still composed.",
   measured: { takes: 1138, skipped: 12, bars: 20528, steps: 16 },

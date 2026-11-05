@@ -224,6 +224,51 @@ export default async function ({ browser, base }) {
       && /No section length is judged/.test(form.shape),
       form.shape.slice(-110));
 
+    /* THE FEEL PANEL, DRIVEN RATHER THAN IMPORTED.
+
+       This shipped throwing ReferenceError on every use and no test
+       noticed, because src/pure/groove.js and src/pure/grooves.js both
+       exported GROOVES — and `export *` drops an ambiguous name rather
+       than resolving it, so the page got neither. Both files' unit
+       tests import by path and stayed green the whole time.
+
+       tests/pure-globals.test.mjs is the general check and runs in
+       milliseconds. This is the specific one, and it is here because
+       the reason the fault survived is that nobody clicked the
+       button. */
+    t.head('THE GROOVE PANEL APPLIES A FEEL');
+    const feel = await page.evaluate(async () => {
+      const out = { globals: typeof GROOVES };
+      const pat = S.patterns[S.pattern];
+      pat.steps[0] = []; pat.locks = {};
+      /* EVERY sixteenth, not every eighth. The first version of this
+         fixture put hits only on even steps, and mpc58 nudges only the
+         ODD ones — so it read zero offsets off a feel that was applied
+         perfectly, and the test was wrong about the code rather than
+         the other way round. */
+      for (let st = 0; st < 16; st++) pat.steps[0][st] = 0.9;
+      S.seqPad = 0;
+      document.getElementById('grvSel').value = 'mpc58';
+      document.getElementById('grvAmt').value = '1';
+      try { document.getElementById('btnGrvTrack').click(); }
+      catch (e) { out.threw = e.message; return out; }
+      await new Promise(r => setTimeout(r, 150));
+      out.lcd = document.getElementById('lcdmsg').textContent;
+      out.nudged = Object.keys(pat.locks).filter(k => pat.locks[k].nudge).length;
+      out.names = [...document.getElementById('grvSel').options].length;
+      return out;
+    });
+    t.ok('GROOVES is a global the page actually received',
+      feel.globals === 'object', 'typeof GROOVES = ' + feel.globals);
+    t.ok('clicking APPLY TO TRACK does not throw',
+      !feel.threw, feel.threw || 'no throw');
+    t.ok('and it writes real timing offsets onto the steps',
+      feel.nudged > 0, feel.nudged + ' steps nudged');
+    t.ok('the feel it applied is named back to the person',
+      /SWING 58%/.test(feel.lcd || ''), (feel.lcd || '').slice(0, 90));
+    t.ok('the picker offers every template in the table',
+      feel.names >= 8, feel.names + ' options');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
