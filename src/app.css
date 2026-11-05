@@ -31,6 +31,40 @@ html,body{background:var(--chassis);color:var(--txt);
   -webkit-font-smoothing:antialiased;
   overscroll-behavior:none;height:100%}
 body{display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+
+/* THIS IS AN INSTRUMENT, NOT A DOCUMENT.
+
+   Reported: "I'm having issues accidentally highlighting text and buttons
+   with a cursor." Of course — every surface here is something you drag. A
+   fader, a pad, a step, a strip, the waveform, the wheel. A mouse that
+   travels more than a pixel between press and release is a text selection
+   as far as the browser is concerned, so the labels around whatever you
+   grabbed light up blue, and a double-tap on a button selects its word.
+
+   `.pad` and the sampler surface already turned it off for themselves, one
+   at a time, as each one was found to need it. That is the wrong shape:
+   the DEFAULT for an app like this is unselectable, and the exceptions are
+   the handful of places that hold text a person would actually want to
+   copy. So it is set once here and given back below.
+
+   -webkit-touch-callout stops the iOS press-and-hold menu over a control,
+   which is the same fault wearing a touchscreen. */
+body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+
+/* THE EXCEPTIONS — anything that is text to READ or to COPY.
+
+   The measurements are the point of half this app, and a number you cannot
+   select is a number you cannot paste into a message to somebody. So every
+   results panel keeps selection. They are matched on their id suffix rather
+   than listed, because there are 28 of them and a list goes stale the day
+   somebody adds the 29th; `:not(button)` is there because btnClkOut and
+   btnNotesOut end in Out and are controls, not readouts. */
+input,textarea,select,[contenteditable],
+.hint-body,.ex-body,.rowhint,.lead-was,.cmd,.toollog,.selectable,
+#lcdmsg,
+[id$="Info"]:not(button),[id$="Log"]:not(button),
+[id$="log"]:not(button),[id$="Out"]:not(button){
+  -webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 button{font-family:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--edge);
   border-radius:var(--r-md);font-size:var(--fs-md);padding:9px 12px;min-height:var(--tap);
   touch-action:manipulation;transition:background .12s ease,border-color .12s ease}

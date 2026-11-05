@@ -2852,7 +2852,7 @@
    check by construction. scripts/check-build-label.mjs therefore CHECKS
    it instead, in CI, where HEAD is the commit being shipped and the
    arithmetic is exact. R = commits on main minus 9. */
-const BUILD = 'JBH-88 · R276 · 2026-11-05 · VOL is on the pad editor and every mixer slider says what it is';
+const BUILD = 'JBH-88 · R277 · 2026-11-05 · dragging a control no longer highlights the words around it';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under

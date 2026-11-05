@@ -3454,3 +3454,66 @@ sounds onto pads 1 and 2 had moved `S.editPad`, which is the
 after reading it. The claim was never "gain is 1" but "VOL does not
 move gain", so it reads both ends now. Assert the change, not the
 value you expect the world to be in.
+
+## A check that cannot fail
+
+"I'm having issues accidentally highlighting text and buttons with a
+cursor."
+
+The fix is four lines of CSS: `user-select:none` on `body`, given back
+to the handful of places holding text somebody would want to copy.
+`.pad` and the sampler surface had each switched it off for themselves
+as the need was found, one at a time, which is the wrong shape — the
+default for an instrument is unselectable and the exceptions are the
+prose.
+
+The interesting part is the test.
+
+The obvious things to drag across are `#groups` (the activity row),
+`.pslider` (a fader and its label) and `.pad`. All three were written,
+all three passed — **against a stale `index.html` that did not contain
+the fix**, because the build had aborted on the version-label check and
+the summary scrolled past. Measured afterwards, in both states:
+
+```
+#groups    user-select:auto -> selected ""      none -> ""
+.pslider   user-select:auto -> selected ""      none -> ""
+.pad       user-select:auto -> selected ""      none -> ""
+.lbl       user-select:auto -> "BANK A B C D EDIT REPEAT"   none -> ""
+```
+
+Chromium does not start a selection from button text, and a range input
+swallows the drag before it becomes one. So three of the four targets
+select nothing whatever the stylesheet says. They were not weak checks;
+they were checks with no failing input anywhere in their domain.
+
+`.lbl` is the one that moves, and it reproduces the report exactly. The
+suite now drags from there and carries a self-test that switches the
+rule off and asserts the same drag *does* highlight — the known-bad
+input, in the same shape `scripts/lint-comments.mjs --self-test` uses.
+
+Three smaller traps fell out of writing it, each worth more than the
+CSS:
+
+- **`querySelector` finds hidden elements.** These checks run after the
+  suite has clicked through all thirteen views, so the first `.rowhint`
+  in the DOM is on a panel that is no longer on screen: `offsetParent`
+  null, a 0×0 rect, `scrollIntoView` a no-op, and a drag at (2,2) that
+  selects nothing. That reads as "selection is off" and means "there was
+  nothing there". It takes the first VISIBLE match now, and pins the view
+  first rather than inheriting whatever the previous section left.
+- **A sentinel that satisfies the assertion it guards.** The helper
+  returned the string `(nothing visible)` for a missing element, and the
+  positive check was `onHint.length > 0` — so the failure sentinel passed
+  the test it existed to catch.
+- **Two gestures, because they are two questions.** The accident is a
+  slip OFF a control onto what is below it, so that drag must leave the
+  element; a nudge inside one short label picks up nothing even with
+  selection fully on. Copying is a drag WITHIN a paragraph. One helper,
+  one flag, and the comment says which is which.
+
+And the cost of the rule, stated rather than discovered later: a
+selection survives only while the whole drag stays inside selectable
+content. Start in a hint, carry on down into the controls, and Chromium
+hands back nothing. Small, and better than highlighting the interface
+every time somebody misses a fader by four pixels.

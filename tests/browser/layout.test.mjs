@@ -157,6 +157,115 @@ export default async function ({ browser, base }) {
     t.ok('and both clear again when the lanes do',
       !badge.restored.gOn && !badge.restored.tOn, 'back to clean');
 
+    /* "I'M HAVING ISSUES ACCIDENTALLY HIGHLIGHTING TEXT AND BUTTONS WITH A
+       CURSOR."
+
+       Every surface in this app is something you drag, and a mouse that
+       travels a pixel between press and release is a text selection as far
+       as the browser is concerned. `.pad` and the sampler surface had each
+       turned selection off for themselves as the need was found; the
+       default was still "document", which is the wrong default for an
+       instrument.
+
+       Both halves are checked, because turning selection off everywhere
+       would be its own fault: the measurements are the point of half this
+       app, and a number nobody can copy is a number nobody can paste into
+       a message. So: the chrome does not select, the readouts do. */
+    t.head('DRAGGING ACROSS THE CONTROLS DOES NOT HIGHLIGHT THEM');
+    const drag = async (sel, within) => {
+      /* THE FIRST VISIBLE ONE, NOT THE FIRST ONE. These checks run after
+         the suite has clicked through all thirteen views, so
+         querySelector('.rowhint') hands back a hint on a panel that is no
+         longer on screen: offsetParent null, a 0x0 rect, scrollIntoView a
+         no-op, and a drag at (2,2) that selects nothing. That reads as
+         "selection is off" and is really "there was nothing there". */
+      const r = await page.evaluate((s) => {
+        const e = [...document.querySelectorAll(s)].find(x => x.offsetParent !== null
+          && x.getBoundingClientRect().width > 8);
+        if (!e) return null;
+        e.scrollIntoView({ block: 'center' });
+        const b = e.getBoundingClientRect();
+        return { x: b.left + 2, y: b.top + 2, x2: b.right - 2, y2: b.bottom - 2 };
+      }, sel);
+      if (!r) return '(nothing visible)';
+      await page.evaluate(() => window.getSelection().removeAllRanges());
+      /* TWO GESTURES, BECAUSE THEY ARE TWO DIFFERENT QUESTIONS.
+
+         The accident is a slip OFF a control onto whatever is below it, so
+         that drag has to leave the element — a nudge inside one short
+         label picks up nothing even with selection fully on, and would
+         pass either way. Copying is a drag WITHIN the paragraph you are
+         reading.
+
+         Worth knowing, and the reason this is not one gesture: a selection
+         only survives while the whole drag stays in selectable content.
+         Start inside a hint and carry on down into the controls and
+         Chromium hands back nothing. That is the cost of the rule, it is
+         small, and it beats highlighting the UI every time you miss a
+         fader by four pixels. */
+      await page.mouse.move(r.x, r.y);
+      await page.mouse.down();
+      await page.mouse.move(within ? r.x2 : r.x + 140,
+        within ? r.y2 : r.y2 + 70, { steps: 16 });
+      await page.mouse.up();
+      return await page.evaluate(() => String(window.getSelection()).trim());
+    };
+    /* THE TARGET IS A CONTROL LABEL, AND THE FIRST THREE TRIED WERE NOT.
+
+       `#groups`, `.pslider` and `.pad` were the obvious places to drag and
+       all three select nothing in Chromium whatever this rule says —
+       button text does not start a selection, and a range input swallows
+       the drag. Three checks that could not fail, passing against a stale
+       build, which is how they were caught. Measured instead: a drag from
+       the BANK label picks up "BANK A B C D EDIT REPEAT" with the rule off
+       and nothing with it on, so that is the one worth asserting. */
+    /* ON A KNOWN VIEW. By this point the suite has been through all
+       thirteen, and which one it finishes on is not this section's
+       business to assume. */
+    await page.evaluate(() => document.querySelector('#tabs button[data-v="pads"]').click());
+    await page.waitForTimeout(120);
+    const onLabel = await drag('.lbl');
+    t.ok('a drag from a control label selects nothing', onLabel === '',
+      'selection: ' + JSON.stringify(onLabel));
+    t.ok('and it found something to drag, rather than nothing',
+      onLabel !== '(nothing visible)', onLabel);
+
+    /* KNOWN-BAD INPUT. A drag check that cannot tell the two builds apart
+       is not a check, so the rule is switched off and the same drag
+       repeated. If this one does not highlight, neither assertion above
+       means anything. */
+    await page.evaluate(() => { document.body.style.userSelect = 'auto';
+      document.body.style.webkitUserSelect = 'auto'; });
+    const broken = await drag('.lbl');
+    await page.evaluate(() => { document.body.style.userSelect = '';
+      document.body.style.webkitUserSelect = ''; });
+    t.ok('SELF-TEST: with the rule off, that same drag does highlight',
+      broken.length > 0, 'with user-select:auto it selects ' + JSON.stringify(broken.slice(0, 40)));
+
+    t.head('BUT A MEASUREMENT IS STILL SOMETHING YOU CAN COPY');
+    /* the positive control. Without it this pair passes just as well with
+       selection switched off for the whole document, which would be the
+       Goodhart version of the fix. */
+    const onHint = await drag('.rowhint', true);
+    /* "(nothing visible)" is a non-empty string and passed a bare
+       length check once. A sentinel that satisfies the assertion it was
+       added to guard is worse than no sentinel. */
+    t.ok('the small print beside a control still selects',
+      onHint.length > 0 && !onHint.startsWith('('),
+      'selection: ' + JSON.stringify(onHint.slice(0, 40)));
+    const css = await page.evaluate(() => {
+      const u = (s) => { const e = document.querySelector(s);
+        return e ? getComputedStyle(e).userSelect || getComputedStyle(e).webkitUserSelect : '(none found)'; };
+      return { button: u('#tabs button'), label: u('.lbl'), pad: u('.pad'),
+        lcd: u('#lcdmsg'), hint: u('.hint-body'), input: u('input[type=text]') };
+    });
+    t.ok('buttons, labels and pads are unselectable by default',
+      css.button === 'none' && css.label === 'none' && css.pad === 'none',
+      'button ' + css.button + ', label ' + css.label + ', pad ' + css.pad);
+    t.ok('while readouts, prose and text fields are not',
+      css.lcd === 'text' && css.hint === 'text' && css.input === 'text',
+      'lcd ' + css.lcd + ', hint ' + css.hint + ', input ' + css.input);
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
