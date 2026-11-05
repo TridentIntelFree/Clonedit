@@ -2838,7 +2838,21 @@
      sounding like something you did not record. It follows the same rules as
      every other route onto a pad now.
    ================================================================ */
-const BUILD = 'JBH-88 · R267 · 2026-11-04 · a recipe can use the sounds you already had';
+/* THE LINE THE APP INTRODUCES ITSELF WITH, AND IT LIED FOR SEVEN
+   COMMITS. R267 was written here for commit 500d4e4 and the seven
+   commits after it each shipped without touching it, so the app kept
+   saying R267 while everything under it changed -- reported as "I've
+   been stuck on version 267 for several sessions". Nothing was stuck;
+   every one of those builds deployed.
+
+   It is hand-written on purpose and cannot be injected: index.html is
+   committed and CI rebuilds it demanding a byte-identical result, while
+   a build runs BEFORE the commit it ships with -- so any count, SHA or
+   timestamp taken from git differs between the two and breaks the drift
+   check by construction. scripts/check-build-label.mjs therefore CHECKS
+   it instead, in CI, where HEAD is the commit being shipped and the
+   arithmetic is exact. R = commits on main minus 9. */
+const BUILD = 'JBH-88 · R275 · 2026-11-05 · a volume fader per pad, and the app explains itself in plain words';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under

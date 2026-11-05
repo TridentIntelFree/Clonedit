@@ -758,6 +758,17 @@ user-facing message goes through it; `npm run lint` fails on a call with
 no entry in `CONTROL_FOR`. Never name a control you have not found in
 src/index.html.
 
+**THE VERSION THE APP SHOWS IS HAND-WRITTEN, SO BUMP IT.** `const BUILD`
+in src/legacy.js is what the app introduces itself with, and it sat at
+R267 through seven commits while everything under it changed -- reported
+as "I've been stuck on version 267 for several sessions", when nothing
+was stuck and every build had deployed. R = commits on main minus 9. It
+cannot be injected: index.html is committed and CI demands a
+byte-identical rebuild, while a build runs BEFORE its own commit, so
+anything taken from git history differs between the two.
+`npm run lint` fails when the label is behind, and the build now prints
+the label it published next to the size.
+
 **A sample pack can lie about pitch.** VSCO-2 CE names every file an
 octave below what it sounds, and is not consistent with itself: one solo
 violin folder uses scientific pitch and another folder of the same
@@ -1289,6 +1300,7 @@ thing they are about:
 - [Higher-order Markov and pink noise: measured, and already there](docs/findings.md#higher-order-markov-and-pink-noise-measured-and-already-there)
 - [Duration and placement, measured — and the guarantee they broke](docs/findings.md#duration-and-placement-measured--and-the-guarantee-they-broke)
 - [One message, two audiences — and only one of them can type](docs/findings.md#one-message-two-audiences--and-only-one-of-them-can-type)
+- ["I've been stuck on version 267 for several sessions"](docs/findings.md#ive-been-stuck-on-version-267-for-several-sessions)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

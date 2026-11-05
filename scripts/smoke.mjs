@@ -20,7 +20,18 @@ if (!existsSync(staged)) { console.error('nothing staged — run the build first
 const promote = () => {
   writeFileSync(live, readFileSync(staged));
   unlinkSync(staged);
-  console.log('published  index.html  ' + (statSync(live).size / 1024).toFixed(0) + ' KB');
+  /* AND THE VERSION IT PUBLISHED, every time.
+     "I've been stuck on version 267 for several sessions" — nothing was
+     stuck; the hand-written BUILD line had not moved for seven commits
+     and the build never mentioned it, so there was nothing to notice.
+     Printing it here means a stale label is in front of whoever built,
+     on the same line as the size they already read. */
+  /* the R number specifically: a looser match found the page TITLE,
+     "JBH-88 Groovebox", and printed that instead of the version */
+  const label = (readFileSync(live, 'utf8')
+    .match(/JBH-88\s*\u00b7\s*R\d+[^'"]{0,120}/) || [''])[0];
+  console.log('published  index.html  ' + (statSync(live).size / 1024).toFixed(0) + ' KB'
+    + (label ? ('  \u00b7  ' + label) : '  \u00b7  NO VERSION LABEL FOUND'));
 };
 
 if (process.argv.includes('--skip-smoke')) {

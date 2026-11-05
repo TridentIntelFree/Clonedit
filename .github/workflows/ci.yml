@@ -37,6 +37,18 @@ jobs:
         if: steps.pw-cache.outputs.cache-hit != 'true'
         run: node node_modules/playwright-core/cli.js install --with-deps chromium
 
+      # "I've been stuck on version 267 for several sessions" — nothing was
+      # stuck. The hand-written BUILD line in src/legacy.js had not moved
+      # for seven commits, so the app kept introducing itself as R267
+      # while everything under it changed. It cannot be injected at build
+      # time: index.html is committed and the drift check below demands a
+      # byte-identical rebuild, while a build runs before the commit it
+      # ships with, so anything taken from git history differs between
+      # the two. Here HEAD *is* the shipping commit, so the arithmetic is
+      # exact and this is the one place the check belongs.
+      - name: The version the app shows is the version it is
+        run: node scripts/check-build-label.mjs
+
       - name: Unit tests
         run: npm test
 

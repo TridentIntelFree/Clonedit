@@ -3317,3 +3317,78 @@ shortened would end with sentences trimmed to satisfy a word count —
 the Goodhart failure the longest section of AGENTS.md is about. The
 `translate()` message above is 36 words and is the best sentence in the
 app.
+
+## "I've been stuck on version 267 for several sessions"
+
+Nothing was stuck. Every one of those builds deployed correctly, and the
+committed `index.html` carried every change. What had not moved was one
+hand-written line:
+
+```js
+const BUILD = 'JBH-88 · R267 · 2026-11-04 · a recipe can use the sounds you already had';
+```
+
+R267 was written for commit `500d4e4`, and the **seven commits after it
+each shipped without touching that line** — so the app kept introducing
+itself as R267 while everything under it changed. Diagnosis took three
+checks: no `pages.yml`, so the documented Pages trap was not it; the
+committed `index.html` contained the new work; and `git log 500d4e4..HEAD`
+listed seven commits, none of which touched the label.
+
+**This is the worse kind of bug.** A broken feature wastes the time it
+takes to find. A lying version number makes a person doubt work that is
+sitting in front of them, for several sessions, and there is nothing in
+the app to contradict it.
+
+### Why it cannot be injected at build time
+
+The first instinct was to derive it from git in `scripts/emit.mjs`. That
+cannot work here, and the reason is worth writing down because it will
+look obvious again next time. `index.html` is committed, and CI rebuilds
+it and demands the result be byte-identical:
+
+```
+if ! git diff --quiet -- index.html; then  …  exit 1
+```
+
+A build runs **before** the commit it ships with. So locally
+`git rev-list --count HEAD` is the parent's count, and in CI it is the
+commit's own. Injecting a count, a short SHA or a timestamp therefore
+makes the local and CI builds differ *by construction*, and the drift
+check fails on every push. Anything derived from history has to be
+CHECKED rather than injected.
+
+### So it is checked, and the check works in both places
+
+`scripts/check-build-label.mjs` compares the R number against the commit
+count. The offset is **9**, measured rather than assumed: `500d4e4` is
+the 276th commit on main and its label says R267. The R numbers predate
+the current history, so they are not the commit count — they are the
+count minus a constant, and that pair fixes the constant.
+
+The off-by-one is settled by asking git whether the tree is dirty rather
+than by a flag: locally the label describes a commit that does not exist
+yet, in CI it describes HEAD. That lets the same check run in `npm run
+lint` *and* as a CI step, which matters — a check that only runs in CI is
+one nobody sees until after they have pushed.
+
+```
+THE VERSION LABEL IS 8 BEHIND.
+
+  src/legacy.js says   R267
+  this commit is       R275   (283 commits on main + the one you are making − 9)
+```
+
+And `npm run build` now prints the label it published, on the line that
+already reports the size:
+
+```
+published  index.html  2181 KB  ·  JBH-88 · R275 · 2026-11-05 · …
+```
+
+That last part is the cheap half of the fix and probably the useful one.
+The label went stale for seven commits because **the build never
+mentioned it**, so there was nothing to notice. A first attempt at
+printing it matched the page `<title>` instead and proudly announced
+`JBH-88 Groovebox</title>`, which is its own small lesson about regexes
+over HTML.
