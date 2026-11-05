@@ -2689,3 +2689,255 @@ appeared in the joined text. It walks now, starting at `writeSurprise()`
 and admitting a function only once its name appears in text already
 admitted. Three known-bad inputs were tried against it; the fixed-list
 version caught two.
+
+## The kit was assigned by pad index, and A01 never played
+
+"I'd like to be able to click a button that learns pads, then click
+write song and it utilise what it learned about pads available and that
+info it gathers from learning apply to songwriting to increase
+musicality."
+
+The fault underneath that request was real and had been costing every
+build:
+
+```js
+const drums = loose.slice(0, 3);
+//   drums[0] -> kick figure, [1] -> snare, [2] -> hat
+```
+
+The three voices went to whichever pads were free IN PAD ORDER. Load a
+hat on A01 and a kick on A03 and the measured hiphop kick bar plays on
+the hat while the hat pattern fires the kick. Every check in this repo
+passes: the steps are on the grid, the harmony is untouched, `pulse()`
+finds a beat, `form()` reports A B A B C B. Nothing is broken. It is
+simply not the kit anybody loaded, and nothing here looks at whether a
+figure landed on the right sound.
+
+`timbre()` could not have caught it. A kick and a closed hat are both a
+fast attack and a short tail; the difference is entirely SPECTRAL, and
+nothing in `src/pure/` measured a spectrum.
+
+### Air-vs-body is the axis, and the centroid is not
+
+The first version of the detector scored on the spectral centroid —
+under 150Hz a kick, 300-2500Hz a snare, above 2500Hz a hat. It passed
+every synthesised fixture, then met a real pack of 27 drums and **every
+single snare came back as a hat**:
+
+```
+sample              truth  read   owns      centroid   air
+jbh:snare_909       snare  hat    120-250       3798   -1.9
+jbh:snare_acoustic  snare  hat    8k-16k        6716    8.7
+jbh:snare_tight     snare  hat    250-500       4675   -1.3
+jbh:snare_rim       snare  hat    8k-16k        7671    9.6
+jbh:clap            snare  hat    4k-8k         6601   21.7
+```
+
+A real snare is BRIGHT — the wire buzz puts its centroid at 3.8-7.7kHz,
+exactly where the hats sit (hat_closed 3033, ride 4215, hat_open 5551).
+The centroid cannot separate those two at all. "A snare is a mid sound"
+came from intuition, not measurement, which is the failure AGENTS.md
+describes as a plausible number reading later as a fact.
+
+What does separate them, across the same 27 samples:
+
+```
+kick    air-vs-body  -95.6 .. -41.8     all body, no air
+snare                -10.9 .. +21.7     shell tone AND wire buzz
+hat                  +31.0 .. +82.8     all air, no body
+```
+
+That is not a quirk of one pack, it is what the instruments are: a kick
+is a tuned membrane with nothing above it, a cymbal is nothing but
+overtones, and a snare is the one with both at once. Being a ratio it is
+also level-independent. Accuracy went from 16/22 to **20/22**, and the
+two it disagrees with are a cowbell and a rimshot — percussion where the
+label is a judgement call, and it flags the rimshot as unsure.
+
+### The one it refuses, and why that is right
+
+An 808 kick and an 808 bass note are THE SAME SIGNAL; which one it is
+depends on what you play it as. `jbh-drums` ships both and they measure
+alike — kick_808 at 62Hz, bass808_C1 at 36Hz, both all body, both
+ringing. Ring does not separate them either.
+
+The first `pitchedness()` called anything with a 500ms tail under 3kHz a
+note, so a 909 kick (600ms ring at 62Hz) read as melodic: the builder
+dealt it a bass line and reported `kick=—` on a board whose kick was
+sitting right there and had been correctly identified one line earlier.
+Guessing the other way would be equally wrong, so below 300Hz it returns
+null and the caller uses the two things that actually know — the `inst`
+tag, which is the person saying so outright, and the kit scores, which
+say what the sound would be GOOD at.
+
+The kit-candidate filter then has to be `!== 'pitched'` rather than
+`=== 'percussive'`, because the kick measures as neither. Requiring a
+positive `percussive` threw away the one voice the kit most needs.
+
+### And a bug older than the feature
+
+```js
+if (drums[0]) { ... }      // A01 is pad index 0, so this is FALSE
+```
+
+A pad index is a number. The voice assigned to A01 had its figure
+computed, its break and fill worked out around it, and then nothing
+written. It stayed hidden because the old code took `loose.slice(0, 3)`
+and the kick was USUALLY pad 0 — so the commonest board silently had no
+kick at all. The measured assignment surfaced it by putting a hat there
+instead, which was equally skipped and far more obvious.
+
+It was found by counting hits per pad after a build, not by reading the
+output, which named every voice correctly while writing two of them.
+`tests/generator-reach.test.mjs` now rejects any `if (drums[n])` in
+`writeKit`, verified by putting one back.
+
+### What the build does with it now
+
+`learn()` runs BEFORE the voices are chosen — the order matters, because
+choosing voices first takes the kit pads away and a drum gets dealt a
+melody. Percussive pads are reserved for the kit, pitched ones carry the
+parts, and the kit gives its least convincing member back if that would
+leave nobody to play the tune. An `inst` tag outranks any measurement.
+
+```
+hat on A01, snare on A02, kick on A03, tagged bass on A04
+
+LEARN   kick=A03 snare=A02 hat=A01. 4 of 4 were clear-cut.
+BUILD   1 voice over 3 patterns ... Kit by ear: kick=A03 snare=A02
+        hat=A01. Kit: kick/snare/hat drawn from 95 measured hiphop takes.
+hits    A01 16, A02 8, A03 12, bass 11   (per pattern)
+```
+
+**The build measures the pads whether or not the button was pressed.** A
+track that is only right when you remember to press something first is a
+track that is usually wrong. The button exists so a person can SEE the
+reading before committing to it, and disagree — which is why it prints
+the numbers per pad rather than only the verdict.
+
+### A process note worth more than the feature
+
+Mid-way through, three probes in a row reported `kick=—` and a debug hook
+that never fired. The cause was that `npm run build` runs the unit tests
+first and had been ABORTING on a test I had just broken, so every probe
+was measuring a stale `index.html`. Reading `tail -3` of a build showed a
+test summary rather than a build summary and that went unnoticed for
+three cycles. Check that the thing you are measuring is the thing you
+just changed — the same trap as "before concluding that an edit failed,
+check that the edit changed anything at all", one level up.
+
+## Bend to my will: the knob search was the wrong mechanism
+
+"A bend-to-my-will button that forces pads into parameters as best I can
+as opposed to selecting the best available would be interesting."
+
+Everything else on the board PICKS. `fit()` ranks the pads you own
+against a slot, `assignKit()` hands the three drum voices to whichever
+sounds measure most like them, and both answer "which of these is
+closest". Bend is the other verb: name the job, and the sound is pushed
+toward it until it measures like the thing.
+
+`mutate()` looked like the mechanism and it was already a knob search —
+render a candidate, measure it, score it, keep the best — so adding a
+role as its objective was four lines. AGENTS.md's own rule: check
+whether the thing you want already exists and has never been reached
+for.
+
+**Then it was measured, and the person using it had already said it:
+"mutate doesn't have much effect either."** On real samples, scored on
+the render:
+
+```
+ride           -> kick     0% ->  0%    0dB spectral change, 15 tries, 32s
+snare_acoustic -> hat      70% -> 71%   5.48dB change, 32s
+```
+
+Nothing, and one percentage point. Which is exactly what AGENTS.md says
+about mutate — it turns the pad's own knobs and **never touches the
+audio**, so "the most transformed thing it can return is your sample
+with a filter on it". A ride needs 66dB more body to hold a kick's place
+and no filter setting adds low end that was never recorded. The tool was
+working correctly and was the wrong tool.
+
+### What the fix needed first: something to aim at
+
+`ROLE_TARGETS` scores a role from two numbers — air-vs-body and a
+centroid range. That is enough to RECOGNISE a sound and not enough to
+MAKE one: two constraints cannot specify nine bands. So
+`scripts/study-role-shapes.mjs` measures the mean band shape of each job
+from the labelled samples of `samples/jbh-drums.json`, the way
+`grooves.js` was measured from the Groove MIDI Dataset, and refuses to
+write unless kick comes out darker than snare and snare darker than hat
+on the same axis:
+
+```
+kick  n=4  air  -75.3dB  centroid    73Hz
+snare n=6  air    4.2dB  centroid  4406Hz
+hat   n=8  air   34.4dB  centroid  4616Hz
+bass  n=3  air  -97.3dB  centroid    38Hz
+```
+
+21 samples from one pack is not a corpus, and the generated file says so
+in its own header.
+
+### The mechanism that works
+
+An EQ match on the buffer: measure the sample's nine bands, compare with
+the job's shape, apply the difference through an STFT. One static curve
+across the whole sample, because the envelope is the sample's identity
+and the thing being changed is COLOUR. Same job, both mechanisms:
+
+```
+                 knob search                  audio bend
+ride -> kick     air 31.7 -> 31.7dB           air 31.7 -> -27.0dB
+                 centroid 4215 -> 4215Hz      centroid 4215 -> 149Hz
+                 fit 0% -> 0%,  32 seconds    fit 0% -> 73%,  0.2 seconds
+```
+
+A boost is capped at 18dB and a cut is not, which is the honest
+asymmetry: lifting a band that holds nothing amplifies noise instead of
+adding a sound. A kick bent toward a hat gets to 2% and says it needs
+56dB more air, then names `resynth()` and `paint()`, which do make
+substance that is not there. Most of the real transformation is in the
+cutting anyway — take the air off a ride and what is left thumps.
+
+### Two identical measurements, twice, for two different reasons
+
+AGENTS.md: "before concluding that an edit failed to achieve its goal,
+check that the edit changed anything at all. Two identical measurements
+are not a weak effect, they are no effect." That exact reading appeared
+twice here, and **neither time was the transform at fault**.
+
+First, `bend()` reported before and after with `learn()`, which profiles
+the RAW SAMPLE. Knobs do not touch the buffer, so learn() could not see
+any of them:
+
+```
+snare_acoustic -> hat   fit 77% -> 77%   air 8.7 -> 8.7dB
+moved fcut 1->0.646, ftype off->bandpass, eqHi 0->-2.915, (8 more)
+```
+
+Eleven knobs moved and the measurement did not shift a decimal. The edit
+had worked and the measurement was blind to it — the same rule wearing
+the other face. `mutate()` already returns the rendered before and after
+shapes, so there was nothing to add but to read the right ones.
+
+Second, after the audio bend was in, the numbers went identical again:
+air 31.7 → 31.7 following an 18dB boost and a 48dB cut. The curve was
+right, the transform was right, and `loadIntoTarget(buf, name,
+{keepTarget: true})` writes to **`S.editPad`**, not to the pad the
+function was handed. With one pad loaded those are the same pad and
+everything looks correct; load three and the selection has moved on, so
+the bent audio landed on the last pad touched while `bend()` measured
+and reported the untouched one. The browser test now loads three pads
+for exactly this reason.
+
+### And a build that aborts looks like a build that ran
+
+Three probe cycles in a row reported a stale result and a debug hook
+that never fired. `npm run build` runs the unit tests first, and it had
+been ABORTING on a test broken a minute earlier — so every probe was
+measuring the previous `index.html`. Reading `tail -3` of the build
+showed a *test* summary rather than a build summary, and that went
+unnoticed three times. Check that the thing being measured is the thing
+that was just changed.

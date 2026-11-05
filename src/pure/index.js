@@ -20,6 +20,21 @@ export * from './sfz.js';
    playable on it at a given tempo. Pure maths over a channel of audio,
    so it is tested in Node against signals whose answers are known. */
 export * from './timbre.js';
+/* WHAT IS ON THIS PAD — level, envelope, and the spectrum timbre.js
+   does not measure. The song builder assigned kick, snare and hat by
+   PAD INDEX, so a hat on A01 got the kick figure and every check in the
+   repo passed. Identity is spectral and nothing here was looking. */
+export * from './padprofile.js';
+/* THE MEAN SPECTRUM OF EACH JOB, measured from a labelled pack by
+   scripts/study-role-shapes.mjs. ROLE_TARGETS recognises a sound with
+   two numbers, which cannot specify nine bands — making one needs
+   something to aim at. */
+export * from './roleshapes.js';
+/* EQ-MATCHING A SAMPLE INTO A JOB, by changing the audio. The knob
+   search was the obvious mechanism and measured 0% on a ride aimed at a
+   kick, over 15 candidates: a filter cannot add low end nobody
+   recorded. */
+export * from './bend.js';
 /* what a RECORDED take did: onsets off the buffer, timing against the
    grid, and the three faults that make a take unusable. The schedule
    checks next door cannot see a take at all -- they read the sequencer,

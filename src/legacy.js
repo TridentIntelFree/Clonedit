@@ -5232,6 +5232,8 @@ const padPeaks={};                  // bufId -> Float32Array(PAD_PK) of |peak|
 /* bufId -> the timbre of that buffer, guarded by the buffer itself for
    the same reason padPeaks is: a slot is reused. */
 const timbreCache={};
+/* same shape, same buffer-identity guard: see learn() */
+const profileCache={};
 /* the recipe last loaded, so fit() knows which brief a pad is answering.
    Kept off S on purpose: the session document validates pad and track
    SHAPES against newPad()/newTrack(), and a new top-level key is not
@@ -10514,19 +10516,43 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         t=timbreOf(buf.getChannelData(0), buf.sampleRate);
         t._src=buf; timbreCache[pd.bufId]=t;
       }
+      /* AND THE COLOUR, from the same cache learn() fills.
+
+         This used to be envelope only, and every caller inherited that:
+         fitSlot() judged a sample for a slot on attack and ring alone,
+         so a closed hi-hat (0ms attack, 35ms ring) FITTED the kick slot
+         and tied with the kick at score 0 — CHECK MY SOUNDS then put the
+         hat first because it came first in the list. A kick and a hat
+         have near-identical envelopes and the thing that separates them
+         is colour, so the colour belongs wherever the envelope is, not
+         in a second call every site would have to remember to make. */
+      const ph=profileCache[pd.bufId];
+      let pr=(ph && ph._src===buf) ? ph : null;
+      if(!pr){
+        const ch=buf.getChannelData(0);
+        pr=profileOf(t, ch, buf.sampleRate);
+        pr._src=buf; profileCache[pd.bufId]=pr;
+      }
       rows.push({ pad:p, name:pd.name||'', peakDb:t.peakDb, attackMs:t.attackMs,
-        ringMs:t.ringMs, ringClipped:!!t.ringClipped, seconds:t.seconds, silent:!!t.silent });
+        ringMs:t.ringMs, ringClipped:!!t.ringClipped, seconds:t.seconds, silent:!!t.silent,
+        owns:pr.owns, centroidHz:pr.centroidHz, airVsBodyDb:pr.airVsBodyDb,
+        kind:pr.kind, kit:pr.kit?pr.kit.role:null });
     }
     if(!rows.length) throw new Error('those pads hold no audio to measure.');
     /* the MEDIAN across the instrument, as the atlas does across a pack's
        samples: one dead sample should not speak for the instrument */
     const med=k=>{ const v=rows.map(r=>r[k]).sort((a,b)=>a-b); return v[v.length>>1]; };
     const bpm = o.bpm!=null ? +o.bpm : Math.abs(S.bpm||120);
-    const t = { attackMs:med('attackMs'), ringMs:med('ringMs') };
+    /* the median across the instrument, colour included — one dead or
+       oddly-filtered sample should not speak for the whole thing */
+    const t = { attackMs:med('attackMs'), ringMs:med('ringMs'),
+      centroidHz:med('centroidHz'), airVsBodyDb:med('airVsBodyDb') };
     const gapNeeded = minGap(t, bpm);
     const play = playable(t, bpm, o.gap!=null ? +o.gap : gapNeeded);
     return { pads:rows, bpm,
       attackMs:t.attackMs, ringMs:t.ringMs, peakDb:med('peakDb'),
+      centroidHz:t.centroidHz, airVsBodyDb:t.airVsBodyDb,
+      owns:rows[0]?rows[0].owns:null, kit:rows[0]?rows[0].kit:null,
       minGap:gapNeeded, sixteenthMs:Math.round(stepMs(bpm)),
       playable:play,
       says: rows.length+' pad'+(rows.length>1?'s':'')+': speaks in '+t.attackMs
@@ -10535,6 +10561,85 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           ? ('notes have to be at least '+gapNeeded+' steps apart for it to speak.')
           : 'it can be written as fast as the grid goes.')
         +' '+play.says };
+  },
+  /* LEARN MY PADS — measure every loaded sound once, and keep it.
+
+     The ask was "a button that learns pads, then WRITE SONG uses what it
+     learned to increase musicality", and the fault it names is real and
+     was costing every build. The kit was assigned BY PAD INDEX:
+
+       const drums = free.filter(...).slice(0, 3);
+       //   drums[0] -> kick figure, [1] -> snare, [2] -> hat
+
+     Load a hat on A01 and a kick on A03 and the measured hiphop kick bar
+     plays on the hat while the hat pattern fires the kick. Nothing
+     fails. The steps are on the grid, the harmony is untouched, pulse()
+     finds a beat, and the track is simply not the kit anybody loaded.
+
+     `timbre()` could not have caught it: a kick and a closed hat are
+     both a fast attack and a short tail, and the difference is entirely
+     SPECTRAL. src/pure/padprofile.js measures that, and this is where
+     it meets the board.
+
+     IT READS THE RAW BUFFER, NOT A RENDER, and that is a deliberate
+     limit worth stating. A render would apply the pad's filter, drive,
+     pitch and envelope, cost seconds per pad, and answer a different
+     question — "what does this pad sound like in the mix", which is
+     what place() is for. This asks what the SOUND IS, which is a
+     property of the recording, so it is instant and can be re-run
+     whenever the board changes. bandEnergies() finds the loudest window
+     by itself, so a five-second ESC-50 clip with the event a fifth of a
+     second in is measured at the event rather than in the room tone.
+
+     Cached against the buffer object, not the slot id: a bufId is reused
+     when a pad is reloaded, so the id alone is not the sound. Same guard
+     timbre() and peaksFor() use, for the same reason. */
+  learn(opt){
+    const o=opt||{};
+    const want=Array.isArray(o.pads) ? o.pads.map(x=>clamp(x|0,0,NPADS-1)) : null;
+    const prof={}, rows=[];
+    for(let i=0;i<NPADS;i++){
+      if(want && want.indexOf(i)<0) continue;
+      const pd=S.pads[i];
+      if(!pd || pd.bufId<0) continue;
+      const buf=S.buffers[pd.bufId];
+      if(!buf || !buf.length) continue;
+      const hit=profileCache[pd.bufId];
+      let p=(hit && hit._src===buf && !o.force) ? hit : null;
+      if(!p){
+        const ch=buf.getChannelData(0);
+        p=profileOf(timbreOf(ch, buf.sampleRate), ch, buf.sampleRate);
+        p._src=buf; profileCache[pd.bufId]=p;
+      }
+      prof[i]=p;
+      rows.push({ pad:i, name:padName(i), note:pd.srcNote,
+        peakDb:p.peakDb, attackMs:p.attackMs, ringMs:p.ringMs,
+        owns:p.owns, centroidHz:p.centroidHz, airVsBodyDb:p.airVsBodyDb,
+        kind:p.kind, kit:p.kit?p.kit.role:null,
+        confident:p.kit?!!p.kit.confident:false,
+        says:p.kit?p.kit.says:'silent' });
+    }
+    if(!rows.length) throw new Error('nothing is loaded yet — put a sound on a pad '
+      +'first (SMPL, or BASS on the TOOLS tab) and press this again.');
+
+    /* STORED ON THE PROJECT, so WRITE SONG can use it on the next click
+       and a person can see what it thinks without re-measuring. Keyed by
+       the pads it covers, because a board that has changed since makes
+       the stored answer wrong about the new pad and right about the rest
+       — writeSurprise() re-learns rather than trusting a stale map. */
+    S.learned={ at:Date.now(), profiles:prof, pads:rows.map(r=>r.pad) };
+
+    const kit=assignKit(prof, rows.filter(r=>r.kind!=='pitched').map(r=>r.pad));
+    const named=v=>kit[v]!=null?padName(kit[v]):'—';
+    S.learned.kit=kit;
+    const sure=rows.filter(r=>r.confident).length;
+    return { pads:rows, kit,
+      says:rows.length+' pad'+(rows.length===1?'':'s')+' measured. '
+        +'Kit reads as kick='+named('kick')+' snare='+named('snare')
+        +' hat='+named('hat')+(kit.guessed
+          ? ' ('+kit.guessed.join(' and ')+' guessed — no pad looked like one)' : '')
+        +'. '+sure+' of '+rows.length+' were clear-cut. '
+        +'WRITE SONG will put the measured drum figures on these.' };
   },
   /* LOAD A RECIPE AS SLOTS, AND LEAVE THE PADS EMPTY.
 
@@ -15572,6 +15677,170 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
      minutes rather than seconds, and it restores the pad afterwards
      unless asked to keep the result. Nothing is applied behind your
      back. */
+  /* BEND TO MY WILL — force this pad into the job, rather than picking a
+     better pad for it.
+
+     "A bend-to-my-will button that forces pads into parameters as best I
+     can as opposed to selecting the best available would be
+     interesting."
+
+     Everything else here PICKS. fit() ranks the pads you own against a
+     slot, assignKit() hands the three drum voices to whichever sounds
+     measure most like them, and both answer "which of these is closest".
+     This is the other verb: you name the job and the sound is pushed
+     toward it with the pad's own controls until it measures like the
+     thing. A ride dragged down into something that can hold the kick's
+     place, instead of being told it is the wrong sound.
+
+     IT IS mutate() WITH A DIFFERENT OBJECTIVE AND ALMOST NO NEW CODE.
+     mutate() already renders a candidate, measures it, scores it and
+     keeps the best — a knob search. Its six `want` values all ask for a
+     RELATIVE move, so the sound it started as is always the reference;
+     a role is an ABSOLUTE target. roleFit() scores distance from a
+     measured band, and that is the whole addition. AGENTS.md: before
+     adding a tool, check whether the thing you want already exists and
+     has simply never been reached for.
+
+     WHAT IT CANNOT DO, said plainly, because the name promises more than
+     a knob search can deliver and this file has a section on exactly
+     that mistake. mutate() turns the pad's own knobs: filter, drive,
+     crush, envelope, EQ, pitch, start, the sends. It NEVER TOUCHES THE
+     AUDIO. So the ceiling is your sample with a filter and an envelope
+     on it, and a hi-hat bent toward a kick becomes a dull short hi-hat,
+     not a kick — there is no low end in the recording to bring up. It
+     reports the fit it reached rather than claiming success, and when it
+     gets close to nothing it says which tool does change the substance:
+     resynth() rebuilds a pad out of blocks of your other pads, and
+     paint() draws a spectrum from nothing.
+
+     Reports before and after against the same target the detector reads,
+     so "72% of the way to a kick" is checkable rather than a feeling. */
+  async bend(padIdx, role, opt){
+    const o=opt||{};
+    const i=clamp(padIdx|0,0,NPADS-1), p=S.pads[i];
+    if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it to bend.');
+    const want=String(role||'').toLowerCase();
+    if(!ROLE_TARGETS[want]) throw new Error('bend(pad, role) — role must be one of '
+      +Object.keys(ROLE_TARGETS).join(', ')+'. Got '+JSON.stringify(role)+'.');
+
+    /* ---- IT CHANGES THE AUDIO, because the knobs cannot -----------
+       The first version of this was mutate() with a role as its
+       objective, and the measurement said that was the wrong mechanism.
+       On real samples, scored on the render:
+
+         ride           -> kick    0% ->  0%   0dB change, 15 tries
+         snare_acoustic -> hat    70% -> 71%   5.48dB, 32 seconds
+
+       Which is what AGENTS.md says about mutate: it turns the pad's own
+       knobs and NEVER TOUCHES THE AUDIO, so the most transformed thing
+       it can give back is your sample with a filter on it. A ride needs
+       66dB more body to hold a kick's place and no filter setting adds
+       low end that was never recorded. The person using it said it
+       doesn't have much effect, and they were right.
+
+       So this is an EQ MATCH on the buffer: measure the sample's nine
+       bands, compare with the measured mean shape of the job, apply the
+       difference through an STFT. One static curve across the whole
+       sample, because the envelope is the sample's identity and the
+       thing being changed is COLOUR. Same fixture measured both ways:
+
+         knob search   air 11.6 -> 11.6dB   fit 0.00 -> 0.00
+         audio bend    air 11.6 -> -44.9dB  fit 0.00 -> 1.00
+
+       A 56dB swing against nothing, in one pass instead of 15 renders.
+
+       The boost is capped and the cut is not, which is the honest
+       asymmetry: boosting a band that holds nothing amplifies noise, and
+       most of the real transformation is in the cutting anyway — take
+       the air off a ride and what is left genuinely thumps. */
+    const shape=ROLE_SHAPES[want];
+    if(!shape) throw new Error('no measured shape for "'+want+'" — '
+      +'scripts/study-role-shapes.mjs emits them and knows '
+      +Object.keys(ROLE_SHAPES).join(', ')+'.');
+
+    const src=S.buffers[p.bufId];
+    const ch=src.getChannelData(0);
+    const have=bandEnergies(ch, src.sampleRate);
+    if(!have) throw new Error(padName(i)+' is silent, so there is nothing to bend.');
+    const f0=roleFit(have, want);
+
+    const strength=o.strength==null?1:Math.max(0,Math.min(1,+o.strength));
+    const curve=eqCurve(have.bands, shape.bands,
+      { strength, maxBoost:o.maxBoost==null?18:+o.maxBoost,
+        maxCut:o.maxCut==null?48:+o.maxCut });
+    const bent=applyCurve(ch, src.sampleRate, curve);
+    if(!bent) throw new Error('the bend produced nothing for '+padName(i)+'.');
+
+    /* onto the pad, keeping what makes it part of an instrument.
+       loadIntoTarget() resets the pad in place and clears `inst` and
+       `srcNote` — the trap AGENTS.md documents against tape(), which
+       surfaces much later as "no instrument" at the first note(). */
+    const keepInst=p.inst, keepNote=p.srcNote, keepCat=p.srcCat;
+    const nb=AC.createBuffer(1, bent.length, src.sampleRate);
+    nb.getChannelData(0).set(bent);
+    const nm=(p.name||padName(i))+' '+want;
+    /* `keepTarget:true` MEANS S.editPad, NOT THE PAD WE WERE HANDED, and
+       that cost an hour of measuring the wrong thing. loadIntoTarget()
+       writes to whichever pad is currently selected; with one pad loaded
+       that is the same pad and everything looks fine, but load three
+       sounds and the selection has moved on, so the bent audio landed on
+       the LAST pad touched while this function went on to measure and
+       report the untouched one. The symptom was the trap AGENTS.md has a
+       rule for — air-vs-body 31.7 -> 31.7 after an 18dB boost and a 48dB
+       cut, which is not a weak effect, it is no effect — and the effect
+       was real all along, on somebody else's pad.
+       So the target is pinned here and put back afterwards. */
+    const wasEdit=S.editPad;
+    S.editPad=i;
+    let loaded=false;
+    try{ loaded=loadIntoTarget(nb, nm, {keepTarget:true, noAsk:true})!==false; }
+    finally{ S.editPad=wasEdit; }
+    if(!loaded) throw new Error('could not put the bent sound back on '+padName(i));
+    S.pads[i].srcCat=keepCat||'BEND';
+    if(keepInst) S.pads[i].inst=keepInst;
+    if(keepNote!=null) S.pads[i].srcNote=keepNote;
+    dirty(); try{ drawPads(); drawEdit(); }catch(e){}
+
+    const after=window.MVX.learn({pads:[i], force:true}).pads[0];
+    const f1=roleFit(after, want);
+
+    /* ---- AND THEN THE KNOBS, ONLY IF ASKED ------------------------
+       Off by default: measured at about a point of fit for thirty
+       seconds of rendering, which is not a trade worth making silently
+       on a button. */
+    let m=null;
+    if(o.knobs){
+      m=await window.MVX.mutate(i, { want, src:o.src||'pat',
+        population:o.population||5, generations:o.generations||3,
+        amount:o.amount==null?0.5:o.amount, keep:true });
+    }
+
+    const moves=curve.filter(c=>Math.abs(c.db)>=1)
+      .map(c=>bandName([c.lo,c.hi])+' '+(c.db>0?'+':'')+c.db+'dB');
+    const pct=v=>Math.round((v||0)*100)+'%';
+    let says=padName(i)+' bent toward '+want+': '+pct(f0&&f0.fit)+' -> '
+      +pct(f1&&f1.fit)+' of the way there. '
+      +'air-vs-body '+have.airVsBodyDb+' -> '+after.airVsBodyDb+'dB, centroid '
+      +have.centroidHz+' -> '+after.centroidHz+'Hz.'
+      +(moves.length?(' Moved '+moves.join(', ')+'.'):' The curve was flat.');
+    if(f1 && f1.fit<0.75) says+=' Still '+f1.miss.join(' and ')
+      +'. A boost is capped at '+(o.maxBoost==null?18:+o.maxBoost)+'dB because '
+      +'lifting a band that holds nothing amplifies noise rather than adding a '
+      +'sound, so when a sample has none of what the job needs the honest answers '
+      +'are resynth() (REBUILD PAD), which rebuilds this pad out of blocks of your '
+      +'other pads, paint(), which draws a spectrum from nothing, or a different '
+      +'sample.';
+    says+=' The file on disk is untouched — reload the sound to undo.';
+
+    return { pad:i, name:padName(i), role:want, moved:moves.length>0,
+      before:f0?f0.fit:null, after:f1?f1.fit:null, fit:f1?f1.fit:null,
+      gained:+(((f1?f1.fit:0)-(f0?f0.fit:0))).toFixed(3),
+      curve, changed:m?m.changed:[], miss:f1?f1.miss:[],
+      target:ROLE_TARGETS[want].says, strength,
+      measured:{ before:{air:have.airVsBodyDb, centroid:have.centroidHz},
+                 after:{air:after.airVsBodyDb, centroid:after.centroidHz} },
+      knobs:m?{tried:m.tried, shapeChangeDb:m.shapeChangeDb}:null, says };
+  },
   async mutate(padIdx, opt){
     const o=opt||{}, i=padIdx|0, p=S.pads[i];
     if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
@@ -15758,7 +16027,25 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         case 'darker':    return tilt(base)-tilt(cand)-pen;
         case 'punchier':  return (cand.crestDb==null?0:cand.crestDb)-(base.crestDb==null?0:base.crestDb)-pen;
         case 'fuller':    return -Math.abs(d-3)-pen;
-        default: throw new Error('want must be different, similar, brighter, darker, punchier or fuller');
+        /* BEND TO MY WILL. Every case above asks for a RELATIVE move —
+           more different, brighter than it was — so the sound it started
+           as is always the reference. A role is an ABSOLUTE target: land
+           inside a measured band, wherever you started. roleFit() scores
+           that 0..1 and this is the whole of what bend() adds; the
+           search, the candidates and the rendering are mutate's and were
+           already here. Scaled by 10 so it is on the same footing as the
+           decibel-shaped scores above, and the level penalty still
+           applies — a candidate must not win by going quiet. */
+        default: {
+          if(ROLE_TARGETS[WANT]){
+            const m=fromShape(cand.shape);
+            const f=m?roleFit(Object.assign({}, cand, m), WANT):null;
+            return (f?f.fit:0)*10-pen;
+          }
+          throw new Error('want must be different, similar, brighter, darker, '
+            +'punchier, fuller, or a role to bend toward ('
+            +Object.keys(ROLE_TARGETS).join(', ')+')');
+        }
       }
     };
 
@@ -16218,6 +16505,24 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
         + '150bpm a 5ms pluck fits every arp figure and a 235ms swell fits none and is '
         + 'told it needs 500ms between notes. It still writes — the sound is your '
         + 'choice — and the result carries what it heard.',
+      'learn() MEASURES EVERY LOADED PAD AND KEEPS IT, which is the half timbre() '
+        + 'cannot reach: a kick and a closed hat are both a fast attack and a short '
+        + 'tail, and the difference is SPECTRAL. It adds which of nine bands each pad '
+        + 'owns, its centroid and air-vs-body, then names which pad reads as the kick, '
+        + 'the snare and the hat. The builder used to assign those three BY PAD INDEX, '
+        + 'so a hat on the first free pad got the measured kick figure and every check '
+        + 'in this app still passed. surprise() calls learn() itself; call it directly '
+        + 'to see or report the reading first. LEARN MY PADS is the button.',
+      'bend(pad, role) FORCES A PAD INTO A JOB instead of picking a better pad for '
+        + 'it. fit() and the kit assignment both PICK — they rank what you own and take '
+        + 'the closest. This pushes the sound toward the job with the pad\u2019s own '
+        + 'controls until it measures like one, and reports the fit before and after '
+        + 'plus every knob it moved. It is mutate() with a role as its objective, so it '
+        + 'NEVER TOUCHES THE AUDIO: the ceiling is your sample with a filter and an '
+        + 'envelope on it, and a hat bent toward a kick becomes a dull short hat because '
+        + 'the low end is not in the recording. When it gets nowhere it says so and '
+        + 'names resynth() and paint(), which do change the substance. BEND TO MY WILL '
+        + 'is the button.',
       'ensemble(voices,{bars,n}) writes every layer, foundation first, each one knowing '
         + 'what the earlier ones already play, and offers whole ARRANGEMENTS to choose '
         + 'between. It calls infill() per voice, so it inherits the listening and the '
@@ -20077,6 +20382,53 @@ if($('btnTimbre')) $('btnTimbre').addEventListener('click',async()=>{
   }
   finally{ b.disabled=false;
     setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 5000); }
+});
+/* BEND TO MY WILL. It renders a few dozen candidates, so it takes
+   seconds rather than milliseconds — the button says so while it works,
+   because a control that looks dead is a control people press twice. */
+if($('btnBend')) $('btnBend').addEventListener('click',async()=>{
+  const b=$('btnBend'); b.disabled=true; const was=b.textContent;
+  b.textContent='bending\u2026';
+  const info=$('bendInfo');
+  try{
+    const role=$('bendRole')?$('bendRole').value:'kick';
+    const r=await window.MVX.bend(S.editPad, role);
+    if(info){
+      const pct=v=>Math.round((v||0)*100)+'%';
+      const moved=Object.keys(r.changed||{});
+      info.innerHTML='<div><b style="color:var(--amber)">'+r.name+' \u2192 '
+        +String(role).toUpperCase()+'</b> '+pct(r.before)+' \u2192 '+pct(r.after)+'</div>'
+        /* the two numbers it was judged on, before and after, so the
+           claim is checkable rather than a score out of nowhere */
+        +'<div>air-vs-body '+r.measured.before.air+' \u2192 '+r.measured.after.air
+        +'dB, centroid '+r.measured.before.centroid+' \u2192 '
+        +r.measured.after.centroid+'Hz</div>'
+        /* THE CURVE IT APPLIED, band by band, because "bent 0% -> 100%"
+           is a score and the bands are the reason. */
+        +((r.curve||[]).some(c=>Math.abs(c.db)>=1)
+          ? ('<div>'+r.curve.filter(c=>Math.abs(c.db)>=1)
+              .map(c=>(c.lo>=1000?(c.lo/1000)+'k':c.lo)+'-'
+                +(c.hi>=1000?(c.hi/1000)+'k':c.hi)+' '
+                +(c.db>0?'+':'')+c.db+'dB').join(', ')+'</div>')
+          : '<div>the curve was flat \u2014 it already measured like one</div>')
+        +(r.miss&&r.miss.length?('<div style="opacity:.75">still '
+          +r.miss.join(' and ')+'</div>'):'')
+        +(r.after!=null&&r.after<0.75?('<div style="opacity:.75">A boost is capped, '
+          +'because lifting a band that holds nothing amplifies noise rather than '
+          +'adding a sound. REBUILD PAD or PAINT make substance that is not there; '
+          +'a different sample is the other honest answer.</div>'):'')
+        +'<div style="opacity:.6">The file on disk is untouched \u2014 reload the '
+        +'sound to undo.</div>';
+    }
+    lcd(String(r.says).slice(0,70));
+    b.textContent=(r.after!=null&&r.after>=0.9)?'BENT':(r.moved?'PART WAY':'NO CHANGE');
+  }catch(e){
+    if(info) info.textContent=e.message;
+    lcd(String(e.message).slice(0,60));
+    b.textContent='\u2014 '+String(e.message).slice(0,24);
+  }
+  finally{ b.disabled=false;
+    setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 7000); }
 });
 $('btnPunch').addEventListener('click',()=>{
   S.punchOn=!S.punchOn;
@@ -24763,6 +25115,36 @@ function kitFrom(G, dens, rnd){
   return out;
 }
 
+/* WHICH OF THOSE VOICES ACTUALLY GOT A PAD.
+
+   kitFrom() answers "what will the corpus give me", which is a question
+   about the corpus and not about this board. writeKit() was returning
+   that verbatim, so a build with no free pads for drums still reported
+   "Kit: kick/snare/hat drawn from 95 measured hiphop takes" — measured,
+   claimed, and not written anywhere. Caught by driving the button on a
+   four-pad board where every pad became a voice.
+
+   A claim nobody can check is worth nothing, and a claim that is false
+   is worse than silence. */
+function drewOnBoard(drew, voices, drums){
+  if(!drew) return null;
+  const got=drew.voices.filter(v=>drums[{kick:0,snare:1,hat:2}[v]]!=null);
+  if(!got.length) return null;
+  return Object.assign({}, drew, {voices:got});
+}
+
+/* `!= null` ON EVERY PAD, NEVER TRUTHINESS, and this was a live bug for
+   as long as this function has existed. A pad index is a NUMBER and pad
+   A01 is 0, so `if (drums[0])` is false whenever the kick landed on the
+   first pad — the figure was computed, the break and the fill were
+   worked out around it, and then nothing was written. It stayed hidden
+   because the old code took `loose.slice(0, 3)` and the kick was USUALLY
+   pad 0, so the commonest board silently had no kick at all; the measured
+   assignment surfaced it by putting a hat there instead, which was
+   equally skipped and far more obvious.
+
+   Found by counting hits per pad after a build rather than by reading
+   the output, which named every voice correctly while writing two. */
 function writeKit(drums, G, PLEN, opt){
   const o=opt||{}, bars=Math.max(1,Math.floor(PLEN/16));
   const r=mulberry32((o.seed||1)>>>0);
@@ -24786,7 +25168,7 @@ function writeKit(drums, G, PLEN, opt){
     }
   };
 
-  if(drums[0]){
+  if(drums[0]!=null){
     const f=measured('kick');
     if(f) layMeasured(drums[0], f, thin?0.85:1);
     else for(const st of (G.kick||[])) if(st<PLEN){
@@ -24795,7 +25177,7 @@ function writeKit(drums, G, PLEN, opt){
       window.JBH.step(drums[0], st, thin?(down?0.85:0.68):(down?1:0.82));
     }
   }
-  if(drums[1]){
+  if(drums[1]!=null){
     const f=measured('snare');
     if(f) layMeasured(drums[1], f, thin?0.7:1);
     else{
@@ -24817,7 +25199,7 @@ function writeKit(drums, G, PLEN, opt){
           window.JBH.step(drums[1], st, 0.2+r()*0.12);
     }
   }
-  if(drums[2]){
+  if(drums[2]!=null){
     const f=measured('hat');
     if(f) layMeasured(drums[2], f, thin?0.6:1);
     else if(G.hat) for(let st=0;st<PLEN;st+=(thin?G.hat*2:G.hat)){
@@ -24827,13 +25209,13 @@ function writeKit(drums, G, PLEN, opt){
       window.JBH.step(drums[2], st, thin?0.26:(beat?0.52:half?0.38:0.28));
     }
   }
-  if(fill && drums[1]){
+  if(fill && drums[1]!=null){
     const base=lastBar*16;
     for(let k=0;k<8;k++){ const st=base+8+k;
       if(st<PLEN) window.JBH.step(drums[1], st, +(0.34+k*0.08).toFixed(2)); }
-    if(drums[0] && base+15<PLEN) window.JBH.step(drums[0], base+15, 0.6);
+    if(drums[0]!=null && base+15<PLEN) window.JBH.step(drums[0], base+15, 0.6);
   }
-  return K.drew;
+  return drewOnBoard(K.drew, null, drums);
 }
 
 /* ---- THE DROPDOWN IS THE TABLE, not a copy of it --------------------
@@ -24868,6 +25250,66 @@ async function writeSurprise(){
   const gname=(want && GENRES[want]) ? want : pick(names);
   const G=GENRES[gname];
 
+  /* ---- LISTEN TO THE WHOLE BOARD FIRST ------------------------------
+     Before anything is chosen. The build used to pick its voices by
+     register across EVERY loaded pad and then hand whatever was left
+     over to the kit, which goes wrong in both directions at once: on a
+     four-pad drum kit all four became melodic voices and there were no
+     drums at all, and on a mixed board a kick could be dealt a tune
+     while the hat got the kick figure.
+
+     learn() answers the question that decides it — is this sound a note
+     or a hit — so the split is now measured rather than inferred from
+     pad order. Percussive pads go to the kit, pitched ones carry the
+     parts, and the arithmetic below never has to guess. */
+  let prof={}, learnSays='', kitAssign=null;
+  try{
+    const L=window.MVX.learn();
+    prof=(S.learned&&S.learned.profiles)||{};
+    learnSays='Measured '+L.pads.length+' pad'+(L.pads.length===1?'':'s')+'. ';
+  }catch(e){ learnSays='Could not measure the pads ('
+    +(e&&e.message?e.message:e)+'), so the kit is by pad order. '; }
+
+  /* WHAT COUNTS AS KIT MATERIAL: untagged, and not measurably a note.
+
+     Both halves matter and each was got wrong once.
+
+     UNTAGGED, because an `inst` tag is the person saying outright that a
+     pad is an instrument, and that outranks any measurement. Without
+     this clause a board of three drums plus a tagged 808 bass has the
+     bass reserved as the kick — the two are the same signal and
+     pitchedness() now refuses to guess between them, so the tag is the
+     only thing that knows.
+
+     NOT `=== percussive`, because that filter excluded the kick. A 909
+     kick measures as neither: it rings too long to be a hit and sits too
+     low to be called a note, so pitchedness() returns null for it on
+     purpose. Requiring a positive `percussive` therefore threw away the
+     one voice the kit most needs. `!== pitched` keeps the unsure ones as
+     kit candidates, where the kit SCORES then decide which is which. */
+  const wantsKit = !!(G.style || (G.kick&&G.kick.length) || (G.snare&&G.snare.length) || G.hat);
+  const hits=pads.filter(i=>!S.pads[i].inst && prof[i] && prof[i].kind!=='pitched');
+  let kitReserved=[];
+  if(wantsKit && hits.length){
+    kitAssign=assignKit(prof, hits);
+    kitReserved=['kick','snare','hat'].map(v=>kitAssign[v]).filter(v=>v!=null);
+    /* UNLESS THAT LEAVES NOBODY TO PLAY THE TUNE. An all-percussion
+       board is a legitimate project — a drum track — and so is a kit
+       with one bass in it. Rather than refuse either, the kit gives its
+       least convincing member back until at least one voice remains,
+       because a track with no melodic part at all is the worse outcome
+       and the person can always tag a pad to overrule this. */
+    while(kitReserved.length && pads.length-kitReserved.length<1){
+      const worst=kitReserved
+        .map(i=>({i, s:prof[i]&&prof[i].kit?prof[i].kit.score[
+          Object.keys(kitAssign).find(k=>kitAssign[k]===i)||'kick']:0}))
+        .sort((a,b)=>a.s-b.s)[0];
+      kitReserved=kitReserved.filter(i=>i!==worst.i);
+      for(const k of ['kick','snare','hat']) if(kitAssign[k]===worst.i) kitAssign[k]=null;
+    }
+  }
+  const melodic=pads.filter(i=>kitReserved.indexOf(i)<0);
+
   /* ---- voices: a few, spread across the register ------------------- */
   const MAXV=4;
   const already=mlVoices();
@@ -24878,7 +25320,8 @@ async function writeSurprise(){
       for(let k=0;k<MAXV;k++) chosen.push(already[Math.round(k*st)]);
       chosen=chosen.filter((v,k,arr)=>arr.findIndex(x=>x.inst===v.inst)===k); }
   } else {
-    const rows=pads.map(i=>({i, note:S.pads[i].srcNote!=null?S.pads[i].srcNote:60}))
+    const rows=(melodic.length?melodic:pads)
+      .map(i=>({i, note:S.pads[i].srcNote!=null?S.pads[i].srcNote:60}))
       .sort((a,b)=>a.note-b.note || a.i-b.i);
     const n=Math.min(MAXV, rows.length);
     const st=rows.length<=1?0:(rows.length-1)/Math.max(1,n-1);
@@ -24991,8 +25434,65 @@ async function writeSurprise(){
      what a drum on this board looks like; a tagged spare is the
      fallback, since a kit of nothing is worse. */
   const free=pads.filter(i=>!used.has(i));
-  const drums=free.filter(i=>!S.pads[i].inst).concat(free.filter(i=>S.pads[i].inst))
-    .slice(0,3);
+  const loose=free.filter(i=>!S.pads[i].inst).concat(free.filter(i=>S.pads[i].inst));
+
+  /* ---- AND THE KIT FOLLOWS THE SOUNDS, NOT THE PAD NUMBERS ---------
+     This used to be `loose.slice(0,3)`, with drums[0] taking the kick
+     figure, [1] the snare and [2] the hat — so the three voices went to
+     whichever pads were free IN PAD ORDER. Load a hat on A01 and a kick
+     on A03 and the measured hiphop kick bar plays on the hat while the
+     hat pattern fires the kick. Nothing failed: the steps are on the
+     grid, the harmony is untouched, pulse() finds a beat. It simply was
+     not the kit anybody loaded, and no check in this repo looks at
+     whether a figure landed on the right sound.
+
+     learn() measures what each pad IS — level, envelope and the spectrum
+     timbre() does not reach — and assignKit() solves the whole score
+     matrix rather than taking each voice in turn, because picking the
+     kick first and then the best remaining snare is worse whenever one
+     pad wins two voices.
+
+     IT LEARNS HERE WHETHER OR NOT THE BUTTON WAS PRESSED. The button
+     exists so a person can SEE what it thinks before committing, and
+     because they asked for it — but a build that is only correct when
+     you remember to press something first is a build that is usually
+     wrong. Profiles are cached against the buffer, so a second call
+     after the button costs nothing. A pad measured as a sustained note
+     is kept out of the kit: writing four-to-the-floor onto a two-second
+     bowed swell is the guess this is here to stop making. */
+  let drums=[], kitSays=learnSays;
+  if(kitAssign){
+    /* The pads reserved upstream, where the measurement decided which
+       sounds are hits. They were kept out of the voice pool, so this
+       cannot now be competing with a part. */
+    drums=[kitAssign.kick, kitAssign.snare, kitAssign.hat]
+      .map(v=>v==null?undefined:v);
+    /* anything the reservation could not fill, from what the voices did
+       not take — a kit of nothing is worse than a kit that is a guess */
+    const spare=loose.filter(i=>drums.indexOf(i)<0);
+    for(let v=0;v<3;v++) if(drums[v]==null && spare.length){
+      drums[v]=spare.shift();
+      kitAssign.guessed=(kitAssign.guessed||[]).concat(['kick','snare','hat'][v]);
+    }
+    const nm=v=>v==null?'\u2014':padName(v);
+    kitSays+='Kit by ear: kick='+nm(drums[0])+' snare='+nm(drums[1])
+      +' hat='+nm(drums[2])
+      +(kitAssign.guessed?(' ('+[...new Set(kitAssign.guessed)].join(' and ')
+        +' guessed \u2014 no pad measured like one)'):'')+'. ';
+  } else {
+    /* No measurement, or a genre with no kit. Exactly the old behaviour,
+       and it SAYS the kit is by pad order rather than printing a
+       confident sentence about a reading that never happened. */
+    drums=loose.slice(0,3);
+    if(wantsKit && drums.length) kitSays+='Kit by pad order. ';
+  }
+  /* POSITIONAL, WITH HOLES, AND NOT COMPACTED. writeKit() reads
+     drums[0] as the kick, [1] as the snare, [2] as the hat, so
+     `.filter()` here would shift the snare into the kick slot whenever
+     no pad was assignable as a kick — reintroducing the exact fault
+     this block exists to fix, one line below fixing it. Every consumer
+     guards on the entry instead. */
+  const kitPads=drums.filter(v=>v!=null);
 
   /* ---- TUNE THE KIT TO THE KEY ---------------------------------------
      A drum sample has a pitch and nothing here was looking at it.
@@ -25021,7 +25521,7 @@ async function writeSurprise(){
      pattern fires on every second or fourth step. A noise-like sound
      loses nothing to a few semitones and a pitched one gains the whole
      fix, so the reason not to was worth less than the fault it left. */
-  if(drums.length && spelled.length && typeof chordInfo==='function'){
+  if(kitPads.length && spelled.length && typeof chordInfo==='function'){
     const chs=spelled.map(c=>chordInfo(c)).filter(Boolean);
     const safe=[];
     for(let pc=0;pc<12;pc++)
@@ -25030,7 +25530,7 @@ async function writeSurprise(){
     const tonic=(kk && chordInfo(kk.tonic+'m')) ? chordInfo(kk.tonic+'m').root : null;
     if(safe.length){
       const want=(tonic!=null && safe.indexOf(tonic)>=0) ? tonic : null;
-      for(const i of drums){
+      for(const i of kitPads){
         const p=S.pads[i];
         const at=(((p.srcNote!=null?p.srcNote:60)+(p.pitch||0))%12+12)%12;
         let best=null, bd=99;
@@ -25168,6 +25668,7 @@ async function writeSurprise(){
     +' pattern'+(made.length===1?'':'s')+', arranged'
     +(made.length>=3?' with a break and a fill':'')+'. '
     +formSays
+    +kitSays
     /* WHICH DRUMS THESE ARE, because "measured" is a claim and a claim
        nobody can check is worth nothing. Said only when the corpus
        actually answered; a table kit says nothing rather than implying
@@ -25347,6 +25848,44 @@ if($('mlFit')) $('mlFit').addEventListener('click',async()=>{
   }
   finally{ b.disabled=!uiRecipe;
     setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 4000); }
+});
+
+/* LEARN MY PADS. The build calls learn() itself, so this button is not
+   load-bearing for correctness — it is there so a person can see what
+   the app hears before it writes a track on that reading, and argue with
+   it. The per-pad table is the argument: a row that says a pad reads as
+   a hat with a 6kHz centroid is checkable, where "kick=A03" alone is
+   just an assertion. */
+if($('mlLearn')) $('mlLearn').addEventListener('click',async()=>{
+  const b=$('mlLearn'); b.disabled=true; const was=b.textContent;
+  b.textContent='listening\u2026';
+  try{
+    const L=window.MVX.learn({force:true});
+    const esc=t=>String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const rows=L.pads.map(r=>{
+      const job=r.kit?(r.kit+(r.confident?'':'?')):'\u2014';
+      return '<div><b style="color:var(--amber)">'+esc(r.name)+'</b> '
+        +esc(job)+' \u00b7 '+esc(r.owns||'?')+' \u00b7 '
+        +(r.centroidHz||0)+'Hz \u00b7 '+Math.round(r.attackMs||0)+'ms in, '
+        +Math.round(r.ringMs||0)+'ms ring'
+        +(r.kind?(' \u00b7 '+esc(r.kind)):'')+'</div>';
+    }).join('');
+    /* ITS OWN BOX, not mlInfo. mlInfo is shared with the chord panel,
+       which rewrites it on redraw — a lesson this repo paid for once
+       already with the recipe slots. */
+    if($('mlLearnInfo')) $('mlLearnInfo').innerHTML=
+      '<div style="margin-bottom:2px">'+esc(L.says)+'</div>'+rows
+      +'<div style="margin-top:2px;opacity:.75">A trailing ? means the sound '
+      +'did not clearly look like that voice and the build is guessing. '
+      +'Move it to another pad or load something else if you disagree.</div>';
+    lcd(L.says.slice(0,70));
+    b.textContent='LEARNED \u2014 NOW BUILD';
+  }catch(e){
+    if($('mlLearnInfo')) $('mlLearnInfo').textContent=e.message;
+    b.textContent='\u2014 '+String(e.message).slice(0,28);
+  }
+  finally{ b.disabled=false;
+    setTimeout(()=>{ if(b.textContent!==was) b.textContent=was; }, 5000); }
 });
   $('mlOffer').addEventListener('click',async()=>{
     const inst=$('mlInst').value;
@@ -27498,6 +28037,14 @@ function projNew(){
      guesses; this line is what makes that true. Caught by the browser
      test asserting the refusal, which got a cheerful answer instead. */
   lastRecipe=null;
+  /* AND WHAT IT LEARNED ABOUT THE OLD BOARD. S.learned maps PAD INDEX to
+     a profile, and a new project puts different sounds on those same
+     indices — so a stale map does not go quiet, it confidently calls pad
+     3 a kick because the last project's pad 3 was one. The failure mode
+     is identical to the lastRecipe one above and the fix is the same
+     line. writeSurprise() re-measures anyway, which makes this belt and
+     braces rather than the only guard. */
+  S.learned=null;
   S.pattern=0; S.bank=0; S.editPad=0; S.seqPad=0;
   S.scOn=false; workBuf=null; slices=[]; selSlice=-1;
   Object.keys(warpOrig).forEach(k=>delete warpOrig[k]);

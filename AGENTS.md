@@ -713,6 +713,33 @@ way the build does and asserts every declared name arrives. Name a new
 export so it cannot collide, and run that test before assuming a global
 is there.
 
+**A PAD INDEX IS A NUMBER AND A01 IS ZERO, so `if(drums[0])` is false
+for it.** `writeKit()` carried that for its whole life: the voice on pad
+0 had its figure computed, its break and its fill worked out, and then
+nothing written. It hid because the kit was taken off the top of the
+free-pad list, so the kick was usually pad 0 and the commonest board
+silently had no kick, while the build's own report named one. Test pad
+indices with `!= null`, and when a report and the grid disagree, count
+the steps — the sentence is generated, the steps are the track.
+
+**Identity is SPECTRAL, so timbre() cannot tell a kick from a hat.**
+Both are a fast attack and a short tail. `learn()` adds the spectrum and
+names which pad reads as kick, snare and hat; the axis that works is
+energy above 2kHz against below 500 (kick -96..-42dB, snare -11..+22,
+hat +31..+83), NOT the spectral centroid — a real snare's wire buzz puts
+it at 3.8-7.7kHz, right on top of the hats, and scoring on centroid read
+every snare in a real pack as a hat. An 808 kick and an 808 bass note are
+the same signal and `pitchedness()` refuses to choose between them; the
+`inst` tag is what knows. LEARN MY PADS is the button.
+
+**`loadIntoTarget(buf, name, {keepTarget:true})` WRITES TO `S.editPad`,
+not to the pad you were handed.** With one pad loaded they are the same
+pad and everything looks right; load three and the selection has moved
+on, so a new buffer lands on the last pad touched while the caller goes
+on to measure and report the untouched one. Pin `S.editPad` around the
+call and put it back. It also clears `inst` and `srcNote` — the tape()
+trap below — so restore those too.
+
 **A sample pack can lie about pitch.** VSCO-2 CE names every file an
 octave below what it sounds, and is not consistent with itself: one solo
 violin folder uses scientific pitch and another folder of the same
@@ -1239,6 +1266,8 @@ thing they are about:
 - [The arp role never asked whether the sound could play one](docs/findings.md#the-arp-role-never-asked-whether-the-sound-could-play-one)
 - [Two files exported the same name, and the app lost both](docs/findings.md#two-files-exported-the-same-name-and-the-app-lost-both)
 - [Is every tool we have to write actually used before a song is made?](docs/findings.md#is-every-tool-we-have-to-write-actually-used-before-a-song-is-made)
+- [The kit was assigned by pad index, and A01 never played](docs/findings.md#the-kit-was-assigned-by-pad-index-and-a01-never-played)
+- [Bend to my will: the knob search was the wrong mechanism](docs/findings.md#bend-to-my-will-the-knob-search-was-the-wrong-mechanism)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

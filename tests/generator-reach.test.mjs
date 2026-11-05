@@ -128,6 +128,9 @@ const WRITES = {
   'figureFor()':   /\bfigureFor\s*\(/,
   'figureSteps()': /\bfigureSteps\s*\(/,
   'form()':        /MVX\.form\s*\(/,
+  /* what each pad IS, which is the half timbre() cannot reach */
+  'learn()':       /MVX\.learn\s*\(/,
+  'assignKit()':   /\bassignKit\s*\(/,
 };
 
 /* NOT REACHED, ON PURPOSE. Each line is a decision, and the reason has
@@ -200,6 +203,34 @@ test('the drum corpus reaches the song builder, not just recipe()', () => {
   /* and the claim is only made when the corpus actually answered */
   const sur = body('async function writeSurprise()');
   assert.match(sur, /kitDrew/, 'the build should say which drums are measured');
+});
+
+/* THE KIT FOLLOWS THE SOUNDS, which is the third thing the audit found
+   and the one a listener hears first. */
+test('the kit is assigned by measurement, not by pad index', () => {
+  const sur = body('async function writeSurprise()');
+  assert.ok(!/loose\.slice\(0,\s*3\)[^;]*;\s*$/m.test(sur)
+    || /assignKit/.test(sur),
+    'drums must not be taken straight off the top of the free-pad list');
+  const i = sur.indexOf("MVX.learn(");
+  const j = sur.indexOf('mlVoices()');
+  assert.ok(i > 0 && j > 0 && i < j,
+    'learn() has to run BEFORE the voices are chosen, or the kit pads are '
+    + 'already gone and a drum gets dealt a melody');
+  assert.match(sur, /kitReserved/,
+    'percussive pads have to be held back from the voice pool');
+});
+
+/* A pad index is a NUMBER and A01 is 0, so truthiness silently drops it.
+   This was live for as long as writeKit existed: the kick was usually
+   pad 0, so the commonest board had no kick and the report named one. */
+test('writeKit tests its pads against null, never for truthiness', () => {
+  const kit = body('function writeKit(');
+  const bad = [...kit.matchAll(/if\s*\(\s*(?:fill\s*&&\s*)?drums\[\d\]\s*[){&]/g)]
+    .map(m => m[0]);
+  assert.deepEqual(bad, [],
+    'pad A01 is index 0 and these are false for it, so its part is never '
+    + 'written:\n  ' + bad.join('\n  '));
 });
 
 test('the builder checks the form of the arrangement it just wrote', () => {

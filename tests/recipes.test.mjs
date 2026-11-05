@@ -298,3 +298,69 @@ test('velocity is scaled within a voice, because across voices it is not compara
     'only ' + shaped + ' of ' + loudEnough
     + ' measured voices kept any dynamic shape — the scaling flattened them');
 });
+
+/* ---- DOES THE WRITE KNOW WHAT TO WANT? ------------------------------
+
+   It did not. Every slot brief was ENVELOPE ONLY — attackMsMax,
+   ringMsMin, ringMsMax — and a kick and a hi-hat have near-identical
+   envelopes, so the consequence was not a near-miss but a dead tie:
+
+     hat_closed  (0ms attack,  35ms ring)  into the KICK slot -> fits
+     ride        (0ms attack, 600ms ring)  into the KICK slot -> fits
+     kick_909    (0ms attack, 155ms ring)  into the KICK slot -> fits
+     ranked for KICK:  hat_closed(0)  ride(0)  kick_909(0)
+
+   CHECK MY SOUNDS put a closed hi-hat first for the kick slot purely
+   because it came first in the list, and told the person "it suits this
+   slot".
+
+   The numbers below are measured off samples/jbh-drums.json in a
+   browser, not invented for the test. */
+const REAL = {
+  kick_909:   { attackMs: 0, ringMs: 155, silent: false, airVsBodyDb: -87.8, centroidHz: 62 },
+  hat_closed: { attackMs: 0, ringMs: 35, silent: false, airVsBodyDb: 40, centroidHz: 3033 },
+  ride:       { attackMs: 0, ringMs: 600, silent: false, airVsBodyDb: 31.7, centroidHz: 4215 },
+  snare_909:  { attackMs: 0, ringMs: 125, silent: false, airVsBodyDb: -1.9, centroidHz: 3798 },
+};
+
+test('a slot knows the COLOUR it wants, not only the timing', () => {
+  const rank = (role, gap) => suggestFor(role,
+    Object.keys(REAL).map(id => ({ id, timbre: REAL[id] })), 120, gap).map(c => c.id);
+  assert.equal(rank('kick', 4)[0], 'kick_909', 'ranked ' + rank('kick', 4).join(' '));
+  assert.equal(rank('hat', 1)[0], 'hat_closed', 'ranked ' + rank('hat', 1).join(' '));
+  assert.equal(rank('snare', 2)[0], 'snare_909', 'ranked ' + rank('snare', 2).join(' '));
+});
+
+test('and the wrong colour is no longer a dead tie with the right one', () => {
+  const k = fitSlot('kick', REAL.kick_909, 120, 4);
+  const h = fitSlot('kick', REAL.hat_closed, 120, 4);
+  assert.ok(h.score > k.score,
+    'hat scored ' + h.score + ' and kick ' + k.score + ' for the kick slot');
+  assert.match(h.says, /more body/, h.says);
+  assert.equal(k.colour.fit, 1, JSON.stringify(k.colour));
+});
+
+test('it REMARKS on colour and does not refuse — a brief is not a gate', () => {
+  /* AGENTS.md's line: only silence and not being able to speak are
+     brokenness. A hat in the kick slot is a choice someone might want. */
+  const h = fitSlot('kick', REAL.hat_closed, 120, 4);
+  assert.equal(h.fits, true, 'a wrong-coloured sound must still be allowed');
+});
+
+test('SYNTH, LEAD and PAD have no colour want, because that is taste', () => {
+  for (const r of ['synth', 'lead', 'pad']) {
+    assert.equal(ROLES[r].colour, undefined, r + ' should not constrain colour');
+    assert.equal(fitSlot(r, REAL.hat_closed, 120, 2).colour, null, r);
+  }
+  /* and the four that do carry one */
+  for (const r of ['low', 'kick', 'snare', 'hat'])
+    assert.ok(ROLES[r].colour, r + ' should state a colour');
+});
+
+test('a sound measured without a spectrum is judged on timing alone, not failed', () => {
+  const noColour = { attackMs: 0, ringMs: 155, silent: false };
+  const f = fitSlot('kick', noColour, 120, 4);
+  assert.equal(f.colour, null);
+  assert.equal(f.fits, true);
+  assert.ok(!/colour/.test(f.says), f.says);
+});

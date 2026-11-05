@@ -33,6 +33,9 @@
    call minGap() themselves. */
 import { playable, stepMs } from './timbre.js';
 import { DRUM_CORPUS } from './grooves.js';
+/* the measured colour of each job — see ROLE_TARGETS for the numbers
+   and where they came from */
+import { ROLE_TARGETS, roleFit } from './padprofile.js';
 
 /* ---- THE SLOT VOCABULARY ------------------------------------------
    Each slot says what job it does and what a sound has to be able to do
@@ -49,18 +52,22 @@ export const ROLES = {
   low:   { label: 'LOW END', pitched: true,
            says: 'the weight. One note at a time, felt more than heard.',
            wants: { attackMsMax: 60, ringMsMin: 120, ringMsMax: 2500 },
+           colour: 'bass',
            presets: ['b808', 'bsub', 'breese', 'bfm'] },
   kick:  { label: 'KICK', pitched: false,
            says: 'the downbeat. Short, and it has to speak instantly.',
            wants: { attackMsMax: 25, ringMsMax: 700 },
+           colour: 'kick',
            presets: ['dkick', 'dtom'] },
   snare: { label: 'SNARE', pitched: false,
            says: 'the backbeat, and the thing a fill is made of.',
            wants: { attackMsMax: 25, ringMsMax: 600 },
+           colour: 'snare',
            presets: ['dsnare', 'dclap', 'drim'] },
   hat:   { label: 'HI', pitched: false,
            says: 'the air and the motion. Plays fastest, so it has to be the quickest to speak.',
            wants: { attackMsMax: 15, ringMsMax: 300 },
+           colour: 'hat',
            presets: ['dhat', 'dshk', 'dohat', 'dcow'] },
   synth: { label: 'SYNTH', pitched: true,
            says: 'the harmonic middle — what states the chord.',
@@ -106,11 +113,52 @@ export function fitSlot(role, timbre, bpm, gap = 1) {
       + w.ringMsMin + 'ms — it will sound clipped where the part expects it to hold.');
   if (t.silent) notes.push('this pad is silent.');
 
+  /* ---- AND WHAT COLOUR THE JOB WANTS -------------------------------
+     "When our write is looking for ideal samples does it know what to
+     want?" It did not. Every brief above was ENVELOPE ONLY — attack and
+     ring in milliseconds — and the consequence is not a near-miss:
+
+       hat_closed  (0ms attack,  35ms ring)  into the KICK slot -> fits
+       ride        (0ms attack, 600ms ring)  into the KICK slot -> fits
+       kick_909    (0ms attack, 155ms ring)  into the KICK slot -> fits
+
+       ranked for KICK:  hat_closed(0)  ride(0)  kick_909(0)
+
+     A dead tie, so CHECK MY SOUNDS put a closed hi-hat first for the
+     kick slot purely because it came first in the list, and said "it
+     suits this slot". The timing was all it knew how to want.
+
+     A kick and a hat have near-identical envelopes; what separates them
+     is colour, and ROLE_TARGETS has that measured off a real pack. Only
+     the four slots with a colour anybody could state carry one: the
+     three drum voices and the low end, which must be low to do its job.
+     SYNTH, LEAD and PAD deliberately have none — a bright lead and a
+     dark one are both leads, and that is taste rather than brokenness,
+     which is the line this whole check is drawn along.
+
+     It REMARKS and RANKS; it does not gate. `fits` still turns only on
+     whether the sound can speak, because a hat in the kick slot is a
+     choice someone might want and this tool exists to inform it, not to
+     overrule it. What changes is that the suggestion order now knows,
+     and the remark says what is wrong in the sound's own numbers. */
+  let colour = null;
+  if (R.colour && t.airVsBodyDb != null && t.centroidHz != null) {
+    colour = roleFit(t, R.colour);
+    if (colour && colour.fit < 0.999)
+      notes.push('for colour it ' + colour.miss.join(' and ')
+        + ' — ' + ROLE_TARGETS[R.colour].says + '.');
+  }
+
   /* speaking is the pass/fail; everything else is a remark, and the
      score exists to ORDER suggestions rather than to gate them */
   const fits = play.speaks && !t.silent;
-  const score = (play.speaks ? 0 : 100) + (t.silent ? 100 : 0) + notes.length;
+  /* colour contributes up to 3, so a right-coloured sound with one
+     envelope remark still outranks a wrong-coloured one with none */
+  const colourCost = colour ? +((1 - colour.fit) * 3).toFixed(2) : 0;
+  const score = (play.speaks ? 0 : 100) + (t.silent ? 100 : 0)
+    + notes.length + colourCost;
   return { fits, score, role: R.label, gap,
+    colour: colour ? { want: R.colour, fit: colour.fit, miss: colour.miss } : null,
     says: notes.length ? notes.join(' ') : 'it suits this slot.' };
 }
 

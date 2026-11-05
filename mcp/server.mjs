@@ -863,6 +863,60 @@ const TOOLS = [
       bpm: { type: 'number', description: 'judge it at this tempo instead of the project\u2019s' },
       gap: { type: 'integer', description: 'sixteenths between notes to judge against' } } } },
 
+  { name: 'jbh_bend', description:
+      'FORCE A PAD INTO A JOB, instead of picking a better pad for it. Everything else '
+      + 'here PICKS: jbh_fit ranks the pads you own against a slot and the song builder '
+      + 'hands the drum voices to whichever sounds measure most like them. This is the '
+      + 'other verb — you name the job and the sound is pushed toward it with the pad’s '
+      + 'own controls until it measures like the thing. Roles: kick, snare, hat (measured '
+      + 'colour bands, see jbh_learn) plus bass and lead (register). Reports the fit '
+      + 'before and after as a fraction, and every knob it moved, so the result is '
+      + 'auditable and reversible by hand. '
+      + 'WHAT IT CANNOT DO: it is mutate() with a role as its objective, so it turns the '
+      + 'pad’s knobs and NEVER TOUCHES THE AUDIO. The ceiling is your sample with a '
+      + 'filter and an envelope on it — a hi-hat bent toward a kick becomes a dull short '
+      + 'hi-hat, because there is no low end in the recording to bring up. When it gets '
+      + 'close to nothing it says so and names jbh_resynth (rebuilds the pad out of '
+      + 'blocks of your other pads) or jbh_paint (draws a spectrum from nothing), which '
+      + 'are the tools that change the substance.',
+    inputSchema: { type: 'object', required: ['pad', 'role'], properties: {
+      pad: { type: 'integer', description: 'the pad to bend' },
+      role: { type: 'string', enum: ['kick', 'snare', 'hat', 'bass', 'lead'],
+        description: 'the job to bend it toward' },
+      strength: { type: 'number',
+        description: 'how far toward the target shape, 0-1 (default 1)' },
+      maxBoost: { type: 'number',
+        description: 'cap on lifting a band, dB (default 18) — lifting a band that '
+          + 'holds nothing amplifies noise rather than adding a sound' },
+      maxCut: { type: 'number', description: 'cap on cutting a band, dB (default 48)' },
+      knobs: { type: 'boolean',
+        description: 'also run the knob search afterwards. Off by default: measured at '
+          + 'about one point of fit for thirty seconds of rendering' },
+      amount: { type: 'number',
+        description: 'knob search only: how far a knob may move per step, 0.05-1' },
+      population: { type: 'integer', description: 'knob search only: candidates per round' },
+      generations: { type: 'integer', description: 'knob search only: how many rounds' },
+      src: { type: 'string', enum: ['pat', 'song'] } } } },
+
+  { name: 'jbh_learn', description:
+      'MEASURE EVERY LOADED PAD AND KEEP IT, so the song builder puts the drum figures on '
+      + 'the sounds that are actually drums. jbh_timbre reports attack and ring, which cannot '
+      + 'tell a kick from a closed hi-hat — both are a fast attack and a short tail, and the '
+      + 'difference is entirely SPECTRAL. This adds the spectrum: which of nine bands each pad '
+      + 'owns, its centroid, and energy above 2kHz against below 500Hz. It then names which pad '
+      + 'reads as the kick, the snare and the hat, with a flag for whether the reading was '
+      + 'clear-cut. Reads the raw buffer, so no render and no network. '
+      + 'WHY IT MATTERS: the builder used to assign those three voices BY PAD INDEX, so a hat '
+      + 'on the first free pad got the measured kick figure while the hat pattern fired the '
+      + 'kick — and every check in the app passed, because the steps were on the grid and '
+      + 'the harmony was untouched. jbh_surprise calls this itself now; call it directly when '
+      + 'you want to see or report the reading before writing.',
+    inputSchema: { type: 'object', properties: {
+      pads: { type: 'array', items: { type: 'integer' },
+        description: 'only these pads; default is every loaded pad' },
+      force: { type: 'boolean',
+        description: 're-measure rather than using the cached profile for an unchanged buffer' } } } },
+
   { name: 'jbh_inst_pads', description:
       'WHICH PADS AN INSTRUMENT SPANS. A sampled instrument is one sound laid across a pad '
       + 'per sampled note, and several calls need that list: jbh_place and jbh_audit take an '
@@ -1380,6 +1434,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'jbh_fit':         return ok(await jbh('fit', [a.slot, { bpm: a.bpm, gap: a.gap }]));
       case 'jbh_timbre':      return ok(await jbh('timbre', [a.instrument,
                                 { bpm: a.bpm, gap: a.gap }]));
+      case 'jbh_bend':        return ok(await jbh('bend', [a.pad, a.role,
+                                { strength: a.strength, maxBoost: a.maxBoost,
+                                  maxCut: a.maxCut, knobs: a.knobs, src: a.src,
+                                  amount: a.amount, population: a.population,
+                                  generations: a.generations }]));
+      case 'jbh_learn':       return ok(await jbh('learn', [{ pads: a.pads, force: a.force }]));
       case 'jbh_inst_pads':   return ok(await jbh('instPads', [a.instrument]));
       case 'jbh_bass':        return ok(await jbh('bass', [{ pad: a.pad, style: a.style,
                                 midi: a.midi, fromMidi: a.fromMidi, seconds: a.seconds,
