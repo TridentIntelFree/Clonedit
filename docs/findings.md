@@ -3170,6 +3170,52 @@ cooperate. That is a change to the pitch assignment with its own
 regression risk and it deserves its own pass, not a corner of this
 one.
 
+### The pass it deserved, and the first attempt at it was wrong
+
+The coupling was two lines:
+
+```js
+const strong = st === 0 || st === 8;                  // only these may take it
+const lastChance = ... && si >= slots.length - 2;     // weak slots only
+```
+
+A bar whose slots are all strong reaches neither, and the strong branch
+picks whichever of root and third is NEAREST the previous note — which
+can be the root twice. A two-slot bar of steps 0 and 8 therefore states
+no quality at all. The hand-authored library happens to give every bar a
+weak slot, so the guarantee held for years with nothing stating that it
+depended on that.
+
+**The obvious fix cost more than it bought.** Repairing the bar AFTER
+its slots were written — find the note closest to a third, move it —
+produced 0 bars without a third and broke three other checks:
+
+```
+and passing `against` removes every one of them   with against: 4,4,4,4,4,4
+THE PANEL PASSES IT TOO                            2 false relations
+and no parallel octaves                            1 of 24 pairs
+```
+
+Because `semiOk`, `isParallel` and the false-relation filter all run
+during pitch selection, and a note changed after the loop goes round
+them. A wrong note somebody hears is worse than a colourless bar, so
+that trade was backwards.
+
+The fix is to force the pitch CLASS on the last slot of the bar, inside
+the loop, before the three branches — leaving every filter in the path.
+If the third would clash, the escape hatches still move it and the bar
+keeps its missing third, which is the right way round. All six
+combinations of three densities and contour on/off now come back with 0
+minor ninths and 0 bars without a third, and the busy band measures
+inside the range real melodies occupy.
+
+Verified load-bearing both times by disabling it and watching the
+failures return: `sparse/shape=true` drops a third immediately, and the
+contour-off path drops two.
+
+**And the measured Essen cells are in the lead pool now**, which is what
+the whole exercise was for.
+
 ### And the build-aborts-look-like-builds trap, for the third time
 
 `npm run build` runs the unit tests first. Twice more in this session a

@@ -21041,45 +21041,46 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       return Math.max(1, m);
     };
     const needGap = tb && tb.minGap ? tb.minGap : 1;
-    /* ---- THE MEASURED CELLS ARE NOT WIRED IN HERE, AND THAT IS THE
-       FINDING ----------------------------------------------------------
+    /* ---- AND THE MEASURED ONES, NOW THAT THEY ARE SAFE TO USE ------
        CELLS above is hand-authored and said so, and it was the last
-       unmeasured thing in the write path. scripts/study-cells.py now
-       measures the same thing properly — 78,556 duple-meter bars and
-       277,508 notes of the Essen Folksong Collection, as whole bars of
-       [step, beats], placement and duration together — and
-       melodyCellsFor() offers them. They are deliberately NOT added to
-       this pool.
+       unmeasured thing in the write path. scripts/study-cells.py
+       measures the same thing from 78,556 duple-meter bars and 277,508
+       notes of the Essen Folksong Collection, as whole bars of
+       [step, beats] -- placement and duration together, which is the
+       only form in which either means anything.
 
-       Adding them broke a measured harmonic guarantee. Two browser
-       checks went red, against the norm that 94.6% of Bach sonorities
-       state a third:
+       THEY WERE BLOCKED FOR A WHILE AND IT WAS WORTH FINDING OUT WHY.
+       Adding them turned two harmonic checks red: 3 bars of 12
+       candidates with no third, against the measured 94.6% of Bach
+       sonorities that state one. Two filters on the CELLS were tried
+       and the second fixed nothing, because the cells were never the
+       fault -- the third was being placed only on a slot at step 0 or
+       8, or on a weak slot near the end of a bar, so a bar whose slots
+       were all strong reached neither mechanism. The guarantee had been
+       quietly resting on the hand-authored library giving every bar a
+       weak slot.
 
-         and no bar is left without a third             3 bars of 12 candidates
-         and turning it off is still harmonically clean  2 bars with no third
+       It lives after the slots now, independent of their shape, which
+       is at the end of the bar loop below. With that in place all three
+       densities come back with 0 minor ninths and 0 bars without a
+       third, and the busy band measures inside the range real melodies
+       occupy.
 
-       Disabling the wiring and re-running confirmed the cause rather
-       than leaving it a suspicion. The reason is below this line: the
-       pitch assignment places a third on a strong beat, and with the
-       slots a different rhythm gives it, it runs out of places to put
-       one. THE GUARANTEE WAS IMPLICITLY COUPLED TO THE HAND-AUTHORED
-       LIBRARY IT WAS TUNED AGAINST. Nothing here states that it needs a
-       minimum number of slots, or slots on particular beats, and nothing
-       failed until a different set of rhythms arrived.
+       ADDED, NOT SUBSTITUTED. Essen's commonest bar is four quarter
+       notes at 19.1% of all bars, so replacing these with the corpus
+       favourites would make every lead plainer rather than better: the
+       Goodhart failure AGENTS.md is longest about, reached by
+       diligence. melodyCellsFor() bands by density, and the hand cells
+       stay in the pool beside them.
 
-       Two filters were tried on the cells — a four-note floor, then a
-       floor plus two strong beats. The first fixed the contour-on path
-       and left the contour-off one dropping thirds; the second fixed
-       neither. At that point the filters were chasing a number rather
-       than fixing a cause, which is the failure the longest section of
-       AGENTS.md is about, so this stops.
-
-       The fix belongs in the pitch assignment: state a third per bar
-       whatever slots exist, rather than relying on the rhythm to
-       cooperate. Until then melodyCellsFor() is reachable from the API
-       and from the page, the measurement stands on its own, and this
-       pool is the hand-authored one it always was. */
-    const allCells = CELLS[role]||[];
+       LEAD ONLY, because the corpus is monophonic folk MELODY. That is
+       what a tune is and it is not what a bass line or an arpeggio is,
+       so those two keep their hand-authored figures. The timbre filter
+       below then applies to the whole pool either way, so a sound too
+       slow for a measured figure is no more likely to be handed one. */
+    const measuredCells = (role==='lead' && typeof melodyCellsFor==='function')
+      ? melodyCellsFor(dens) : [];
+    const allCells = (CELLS[role]||[]).concat(measuredCells);
     const fitCells = allCells.filter(c=>tightestGap(c)>=needGap);
     /* the loosest available, so a sound that fits nothing still gets
        the best chance the library can give it */
@@ -21221,8 +21222,36 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           const beats=+clamp(rawBeats*GATE, 0.25, 4).toFixed(3);
           const strong = st===0 || st===8;
           const last = si===slots.length-1;
+          /* ---- THE BAR STATES ITS THIRD, WHATEVER SLOTS IT GOT ------
+             THIS IS THE COUPLING THAT BLOCKED THE MEASURED CELLS.
+
+             Two mechanisms below try to state the third and both turn
+             on the SHAPE of the rhythm rather than on the harmony: the
+             strong branch only fires at step 0 or 8, and `lastChance`
+             only in the weak branch. So a bar whose slots are all
+             strong reached neither, and the strong branch picks
+             whichever of root and third is NEAREST — which can be the
+             root twice. The hand-authored library happens to give every
+             bar a weak slot, so the guarantee rested on that for years
+             with nothing saying so. 78,556 bars of measured Essen
+             rhythm found it: 3 bars of 12 candidates stating no
+             quality at all, against the measured 94.6% of Bach
+             sonorities that do.
+
+             ON THE LAST SLOT, AND INSIDE THE LOOP, which matters. The
+             first fix repaired the bar AFTER the slots were written,
+             and that bypassed semiOk, isParallel and the false-relation
+             filter further down — it bought 0 bars without a third and
+             cost 4 inter-voice clashes, 2 false relations and a
+             parallel octave. A wrong note somebody hears is worse than
+             a colourless bar. Forcing the class HERE leaves every one
+             of those filters in the path, so if the third would clash
+             the escape hatches still move it and the bar keeps its
+             missing third, which is the right way round. */
+          const mustThird = want3 && !stated3 && ch.third!=null && last;
           let pcChoices;
-          if(strong){
+          if(mustThird){ pcChoices=[ch.third]; }
+          else if(strong){
             /* root or third on a strong beat — roots and fifths alone
                state no quality, and whatever chromatic is passing then
                becomes the note that defines the chord */
@@ -21602,6 +21631,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
           out.push({ midi:m, step:(from+b)*16+st, vel, beats, nudge, _cell:cell });
           prev=m;
         }
+
       }
       return out;
     };
