@@ -602,6 +602,11 @@ export default async function ({ browser, base }) {
         for (const row of Object.values(p.steps || {})) for (const v of (row || [])) if (v > 0) n++;
         return n;
       });
+      /* THE CONTENT, NOT THE COUNT. Which bar a step is on and how hard
+         it is hit — the thing "four copies of one chunk" would make
+         identical. */
+      const sig = S.patterns.map(p => Object.keys(p.steps || {}).sort()
+        .map(k => k + ':' + (p.steps[k] || []).join(',')).join('|'));
       /* AND THE PICKER MUST NOT OFFER WHAT HAS NOWHERE TO GO. Sixteen
          bars is four patterns; from the last one there is room for one,
          and the LEN test alone said yes. */
@@ -612,16 +617,29 @@ export default async function ({ browser, base }) {
         seen[sel + 1] = [...document.getElementById('mlSpan').options]
           .filter(o => o.disabled).map(o => o.value);
       }
-      return { hits, offered, seen, said, selected: S.pattern + 1 };
+      return { hits, sig, offered, seen, said, selected: S.pattern + 1 };
     });
     t.ok('the first four patterns all get a part',
       chunked.hits.slice(0, 4).every(h => h > 0),
       'hits per pattern: ' + chunked.hits.join(', '));
     t.ok('and the fifth is left alone — the span stops where it ends',
       chunked.hits[4] === 0, 'pattern 5 has ' + chunked.hits[4] + ' hits');
+    /* COMPARED AS CONTENT, AND IT USED TO BE COMPARED AS A COUNT.
+       This asked for 3 distinct HIT COUNTS among four randomly generated
+       bars. Counts here cluster near 50, so a collision is ordinary luck:
+       one run in a full suite came back 52, 56, 52, 56 and failed, and
+       three re-runs gave 54/45/54/60, 51/58/49/55 and 45/51/50/52 — a
+       coin flip wearing an assertion. Equal counts do not mean equal bars
+       either, so it was a probabilistic test of a proxy.
+
+       Four copies of one chunk are IDENTICAL, which is not probabilistic
+       at all. Comparing the steps themselves makes the check exact and
+       says what the sentence always claimed. */
+    const bars = chunked.sig.slice(0, 4);
     t.ok('they are VARIATIONS, not four copies of one chunk',
-      new Set(chunked.hits.slice(0, 4)).size >= 3,
-      'hits: ' + chunked.hits.slice(0, 4).join(', '));
+      new Set(bars).size === 4,
+      new Set(bars).size + ' distinct of 4 (hits: '
+        + chunked.hits.slice(0, 4).join(', ') + ')');
     t.ok('OFFER says only the first chunk was scored',
       /first 4 bars/.test(chunked.offered) && /across 4 patterns/.test(chunked.offered),
       chunked.offered.slice(-130));
