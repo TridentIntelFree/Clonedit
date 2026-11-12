@@ -12813,7 +12813,7 @@ Object.assign(globalThis, __JBH_PURE);})();
    check by construction. scripts/check-build-label.mjs therefore CHECKS
    it instead, in CI, where HEAD is the commit being shipped and the
    arithmetic is exact. R = commits on main minus 9. */
-const BUILD = 'JBH-88 · R282 · 2026-11-05 · a kit stages its own levels instead of arriving 22dB apart';
+const BUILD = 'JBH-88 · R283 · 2026-11-05 · the harmony check hears how long a sample really rings';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -23451,11 +23451,57 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        sus:0 shape every sampled instrument here uses, that is the decay
        plus the release — which on a piano is most of a bar and is the
        whole reason an approach note stopped being an approach note. */
+    /* AND THE SUSTAINING CASE WAS A GUESS, WHICH IS THE INTERESTING HALF.
+
+       `barSec*0.5` was a stand-in for "it holds for a while". Measured
+       against the audio it is not close: CHAMBER's contrabass rings
+       8560ms and that guess gives 1760ms at 76bpm, so the check was
+       blind to the last 6.8 seconds of every bass note. Those seconds
+       are where the clash lives — a root held into the next two chords
+       is exactly the fault harmony() exists to find, and it is also the
+       use src/pure/timbre.js names for its own ring measurement: "a
+       held note has to land somewhere in the chord it rings INTO".
+
+       So the measured ring is used where the envelope lets the sample
+       through, and the envelope is used where it cuts the sample off.
+       Taking the smaller of the two is the whole rule: a gate that
+       closes in 180ms makes a ten-second cello irrelevant, and a gate
+       left open makes the envelope's arithmetic irrelevant. Either one
+       alone is wrong half the time.
+
+       A pad with no measurement yet falls back to the old estimate
+       rather than to zero: an unmeasured pad must not read as a note
+       that stops instantly, which would turn every clash it has into a
+       pass. */
+    const measuredRing=(pad)=>{
+      const p=S.pads[pad]; if(!p || p.bufId<0) return null;
+      const buf=S.buffers[p.bufId]; if(!buf) return null;
+      const hit=timbreCache[p.bufId];
+      let t=(hit && hit._src===buf) ? hit : null;
+      if(!t){
+        try{ t=timbreOf(buf.getChannelData(0), buf.sampleRate); t._src=buf;
+          timbreCache[p.bufId]=t; }catch(e){ return null; }
+      }
+      if(t.ringMs==null) return null;
+      /* attack included: the sound is sounding from its start, and ring
+         is measured from the PEAK, not from the note's beginning */
+      return ((t.attackMs||0)+t.ringMs)/1000;
+    };
     const ring=(n)=>{
-      if(n.len>0) return n.len;
       const p=S.pads[n.pad]; if(!p) return 0.1;
       const a=+p.att||0, d=+p.dec||0, r=+p.rel||0, s=+p.sus||0;
-      return s>0 ? Math.max(0.1, a+d+r+barSec*0.5) : Math.max(0.05, a+d+r);
+      const heard=measuredRing(n.pad);
+      /* an explicit step length holds the gate open that long, then the
+         release closes it — the sample cannot outlast that */
+      if(n.len>0) return heard!=null ? Math.min(n.len+r, heard) : n.len;
+      const gated = s>0 ? Math.max(0.1, a+d+r+barSec*0.5) : Math.max(0.05, a+d+r);
+      if(heard==null) return gated;
+      /* the eight-bar cap is a COMPUTE guard, not a musical claim: every
+         sounding pair is compared against every chord the note reaches,
+         so an ambient sample measuring half a minute would turn one note
+         into hundreds of comparisons. Nothing in these packs comes near
+         it — the longest here is 13.8 seconds, about four bars at 76. */
+      return s>0 ? Math.max(0.05, Math.min(heard, barSec*8)) : Math.min(gated, heard);
     };
 
     /* DRUMS ARE NOT A VOICE. instrument() lays a kit out by MIDI note

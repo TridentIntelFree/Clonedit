@@ -122,6 +122,38 @@ export default async function ({ browser, base }) {
       !/too quiet on disk/.test(kit.lcd) || /spread closed/.test(kit.lcd),
       (kit.lcd || '').slice(0, 130));
 
+    t.head('AND THE HARMONY CHECK HEARS HOW LONG THE SAMPLE REALLY RINGS');
+    /* harmony() worked out how long a note sounds from the pad's
+       ENVELOPE, and for the sustaining case that was the stand-in
+       `barSec*0.5`. Measured against the audio it is not close:
+       CHAMBER's contrabass rings 8560ms and the guess gives 1760ms at
+       76bpm, so the last 6.8 seconds of every bass note were invisible
+       to a check calibrated on 370 Bach chorales — and those seconds
+       are where a held root clashes with the chord it rings into.
+
+       The two trials below differ ONLY in the pad's gate. Same notes,
+       same chords. Every chord is Bb so that the cello's Bb is a chord
+       tone and nothing can flag except the bass-against-cello PAIR,
+       which is the thing ring decides. */
+    const rings = await page.evaluate(async () => {
+      const trial = async (sus, dec) => {
+        for (let i = 0; i < 64; i++) if (S.pads[i].role === 'bass') {
+          S.pads[i].sus = sus; S.pads[i].dec = dec; S.pads[i].rel = 0.05; }
+        await JBH.pattern(0, { plen: 16, clear: true, select: true });
+        JBH.chords(0, ['Bb', 'Bb', 'Bb', 'Bb']);
+        JBH.note('bass', 45, 0, 0.8);   // A2, a non-chord tone that rings on
+        JBH.note('vibes', 58, 4, 0.8);  // Bb one bar later (2.4s): past the old 1.4s guess, inside the real ring
+        const h = await JBH.harmony({ src: 'pat' });
+        return (h.says || '');
+      };
+      return { sustaining: await trial(1, 0.12), gated: await trial(0, 0.08) };
+    });
+    const pair = /two voices sound a semitone apart/;
+    t.ok('a note still ringing into the next chord is FOUND', pair.test(rings.sustaining),
+      rings.sustaining.slice(0, 120));
+    t.ok('and the same part with the gate shut is not, because it really has stopped',
+      !pair.test(rings.gated), rings.gated.slice(0, 120));
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
