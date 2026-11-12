@@ -781,6 +781,15 @@ that makes a whole-buffer COPY — reverse, a stretch — goes through
 slow on a long sound, time it before deciding what it is: the decode
 that "obviously" caused this took a quarter of one autosave.
 
+**A WHOLE-BUFFER TRANSFORM NEEDS A LENGTH CEILING.** CHOP, TAPE, MUTATE
+and REBUILD PAD process every sample, so on a six-minute track they
+froze the UI for 20-63 seconds each — a crash on a phone, one per
+button. `guardLongEdit(buf, what)` refuses past 45s (tape/mutate/
+resynth) with a CROP message; CHOP bounds its own analysis frames
+instead. The way these were found is the rule: the bug report named
+only LOAD, and only driving EVERY control on the long file found the
+other four. When a fix lands, test the neighbours.
+
 **A sample pack can lie about pitch.** VSCO-2 CE names every file an
 octave below what it sounds, and is not consistent with itself: one solo
 violin folder uses scientific pitch and another folder of the same
@@ -1317,6 +1326,7 @@ thing they are about:
 - [A check that cannot fail](docs/findings.md#a-check-that-cannot-fail)
 - [A suggestion has to stop being made once it has been taken](docs/findings.md#a-suggestion-has-to-stop-being-made-once-it-has-been-taken)
 - ["The app crashes when a large file is loaded"](docs/findings.md#the-app-crashes-when-a-large-file-is-loaded)
+- [Four more tools froze on a long sound, and the matrix is how they surfaced](docs/findings.md#four-more-tools-froze-on-a-long-sound-and-the-matrix-is-how-they-surfaced)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

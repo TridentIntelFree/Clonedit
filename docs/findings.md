@@ -3704,3 +3704,58 @@ What is NOT fixed: a six-minute stereo track is still 132MB of float
 in memory, because that is what Web Audio holds, and REVERSE on it
 still makes a second 132MB if the budget allows. The app says so when
 the file loads rather than when the tab dies.
+
+## Four more tools froze on a long sound, and the matrix is how they surfaced
+
+The LOAD crash fixed, the honest next step was the one the user asked
+for: test every option. A matrix drove all ~17 controls on the
+six-minute track at desktop and phone profiles, measuring wall-clock,
+js heap, audio-buffer megabytes (which `performance.memory` does NOT
+see — an AudioBuffer is native, not JS heap) and the worst main-thread
+freeze.
+
+Nothing crashed headless Chromium. The wall-clock did the talking:
+
+```
+op       desktop   what it does on 360s of audio
+CHOP        63s    a 60ms window slid at 30ms hops: ~12,000 sliceBuf
+                   AudioBuffers and FFTs, held at once
+MUTATE      40s    re-renders the whole pad per candidate, POPxGEN times
+TAPE        20s    one synchronous per-sample loop over 17M samples —
+                   a single 5-SECOND block
+RESYNTH      8s    plus a fresh 66MB output buffer
+```
+
+A phone is 3-5x slower and gets killed for a multi-second unresponsive
+frame, so each of these is a crash there — the same crash, reached by a
+different button. None would have been found from the bug report, which
+named only LOAD.
+
+The fix matches the sound's nature. These are tools for a SOUND — a
+hit, a loop, a phrase — not a track:
+
+- CHOP stays usable at any length. Its hop widens so the analysis never
+  exceeds 500 windows; a short sample is unchanged, and finding a
+  handful of cut points across minutes never needed 30ms resolution.
+  63s -> 2.9s on the six-minute file.
+- TAPE, MUTATE and REBUILD PAD (resynth) refuse past 45 seconds and
+  name the fix — CROP to the part you want, which is the same thing the
+  LOAD message already tells you when a long sound lands. 45s is set by
+  the worst-scaling of the three (mutate's repeated renders); past it
+  the crash case is blocked and a 45s loop is still one TRIM from
+  working.
+- PAINT needed no guard: its output is capped at 8 seconds whatever the
+  input. FREEZE takes a single 8192-sample window. Confirmed, not
+  assumed — both were in the matrix.
+
+What the matrix also confirmed WORKS after the vault split, on the same
+file: autosave 526ms (was 4200), checkpoint 100ms, NORMALIZE 352ms,
+TRIM 302ms, FREEZE 237ms, REVERSE declined on the phone profile and
+built on desktop (the copy budget doing its job), SAVE and EXPORT ~1.5s,
+a one-bar render ~1s. The full-song BOUNCE is 2 minutes — but that is
+rendering the whole arrangement offline, it is explicit, and it
+produces the file.
+
+The lesson restated: the bug report is a symptom, not a map. "Crashes
+on load" was one of five ways the same shape of fault could crash the
+app, and only driving every path found the other four.

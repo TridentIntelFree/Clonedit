@@ -180,6 +180,52 @@ export default async function ({ browser, base }) {
     t.ok('UNDO still steps back one take', un.big.back === 'take 5', 'pad reads "' + un.big.back + '"');
     t.ok('twelve ordinary replacements keep all twelve steps', un.smallGrew === 12, un.smallGrew + ' steps added');
 
+    /* The LOAD fix stopped a long track crashing on the way in, but the
+       sound-design tools transform the WHOLE buffer and had no length
+       ceiling: on a six-minute file CHOP froze the page for 63s, MUTATE
+       40s, TAPE 20s, RESYNTH 8s. These are tools for a sound, not a track.
+       Three refuse past 45s and name the fix; CHOP stays usable at any
+       length by bounding its own analysis. */
+    t.head('THE WHOLE-BUFFER TOOLS DO NOT FREEZE ON A LONG SOUND');
+    const guard = await page.evaluate(async () => {
+      const sr = 48000;
+      const mk = (secs, f) => { const b = mkAudioBuf(Math.round(sr * secs), sr, 1), d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = 0.3 * Math.sin(2 * Math.PI * f * i / sr); return b; };
+      await JBH.clear();
+      S.editPad = 0; loadIntoTarget(mk(60, 110), 'long60', { keepTarget: true, noAsk: true });   // > 45s
+      S.editPad = 2; loadIntoTarget(mk(8, 220), 'short8', { keepTarget: true, noAsk: true });     // < 45s
+      S.editPad = 3; loadIntoTarget(mk(8, 330), 'brain', { keepTarget: true, noAsk: true });      // resynth needs one
+      S.patterns[S.pattern].steps[0][0] = 0.9; S.patterns[S.pattern].steps[2][0] = 0.9;
+      const gate = async (fn) => { try { await fn(); return ''; } catch (e) { return e.message; } };
+      const longMsgs = {
+        tape: await gate(() => JBH.tape(0)),
+        resynth: await gate(() => JBH.resynth({ target: 0 })),
+        mutate: await gate(() => JBH.mutate(0)),
+      };
+      // the twin: the SHORT one must not be stopped by the length gate
+      const shortMsgs = {
+        tape: await gate(() => JBH.tape(2)),
+        mutate: await gate(() => JBH.mutate(2)),
+      };
+      // CHOP is not guarded — it must stay usable on the long one, and fast
+      const t0 = performance.now();
+      let chop = null, chopErr = '';
+      try { chop = await JBH.chop(0, 8); } catch (e) { chopErr = e.message; }
+      const chopMs = performance.now() - t0;
+      return { longMsgs, shortMsgs, chop: chop && (chop.points ? chop.points.length : chop.slices),
+        chopErr, chopMs: Math.round(chopMs) };
+    });
+    const refused = (m) => /CROP|not a whole track|a sound, not a track/i.test(m);
+    for (const op of ['tape', 'resynth', 'mutate'])
+      t.ok(op.toUpperCase() + ' on a 60s sound is refused, with the fix named',
+        refused(guard.longMsgs[op]), op + ': ' + JSON.stringify(guard.longMsgs[op].slice(0, 70)));
+    t.ok('BUT AN 8s SOUND IS NOT STOPPED BY THE LENGTH GATE — the guard did not become the bug',
+      !refused(guard.shortMsgs.tape) && !refused(guard.shortMsgs.mutate),
+      'tape: ' + JSON.stringify(guard.shortMsgs.tape.slice(0, 40)) + ' · mutate: ' + JSON.stringify(guard.shortMsgs.mutate.slice(0, 40)));
+    t.ok('CHOP still works on the long sound, and quickly',
+      !guard.chopErr && guard.chop > 0 && guard.chopMs < 10000,
+      guard.chopErr ? 'threw ' + guard.chopErr : guard.chop + ' points in ' + guard.chopMs + 'ms');
+
     t.head('JS ERRORS');
     t.ok('none', errors.length === 0, errors.slice(0, 3).join(' | '));
   } finally {

@@ -2852,7 +2852,7 @@
    check by construction. scripts/check-build-label.mjs therefore CHECKS
    it instead, in CI, where HEAD is the commit being shipped and the
    arithmetic is exact. R = commits on main minus 9. */
-const BUILD = 'JBH-88 · R284 · 2026-11-12 · a long track is saved once, not on every edit';
+const BUILD = 'JBH-88 · R285 · 2026-11-12 · the sound-design tools no longer freeze on a whole track';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -3043,6 +3043,42 @@ function derivedRefused(buf, what){
   const secs=buf.duration, mb=Math.round(bufBytes(buf)/1048576);
   lcd('LONG SOUND — '+what+' needs a second copy of all '+(secs>=90?(secs/60).toFixed(1)+' minutes':Math.round(secs)+'s')
     +' ('+mb+'MB), which is more than this device should be asked for. CROP to the part you want and it will work.');
+}
+/* A WHOLE-BUFFER TRANSFORM HAS NO LENGTH CEILING, AND THAT IS A CRASH.
+
+   The autosave fix stopped a long track taking the app down on LOAD, but
+   the matrix that proved it also drove every other control, and four of
+   the sound-design tools freeze the main thread for the length of the
+   file. Measured on a six-minute track, desktop wall-clock (a phone is 3-5x
+   and far likelier to be killed for it):
+
+     CHOP     63s   — a 60ms window slid across the whole file, ~12,000
+                      sliceBuf allocations and FFTs held at once
+     MUTATE   40s   — re-renders the whole pad per candidate, POPxGEN times
+     TAPE     20s   — one synchronous per-sample loop over 17M samples,
+                      a single 5-SECOND block
+     RESYNTH   8s   — plus a fresh 66MB output buffer
+
+   These are tools for a SOUND — a hit, a loop, a phrase — not for a track.
+   CHOP stays useful at any length (it bounds its analysis instead; a
+   handful of cut points across minutes needs coarse windows, not 30ms
+   ones). The other three refuse past a cap and name the fix, which is the
+   same CROP the LOAD message already tells you about when a long sound
+   lands. PAINT needs no guard — its output is capped at 8s whatever the
+   input — and FREEZE takes one 8192-sample window.
+
+   THE CAP IS 45 SECONDS, set by the worst-scaling of the three. At 45s
+   TAPE is ~2.5s and MUTATE's repeated renders ~5s on this desktop:
+   unpleasant, survivable, not a kill. A sound past 45 seconds is a loop
+   you can crop, and the crash case — a multi-minute master — is what this
+   stops dead. */
+const LONG_EDIT_SEC=45;
+function guardLongEdit(buf, what){
+  if(buf && buf.duration>LONG_EDIT_SEC)
+    throw new Error(what+' works on a sound, not a whole track — this one is '
+      +(buf.duration>=90?(buf.duration/60).toFixed(1)+' minutes':Math.round(buf.duration)+' seconds')
+      +' long and processing all of it would freeze the app. CROP to the part you want first (set the '
+      +'start and end, then TRIM), and it will work.');
 }
 /* IDENTITY, NOT POSITION. bufId is an index, and indexes get reused: NEW
    PROJECT empties the list, a load replaces it, gcBuffers renumbers it. Every
@@ -12978,7 +13014,15 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     const win=clamp(+o.window||0.06,0.01,0.5);
     const sr=buf.sampleRate, W=Math.floor(win*sr);
     const d=buf.getChannelData(0);
-    const hop=Math.max(1,Math.floor(W*0.5));
+    /* BOUNDED, SO A LONG RECORDING DOES NOT MELT THE PAGE. Each window is
+       an AudioBuffer allocation and an FFT, and at a 30ms hop a six-minute
+       file is ~12,000 of them held at once — 63 seconds of frozen UI,
+       measured. The hop widens so the count never passes CHOP_MAX_FRAMES;
+       a short sample is unchanged (its natural hop gives fewer than that),
+       and finding a handful of cut points across minutes does not need
+       30ms resolution anyway. */
+    const CHOP_MAX_FRAMES=500;
+    const hop=Math.max(Math.floor(W*0.5), Math.ceil((d.length-W)/CHOP_MAX_FRAMES));
     /* one descriptor per window: level plus the nine-band shape, which
        is the cheap stand-in for Samplebrain's fft/mfcc pair */
     const frames=[];
@@ -14812,6 +14856,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
     const src=S.buffers[p.bufId];
     if(!src || !src.length) throw new Error('that pad\'s buffer is empty');
+    guardLongEdit(src, 'TAPE');
 
     const wowHz=clamp(o.wowHz==null?0.7:+o.wowHz, 0.05, 4);
     const wowCents=clamp(o.wow==null?9:+o.wow, 0, 100);
@@ -14948,6 +14993,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     if(!tp || tp.bufId<0) throw new Error('pad '+(o.target|0)+' has no sample to rebuild');
     const tBuf=S.buffers[tp.bufId];
     if(!tBuf || !tBuf.length) throw new Error('the target pad\'s buffer is empty');
+    guardLongEdit(tBuf, 'REBUILD PAD');
 
     /* the brain: every other pad that holds a sample, unless told */
     let brainPads=o.brain;
@@ -16295,6 +16341,7 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
   async mutate(padIdx, opt){
     const o=opt||{}, i=padIdx|0, p=S.pads[i];
     if(!p || p.bufId<0) throw new Error('pad '+i+' has no sample on it');
+    guardLongEdit(S.buffers[p.bufId], 'MUTATE');
     const POP=Math.max(2, Math.min(12, o.population||5));
     const GEN=Math.max(1, Math.min(8, o.generations||3));
     const WANT=o.want||'different';
