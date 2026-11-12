@@ -277,13 +277,17 @@ export default async function ({ browser, base }) {
        only: lose the page in that window and the work is gone silently. */
     const vault = await page.evaluate(async () => {
       const o = {};
-      await idbPut('last', snapshotSession());
-      const before = await idbGet('last');
+      /* through the slot the app really uses. This read 'last' directly
+         for a long time; the session lives under 'vault' now, with its
+         audio in records of its own, and vaultPeek() is the one place
+         that knows which slot is current. */
+      await vaultPut();
+      const before = (await vaultPeek()).doc;
       o.before = before.buffers.length;
       const keep = S.buffers;
       S.buffers = [];                       // what undoing to the bottom leaves
       await autosave();
-      const after = await idbGet('last');
+      const after = (await vaultPeek()).doc;
       o.after = after ? after.buffers.length : 'GONE';
       o.sameStamp = !!after && after.t === before.t;
       /* and it must SAY it filed the old one into REWIND, not fail silently */
@@ -296,7 +300,7 @@ export default async function ({ browser, base }) {
       S.buffers = keep;
       // and once there IS audio again, the vault updates normally
       await autosave();
-      const back = await idbGet('last');
+      const back = (await vaultPeek()).doc;
       o.restored = back ? back.buffers.length : 'GONE';
       return o;
     });

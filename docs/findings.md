@@ -3571,3 +3571,136 @@ The through-line with the VOL finding above: in both cases the
 behaviour was correct and the person's experience was not, and no
 amount of testing the behaviour harder would have found it. What found
 it was somebody using the thing.
+
+## "The app crashes when a large file is loaded"
+
+A multiple-minute full track. The obvious suspect is the decode, and
+the decode is fine: a six-minute stereo WAV is on a pad in 1.4 seconds.
+
+Measured through the real import path, with a `PerformanceObserver`
+counting long tasks and wrappers timing the suspects:
+
+```
+function         calls   total ms   ms/call
+autosave             6       4203       700
+snapshotSession      6       3386       564
+pcmQuant            12       2686       224
+decode               1       1093      1093      <- the thing it "obviously" was
+long tasks: 13, worst 577ms, total 4359ms        heap 38 -> 237MB
+```
+
+Six autosaves in twenty seconds, from five step toggles. **The session
+document carried every sample inline**, so writing down "step 4 is on"
+meant re-quantising 132MB of float into a fresh 66MB and handing it to
+IndexedDB — 570ms of frozen main thread, 1.5 seconds after any edit,
+for as long as that file was in the project. Every three minutes a
+REWIND checkpoint did all of it again and kept three to six full
+copies. A fast desktop shrugs. A phone is three to five times slower
+with a few hundred megabytes to spend, and there it is a reaped tab,
+which is what a crash is.
+
+None of the audio had changed. That is the whole finding.
+
+### The fix is storage, and identity is the wrong key
+
+Audio lives in its own records now, written once, and the autosave
+slot and every checkpoint hold keys. The first design keyed those
+records by the buffer object, and one grep killed it:
+
+```js
+$('btnNorm').addEventListener('click',()=>{ ...
+    for(let i=0;i<d.length;i++) d[i]*=k;      // workBuf, in place
+```
+
+NORMALIZE multiplies the buffer's own samples and keeps the object. A
+vault keyed by identity would have gone on believing the old audio was
+current and RESTORE would have handed it back un-normalised, silently.
+So the key is the CONTENT — an exact hash over the raw float bits
+(`src/pure/vaultsig.js`), not a sampled probe, because a probe with an
+88ms stride on a six-minute file can miss an in-place edit that nothing
+would then ever write.
+
+Same file, same machine, after:
+
+| | before | after |
+|---|---|---|
+| main thread frozen, whole session | 4359ms | 280ms |
+| audio re-encoded | on every autosave | once |
+| in IndexedDB | 66MB per save, 66MB per checkpoint | 33MB total |
+| a checkpoint | a second copy of everything | 117ms, no audio |
+
+(33 and not 66 because the two channels of that file are identical and
+the store is content-addressed per channel. A mono file decoded to
+stereo is stored once.)
+
+### Three rules the new vault lives by
+
+A vault that stores audio by reference can lose it in ways an inline
+one cannot. Each of these is a comment in the code and a test:
+
+1. **A document never points at audio that is not there.** Audio is
+   written first, the document second; a document is deleted first, its
+   audio swept second. Die anywhere and the disk holds the old state or
+   the new one.
+2. **The sweep is the only code that deletes audio**, its rule is a
+   pure function with its own tests, and every vault operation runs one
+   at a time — across tabs too, through the Web Locks API.
+3. **Old builds never meet the new format.** Light documents get new
+   keys (`vault`, `ck2:`); `last` and `ckpt:` keep meaning what they
+   meant, are still read forever, and nothing is converted. An old
+   session restores exactly as it did and is retired only after the
+   new slot holds it.
+
+`tests/browser/vault-split.test.mjs` is mostly a round trip through
+real page reloads, because "the save was fast" is worth nothing if the
+restore is wrong.
+
+### And then the same measurement found four more
+
+Timing every whole-buffer operation on the six-minute file took the
+heap to 455MB and showed the autosave was only the loudest problem.
+
+- **KEEP TIME is on by default and its warm-up builds a stretched copy
+  of the sound per distinct pitch, up to sixteen**, synchronously,
+  cached forever. For a snare, nothing. For this file, two gigabytes,
+  requested by drawing the edit panel. There is a byte budget on
+  derived copies now, with two rules that differ by *who asked*:
+  nothing built unasked may exceed a quarter of it; something a person
+  pressed a button for is built if it fits at all. The KEEP TIME button
+  says `TAPE PITCH · TOO LONG TO HOLD` instead of sitting lit over a
+  pad it is not holding.
+- **The undo stack's own comment said sharing buffer references "costs
+  pointers, not audio memory."** True of a sound still in use. But undo
+  exists to bring back what is *not* in use, so every replaced sound
+  stays alive forty entries deep, in no meter. Audio held only by
+  history is counted now and the stack shortens when it passes the
+  budget — and says so in the project log.
+- **Import held the file twice.** `decode(it.ab.slice(0))` decoded a
+  copy and kept the original until the whole import returned, and
+  choosing several files read all of them before decoding the first.
+  Nothing read the bytes again; the copy bought nothing.
+- **EXPORT JSON built the project as one contiguous string** — the
+  path the app tells you to use *when the autosave has failed*. It is
+  assembled from Blob parts now, and the test produces the old file
+  and the new one and compares them byte for byte.
+
+Restore also decoded each channel into a temporary `Float32Array` and
+then copied it, so every channel existed three times at the moment
+memory was already at its peak. It decodes in place.
+
+### What measuring was worth
+
+Had this been fixed from the bug report it would have been a decode
+guard, a "file too large" message, and a closed ticket — and the app
+would still have crashed. The decode took a quarter of the time of ONE
+autosave, and there were six.
+
+Two guards were considered and not built because the numbers said no:
+a duration cap on import (the file loads fine; refusing it would have
+removed a working feature) and automatic mono downmix (it changes the
+audio to solve a problem that was never the audio).
+
+What is NOT fixed: a six-minute stereo track is still 132MB of float
+in memory, because that is what Web Audio holds, and REVERSE on it
+still makes a second 132MB if the budget allows. The app says so when
+the file loads rather than when the tab dies.

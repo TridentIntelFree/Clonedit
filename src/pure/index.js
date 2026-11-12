@@ -93,3 +93,7 @@ export * from './samplekits.js';
 /* stage every pad in a kit from its own measured peak, so a kit does
    not arrive with a 22dB spread across its own sounds */
 export * from './staging.js';
+/* the content signature the session vault keys stored audio by, and the
+   rule that decides which stored audio may be deleted — see the header
+   there for why it is exact and why it is not object identity */
+export * from './vaultsig.js';

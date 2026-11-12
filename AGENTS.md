@@ -769,6 +769,18 @@ anything taken from git history differs between the two.
 `npm run lint` fails when the label is behind, and the build now prints
 the label it published next to the size.
 
+**THE AUTOSAVE MUST NEVER COST WHAT THE AUDIO COSTS.** It fires 1.5s
+after any edit. The session document used to carry every sample inline,
+so toggling a step re-encoded and re-wrote a whole six-minute track —
+570ms frozen, 66MB allocated — and a phone took that as a crash. Audio
+is in its own content-addressed records now (`vaultPut()`, never
+`idbPut('last', snapshotSession())`), keyed by an exact hash because
+NORMALIZE edits a buffer in place and identity would miss it. Anything
+that makes a whole-buffer COPY — reverse, a stretch — goes through
+`derivedRoom()`; anything built unasked passes `auto`. When something is
+slow on a long sound, time it before deciding what it is: the decode
+that "obviously" caused this took a quarter of one autosave.
+
 **A sample pack can lie about pitch.** VSCO-2 CE names every file an
 octave below what it sounds, and is not consistent with itself: one solo
 violin folder uses scientific pitch and another folder of the same
@@ -1304,6 +1316,7 @@ thing they are about:
 - ["I can't find master volume for each pad separate from gains"](docs/findings.md#i-cant-find-master-volume-for-each-pad-separate-from-gains)
 - [A check that cannot fail](docs/findings.md#a-check-that-cannot-fail)
 - [A suggestion has to stop being made once it has been taken](docs/findings.md#a-suggestion-has-to-stop-being-made-once-it-has-been-taken)
+- ["The app crashes when a large file is loaded"](docs/findings.md#the-app-crashes-when-a-large-file-is-loaded)
 
 **Add new findings there, not here.** What belongs in this file is a
 rule short enough to follow without the story behind it; the story

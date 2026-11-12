@@ -2985,6 +2985,7 @@ var __JBH_PURE = (() => {
   // src/pure/index.js
   var index_exports = {};
   __export(index_exports, {
+    AUD_PREFIX: () => AUD_PREFIX,
     BANDS: () => BANDS,
     CONTROL_FOR: () => CONTROL_FOR,
     DRUM_CORPUS: () => DRUM_CORPUS,
@@ -3017,12 +3018,16 @@ var __JBH_PURE = (() => {
     applyCurve: () => applyCurve,
     assignKit: () => assignKit,
     attackRing: () => attackRing,
+    audKey: () => audKey,
+    audRefsOf: () => audRefsOf,
+    audUnreferenced: () => audUnreferenced,
     autocorr: () => autocorr,
     bandEnergies: () => bandEnergies,
     bandName: () => bandName,
     beatPhase: () => beatPhase,
     binGains: () => binGains,
     centsOff: () => centsOff,
+    chanSig: () => chanSig,
     chordInfo: () => chordInfo,
     clamp: () => clamp,
     clampBpm: () => clampBpm,
@@ -3045,6 +3050,7 @@ var __JBH_PURE = (() => {
     installSteps: () => installSteps,
     irDur: () => irDur,
     isInstalled: () => isInstalled,
+    isLightDoc: () => isLightDoc,
     isPoly: () => isPoly,
     keyChords: () => keyChords,
     kitRoleOf: () => kitRoleOf,
@@ -3108,6 +3114,9 @@ var __JBH_PURE = (() => {
     sfzNote: () => sfzNote,
     sfzResolve: () => sfzResolve,
     sfzRoundRobin: () => sfzRoundRobin,
+    sigFeed: () => sigFeed,
+    sigHex: () => sigHex,
+    sigNew: () => sigNew,
     sixteenthSec: () => sixteenthSec,
     snapSemitone: () => snapSemitone,
     stagePads: () => stagePads,
@@ -3122,7 +3131,8 @@ var __JBH_PURE = (() => {
     timbreOf: () => timbreOf,
     toRoman: () => toRoman,
     toTriad: () => toTriad,
-    trackLen: () => trackLen
+    trackLen: () => trackLen,
+    wordsOf: () => wordsOf
   });
 
   // src/pure/math.js
@@ -9953,6 +9963,52 @@ var __JBH_PURE = (() => {
     says += ". Peak is not loudness, so a long sound will still read louder than a short one at the same number.";
     return { target: +target.toFixed(1), gains, short, spread, says };
   }
+
+  // src/pure/vaultsig.js
+  function sigNew() {
+    return { a: 2166136261 | 0, b: 0, n: 0 };
+  }
+  function sigFeed(s, u32, from, to) {
+    let a = s.a, b = s.b;
+    for (let i = from; i < to; i++) {
+      const w = u32[i];
+      a = Math.imul(a ^ w, 16777619);
+      b = Math.imul(b, 31) + w | 0;
+    }
+    s.a = a;
+    s.b = b;
+    s.n += to - from;
+    return s;
+  }
+  function sigHex(s) {
+    return (s.a >>> 0).toString(16).padStart(8, "0") + (s.b >>> 0).toString(16).padStart(8, "0");
+  }
+  function wordsOf(f32) {
+    return new Uint32Array(f32.buffer, f32.byteOffset, f32.length);
+  }
+  function chanSig(f32) {
+    const u = wordsOf(f32);
+    return sigHex(sigFeed(sigNew(), u, 0, u.length));
+  }
+  var AUD_PREFIX = "aud:";
+  function audKey(length, hex) {
+    return AUD_PREFIX + length + ":" + hex;
+  }
+  function audRefsOf(doc) {
+    const out = [];
+    if (!doc || !Array.isArray(doc.buffers)) return out;
+    for (const b of doc.buffers)
+      if (b && Array.isArray(b.aud)) for (const k of b.aud) out.push(k);
+    return out;
+  }
+  function isLightDoc(doc) {
+    return !!(doc && Array.isArray(doc.buffers) && doc.buffers.some((b) => b && Array.isArray(b.aud)));
+  }
+  function audUnreferenced(present, docs) {
+    const used = /* @__PURE__ */ new Set();
+    for (const d of docs || []) for (const k of audRefsOf(d)) used.add(k);
+    return (present || []).filter((k) => typeof k === "string" && k.indexOf(AUD_PREFIX) === 0 && !used.has(k));
+  }
   return __toCommonJS(index_exports);
 })();
 Object.assign(globalThis, __JBH_PURE);})();
@@ -12813,7 +12869,7 @@ Object.assign(globalThis, __JBH_PURE);})();
    check by construction. scripts/check-build-label.mjs therefore CHECKS
    it instead, in CI, where HEAD is the commit being shipped and the
    arithmetic is exact. R = commits on main minus 9. */
-const BUILD = 'JBH-88 · R283 · 2026-11-05 · the harmony check hears how long a sample really rings';
+const BUILD = 'JBH-88 · R284 · 2026-11-12 · a long track is saved once, not on every edit';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -12944,6 +13000,67 @@ const S = {
   mMud:0, mAir:0, mFocus:0, mDeess:0
 };
 const revCache = {};      // bufId -> reversed AudioBuffer
+
+/* A COPY OF A LONG SOUND IS NOT FREE, AND THESE WERE NEVER COUNTED.
+
+   Found while measuring why a multi-minute file takes the app down. The
+   reversed copy and every time-stretched copy of a pad's sound are whole
+   new buffers the same size as the original or larger, cached here and
+   in speedCache, and nothing ever let go of one. Worse, KEEP TIME is on
+   by default and warmKeepTime() builds one stretch PER DISTINCT PITCH the
+   pad's steps use, up to sixteen — each a synchronous pass over the whole
+   sound on the main thread. For a snare that is sixteen copies of a few
+   hundred kilobytes. For a six-minute track it is two gigabytes, asked
+   for by drawing the edit panel.
+
+   Two rules, and the difference between them is who asked:
+
+   - NOTHING BUILT UNASKED may be more than a quarter of the budget. The
+     warm-up and the pre-bounce pass are conveniences; a convenience that
+     can take the page down is not one. Past that size the pad simply
+     plays as tape pitch, which is what every trigger path already does
+     when a stretch is not ready, and the edit panel says why.
+   - SOMETHING ASKED FOR — REVERSE pressed, KEEP PITCH turned on — is
+     built if it fits the budget at all, evicting older copies to make
+     room. One copy because a person wanted it is a different thing from
+     sixteen because a loop said so.
+
+   The budget follows navigator.deviceMemory where the browser admits to
+   one. Safari does not, on any device, so the fallback is sized for a
+   phone: being conservative on a desktop costs a rebuilt stretch, and
+   being generous on a phone costs the session.
+
+   Recency lives ON the cached buffer (`_used`) and the total is counted
+   from the two caches themselves, so the three places that clear them
+   wholesale cannot leave this out of step with what is really held. */
+let derivedClock=0;
+const bufBytes=(b)=> b ? b.length*b.numberOfChannels*4 : 0;
+function derivedBudget(){
+  const dm=(typeof navigator!=='undefined' && +navigator.deviceMemory)||0;
+  return clamp(dm ? dm*48 : 160, 96, 768)*1048576;
+}
+function derivedTouch(b){ if(b) b._used=++derivedClock; return b; }
+function derivedRoom(bytes, auto){
+  const budget=derivedBudget();
+  if(bytes>budget || (auto && bytes>budget/4)) return false;
+  const es=[];
+  for(const k in revCache) es.push({c:revCache,k,b:revCache[k]});
+  for(const k in speedCache) es.push({c:speedCache,k,b:speedCache[k]});
+  es.sort((x,y)=>((x.b&&x.b._used)||0)-((y.b&&y.b._used)||0));
+  let total=es.reduce((n,e)=>n+bufBytes(e.b),0);
+  for(const e of es){ if(total+bytes<=budget) break; total-=bufBytes(e.b); delete e.c[e.k]; }
+  return true;
+}
+/* Said once per sound, not once per attempt: the warm-up runs every time
+   the edit panel is drawn. */
+const derivedSaid=new WeakSet();
+function derivedRefused(buf, what){
+  if(!buf || derivedSaid.has(buf)) return;
+  derivedSaid.add(buf);
+  const secs=buf.duration, mb=Math.round(bufBytes(buf)/1048576);
+  lcd('LONG SOUND — '+what+' needs a second copy of all '+(secs>=90?(secs/60).toFixed(1)+' minutes':Math.round(secs)+'s')
+    +' ('+mb+'MB), which is more than this device should be asked for. CROP to the part you want and it will work.');
+}
 /* IDENTITY, NOT POSITION. bufId is an index, and indexes get reused: NEW
    PROJECT empties the list, a load replaces it, gcBuffers renumbers it. Every
    cache that was keyed on the index alone could therefore hand back the audio
@@ -13459,7 +13576,8 @@ function scApplyRouting(){ if(LIVE) scApplyRoutingG(LIVE,AC); }
 function getReversed(bid){
   const b=S.buffers[bid]; if(!b) return null;
   const hit=revCache[bid];
-  if(hit && hit._src===b) return hit;   // built from THIS buffer, not just this slot (R202)
+  if(hit && hit._src===b) return derivedTouch(hit);   // built from THIS buffer, not just this slot (R202)
+  if(!derivedRoom(bufBytes(b), false)){ derivedRefused(b,'REVERSE'); return null; }
   let r;
   try{ r=new AudioBuffer({length:b.length,sampleRate:b.sampleRate,numberOfChannels:b.numberOfChannels}); }
   catch(e){ ensureAudio(); r=AC.createBuffer(b.numberOfChannels,b.length,b.sampleRate); }
@@ -13468,7 +13586,7 @@ function getReversed(bid){
     for(let i=0,n=b.length;i<n;i++) d[i]=s[n-1-i];
   }
   r._src=b;
-  revCache[bid]=r; return r;
+  revCache[bid]=derivedTouch(r); return r;
 }
 
 /* ---- per-pad playback SPEED ----
@@ -13481,14 +13599,15 @@ function getReversed(bid){
 const speedCache = {};   // `${bufId}|${dir}|${spd}` -> pitch-preserved AudioBuffer
 function speedKey(bufId,reverse,spd){ return bufTok(bufId)+'|'+(reverse?'r':'f')+'|'+spd.toFixed(3); }
 function pitchKey(bufId,reverse,ratio){ return 'p|'+bufTok(bufId)+'|'+(reverse?'r':'f')+'|'+ratio.toFixed(3); }
-function buildSpeedStretch(bufId,reverse,spd){   // sync build + cache (no-op at 1×)
+function buildSpeedStretch(bufId,reverse,spd,auto){   // sync build + cache (no-op at 1×)
   if(bufId<0 || Math.abs(spd-1)<=0.001) return null;
   const key=speedKey(bufId,reverse,spd);
-  if(speedCache[key]) return speedCache[key];
+  if(speedCache[key]) return derivedTouch(speedCache[key]);
   const src=reverse?getReversed(bufId):S.buffers[bufId];
   if(!src) return null;
+  if(!derivedRoom(bufBytes(src)/spd, !!auto)){ if(!auto) derivedRefused(S.buffers[bufId],'KEEP PITCH'); return null; }
   const out=timeStretch(src, 1/spd);   // faster => shorter, pitch preserved
-  speedCache[key]=out; return out;
+  speedCache[key]=derivedTouch(out); return out;
 }
 function padSpeed(p){ return clamp(p.speed||1,0.25,4); }
 /* PITCH WITHOUT CHANGING THE LENGTH.
@@ -13541,29 +13660,46 @@ function padNotePitches(padIdx){
 function warmKeepTime(padIdx){
   const p=S.pads[padIdx];
   if(!p || !p.keepTime || p.keepPitch || p.bufId<0) return 0;
-  let built=0;
+  let built=0, spent=0;
   padNotePitches(padIdx).forEach(semi=>{
     const r=noteRatio(p,semi,padLayer(p,0));
     if(Math.abs(r-1)<=0.001) return;
-    if(speedCache[pitchKey(p.bufId,!!p.reverse,r)]) return;
-    try{ buildPitchStretch(p.bufId,!!p.reverse,r); built++; }catch(e){}
+    /* touched as well as skipped: these are the copies this pad needs,
+       and recency is what keeps the next pad's warm-up from evicting
+       them only for this one to rebuild them — sixteen stretches chasing
+       each other round the budget every time the panel is drawn */
+    const have=speedCache[pitchKey(p.bufId,!!p.reverse,r)];
+    if(have){ derivedTouch(have); return; }
+    if(spent+bufBytes(S.buffers[p.bufId])*r > derivedBudget()/2) return;   // this pad's share, and no more
+    try{ const o=buildPitchStretch(p.bufId,!!p.reverse,r,true); if(o){ built++; spent+=bufBytes(o); } }catch(e){}
   });
   return built;
 }
-function buildPitchStretch(bufId,reverse,ratio){
+/* `auto` is true for anything nobody pressed a button for. KEEP TIME is
+   the DEFAULT, so every one of these is built unasked unless the person
+   has just turned the control on themselves. */
+function buildPitchStretch(bufId,reverse,ratio,auto){
   if(bufId<0 || Math.abs(ratio-1)<=0.001) return null;
   const key=pitchKey(bufId,reverse,ratio);
-  if(speedCache[key]) return speedCache[key];
+  if(speedCache[key]) return derivedTouch(speedCache[key]);
   const src=reverse?getReversed(bufId):S.buffers[bufId];
   if(!src) return null;
+  if(!derivedRoom(bufBytes(src)*ratio, !!auto)){ if(!auto) derivedRefused(S.buffers[bufId],'KEEP TIME'); return null; }
   const out=timeStretch(src, ratio);   // longer by r, pitch untouched
-  speedCache[key]=out; return out;
+  speedCache[key]=derivedTouch(out); return out;
+}
+/* Can KEEP TIME hold this pad's length at all? Asked by the edit panel so
+   the control can say so, rather than sitting lit over a pad it is not
+   doing anything for. */
+function keepTimeFits(p){
+  const b=p && p.bufId>=0 ? S.buffers[p.bufId] : null;
+  return !b || bufBytes(b) <= derivedBudget()/4;
 }
 function ensureSpeedCaches(){   // pre-build every pitch-locked pad's stretch (before a bounce, or after load)
   for(let i=0;i<NPADS;i++){ const p=S.pads[i];
     if(p.bufId<0) continue;
-    if(p.keepPitch){ const s=padSpeed(p); if(Math.abs(s-1)>0.001) buildSpeedStretch(p.bufId,!!p.reverse,s); }
-    else if(p.keepTime){ const r=pitchRatio(p); if(Math.abs(r-1)>0.001) buildPitchStretch(p.bufId,!!p.reverse,r); }
+    if(p.keepPitch){ const s=padSpeed(p); if(Math.abs(s-1)>0.001) buildSpeedStretch(p.bufId,!!p.reverse,s,true); }
+    else if(p.keepTime){ const r=pitchRatio(p); if(Math.abs(r-1)>0.001) buildPitchStretch(p.bufId,!!p.reverse,r,true); }
   }
 }
 /* trigger a pad into a given graph (live or offline) */
@@ -14182,7 +14318,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
   let speedMul=spd;
   if(p.keepPitch && Math.abs(spd-1)>0.001){
     const sb=speedCache[speedKey(lay.bufId,!!p.reverse,spd)];
-    if(sb){ buf=sb; speedMul=1; }
+    if(sb){ buf=derivedTouch(sb); speedMul=1; }
   }
   /* KEEP TIME: swap in a source pre-stretched by the pitch ratio, so playing it
      at that rate lands back on the original duration. Falls through to ordinary
@@ -14202,7 +14338,7 @@ function triggerPad(ctx, g, idx, vel, when, chokeReg, pitchOff, liveTap, forceLa
     const pr=noteRatio(p,pitchOff||0,lay);
     if(Math.abs(pr-1)>0.001){
       const pb=speedCache[pitchKey(lay.bufId,!!p.reverse,pr)];
-      if(pb){ buf=pb; ktSlice=1; }
+      if(pb){ buf=derivedTouch(pb); ktSlice=1; }
     }
   }
   const effBase=baseRate*speedMul;
@@ -15547,8 +15683,14 @@ function drawEdit(){
   { const sp=padSpeed(p); $('epSpeed').value=sp; $('epSpeedV').textContent=sp.toFixed(2)+'×';
     $('epKeepPitch').classList.toggle('on',!!p.keepPitch);
     $('epKeepPitch').textContent=p.keepPitch?'KEEP PITCH':'VARISPEED';
-    $('epKeepTime').classList.toggle('on',!!p.keepTime);
-    $('epKeepTime').textContent=p.keepTime?'KEEP TIME':'TAPE PITCH';
+    /* A CONTROL MUST NOT SIT LIT OVER SOMETHING IT IS NOT DOING. KEEP TIME
+       works by holding a stretched copy of the sound for every pitch it is
+       played at; past a quarter of the copy budget those are not built,
+       and the pad plays as tape pitch whatever this button says. So it
+       says that instead. */
+    const ktOk=keepTimeFits(p);
+    $('epKeepTime').classList.toggle('on',!!p.keepTime && ktOk);
+    $('epKeepTime').textContent=(p.keepTime && ktOk)?'KEEP TIME':(p.keepTime?'TAPE PITCH · TOO LONG TO HOLD':'TAPE PITCH');
     /* The two cannot both be on: one stretches for SPEED and the other for
        PITCH, and they would fight over the same buffer. Saying so beats a
        control that silently does nothing. */
@@ -15645,6 +15787,13 @@ $('epKeepPitch').addEventListener('click',()=>{
 $('epKeepTime').addEventListener('click',()=>{
   const p=S.pads[S.editPad];
   if(p.keepPitch){ lcd('KEEP TIME is unavailable while KEEP PITCH is on — both stretch the same buffer.'); return; }
+  if(!p.keepTime && !keepTimeFits(p)){
+    const bb=S.buffers[p.bufId];
+    lcd('KEEP TIME cannot hold a sound this long — it keeps a stretched copy of the whole '
+      +(bb.duration/60).toFixed(1)+' minutes for every pitch it is played at. CROP to the part '
+      +'you want pitched and it will work; until then PITCH also changes the length, like tape.');
+    return;
+  }
   p.keepTime=!p.keepTime;
   /* Every pitch this pad's STEPS ask for, not only the pad's own transpose —
      otherwise a melody written in NOTES falls through to varispeed and the
@@ -15670,7 +15819,7 @@ function pitchStretchRefresh(){
   const p=S.pads[S.editPad];
   if(p.bufId<0 || !p.keepTime || p.keepPitch) return;
   const r=pitchRatio(p);
-  if(Math.abs(r-1)>0.001) buildPitchStretch(p.bufId,!!p.reverse,r);
+  if(Math.abs(r-1)>0.001) buildPitchStretch(p.bufId,!!p.reverse,r,true);
 }
 ['epPitch','epFine'].forEach(id=>{
   const el=$(id); if(!el) return;
@@ -18020,11 +18169,27 @@ async function importItems(items){   // items:[{name,ab}] → decode each onto c
   if(!items.length) return;
   ensureAudio();
   S.editPad=pickTargetPad();          // start on an empty pad, not on the selection
-  let cur=S.editPad, ok=0, fail=0, full=false, landed=[], first=true;
+  let cur=S.editPad, ok=0, fail=0, full=false, landed=[], first=true; const tooBig=[];
   for(let k=0;k<items.length;k++){
     const it=items[k];
     lcd('DECODING '+(k+1)+'/'+items.length+' · '+(it.name||'sound')+' …');
-    let buf; try{ buf=await decode(it.ab.slice(0)); }catch(err){ fail++; continue; }
+    /* THE FILE'S BYTES, ONCE, AND THEN NOT AT ALL. This decoded a COPY
+       (`it.ab.slice(0)`) and kept the original in `items` until the whole
+       import returned, so a 60MB file was 120MB of compressed bytes held
+       next to the 132MB it decodes to — and choosing several files read
+       every one of them into memory before decoding the first. Nothing
+       reads the bytes again after this, so the copy bought nothing.
+       A file picked from the device arrives as a File and is read here,
+       one at a time, when it is its turn. */
+    let bytes=null, size=0;
+    try{ bytes=it.ab || await it.file.arrayBuffer(); }catch(err){ fail++; continue; }
+    it.ab=null; it.file=null; size=bytes.byteLength;
+    let buf; try{ buf=await decode(bytes); }catch(err){
+      /* "not audio" is the wrong thing to say about a real recording the
+         device could not hold. Big and undecodable is reported as big. */
+      if(size>48*1048576) tooBig.push((it.name||'sound')+' ('+Math.round(size/1048576)+'MB)'); else fail++;
+      continue; }
+    bytes=null;
     if(!first){
       let t=-1; for(let off=1;off<=NPADS;off++){ const i=(cur+off)%NPADS; if(S.pads[i].bufId<0){ t=i; break; } }
       if(t<0){ full=true; break; } S.editPad=t;
@@ -18034,15 +18199,25 @@ async function importItems(items){   // items:[{name,ab}] → decode each onto c
     landed.push(padName(S.editPad)); cur=S.editPad; first=false; ok++;
   }
   drawPads();
-  if(ok===1 && !fail && !full) return;   // loadIntoTarget already showed a nice message
-  lcd('IMPORTED '+ok+' sound'+(ok!==1?'s':'')+(landed.length?' → '+landed.join(', '):'')+(fail?' · '+fail+' skipped (not audio)':'')+(full?' · pads full — clear some for more':''));
+  if(ok===1 && !fail && !full && !tooBig.length) return;   // loadIntoTarget already showed a nice message
+  lcd('IMPORTED '+ok+' sound'+(ok!==1?'s':'')+(landed.length?' → '+landed.join(', '):'')+(fail?' · '+fail+' skipped (not audio)':'')
+    +(tooBig.length?' · COULD NOT OPEN '+tooBig.join(', ')+' — probably too large for this device to decode. A shorter or lower-quality export of it will load.':'')
+    +(full?' · pads full — clear some for more':''));
 }
 $('btnImport').addEventListener('click',()=>{ ensureAudio(); $('fileIn').value=''; $('fileIn').click(); });
 $('fileIn').addEventListener('change',async e=>{
   const files=e.target.files ? Array.from(e.target.files) : []; if(!files.length) return;
   ensureAudio();
-  const items=[]; for(const f of files) items.push({name:f.name, ab:await f.arrayBuffer()});
-  await importItems(await expandItems(items));
+  /* Each file is handed on as a File and read when its turn comes. Only a
+     zip has to be read now, because what is inside it is the list. */
+  const items=[];
+  for(const f of files){
+    let zip=/\.zip$/i.test(f.name||'');
+    if(!zip){ try{ zip=looksZip(await f.slice(0,4).arrayBuffer()); }catch(e){} }
+    if(zip) items.push(...await expandItems([{name:f.name, ab:await f.arrayBuffer()}]));
+    else items.push({name:f.name, file:f});
+  }
+  await importItems(items);
 });
 $('btnPasteUrl').addEventListener('click',async ()=>{
   // iOS long-press paste is finicky; one-tap read from the clipboard is reliable
@@ -18113,7 +18288,9 @@ function loadIntoTarget(buf,name,opt){
   delete warpOrig[S.editPad]; delete p.srcPreset; delete p.srcNote; delete p.srcSample; delete p.srcCat; delete p.inst;
   drawPads(); drawEdit(); drawWave(); drawMixer(); dirty();
   try{ drawTraxFx(); }catch(e){}     // the TO PAD button names its target, which just moved
-  lcd('LOADED \u2192 '+padName(S.editPad)+' · '+buf.duration.toFixed(2)+'s'
+  const long=bufBytes(buf)>derivedBudget()/4;
+  lcd('LOADED \u2192 '+padName(S.editPad)+' · '+(buf.duration>=90?(buf.duration/60).toFixed(1)+' min':buf.duration.toFixed(2)+'s')
+    +(long?' · A LONG SOUND, '+Math.round(bufBytes(buf)/1048576)+'MB in memory. It plays, saves and chops as normal; KEEP TIME cannot hold it and REVERSE needs a second copy, so CROP to a part first if you want those.':'')
     +(cleared.length?' · cleared this pad\u2019s '+cleared.join(', ')+' from the last sound — UNDO puts it back':''));
   return true;
 }
@@ -37414,9 +37591,9 @@ function download(blob,name){
    JSON.stringify turns an ArrayBuffer into {} and silently drops every
    sample. Found by saving a session over MCP, loading it back, and rendering
    silence from a project whose pads and patterns all looked right. */
-function sessionFileDoc(){
+function sessionFileDoc(noAudio){
   gcBuffers();
-  const bufs=S.buffers.map(b=>{
+  const bufs=noAudio ? [] : S.buffers.map(b=>{
     const chans=[], pk=[];
     for(let c=0;c<b.numberOfChannels;c++){
       const d=b.getChannelData(c), p=pcmPeak(d);
@@ -37446,9 +37623,61 @@ window.MVX.sessionFile=function(name){
   if(name) $('projName').value=String(name).slice(0,60);
   return sessionFileDoc();
 };
+/* THE SAME FILE, WITHOUT EVER HOLDING IT AS ONE STRING.
+
+   EXPORT JSON is what the app tells you to press when the autosave has
+   failed — "EXPORT JSON to be safe" — so it is the one path that has to
+   work when things are already going badly. It was the least likely to:
+   every channel became a byte string, then a base64 string, the document
+   held all of those, and JSON.stringify() then produced the whole project
+   again as a single contiguous string for the Blob to copy. For a
+   six-minute track that is an 88MB string that must exist in one piece,
+   beside three other copies of the same audio.
+
+   A Blob is built from PARTS, and base64 has no character JSON needs to
+   escape, so the samples can go in as many small strings between two
+   quote marks. The document's own JSON is written with a marker where
+   the audio belongs and cut there. Byte for byte the same file — the
+   test parses both and compares them — with nothing larger than one
+   channel's 16-bit samples alive at a time.
+
+   The pieces are multiples of three bytes, because base64 pads anything
+   else and padding in the middle of a string is not base64. */
+function sessionFileBlob(){
+  const doc=sessionFileDoc(true);                 // everything but the samples
+  const MARK='@@JBH-AUDIO-GOES-HERE@@';
+  const bufs=S.buffers.slice();
+  doc.buffers=MARK;
+  const json=JSON.stringify(doc), cut=json.indexOf('"'+MARK+'"');
+  if(cut<0) return new Blob([JSON.stringify(sessionFileDoc())],{type:'application/json'});
+  const parts=[json.slice(0,cut),'['];
+  const PIECE=3*0x4000;
+  bufs.forEach((b,bi)=>{
+    const pk=[]; for(let c=0;c<b.numberOfChannels;c++) pk.push(pcmPeak(b.getChannelData(c)));
+    parts.push((bi?',':'')+'{"sr":'+JSON.stringify(b.sampleRate)+',"len":'+b.length+',"ch":[');
+    for(let c=0;c<b.numberOfChannels;c++){
+      const u8=new Uint8Array(pcmQuant(b.getChannelData(c),pcmScale(pk[c])).buffer);
+      parts.push((c?',':'')+'"');
+      for(let i=0;i<u8.length;i+=PIECE)
+        parts.push(btoa(String.fromCharCode.apply(null,u8.subarray(i,Math.min(u8.length,i+PIECE)))));
+      parts.push('"');
+    }
+    parts.push('],"pk":'+JSON.stringify(pk)+'}');
+  });
+  parts.push(']', json.slice(cut+MARK.length+2));
+  return new Blob(parts,{type:'application/json'});
+}
 $('btnSave').addEventListener('click',()=>{
-  const doc=sessionFileDoc();
-  const blob=new Blob([JSON.stringify(doc)],{type:'application/json'});
+  let blob;
+  try{ blob=sessionFileBlob(); }
+  catch(e){
+    /* said, and with the way out: SAVE keeps the project on the device
+       without building a file at all */
+    lcd('EXPORT FAILED — '+((e&&e.message)||'out of memory')+'. This project may hold more audio than this device can '
+      +'write as one file; SAVE AS NEW keeps it in the on-device library instead.');
+    plog('EXPORT JSON failed: '+((e&&e.name)||'')+' '+((e&&e.message)||e));
+    return;
+  }
   download(blob, ($('projName').value||'mvx-session')+'.json');
   plog('Saved project JSON ('+Math.round(blob.size/1024)+' KB).');
 });
@@ -38090,10 +38319,20 @@ function gcBuffers(){ // drop orphaned samples (every re-render leaves one) so t
     remap(_committed.doc.pads); remap(_committed.doc.trax);
     _committed.bufs=nb.slice();
   }
+  /* THIS is the moment a replaced sound stops belonging to the session
+     and starts belonging only to history, so it is the moment to count
+     what history is holding. Counting at commit time alone found
+     nothing: the commit runs 600ms after an edit and this runs at the
+     autosave 900ms later, so the old sound was still "in use". */
+  try{ undoTrim(); updateUndoUI(); }catch(e){}
 }
+/* THE WHOLE SESSION WITH ITS AUDIO INLINE. Still what SAVE and EXPORT use —
+   a named project is one self-contained record, written when somebody
+   asks for it. It is NOT what the autosave or the checkpoints use any
+   more; see THE VAULT, SPLIT below for why. */
 function snapshotSession(){
-  gcBuffers();
-  const bufs=S.buffers.map(b=>{
+  const doc=sessionMeta();
+  doc.buffers=S.buffers.map(b=>{
     const ch=[], pk=[];
     for(let c=0;c<b.numberOfChannels;c++){
       const f=b.getChannelData(c), p=pcmPeak(f);
@@ -38101,6 +38340,14 @@ function snapshotSession(){
     }
     return {sr:b.sampleRate,len:b.length,ch,pk};
   });
+  return doc;
+}
+/* Everything about the session EXCEPT the samples. gcBuffers() runs first,
+   so the bufIds in here line up with S.buffers as it stands on return —
+   a caller that wants the audio must take S.buffers before it awaits
+   anything. */
+function sessionMeta(){
+  gcBuffers();
   return { fmt:DOC_FMT, v:DOC_V, build:BUILD, t:Date.now(), name:$('projName').value, projId:curProjId,
     bpm:S.bpm, swing:S.swing, human:S.human, humanDrift:S.humanDrift, autoWarp:S.autoWarp, silFade:S.silFade, masterVol:S.masterVol, delayFb:S.delayFb,
     takeSeed:S.takeSeed,   // the performance humanize/probability play; must ride with the project
@@ -38117,9 +38364,225 @@ function snapshotSession(){
     scOn:S.scOn, scTrig:S.scTrig, scDepth:S.scDepth, scRel:S.scRel,
     song:S.song, songOn:S.songOn, songLoop:S.songLoop, morph:S.morph,
     key:S.key, chords:S.chords, sections:S.sections,
-    pads:S.pads, patterns:S.patterns, buffers:bufs };
+    pads:S.pads, patterns:S.patterns, buffers:[] };
 }
-let autosaving=false, saveBroken=false;
+
+/* ================= THE VAULT, SPLIT =================================
+
+   Reported: "the app crashes when a large file is loaded. A multiple
+   minute full track."
+
+   Decoding the file was never the problem. Measured with a six-minute
+   stereo track through the real import path, on a fast desktop:
+
+     per autosave    570ms of frozen main thread
+                     132MB of float re-quantised into a fresh 66MB
+                     66MB written to IndexedDB
+     and an autosave fires 1.5s after ANY edit — one step toggled.
+
+     every 3 minutes  a REWIND checkpoint did all of that again and kept
+                      three to six full copies: ~264MB of IndexedDB,
+                      rewritten continually.
+
+   None of the audio had changed. The session document carried every
+   sample inline, so writing down "step 4 is on" meant re-encoding the
+   whole track. A phone is three to five times slower with a few hundred
+   megabytes to spend, and there this is not a slow save, it is a reaped
+   tab.
+
+   So the samples live in their own records, written ONCE and keyed by
+   their content (src/pure/vaultsig.js), and the autosave slot and every
+   checkpoint hold keys. An edit now saves a few kilobytes. A checkpoint
+   costs almost nothing, because it points at the same audio the session
+   does. A mono file decoded to stereo is stored once.
+
+   THREE THINGS THIS MUST NOT GET WRONG, in the order they would hurt:
+
+   1. A DOCUMENT MUST NEVER POINT AT AUDIO THAT IS NOT THERE. So audio is
+      written first and the document second; a document is deleted first
+      and its audio swept second. Die at any point and what is on disk
+      is either the old state or the new one, plus at worst some
+      unreferenced audio the next sweep removes.
+
+   2. THE SWEEP IS THE ONLY CODE HERE THAT DELETES AUDIO. The rule it
+      follows is a pure function with its own tests, every vault
+      operation runs one at a time through vaultRun(), and across tabs
+      through the Web Locks API where there is one — so a sweep can
+      never run between another operation's audio and its document.
+
+   3. OLD BUILDS MUST NOT MEET THE NEW FORMAT. The service worker is
+      network-first, but offline it serves whatever it cached, and a
+      build that expects samples inline would throw halfway through a
+      restore. So light documents get their OWN keys — 'vault' and
+      'ck2:' — and 'last' and 'ckpt:' are left meaning what they always
+      meant. An old build sees an old session or none, never a document
+      it would misread. Both are still READ here, forever: nothing is
+      converted, an old vault simply restores the way it always did. */
+const VAULT_KEY='vault', CK2='ck2:', CK1='ckpt:';
+let vaultChain=Promise.resolve();
+function vaultRun(fn){
+  const run=()=> (typeof navigator!=='undefined' && navigator.locks && navigator.locks.request)
+    ? navigator.locks.request('jbh-vault', fn) : fn();
+  const p=vaultChain.then(run, run);
+  vaultChain=p.catch(()=>{});
+  return p;
+}
+/* A yield that a hidden tab does not throttle. setTimeout is clamped to a
+   second in the background, which is exactly when iOS is about to take
+   the page away and the save most needs to finish. */
+const vaultYield=(()=>{
+  if(typeof MessageChannel==='undefined') return ()=>new Promise(r=>setTimeout(r,0));
+  const ch=new MessageChannel(), q=[];
+  ch.port1.onmessage=()=>{ const r=q.shift(); if(r) r(); };
+  return ()=>new Promise(r=>{ q.push(r); ch.port2.postMessage(0); });
+})();
+/* A LONG CHANNEL IN SLICES, so that hashing or encoding six minutes of
+   audio is a few dozen short tasks instead of one long one. The scheduler
+   that keeps the sequencer in time runs on this thread. */
+const VAULT_SLICE=1<<20;
+async function chanSigAsync(f32){
+  const u=wordsOf(f32), s=sigNew();
+  for(let i=0;i<u.length;i+=VAULT_SLICE*2){
+    sigFeed(s,u,i,Math.min(u.length,i+VAULT_SLICE*2));
+    if(i+VAULT_SLICE*2<u.length) await vaultYield();
+  }
+  return sigHex(s);
+}
+async function chanEncodeAsync(f32){
+  let pk=0;
+  for(let i=0;i<f32.length;i+=VAULT_SLICE*2){
+    const end=Math.min(f32.length,i+VAULT_SLICE*2);
+    for(let k=i;k<end;k++){ const a=Math.abs(f32[k]); if(a>pk) pk=a; }
+    if(end<f32.length) await vaultYield();
+  }
+  pk=(pk>0 && isFinite(pk)) ? pk : 1;            // pcmPeak's rule: silence scales by 1
+  const out=new Int16Array(f32.length);
+  for(let i=0;i<f32.length;i+=VAULT_SLICE){
+    const end=Math.min(f32.length,i+VAULT_SLICE);
+    out.set(pcmQuant(f32.subarray(i,end),pk), i);  // the same arithmetic the inline path uses
+    if(end<f32.length) await vaultYield();
+  }
+  return {q:out.buffer, pk};
+}
+/* Write whatever audio is not on disk yet; return what a document should
+   say about each buffer. `known` is read fresh from the database by the
+   caller on every operation — another tab may have swept since the last
+   one, and a remembered "that key exists" would be a document pointing at
+   nothing. */
+async function vaultStoreAudio(bufs, known){
+  const out=[];
+  for(const b of bufs){
+    const keys=[];
+    for(let c=0;c<b.numberOfChannels;c++){
+      const f=b.getChannelData(c);
+      let hex=await chanSigAsync(f), key=audKey(f.length,hex);
+      /* HASH, ENCODE, HASH AGAIN. The encode yields, and a buffer here can
+         be edited in place while it does. If the second hash differs the
+         record would be filed under a key that does not describe it, so
+         it is not written; the newer content is tried instead. */
+      for(let tries=0; !known.has(key) && tries<4; tries++){
+        const rec=await chanEncodeAsync(f);
+        const again=await chanSigAsync(f);
+        if(again===hex){ await idbPut(key,rec); known.add(key); break; }
+        hex=again; key=audKey(f.length,hex);
+      }
+      if(!known.has(key)) throw new Error('the audio kept changing while it was being saved');
+      keys.push(key);
+    }
+    out.push({sr:b.sampleRate, len:b.length, aud:keys});
+  }
+  return out;
+}
+/* Snapshot the session NOW and file it under `key`. The description of
+   the session is copied before the first await, because pads and patterns
+   are live objects and the audio may take a while: a document assembled
+   from pads as they were at the end and buffers as they were at the start
+   would be a session that never existed. */
+async function vaultWriteDoc(key){
+  const meta=sessionMeta(), bufs=S.buffers.slice();
+  const doc=(typeof structuredClone==='function') ? structuredClone(meta) : JSON.parse(JSON.stringify(meta));
+  const known=new Set((await idbKeysS(IDB_STORE)).filter(k=>typeof k==='string' && k.indexOf(AUD_PREFIX)===0));
+  doc.buffers=await vaultStoreAudio(bufs, known);
+  await idbPut(key, doc);
+  return doc;
+}
+/* Delete stored audio that no document points at. The rule is
+   audUnreferenced() in src/pure/vaultsig.js and is tested there; this
+   only gathers what it needs. A session still being OFFERED for restore
+   pins its audio too — it is held in memory, and for a moment during an
+   autosave it is in no slot at all. */
+async function vaultSweep(){
+  const ks=await idbKeysS(IDB_STORE);
+  const docs=[];
+  for(const k of ks){
+    if(k===VAULT_KEY || (typeof k==='string' && k.indexOf(CK2)===0)){
+      const d=await idbGet(k);
+      if(!d) continue;
+      docs.push(d);
+    }
+  }
+  if(pendingRestore) docs.push(pendingRestore);
+  for(const k of audUnreferenced(ks, docs)) await idbDelS(IDB_STORE,k);
+}
+/* Light document in, the inline shape out — which is what every restore
+   path has always read, so nothing downstream of here had to change. An
+   old inline document passes straight through. Missing audio THROWS:
+   restoring a session with a hole in it and saying nothing is the outcome
+   this file refuses everywhere else. */
+async function vaultHydrate(doc){
+  if(!isLightDoc(doc)) return doc;
+  const out=Object.assign({},doc), got={};
+  out.buffers=[];
+  for(const b of doc.buffers){
+    if(!b || !Array.isArray(b.aud)){ out.buffers.push(b); continue; }
+    const ch=[], pk=[];
+    for(const k of b.aud){
+      if(!got[k]) got[k]=await idbGet(k);
+      if(!got[k] || !got[k].q)
+        throw new Error('part of this session’s audio is missing from this device');
+      ch.push(got[k].q); pk.push(got[k].pk);
+    }
+    out.buffers.push({sr:b.sr, len:b.len, ch, pk});
+  }
+  return out;
+}
+/* File a session into REWIND without unpacking it. A light document goes
+   under the new prefix and keeps pointing at the same audio; an old inline
+   one goes where it always went. */
+function vaultFile(doc){
+  const t=(doc && doc.t) || Date.now();
+  return idbPut((isLightDoc(doc)?CK2:CK1)+t, doc);
+}
+/* The autosaved session, as stored — newest of the two slots, unhydrated.
+   `key` says which slot it came from. */
+async function vaultPeek(){
+  let a=null, b=null;
+  try{ a=await idbGet(VAULT_KEY); }catch(e){}
+  try{ b=await idbGet('last'); }catch(e){}
+  if(a && b) return ((b.t||0)>(a.t||0)) ? {doc:b,key:'last',other:a,otherKey:VAULT_KEY}
+                                        : {doc:a,key:VAULT_KEY,other:b,otherKey:'last'};
+  if(a) return {doc:a,key:VAULT_KEY};
+  if(b) return {doc:b,key:'last'};
+  return {doc:null,key:null};
+}
+let lastVaultAud='';        // the audio the slot pointed at after the last write
+let legacyLast=false;       // an old-format 'last' is still on disk
+async function vaultPut(){
+  return vaultRun(async ()=>{
+    const doc=await vaultWriteDoc(VAULT_KEY);
+    /* The old slot holds nothing that is not safe elsewhere by now: it was
+       either restored (and is this session), or filed into REWIND before
+       this write. Left in place it would be offered again at the next
+       launch as though it were newer work. */
+    if(legacyLast && !pendingRestore){
+      try{ await idbDelS(IDB_STORE,'last'); legacyLast=false; }catch(e){}
+    }
+    const now=audRefsOf(doc).join('|');
+    if(now!==lastVaultAud){ lastVaultAud=now; try{ await vaultSweep(); }catch(e){} }
+    return doc;
+  });
+}
+let autosaving=false, autosaveAgain=false, saveBroken=false;
 /* A save that fails must say so. This used to swallow the error whole, so if a
    write was refused — a full device is the usual reason, and a sample-heavy
    project on a phone gets there easily — the 'last' slot silently stayed at
@@ -38141,8 +38604,11 @@ let pendingRestore=null;
 let emptyStashT=-1;      // the vault timestamp already filed away by the empty-session guard
 async function stashPendingRestore(){
   const doc=pendingRestore; if(!doc) return;
+  /* Filed BEFORE it is let go of. pendingRestore pins its audio against
+     the sweep, and until this write lands the document exists nowhere but
+     here once the slot is overwritten. */
+  try{ await vaultRun(()=>vaultFile(doc)); }catch(e){}
   pendingRestore=null;
-  try{ await idbPut('ckpt:'+(doc.t||Date.now()), doc); }catch(e){}
   try{
     const bar=$('restoreBar');
     if(bar) bar.style.display='none';
@@ -38152,7 +38618,12 @@ async function stashPendingRestore(){
   }catch(e){}
 }
 async function autosave(){
-  if(autosaving) return;
+  /* A SAVE ASKED FOR WHILE ONE IS RUNNING USED TO BE DROPPED. The timer
+     fired, found the flag up and returned, and whatever had been edited in
+     the meantime was not written until something else was touched. With
+     audio in the same write that window was the length of the encode. It
+     runs again when the one in flight lands. */
+  if(autosaving){ autosaveAgain=true; return; }
   /* Opening the app schedules an autosave of its own — boot calls setBpm, which
      calls dirty() — so this fires about 1.5s after launch with nobody having
      touched anything. That is what used to overwrite the offered session before
@@ -38177,12 +38648,12 @@ async function autosave(){
      checkpoint every time something is touched. */
   if(!S.buffers.length){
     try{
-      const prev=await idbGet('last');
+      const prev=(await vaultPeek()).doc;
       if(prev && Array.isArray(prev.buffers) && prev.buffers.length){
         const stamp=prev.t||0;
         if(emptyStashT!==stamp){
           emptyStashT=stamp;
-          try{ await idbPut('ckpt:'+(stamp||Date.now()), prev); }catch(e){}
+          try{ await vaultRun(()=>vaultFile(prev)); }catch(e){}
           plog('This session holds no audio, and the autosave slot held '+prev.buffers.length+
                ' sample'+(prev.buffers.length===1?'':'s')+' — so the slot was left alone and that '+
                'session was filed into REWIND. Undo does not live on disk; redo it, or take it '+
@@ -38196,7 +38667,7 @@ async function autosave(){
   autosaving=true;
   await stashPendingRestore();
   try{
-    await idbPut('last',snapshotSession());
+    await vaultPut();
     if(saveBroken){ saveBroken=false;
       lcd('AUTOSAVE IS WORKING AGAIN — this session is being kept.');
       plog('Autosave recovered.'); }
@@ -38210,6 +38681,7 @@ async function autosave(){
     }
   }
   autosaving=false;
+  if(autosaveAgain){ autosaveAgain=false; clearTimeout(dirtyT); dirtyT=setTimeout(autosave,300); }
 }
 /* iOS kills the page without letting the pagehide/hidden async IDB write
    finish, so lifecycle saves alone lose the last minute of work. Save
@@ -38275,7 +38747,39 @@ function commitUndo(){
   if(JSON.stringify(cur.doc)===JSON.stringify(_committed.doc)) return;
   undoStack.push(_committed); if(undoStack.length>40) undoStack.shift();
   _committed=cur; redoStack.length=0;
+  undoTrim();
   updateUndoUI();
+}
+/* "THIS COSTS POINTERS, NOT AUDIO MEMORY" — until a sound is replaced.
+
+   The comment above undoCapture() is right about a buffer that is still
+   in use: the stack shares it. But undo exists to bring back what is NOT
+   in use any more, so every sound that has been replaced or deleted is
+   kept alive by the entries that remember it, forty deep, and nothing
+   counted how much that was. Load a six-minute track onto a pad four
+   times while choosing a take and the stack is holding three of them —
+   400MB that appears in no meter and belongs to nothing on screen.
+
+   So the audio held ONLY by history is counted, newest first, and when
+   it passes the budget the entries older than that point are let go.
+   Undo gets shallower when the things being undone are enormous, which
+   is the right trade: the alternative is no session to undo in. Sounds
+   the session still uses cost nothing here and never shorten it. */
+function undoTrim(){
+  const live=new Set(S.buffers), seen=new Set(), budget=derivedBudget();
+  let held=0, cutAt=-1;
+  const count=(e)=>{ for(const b of (e&&e.bufs)||[]) if(b && !live.has(b) && !seen.has(b)){ seen.add(b); held+=bufBytes(b); } };
+  for(const e of redoStack) count(e);
+  for(let i=undoStack.length-1;i>=0;i--){
+    count(undoStack[i]);
+    if(held>budget){ cutAt=i; break; }
+  }
+  if(cutAt>=0){
+    const dropped=cutAt+1;
+    undoStack.splice(0,dropped);
+    plog('Undo history shortened by '+dropped+' step'+(dropped===1?'':'s')+': the sounds those steps had replaced were holding '
+      +Math.round(held/1048576)+'MB between them, more than this device should keep for history alone.');
+  }
 }
 function restoreSnap(entry){
   if(!applySessionDoc(cloneSnap(entry.doc), entry.bufs.slice())) return;
@@ -38326,14 +38830,36 @@ function docToBuffers(doc){   // PCM (Int16) back to AudioBuffers
   return (doc.buffers||[]).map(b=>{
     const ab=mkAudioBuf(b.len,b.sr,b.ch.length);
     b.ch.forEach((raw,i)=>{
-      ab.copyToChannel(pcmRestore(new Int16Array(raw), b.pk?b.pk[i]:1), i);
+      /* STRAIGHT INTO THE CHANNEL. pcmRestore() builds a whole Float32Array
+         and copyToChannel() then copies it, so every channel being restored
+         existed three times at once — the stored 16-bit, the temporary and
+         the buffer. For a six-minute track that temporary is 66MB a
+         channel, allocated at the one moment memory is already at its
+         peak. Same arithmetic, written where it is going. */
+      const q=new Int16Array(raw), d=ab.getChannelData(i), k=pcmScale(b.pk?b.pk[i]:1)/32767;
+      const n=Math.min(q.length,d.length);
+      for(let j=0;j<n;j++) d[j]=q[j]*k;
     });
     return ab;
   });
 }
 async function offerRestore(){
   let doc=null;
-  try{ doc=await idbGet('last'); }catch(e){ factoryDemo(); return; }
+  try{
+    /* TWO SLOTS, AND THE OLDER ONE IS NOT THROWN AWAY. 'vault' is where
+       this build keeps the session; 'last' is where every earlier build
+       did, and an earlier build can still run — offline, the service
+       worker serves whatever it cached. So both are read, the newer is
+       offered, and the older is filed into REWIND rather than dropped. */
+    const pk=await vaultPeek();
+    doc=pk.doc;
+    if(pk.other && pk.other.pads){
+      const older=pk.other, olderKey=pk.otherKey;
+      vaultRun(async ()=>{ await vaultFile(older);
+        if(olderKey==='last') await idbDelS(IDB_STORE,'last'); }).catch(()=>{});
+    }
+    legacyLast = pk.key==='last';
+  }catch(e){ factoryDemo(); return; }
   if(!doc || !doc.pads){ factoryDemo(); return; }
   const bar=$('restoreBar');
   $('restoreAge').textContent=(doc.name?doc.name+' · ':'')+ageText(Date.now()-doc.t);
@@ -38341,12 +38867,16 @@ async function offerRestore(){
   pendingRestore=doc;          // guarded until you accept it or wave it away
   // nothing is loading in this branch — it waits for you, so it really is ready
   lcd('READY · restore the last session above, or start from here.');
-  $('btnRestore').onclick=()=>{
+  $('btnRestore').onclick=async ()=>{
     try{
-      if(!docAccept(doc,'restore last session')) return;   // bar stays up; nothing touched
+      /* The audio is fetched only now, when it is wanted. Reading the
+         slot at launch used to pull every sample into memory just to
+         show this bar. */
+      const full=await vaultHydrate(doc);
+      if(!docAccept(full,'restore last session')) return;   // bar stays up; nothing touched
+      applySessionDoc(full,docToBuffers(full));
       pendingRestore=null;
-      applySessionDoc(doc,docToBuffers(doc));
-      curProjId=doc.projId||null; drawProjects();
+      curProjId=full.projId||null; drawProjects();
       bar.style.display='none';
       lcd('SESSION RESTORED · '+ageText(Date.now()-doc.t));
     }catch(err){ lcd('RESTORE FAILED: '+err.message); }
@@ -38356,9 +38886,9 @@ async function offerRestore(){
      this bar can lose a session. */
   $('btnRestoreX').onclick=()=>{
     bar.style.display='none';
-    const d=pendingRestore; pendingRestore=null;
-    if(d) idbPut('ckpt:'+(d.t||Date.now()), d)
-      .then(()=>{ plog('Dismissed session filed into REWIND ('+ageText(Date.now()-(d.t||Date.now()))+') — nothing is thrown away here.'); })
+    const d=pendingRestore;
+    if(d) vaultRun(()=>vaultFile(d))
+      .then(()=>{ if(pendingRestore===d) pendingRestore=null; plog('Dismissed session filed into REWIND ('+ageText(Date.now()-(d.t||Date.now()))+') — nothing is thrown away here.'); })
       .catch(()=>{});
   };
 }
@@ -38408,7 +38938,7 @@ async function projLoad(id){
     if(playing) stopSeq();
     applySessionDoc(doc,docToBuffers(doc));
     curProjId=id; $('projName').value=doc.name||'untitled';
-    await idbPut('last',snapshotSession());   // make the loaded project the active/crash-recovery session
+    await vaultPut();   // make the loaded project the active/crash-recovery session
     await drawProjects();
     lcd('LOADED “'+(doc.name||'untitled')+'”');
   }catch(err){ lcd('LOAD FAILED: '+err.message); }
@@ -38530,25 +39060,40 @@ async function drawProjects(){
 /* TIME MACHINE — the app checkpoints itself every 3 minutes. REWIND is
    always reversible: rewinding first checkpoints the present. */
 let ckptBusy=false;
+/* Every checkpoint key, oldest first — both the light ones this build
+   writes and the inline ones earlier builds left. */
+const ckptT=(k)=>parseInt(String(k).slice(k.indexOf(':')+1),10)||0;
+async function ckptKeys(){
+  return (await idbKeysS(IDB_STORE))
+    .filter(k=>typeof k==='string' && (k.indexOf(CK2)===0 || k.indexOf(CK1)===0))
+    .sort((a,b)=>ckptT(a)-ckptT(b));
+}
 async function ckptSave(){
   if(ckptBusy||!S.buffers.length) return; ckptBusy=true;
   try{
-    const doc=snapshotSession();
-    await idbPut('ckpt:'+Date.now(),doc);
-    let ks=(await idbKeysS(IDB_STORE)).filter(k=>typeof k==='string'&&k.indexOf('ckpt:')===0).sort();
-    const keep=docKB(doc)>8192?3:6;   // big sample-heavy projects keep fewer
-    while(ks.length>keep){ await idbDelS(IDB_STORE,ks.shift()); }
+    /* A CHECKPOINT USED TO BE A SECOND COPY OF EVERY SAMPLE, taken on the
+       main thread every three minutes, and big projects were cut to three
+       of them so the device did not fill up. It points at the audio the
+       session already stored, so it costs a few kilobytes and there is no
+       reason to keep fewer of them for a large project — the opposite of
+       before, where the more there was to lose the less was kept. */
+    await vaultRun(async ()=>{
+      await vaultWriteDoc(CK2+Date.now());
+      const ks=await ckptKeys();
+      while(ks.length>6){ await idbDelS(IDB_STORE,ks.shift()); }
+      try{ await vaultSweep(); }catch(e){}
+    });
   }catch(e){}
   ckptBusy=false;
 }
 setInterval(ckptSave,180000);
 async function drawRewind(){
   const el=$('rewindList'); if(!el) return;
-  let ks=[]; try{ ks=(await idbKeysS(IDB_STORE)).filter(k=>typeof k==='string'&&k.indexOf('ckpt:')===0).sort().reverse(); }catch(e){}
+  let ks=[]; try{ ks=(await ckptKeys()).reverse(); }catch(e){}
   el.innerHTML='';
   if(!ks.length){ el.innerHTML='<div style="font-size:10px;color:var(--txt-dim);padding:2px 0 6px">No checkpoints yet — they appear automatically every 3 minutes while you work.</div>'; return; }
   ks.forEach(k=>{
-    const t=parseInt(k.slice(5),10);
+    const t=ckptT(k);
     const row=document.createElement('div'); row.className='row';
     const nm=document.createElement('span'); nm.style.cssText='font-size:11px;flex:1;color:var(--lcd)';
     nm.textContent='\u23f1 '+ageText(Date.now()-t);
@@ -38556,9 +39101,10 @@ async function drawRewind(){
     b.addEventListener('click',async ()=>{
       if(!confirm('Rewind the session to '+ageText(Date.now()-t)+'? A checkpoint of RIGHT NOW is saved first, so you can rewind the rewind.')) return;
       try{
-        try{ await idbPut('ckpt:'+Date.now(), snapshotSession()); }catch(e){}
-        const doc=await idbGet(k);
-        if(!doc){ lcd('CHECKPOINT MISSING.'); drawRewind(); return; }
+        try{ await vaultRun(()=>vaultWriteDoc(CK2+Date.now())); }catch(e){}
+        const stored=await idbGet(k);
+        if(!stored){ lcd('CHECKPOINT MISSING.'); drawRewind(); return; }
+        const doc=await vaultHydrate(stored);
         /* Before stopping playback or touching 'last'. A refused rewind must
            leave the session exactly where it was — the checkpoint of RIGHT NOW
            taken above is still filed, which costs nothing and loses nothing. */
@@ -38566,7 +39112,7 @@ async function drawRewind(){
         if(playing) stopSeq();
         applySessionDoc(doc,docToBuffers(doc));
         curProjId=doc.projId||null;
-        await idbPut('last',snapshotSession());
+        await vaultPut();
         drawProjects(); drawRewind();
         lcd('REWOUND \u2713 session restored from '+ageText(Date.now()-t));
       }catch(e){ lcd('REWIND FAILED: '+e.message); }
