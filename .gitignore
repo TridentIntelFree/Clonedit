@@ -6,6 +6,7 @@ index.next.html
 
 # Tracks rendered into the working directory for the user to open or play.
 # Deliverables, not sources — the repo ships no audio.
+firstlight.wav
 hollow-ground.wav
 hollow-ground.json
 passacaglia-dm.wav
