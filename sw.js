@@ -14,7 +14,7 @@
    Samples and icons are deliberately NOT no-store: they are large, they almost
    never change, and forcing a re-download of a 14 MB sample pack on every
    launch would be worse than useless. */
-const CACHE = 'jbh88-shell-v6';   // bumped: the precache no longer fails whole
+const CACHE = 'jbh88-shell-v7';   // bumped: the precache no longer fails whole
 const SHELL = ['./', './index.html', './manifest.webmanifest',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-256.png', './icons/icon-512.png',
   './icons/maskable-192.png', './icons/maskable-512.png'];

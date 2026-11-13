@@ -319,6 +319,17 @@ body.sz-sm #fxPip,body.sz-xs #fxPip{font-size:9px;padding:1px 4px;letter-spacing
 #notegrid .ncell.curcol{box-shadow:0 0 0 1px var(--lcd) inset}
 #notegrid .nlbl{height:22px;font-size:8px;color:var(--txt-dim);display:flex;align-items:center;justify-content:flex-end;padding-right:3px}
 #bpmbox{display:flex;align-items:center;gap:var(--sp-1);flex:none}
+/* THE TEMPO ROW OVERFLOWED A NARROW SCREEN. Its five 32px buttons plus the
+   value field are a fixed 254px, and the LCD beside them can only shrink so
+   far, so at 320px the row ran 9px past the edge and the REV button poked
+   off — "the screen sizing is wrong". A real width query, not a size-class,
+   because the constraint is the physical screen whatever the SCREEN SIZE
+   setting is. Tightened just enough to fit an iPhone SE / a zoomed page. */
+@media (max-width: 360px){
+  #bpmbox{gap:1px}
+  #bpmbox button{width:28px}
+  #bpmbox #bpmval{width:44px !important}
+}
 #bpmbox button{padding:6px 7px;font-size:11px}
 #bpmbox #bpmRev.on{background:var(--red);border-color:var(--red);color:#fff}
 #bpmbox button{width:32px;height:32px;min-height:0;padding:0;font-size:var(--fs-sm);background:transparent;border-color:var(--lcd-dim);color:var(--lcd)}
