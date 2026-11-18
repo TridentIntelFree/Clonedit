@@ -170,7 +170,9 @@ test('every app call has a tool, or is listed as deliberately not exposed', asyn
       + 'add it to API_ONLY');
   }
 
-  const mcp = readFileSync(SERVER, 'utf8');
+  /* the dispatch lives in mcp/tools.mjs, shared with the agent connector */
+  const mcp = readFileSync(SERVER, 'utf8') + readFileSync(resolve(ROOT, 'mcp', 'tools.mjs'), 'utf8')
+    + readFileSync(resolve(ROOT, 'agent', 'src', 'connector.mjs'), 'utf8');
   const reachable = new Set([...mcp.matchAll(/jbh\('([a-zA-Z0-9_]+)'/g)].map(m => m[1]));
 
   /* Deliberate omissions, each with the reason it is one. Adding a name
@@ -190,10 +192,8 @@ test('every app call has a tool, or is listed as deliberately not exposed', asyn
       + 'is deliberately theirs alone',
     calls: 'returns the list of available calls, which an MCP client already has '
       + 'as its tool list and in more detail',
-    sessionFile: 'the file-based save; jbh_save_session is the live path and does '
-      + 'not make the person handle a download',
-    loadFile: 'the other half of sessionFile, and it needs a File object, which '
-      + 'cannot cross a JSON boundary',
+    agents: 'the app\x27s own list of connected agents, for its panel; over MCP the '
+      + 'connector answers the same question itself with jbh_status',
   };
   const missing = api.filter(n => !reachable.has(n) && !API_ONLY[n]);
   assert.deepEqual(missing, [],

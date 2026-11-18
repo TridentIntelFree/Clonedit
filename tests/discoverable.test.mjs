@@ -29,14 +29,17 @@ import { dirname, resolve } from 'node:path';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const leg = readFileSync(resolve(ROOT, 'src', 'legacy.js'), 'utf8');
-const mcp = readFileSync(resolve(ROOT, 'mcp', 'server.mjs'), 'utf8');
+const mcp = readFileSync(resolve(ROOT, 'mcp', 'server.mjs'), 'utf8') + '\n'
+  + readFileSync(resolve(ROOT, 'mcp', 'tools.mjs'), 'utf8');
 
 /* every call an MCP tool actually forwards to — the set an agent can
    reach, which is the set it should be able to find */
 const reachable = [...new Set([...mcp.matchAll(/jbh\('([a-zA-Z0-9_]+)'/g)].map(m => m[1]))];
 
 /* the two places an agent reads before it starts */
-const instructions = (mcp.match(/const INSTRUCTIONS\s*=\s*([\s\S]*?);\n/) || [])[1] || '';
+/* each server's own opening plus the GUIDANCE both of them append */
+const instructions = ((mcp.match(/const INSTRUCTIONS\s*=\s*([\s\S]*?);\n/) || [])[1] || '')
+  + ((mcp.match(/export const GUIDANCE\s*=\s*([\s\S]*?);\n/) || [])[1] || '');
 const hi = leg.indexOf('  howto(){');
 const howtoEnd = leg.indexOf('\n  },', hi);
 const howto = hi > 0 ? leg.slice(hi, howtoEnd) : '';
@@ -57,6 +60,8 @@ const EXEMPT = {
   vsDry: 'a comparison inside audit(); not a starting point',
   figure: 'internal to infill()’s rhythm choice',
   checkMix: 'an alias for the mix half of review()',
+  sessionFile: 'plumbing under jbh_save_track and jbh_save_session, which are what an agent is told',
+  loadFile: 'plumbing under jbh_load_track and jbh_load_session',
   save: 'session plumbing',
   load: 'session plumbing',
   saveSession: 'session plumbing',

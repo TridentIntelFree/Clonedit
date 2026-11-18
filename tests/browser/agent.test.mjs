@@ -987,7 +987,7 @@ export default async function ({ browser, base }) {
         m => m.who === 'app' && /Connecting a client/i.test(m.text));
 
       /* THE MCP CONFIG MUST BE CONFIG, not prose that looks like it. */
-      const cfg = document.getElementById('cmdMcpCfg').textContent;
+      const cfg = document.getElementById('cmdAgentCfg').textContent;
       try {
         const j = JSON.parse(cfg);
         const s = j.mcpServers && j.mcpServers.jbh88;
@@ -1024,7 +1024,7 @@ export default async function ({ browser, base }) {
          the one that has to work when it matters. Selected text is one
          long-press from a paste; nothing selected is a dead button. */
       getSelection().removeAllRanges();
-      document.getElementById('btnCopyMcp').click();
+      document.getElementById('btnCopyAgentCfg').click();
       await wait(300);
       /* NOT read back off the clipboard. navigator.clipboard.readText() waits
          on a permission prompt that headless never answers — the promise does
@@ -1050,9 +1050,12 @@ export default async function ({ browser, base }) {
       how.stayedClosed, 'a panel that keeps reopening itself is its own fault');
     t.ok('the status line and the transcript both point at them',
       how.statPointsAtIt && how.transcriptPointsAtIt);
-    t.ok('the MCP block is real config and names the server in this repo',
+    /* It names the one-file connector a person downloads, NOT a path inside
+       a checkout of this repository: that path is what had agents cloning it. */
+    t.ok('the MCP block is real config and names the downloadable connector',
       how.mcp.parsed === true && how.mcp.cmd === 'node' &&
-      /mcp\/server\.mjs$/.test(how.mcp.arg || ''), JSON.stringify(how.mcp));
+      /jbh88-agent\.mjs$/.test(how.mcp.arg || '') && !/Clonedit|server\.mjs/.test(how.mcp.arg || ''),
+      JSON.stringify(how.mcp));
     t.ok('THE PRINTED SNIPPET ACTUALLY CONNECTS — run unedited, the link flips',
       how.peersBefore === 0 && how.peersAfter === 1 && /CONNECTED/.test(how.statAfter || ''),
       'peers ' + how.peersBefore + '→' + how.peersAfter +

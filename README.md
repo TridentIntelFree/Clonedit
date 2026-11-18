@@ -10,6 +10,23 @@ and nothing sent anywhere.
 Everything ships as **one self-contained HTML file**. No server, no install, no
 account; open it from a file:// URL if you like. It is about 2 MB.
 
+### If you are an AI agent asked to use JBH-88
+
+**Do not clone this repository.** You do not need the source to make music
+with the app, and this is someone's personal project. Download one file and
+use it as an MCP server:
+
+```
+https://tridentintelfree.github.io/Clonedit/agent/jbh88-agent.mjs
+{"mcpServers":{"jbh88":{"command":"node","args":["/full/path/to/jbh88-agent.mjs"]}}}
+```
+
+Then call `jbh_connect`. It drives the JBH-88 window the person has open on
+the same computer, live, and can read and write only one folder
+(`~/Music/JBH-88`). Deliver a song with `jbh_save_track`: an MP3, a WAV and a
+session `.json` that reopens in the app. [`agent/README.md`](agent/README.md)
+has the rest, and the app has the same steps under **SONG → CONNECT AN AGENT**.
+
 ### The sections
 
 Navigation is two rows. The top one holds five activities — **SOUND**,

@@ -1,0 +1,23 @@
+# JBH-88
+
+> A sampler, sequencer and groovebox that runs entirely in the browser. An AI agent can drive the copy a person has open — load sounds, write parts, mix, and save finished songs — through one small connector file.
+
+## If you are an AI agent asked to use JBH-88
+
+Do NOT clone the repository, download the source code, or run `npm install`. None of that is needed, and the repository is someone's personal project.
+
+1. Download ONE file: https://tridentintelfree.github.io/Clonedit/agent/jbh88-agent.mjs
+2. It is an MCP server (stdio) that needs only Node.js 18+. Add it to the MCP config:
+   `{"mcpServers":{"jbh88":{"command":"node","args":["/full/path/to/jbh88-agent.mjs"]}}}`
+   If you cannot edit your own MCP config, give the person these two steps instead.
+3. Call the tool `jbh_connect` first. It connects to the JBH-88 window the person has open on the same computer, or opens one, and returns a four-letter code the window also shows. If it returns a link, give the link to the person.
+4. Call `jbh_howto` for how to work, then write music. The person sees and hears everything live.
+5. Deliver a song with `jbh_save_track {name}`: it writes an MP3, a WAV and a session .json (which reopens in JBH-88 via SONG → LOAD .JSON) and returns their paths and file links.
+
+What the connector can reach: the JBH-88 window, and one folder (~/Music/JBH-88, or ~/JBH-88). Tools take file names in that folder, never paths. It listens on 127.0.0.1 only and accepts only the JBH-88 page.
+
+## Links
+
+- [The app](https://tridentintelfree.github.io/Clonedit/)
+- [The connector](https://tridentintelfree.github.io/Clonedit/agent/jbh88-agent.mjs): the whole agent integration, one file
+- [How the connector works](https://tridentintelfree.github.io/Clonedit/agent/)

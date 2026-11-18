@@ -27,11 +27,8 @@
    arithmetic is exact and the off-by-one does not exist. Run locally
    with --pending to account for the commit you are about to make.
 
-   THE OFFSET is 9, measured rather than assumed: commit 500d4e4 is the
-   276th on main and its label says R267. The R numbers predate the
-   repository's current history, so they are not the commit count — they
-   are the commit count minus a constant, and the constant is what that
-   pair fixes.
+   (That is superseded below: the label is checked against the previous
+   commit's, not against a count. See WHAT THE LABEL IS CHECKED AGAINST.)
 
    Run: node scripts/check-build-label.mjs [--pending]
 */
@@ -44,12 +41,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PENDING = process.argv.includes('--pending');
 
-/* R = (commits on main) - OFFSET. Fixed by 500d4e4: the 276th commit,
-   labelled R267. */
-const OFFSET = 9;
 
 const src = readFileSync(resolve(ROOT, 'src', 'legacy.js'), 'utf8');
-const m = src.match(/const BUILD\s*=\s*'([^']*)'/);
+const m = src.match(/const BUILD\s*=\s*\x27([^\x27]*)\x27/);
 if (!m) {
   console.error('no BUILD line in src/legacy.js — this check cannot read the version.');
   process.exit(2);
@@ -63,47 +57,61 @@ if (!rev) {
 }
 const shown = +rev[1];
 
-let count;
+/* WHAT THE LABEL IS CHECKED AGAINST: THE COMMIT BEFORE IT, NOT A COUNT.
+
+   This used to compute R = (commits on main) - 9. It could not work in the
+   one place it was meant to: CI checks out with fetch-depth 1, where
+   `git rev-list --count HEAD` is 1, so it demanded R-8 and FAILED EVERY
+   PUSH from R285 onward. It was not even right locally — the count depends
+   on how deep the clone is (a shallow one gave 296, the full history 445),
+   so the offset measured on one clone was wrong on the next.
+
+   What is actually wanted is that the number MOVES when the app changes and
+   does not go backwards, and that only needs the previous commit's label:
+
+     - a change in progress (src/ or index.html dirty) must be R(HEAD) + 1;
+     - in CI, HEAD is the shipping commit, and it must be R(HEAD~1) + 1 if
+       it touched src/ or index.html, else equal. ci.yml fetches depth 2;
+     - with no parent to read (a depth-1 clone, a tarball) it is skipped and
+       says so, rather than inventing a number. */
+const git = (args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+const labelAt = (rev) => {
+  try {
+    const t = git(['show', rev + ':src/legacy.js']);
+    const mm = t.match(/const BUILD\s*=\s*\x27[^\x27]*\bR(\d+)\b/);
+    return mm ? +mm[1] : null;
+  } catch (e) { return null; }
+};
+let dirty = false, inGit = true;
 try {
-  count = +execFileSync('git', ['rev-list', '--count', 'HEAD'],
-    { cwd: ROOT, encoding: 'utf8' }).trim();
-} catch (e) {
-  /* a tarball with no git history cannot answer this, and failing the
-     build for that would be worse than skipping it */
+  dirty = git(['status', '--porcelain', '--', 'src', 'index.html']).trim().length > 0;
+} catch (e) { inGit = false; }
+if (!inGit) {
   console.log('no git history here, so the version cannot be checked. Skipped.');
   process.exit(0);
 }
-
-/* PENDING OR SHIPPED, WORKED OUT RATHER THAN DECLARED.
-
-   A build runs before its commit, so locally the label describes a
-   commit that does not exist yet and HEAD is its parent; in CI the
-   commit exists and HEAD *is* it. The difference is exactly whether the
-   tree is dirty, so asking git removes the flag and lets this run in
-   both places — which matters, because a check that only runs in CI is
-   a check nobody sees until after they have pushed. */
-let dirty = false;
-try {
-  dirty = execFileSync('git', ['status', '--porcelain', '--', 'src', 'index.html'],
-    { cwd: ROOT, encoding: 'utf8' }).trim().length > 0;
-} catch (e) { /* no git history: handled above */ }
-
 const pending = PENDING || dirty;
-const expect = count - OFFSET + (pending ? 1 : 0);
-
-/* AND THE DATE, because a stale date is the same lie in a second field.
-   Only its shape is checked here; whether it is TODAY is not something
-   CI can know for a commit made yesterday. */
+let base, changed;
+if (pending) { base = labelAt('HEAD'); changed = true; }
+else {
+  base = labelAt('HEAD~1');
+  try { changed = git(['diff', '--name-only', 'HEAD~1', 'HEAD', '--', 'src', 'index.html']).trim().length > 0; }
+  catch (e) { changed = true; }
+}
+if (base == null) {
+  console.log('the previous commit is not in this clone, so there is no label to compare R'
+    + shown + ' against. Skipped (CI fetches depth 2 for this).');
+  process.exit(0);
+}
+const expect = changed ? base + 1 : base;
 const date = label.match(/\b(\d{4}-\d{2}-\d{2})\b/);
 
 if (shown !== expect) {
-  const behind = expect - shown;
-  console.error('THE VERSION LABEL IS ' + (behind > 0 ? behind + ' BEHIND' : 'AHEAD') + '.');
+  console.error('THE VERSION LABEL IS ' + (shown < expect ? 'BEHIND' : 'AHEAD') + '.');
   console.error('');
   console.error('  src/legacy.js says   R' + shown);
-  console.error('  this commit is       R' + expect
-    + '   (' + count + ' commits on main' + (pending ? ' + the one you are making' : '')
-    + ' − ' + OFFSET + ')');
+  console.error('  it should say        R' + expect + '   (the previous commit was R' + base
+    + (changed ? ', and the app changed' : ', and the app did not change') + ')');
   console.error('');
   console.error('The app introduces itself with that line, so leaving it behind means');
   console.error('somebody looks at new work and sees an old version number. Edit the');

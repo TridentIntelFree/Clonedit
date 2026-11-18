@@ -2852,7 +2852,7 @@
    check by construction. scripts/check-build-label.mjs therefore CHECKS
    it instead, in CI, where HEAD is the commit being shipped and the
    arithmetic is exact. R = commits on main minus 9. */
-const BUILD = 'JBH-88 · R287 · 2026-11-13 · the tempo row fits a narrow screen, and the cache refreshes';
+const BUILD = 'JBH-88 · R288 · 2026-11-18 · an agent on your computer works in this window, no clone needed';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -17878,8 +17878,14 @@ let jbhBus=null, jbhPorts=new Set();
    treated as gone, which is wrong for a quiet one and right for a closed tab;
    the ping below re-checks rather than guessing. */
 let jbhSeen=0, jbhPingT=0;
-function jbhPeers(){ return (jbhSeen && Date.now()-jbhSeen<30000) ? 1 : 0; }
-function jbhDispatch(msg, reply){
+function jbhPeers(){ return ((jbhSeen && Date.now()-jbhSeen<30000) ? 1 : 0) + agentCount(); }
+/* Agents on this computer, over the connector's WebSocket. Counted
+   separately from the bus because a socket's presence is KNOWN, not inferred
+   from when it last spoke. Declared here so jbhPeers can read it before the
+   section that fills it. */
+const jbhSocks=new Map();
+function agentCount(){ let n=0; jbhSocks.forEach(s=>{ if(s.code) n++; }); return n; }
+function jbhDispatch(msg, reply, viaSock){
   if(!msg || msg.jbh!==1) return;
   /* A peer announcing itself, or answering our ping. Not a call. */
   if(msg.event==='hello' || msg.event==='here'){
@@ -17889,7 +17895,7 @@ function jbhDispatch(msg, reply){
     return;
   }
   if(typeof msg.call!=='string') return;
-  jbhSeen=Date.now(); drawAgentLink();
+  if(!viaSock){ jbhSeen=Date.now(); drawAgentLink(); }
   const fn=window.MVX[msg.call];
   const send=(o)=>{ try{ reply(Object.assign({jbh:1,id:msg.id},o)); }catch(e){} };
   if(typeof fn!=='function' && !(msg.call in window.MVX)){
@@ -17935,6 +17941,173 @@ function jbhOnMessage(ev){
      sent it — not broadcast to everything listening. */
   jbhDispatch(ev.data,(o)=>{ try{ ev.source && ev.source.postMessage(o,'*'); }catch(e){} });
 }
+/* ---------------- AN AGENT ON THIS COMPUTER --------------------------------
+   The routes above all need the agent to be INSIDE a browser: a tab on this
+   origin, an embedding page. An AI in a desktop chat is not in a browser at
+   all — it is a process that speaks MCP — and the only bridge this app had
+   for it was mcp/server.mjs, whose instructions began "cd Clonedit/mcp &&
+   npm install". Agents followed them literally: they cloned the whole
+   repository, installed a browser, and then drove a second, hidden copy of
+   the app that the person could not see or hear.
+
+   So the app now reaches OUT to a connector on this computer:
+   agent/jbh88-agent.mjs, one file, served beside this page. It listens on
+   127.0.0.1 only, port 47888 upward, and this connects to it as a WebSocket
+   client. Same envelope as the bus — {jbh:1,id,call,args} in, a reply out —
+   so every method on window.JBH is reachable and nothing here is a second
+   implementation.
+
+   WHO STARTS IT. Never this page, unasked. The person presses CONNECT, or
+   opens the link the agent gives them (#agent=PORT.TOKEN — the token is what
+   lets a connector trust a page that has no origin of its own). After one
+   successful connection the app remembers that this computer has a
+   connector and re-dials quietly every few seconds while it is open, so the
+   next session needs nothing pressed at all. DISCONNECT forgets that.
+
+   WHAT THE AGENT CANNOT DO. It acts on this window and the connector's one
+   tracks folder. The calls that REPLACE the open session — clear, load,
+   loadFile — take a checkpoint first, so whatever was open is one tap away
+   in REWIND however the agent behaves. */
+const AGENT_PORTS=[47888,47889,47890,47891,47892,47893,47894,47895];
+const AGENT_AUTO_KEY='jbh_agent_auto';
+const AGENT_CHECKPOINT=new Set(['clear','load','loadFile']);
+let agentBusy=0, agentLastCall='', agentDialT=0;
+function agentAuto(){ try{ return localStorage.getItem(AGENT_AUTO_KEY)==='1'; }catch(e){ return false; } }
+function agentOpen(port, token){
+  if(jbhSocks.has(port)) return Promise.resolve(!!jbhSocks.get(port).code);
+  return new Promise(res=>{
+    let ws=null, done=false;
+    const fin=v=>{ if(!done){ done=true; res(v); } };
+    try{ ws=new WebSocket('ws://127.0.0.1:'+port+'/jbh'+(token?'?t='+encodeURIComponent(token):'')); }
+    catch(e){ return fin(false); }
+    const s={ws, port, code:'', agent:'', tracks:'', at:Date.now()};
+    jbhSocks.set(port,s);
+    const to=setTimeout(()=>{ try{ ws.close(); }catch(e){} fin(false); }, 4000);
+    ws.onopen=()=>{ try{ ws.send(JSON.stringify({jbh:1, event:'hello', build:BUILD})); }catch(e){} };
+    ws.onmessage=ev=>{
+      let m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+      if(!m || m.jbh!==1 || jbhSocks.get(port)!==s) return;
+      if(m.event==='welcome'){
+        clearTimeout(to);
+        s.code=String(m.code||'????').slice(0,8);
+        s.agent=String(m.agent||'an agent').slice(0,60);
+        s.tracks=String(m.tracks||'').slice(0,300);
+        try{ localStorage.setItem(AGENT_AUTO_KEY,'1'); }catch(e){}
+        agentLog('app','Agent connected: '+s.agent+' · code '+s.code
+          +'. It can work in this window with you; everything it does shows here.');
+        lcd('AGENT CONNECTED · '+s.code);
+        drawAgentLink(); fin(true); return;
+      }
+      if(m.event==='bye'){ agentLog('app','Agent link closed: '+String(m.why||'').slice(0,120)); return; }
+      if(typeof m.call==='string' && s.code) agentRun(s,m);
+    };
+    ws.onerror=()=>{};
+    ws.onclose=()=>{
+      clearTimeout(to);
+      if(jbhSocks.get(port)===s){
+        jbhSocks.delete(port);
+        if(s.code){ agentLog('app','Agent disconnected ('+s.agent+').'); lcd('AGENT DISCONNECTED'); }
+        drawAgentLink();
+      }
+      fin(false);
+    };
+  });
+}
+async function agentRun(s, m){
+  agentBusy++; agentLastCall=String(m.call).slice(0,40); drawAgentPip();
+  if(AGENT_CHECKPOINT.has(m.call)){ try{ await ckptSave(); }catch(e){} }
+  jbhDispatch({jbh:1, id:m.id, call:m.call, args:Array.isArray(m.args)?m.args:[]}, o=>{
+    agentBusy=Math.max(0,agentBusy-1); drawAgentPip();
+    /* A result that will not serialise is still an answer — the agent is
+       waiting on this id and would otherwise wait forever. */
+    let txt;
+    try{ txt=JSON.stringify(o); }
+    catch(e){ txt=JSON.stringify({jbh:1, id:m.id, ok:false, error:'the result could not be sent: '+(e&&e.message)}); }
+    try{ s.ws.send(txt); }catch(e){}
+  }, true);
+}
+/* Dial every port, or one. Resolves to how many agents are now connected. */
+async function agentConnect(opt){
+  const o=opt||{};
+  const ports=o.port?[+o.port]:AGENT_PORTS;
+  await Promise.all(ports.map(p=>agentOpen(p,o.token)));
+  drawAgentLink();
+  return agentCount();
+}
+function agentDisconnect(){
+  try{ localStorage.removeItem(AGENT_AUTO_KEY); }catch(e){}
+  jbhSocks.forEach(s=>{ try{ s.ws.close(1000,'disconnected in the app'); }catch(e){} });
+  jbhSocks.clear();
+  agentLog('app','Disconnected. The app will not reconnect until you press CONNECT again.');
+  drawAgentLink();
+}
+/* The quiet re-dial. Only once a connector has been seen on this computer,
+   only while the page is visible, and only the first four ports — a fifth
+   simultaneous agent can be reached by pressing CONNECT. */
+function agentRedial(){
+  clearTimeout(agentDialT);
+  agentDialT=setTimeout(async ()=>{
+    if(agentAuto() && !document.hidden){
+      const free=AGENT_PORTS.slice(0,4).filter(p=>!jbhSocks.has(p));
+      if(free.length) await Promise.all(free.map(p=>agentOpen(p,'')));
+    }
+    agentRedial();
+  }, agentCount()?15000:5000);
+}
+window.MVX.agents=function(){
+  const out=[]; jbhSocks.forEach(s=>{ if(s.code) out.push({agent:s.agent, code:s.code, port:s.port, tracks:s.tracks}); });
+  return out;
+};
+function drawAgentPip(){
+  const pip=$('agentPip'); if(!pip) return;
+  const n=agentCount();
+  pip.hidden=!n;
+  if(!n) return;
+  const first=[...jbhSocks.values()].find(s=>s.code);
+  pip.textContent='● AGENT'+(n>1?' ×'+n:'')+(agentBusy&&agentLastCall?' · '+agentLastCall:'');
+  pip.classList.toggle('busy',agentBusy>0);
+  pip.title=(n>1?n+' agents':first.agent)+' connected (code '+first.code+'). Tap for the agent panel.';
+}
+/* A LINK FROM THE AGENT. #agent=PORT.TOKEN. If another JBH-88 tab is already
+   open the connection is handed to it, because that is the one holding the
+   person's work — two tabs on one project is how autosaves overwrite each
+   other. Only when nobody answers does this tab connect itself. */
+let agentTabs=null;
+const AGENT_TAB_ID=Math.random().toString(36).slice(2);
+try{
+  agentTabs=new BroadcastChannel('jbh88-tabs');
+  agentTabs.onmessage=ev=>{
+    const d=ev.data||{};
+    if(d.t!=='agent' || !d.port || d.from===AGENT_TAB_ID) return;
+    try{ agentTabs.postMessage({t:'taken'}); }catch(e){}
+    agentConnect({port:+d.port, token:String(d.token||'')}).then(n=>{
+      if(n) lcd('AGENT CONNECTED from the link you opened in another tab.');
+    });
+  };
+}catch(e){ agentTabs=null; }
+(function agentFromHash(){
+  const m=/[#&]agent=(\d{2,5})(?:\.([A-Za-z0-9_-]{8,64}))?/.exec(location.hash||'');
+  if(!m) return;
+  try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
+  const port=+m[1], token=m[2]||'';
+  const mine=()=>agentConnect({port,token}).then(n=>{
+    if(!n) lcd('No agent connector answered on this computer (port '+port+'). Is the agent still running?');
+  });
+  if(!agentTabs) return void mine();
+  let taken=false;
+  let probe=null;
+  try{ probe=new BroadcastChannel('jbh88-tabs');
+    probe.onmessage=ev=>{ if(ev.data && ev.data.t==='taken') taken=true; };
+    probe.postMessage({t:'agent', port, token, from:AGENT_TAB_ID}); }catch(e){}
+  setTimeout(()=>{
+    try{ probe && probe.close(); }catch(e){}
+    if(taken){
+      agentLog('app','Your other JBH-88 tab took the agent connection — you can close this one.');
+      lcd('CONNECTED IN YOUR OTHER JBH-88 TAB — this tab can be closed.');
+    } else mine();
+  }, 500);
+})();
+agentRedial();
 /* What a controller needs to know to talk to it, in one call. */
 window.MVX.calls=function(){
   return Object.keys(window.MVX).filter(k=>typeof window.MVX[k]==='function').sort();
@@ -17961,6 +18134,8 @@ function agentLog(who,text){
 function jbhEmit(o){
   const m=Object.assign({jbh:1},o);
   if(jbhBus) try{ jbhBus.postMessage(m); }catch(e){}
+  if(jbhSocks.size){ let txt=null; try{ txt=JSON.stringify(m); }catch(e){}
+    if(txt) jbhSocks.forEach(s=>{ try{ if(s.code) s.ws.send(txt); }catch(e){} }); }
   /* Also upward, so an embedding page hears it without needing a channel. */
   try{ if(window.parent && window.parent!==window) window.parent.postMessage(m,'*'); }catch(e){}
   try{ if(window.opener) window.opener.postMessage(m,'*'); }catch(e){}
@@ -17968,7 +18143,7 @@ function jbhEmit(o){
 /* FROM the app, to whatever is listening. */
 window.MVX.say=function(text){
   const t=agentLog('you',text);
-  if(!jbhBus) { lcd('AGENT LINK is closed.'); return {sent:false,text:t}; }
+  if(!jbhBus && !agentCount()) { lcd('AGENT LINK is closed.'); return {sent:false,text:t}; }
   jbhEmit({event:'say', text:t});
   if(!jbhPeers()){
     /* Said once, in the transcript, where the message they just typed is —
@@ -18016,7 +18191,7 @@ function jbhNotify(what, data){
   if(JBH_EVENTS.length>JBH_EV_MAX) JBH_EVENTS=JBH_EVENTS.slice(-JBH_EV_MAX);
   /* only pushed when the link is open; the buffer fills either way so a
      client that connects late can still read what it missed */
-  if(jbhBus||jbhPorts.size) jbhEmit({event:'did', did:ev});
+  if(jbhBus||jbhPorts.size||jbhSocks.size) jbhEmit({event:'did', did:ev});
   return ev;
 }
 /* THE TRANSPORT, wrapped rather than edited into startSeq/stopSeq.
@@ -18231,7 +18406,22 @@ let howShown=false;
 function drawAgentLink(){
   const st=$('agentStat'), lg=$('agentLog'), row=$('agentSayRow'), btn=$('btnAgentLink');
   if(!st||!lg||!row||!btn) return;
-  const on=!!jbhBus, peers=jbhPeers();
+  const on=!!jbhBus, peers=jbhPeers(), nAg=agentCount();
+  drawAgentPip();
+  const cb=$('btnAgentConnect'), cs=$('agentConnStat');
+  if(cb){
+    cb.classList.toggle('on',nAg>0);
+    cb.textContent = nAg ? 'DISCONNECT AGENT' : '\u25cf CONNECT AN AGENT ON THIS COMPUTER';
+  }
+  if(cs){
+    const list=window.MVX.agents();
+    cs.textContent = nAg
+      ? '\u25cf CONNECTED \u2014 '+list.map(a=>a.agent+' (code '+a.code+')').join(', ')
+        +'. It works in this window with you. Songs it saves go to '+(list[0].tracks||'its tracks folder')+'.'
+      : agentAuto() ? 'No agent running right now. The app reconnects by itself when one starts.'
+        : 'No agent connected. First time? Open "Set up an agent" below.';
+    cs.style.color = nAg ? 'var(--lcd)' : 'var(--txt-dim)';
+  }
   btn.classList.toggle('on',on);
   /* THREE STATES, NOT TWO. "Open" and "something is actually on the other
      end" are different things, and collapsing them is what made pressing the
@@ -18244,8 +18434,8 @@ function drawAgentLink(){
       ? '\u25cf CONNECTED'
       : 'open \u2014 no client attached. See "Connecting a client" below.';
   st.style.color = (on && peers) ? 'var(--lcd)' : 'var(--txt-dim)';
-  lg.style.display=on?'block':'none';
-  row.style.display=on?'flex':'none';
+  lg.style.display=(on||nAg)?'block':'none';
+  row.style.display=(on||nAg)?'flex':'none';
   /* OPENED FOR YOU, ONCE. The link going live with nobody on the other end is
      exactly the moment the question "connect WHAT?" arrives, so that is the
      moment the answer is unfolded. Once only: it stays open or closed as the
@@ -18253,7 +18443,7 @@ function drawAgentLink(){
      own kind of broken. */
   const how=$('agentHow');
   if(how && on && !peers && !howShown){ howShown=true; how.open=true; }
-  if(!on) return;
+  if(!on && !nAg) return;
   /* BUILT FROM NODES, NOT FROM A STRING. This text arrives from whatever is
      connected — another tab, an embedding page — and putting that through
      innerHTML would be handing any of them script execution in here. There is
@@ -18307,7 +18497,28 @@ async function copyBlock(id,label){
     lcd('CLIPBOARD UNAVAILABLE \u2014 '+label.toLowerCase()+' selected above; long-press \u2192 Copy.');
   }
 }
-$('btnCopyMcp').addEventListener('click',()=>copyBlock('cmdMcpCfg','MCP CONFIG'));
+$('btnCopyAgentCfg').addEventListener('click',()=>copyBlock('cmdAgentCfg','MCP CONFIG'));
+$('btnAgentConnect').addEventListener('click',async ()=>{
+  if(agentCount()){ agentDisconnect(); return; }
+  const st=$('agentConnStat'); if(st) st.textContent='Looking for an agent connector on this computer\u2026';
+  const n=await agentConnect();
+  if(!n){
+    agentLog('app','No agent connector is running on this computer. Set one up below, then ask your agent to connect.');
+    lcd('NO AGENT FOUND \u2014 see "Set up an agent".');
+    const su=$('agentSetup'); if(su){ su.open=true; try{ su.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){} }
+    drawAgentLink();
+  }
+});
+$('btnAgentDl').addEventListener('click',()=>{
+  const a=document.createElement('a');
+  a.href='agent/jbh88-agent.mjs'; a.download='jbh88-agent.mjs';
+  document.body.appendChild(a); a.click(); a.remove();
+  lcd('DOWNLOADING jbh88-agent.mjs \u2014 then step 2.');
+});
+$('agentPip').addEventListener('click',()=>{
+  const t=document.querySelector('#tabs button[data-v="proj"]'); if(t) t.click();
+  setTimeout(()=>{ const b=$('agentBox'); if(b) try{ b.scrollIntoView({block:'start',behavior:'smooth'}); }catch(e){} },60);
+});
 $('btnCopyTab').addEventListener('click',()=>copyBlock('cmdTab','SNIPPET'));
 /* ---- SOUND TOOLS PANEL -------------------------------------------------
    The five calls below existed only on the API, which meant the person

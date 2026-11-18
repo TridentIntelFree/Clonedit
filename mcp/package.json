@@ -3,11 +3,20 @@
   "version": "1.0.0",
   "description": "Drive JBH-88 from an MCP-capable agent: load sounds, write patterns, play, bounce, and hear back what it measured.",
   "type": "module",
-  "bin": { "jbh88-mcp": "./server.mjs" },
-  "files": ["server.mjs", "README.md"],
-  "engines": { "node": ">=20" },
+  "bin": {
+    "jbh88-mcp": "./server.mjs"
+  },
+  "files": [
+    "server.mjs",
+    "tools.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "playwright-core": "^1.48.0"
+    "playwright-core": "^1.48.0",
+    "@breezystack/lamejs": "^1.2.7"
   }
 }

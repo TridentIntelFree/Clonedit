@@ -26,7 +26,11 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const legacy = readFileSync(resolve(root, 'src/legacy.js'), 'utf8');
-const mcp = readFileSync(resolve(root, 'mcp/server.mjs'), 'utf8');
+/* The tool list and its dispatch live in mcp/tools.mjs, shared by
+   mcp/server.mjs and the agent connector; the connector adds its own few. */
+const mcp = readFileSync(resolve(root, 'mcp/server.mjs'), 'utf8') + '\n'
+  + readFileSync(resolve(root, 'mcp/tools.mjs'), 'utf8') + '\n'
+  + readFileSync(resolve(root, 'agent/src/connector.mjs'), 'utf8');
 
 /* The analysers: calls that report on the music rather than change it.
    Named explicitly because "is this a question or an instruction" is not

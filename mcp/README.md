@@ -1,5 +1,11 @@
 # jbh88-mcp
 
+> **Want an AI to work in JBH-88 with you? You do not want this folder.**
+> Use the one-file connector, [`agent/jbh88-agent.mjs`](../agent/README.md):
+> no clone, no install, and it drives the window you have open. This server
+> is for developers working inside a checkout of JBH-88 itself — it runs its
+> own hidden copy of the app.
+
 JBH-88 as MCP tools, so an agent can build in the real engine instead of
 guessing at JSON — load the actual sounds, write the actual steps, render the
 actual mix, and **read the level back**.
@@ -51,16 +57,16 @@ The server owns a **headless browser** with the app loaded, and forwards calls
 into `window.JBH`. There is no second implementation of anything: if a tool here
 disagreed with the app, the app would be right.
 
-**It cannot reach a copy of the app open on your phone.** The browser here is its
+**It cannot reach a copy of the app someone has open.** The browser here is its
 own instance, in this process, and nothing it plays is audible to anyone — the
-audio renders offline. Work reaches a person as a **file**:
+audio renders offline. (`agent/jbh88-agent.mjs` is the one that drives the open
+window.) Work reaches a person as **files in one folder** — `~/Music/JBH-88`, or
+`~/JBH-88`, or wherever `JBH_TRACKS` says. Every file tool takes a *name* in that
+folder and nothing else; a path is cut down to its file name.
 
-- `jbh_save_session` writes a `.json` you open with **PROJ → LOAD .JSON**. Every
-  pad, pattern, lock, tape lane and setting, with the audio embedded.
-- `jbh_render` with `wav_path` writes a `.wav` you can just listen to.
-
-Driving the instance in someone's hand, live, is a different problem: it needs a
-relay between two machines, and this is not that.
+- `jbh_save_track` writes an `.mp3`, a `.wav` and a session `.json` in one call.
+- `jbh_save_session` writes the `.json` alone; open it with **SONG → LOAD .JSON**.
+- `jbh_render` with `wav_name` writes a `.wav`.
 
 ## The tools
 
@@ -86,7 +92,8 @@ relay between two machines, and this is not that.
 | `jbh_auto_targets` | What can be automated, and where each sits now. |
 | `jbh_layer` | Stack another recording of the same note on a pad. With `layMode:'vel'` the engine picks by how hard the note is struck — the one thing no filter can imitate. |
 | `jbh_instrument` / `jbh_note` / `jbh_figure` | **Write notes, not pads.** Lay an instrument across a range, then write notes and chords by MIDI number; the pad and the semitone offset are worked out for you, and a figure's cells are grouped by register so nothing is stretched far. |
-| `jbh_save_session` / `jbh_load_session` | The file a person opens. |
+| `jbh_save_track` / `jbh_list_tracks` / `jbh_load_track` | Deliver a song as MP3 + WAV + session, see what is saved, open one again. The tracks folder only. |
+| `jbh_save_session` / `jbh_load_session` | The session file alone, by name, in the tracks folder. |
 | `jbh_song_doc` | The compact text format — smaller, readable, but sixteen pads only and no tape lanes or instrument. |
 | `jbh_call` | Any `window.JBH` method by name. Covers anything added after these tools were written. |
 

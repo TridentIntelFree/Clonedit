@@ -8,6 +8,33 @@ they return, in prose, and why.
 
 Both are in the MCP server (`mcp/server.mjs`) and on `window.JBH`.
 
+## An agent USING the app never needs this repository
+
+If someone asks an agent to "connect to JBH-88" or "make a track with it",
+the answer is `agent/jbh88-agent.mjs` — one file, served by the site at
+`/agent/jbh88-agent.mjs`, needing only Node. It drives the window the person
+has open, live, over a WebSocket on 127.0.0.1, and can read and write only
+its tracks folder (`~/Music/JBH-88`). `jbh_connect` first; `jbh_save_track`
+delivers an MP3, a WAV and a session `.json`. `llms.txt` and the top of
+README.md say the same to an agent that has only the URL.
+
+This exists because the app's own panel used to say `cd Clonedit/mcp && npm
+install`, so every agent asked to connect cloned the person's whole
+repository, installed a browser, and drove a hidden second copy of the app
+nobody could see — and the file tools took any path, so weaker models walked
+the home directory looking for one that worked. Do not reintroduce either:
+
+- **a file tool takes a NAME in the tracks folder**, never a path
+  (`makeTracks()` in `mcp/tools.mjs`, tested in `tests/agent-connector.test.mjs`);
+- **the tools live in `mcp/tools.mjs`**, shared by `mcp/server.mjs` and the
+  connector. Edit there, then `node scripts/build-agent.mjs` — the committed
+  bundle is checked for drift by `npm test`;
+- **the connector accepts a page only by Origin** (the published site, or
+  localhost), or by the token in the link it hands out; never widen that to
+  "any page".
+
+`mcp/server.mjs` is still here for working on the app itself from a checkout.
+
 ## SHIPPING IT. READ THIS BEFORE YOU GO LOOKING FOR THE ANSWER
 
 The loop is **build, merge to main, and it is live**. It has run more than
