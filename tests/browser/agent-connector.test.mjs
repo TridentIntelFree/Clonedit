@@ -160,6 +160,19 @@ export default async function ({ browser, base }) {
     t.ok('and on their screen', parseFloat(live.shown) === 97, 'tempo box reads ' + live.shown);
     t.ok('the transcript says who connected', /Agent connected: test-agent/.test(live.log));
 
+    t.head('A SONG CHAIN IN THE SHAPE PEOPLE GUESS IS ACCEPTED');
+    /* set({song:[[0,1]]}) was stored as given, form() then called it no
+       arrangement and review() crashed reading .sil off an array. */
+    await mcp.tool('jbh_set', { props: { song: [[0, 2]], songOn: false } });
+    const chain = await page.evaluate(() => JSON.stringify(S.song));
+    const junk = await mcp.tool('jbh_set', { props: { song: [{ pat: 99 }] } });
+    const chain2 = await page.evaluate(() => JSON.stringify(S.song));
+    t.ok('pairs become {pat, reps}', chain === '[{"pat":0,"reps":2}]', chain);
+    t.ok('and a bad entry is refused by name, leaving the chain alone',
+      chain2 === chain && /song entry/.test(JSON.stringify(junk.json && junk.json.warnings)),
+      JSON.stringify(junk.json && junk.json.warnings).slice(0, 120));
+    await mcp.tool('jbh_set', { props: { song: [] } });
+
     t.head('A FINISHED SONG COMES OUT AS FILES A CHAT CAN CARRY — AND ONLY INTO ONE FOLDER');
     const saved = await mcp.tool('jbh_save_track', { name: '../../../etc/a beat', src: 'pat', loops: 2 });
     const files = existsSync(tracks) ? readdirSync(tracks).sort() : [];

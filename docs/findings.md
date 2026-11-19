@@ -3759,3 +3759,46 @@ produces the file.
 The lesson restated: the bug report is a symptom, not a map. "Crashes
 on load" was one of five ways the same shape of fault could crash the
 app, and only driving every path found the other four.
+
+## A song made over the connector, as the test of it
+
+"Deliver a high quality song using the app, as efficiently as you can, to
+test the MCP connection." Done the way a person's agent would: the
+one-file connector, the app in a browser joining from the link, and nothing
+but MCP calls. `songs/` has no script for it on purpose; the plan lives in
+tool calls. LAST LIGHT ON DELANCEY: neo-soul ballad, E♭ major, 82bpm,
+Naked Drums with velocity layers, Salamander grand comping, VSCO
+contrabass pizzicato, VCSL tenor sax on the tune. A cold start to three
+delivered files took 160 seconds; ffmpeg's independent check reads -16
+LUFS, 4.4 LU range, -0.7 dBTP, no holes.
+
+What the instructions got right: `jbh_howto` named every step taken.
+Harmony first, real kits, place each sound, the free checks, write the
+file BEFORE the slow checks. The last one mattered, because the container
+restarted twice mid-session and took the browser and its session with it.
+
+What following them literally found, all fixed in R289:
+
+- **`review({quick})` did not read the declared chords.** With `key()` and
+  `chords()` on every pattern it said "no progression was given — nothing
+  in this app stores one", which stopped being true when `chords()` was
+  added. It asks `harmony()` now, which reads them itself.
+- **It took a kit for four melodies.** A kit laid out with `instrument()`
+  has a MIDI note per pad, so kick, snare, hat and ride became lines and
+  `motif()` reported six times that "nothing comes back" — about drums. Lines
+  now need a non-percussion pack category and at least three pitches.
+- **`set({song:[[0,1],…]})` was stored as given** and broke `form()` and
+  `review()` with errors naming neither. Pairs and bare numbers convert now,
+  and a bad entry is refused by name.
+- **`jbh_save_track` bounced one pattern of a finished song**, because it
+  read `.length` off `state().song`, which is `{on, steps}`.
+- **`jbh_instrument`'s `match` defaults to the NAME**, so `name:"keys"` on
+  Salamander matched nothing. The description says so now.
+- **A session `.json` with sampled instruments is 264 MB**: every velocity
+  layer is embedded. `jbh_save_track` says so and points at the MP3.
+
+And one the instructions handled correctly by being followed: `translate()`
+put the pizzicato bass 27 dB down on a phone. Driving it (the suggested
+fix) made the WHOLE MIX lose 14.4 dB instead of 4.1, so it was reverted.
+A plucked upright is light on a phone and the mix still carries; moving the
+part to satisfy the number would have been the HOLLOWAY mistake.

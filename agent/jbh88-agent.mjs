@@ -9907,7 +9907,7 @@ var TOOLS = [
   },
   {
     name: "jbh_instrument",
-    description: "LAY A PLAYABLE INSTRUMENT ACROSS PADS. Picks every sampled root in the loaded pack matching `match` inside [lo,hi], thins them evenly to `max`, loads each onto its own pad and tags them. Returns the pads, the range, and worstBend — the furthest any note will ever be transposed with this layout, worth reading BEFORE writing the part.",
+    description: 'LAY A PLAYABLE INSTRUMENT ACROSS PADS. Picks every sampled root in the loaded pack matching `match` (a regex on the sample id; WHEN OMITTED IT IS THE NAME, so name:"keys" on the Salamander pack matches nothing — pass match:"sal:") inside [lo,hi], thins them evenly to `max`, loads each onto its own pad and tags them. Returns the pads, the range, and worstBend — the furthest any note will ever be transposed with this layout, worth reading BEFORE writing the part.',
     inputSchema: { type: "object", required: ["name"], properties: {
       rr: { type: "integer", description: "round robins per note. Alternates are takes of the SAME dynamic, so a repeat is not the same waveform twice; velocity layers are a different thing, counted from the sample count." },
       xfade: { type: "number", description: "crossfade between layers; false to disable" },
@@ -11325,7 +11325,7 @@ async function dispatch(name, a, ctx) {
       const T = ctx.tracks;
       const formats = (Array.isArray(a.formats) && a.formats.length ? a.formats : ["mp3", "wav", "json"]).filter((f) => MIME_OF[f]);
       const st = await jbh2("state", []).catch(() => null);
-      const src = a.src || (st && st.song && st.song.length ? "song" : "pat");
+      const src = a.src || (st && st.song && st.song.on && st.song.steps ? "song" : "pat");
       const stem = T.stem(a.name, formats, !!a.overwrite);
       const out = [];
       let r = null;
@@ -11351,6 +11351,8 @@ async function dispatch(name, a, ctx) {
         src,
         says: 'Saved "' + stem + '" to ' + T.dir + ". Give the person: " + out.map((f) => f.path).join(" , ") + (out.some((f) => /\.json$/.test(f.file)) ? " — the .json reopens in JBH-88 with SONG → LOAD .JSON." : "")
       };
+      const big = out.find((f) => /\.json$/.test(f.file) && f.bytes > 25 * 1048576);
+      if (big) summary.says += " NOTE: the session is " + Math.round(big.bytes / 1048576) + " MB because it embeds every sample, too big for most chats — send the MP3, and keep the .json for reopening the project on this computer.";
       const res = ok(summary);
       const pv = ctx.protocol || "2024-11-05";
       if (pv >= "2025-06-18") for (const f of out)

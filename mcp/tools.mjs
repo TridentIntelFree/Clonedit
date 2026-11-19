@@ -160,7 +160,8 @@ export const TOOLS = [
 
   { name: 'jbh_instrument', description:
       'LAY A PLAYABLE INSTRUMENT ACROSS PADS. Picks every sampled root in the loaded pack '
-      + 'matching `match` inside [lo,hi], thins them evenly to `max`, loads each onto its own '
+      + 'matching `match` (a regex on the sample id; WHEN OMITTED IT IS THE NAME, so name:"keys" '
+      + 'on the Salamander pack matches nothing — pass match:"sal:") inside [lo,hi], thins them evenly to `max`, loads each onto its own '
       + 'pad and tags them. Returns the pads, the range, and worstBend — the furthest any note '
       + 'will ever be transposed with this layout, worth reading BEFORE writing the part.',
     inputSchema: { type: 'object', required: ['name'], properties: {
@@ -1552,7 +1553,10 @@ export async function dispatch(name, a, ctx) {
       const formats = (Array.isArray(a.formats) && a.formats.length ? a.formats : ['mp3', 'wav', 'json'])
         .filter(f => MIME_OF[f]);
       const st = await jbh('state', []).catch(() => null);
-      const src = a.src || (st && st.song && st.song.length ? 'song' : 'pat');
+      /* state() reports the chain as {on, steps}, not as a list — so this
+         read .length off an object and always fell back to the pattern,
+         bouncing one 4-bar loop of a finished song. */
+      const src = a.src || (st && st.song && st.song.on && st.song.steps ? 'song' : 'pat');
       const stem = T.stem(a.name, formats, !!a.overwrite);
       const out = [];
       let r = null;
@@ -1575,6 +1579,14 @@ export async function dispatch(name, a, ctx) {
         says: 'Saved "' + stem + '" to ' + T.dir + '. Give the person: '
           + out.map(f => f.path).join(' , ')
           + (out.some(f => /\.json$/.test(f.file)) ? ' — the .json reopens in JBH-88 with SONG → LOAD .JSON.' : '') };
+      /* A SESSION CARRIES EVERY SAMPLE IT USES, every velocity layer of
+         every instrument, and a sampled piano plus a recorded kit came to
+         264 MB for a two-minute song. That is not something to attach to a
+         chat. Said, so the MP3 is what gets handed over. */
+      const big = out.find(f => /\.json$/.test(f.file) && f.bytes > 25 * 1048576);
+      if (big) summary.says += ' NOTE: the session is ' + Math.round(big.bytes / 1048576)
+        + ' MB because it embeds every sample, too big for most chats — send the MP3, and keep '
+        + 'the .json for reopening the project on this computer.';
       const res = ok(summary);
       const pv = ctx.protocol || '2024-11-05';
       /* resource_link and audio are newer than the oldest protocol a client

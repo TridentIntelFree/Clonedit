@@ -2852,7 +2852,7 @@
    check by construction. scripts/check-build-label.mjs therefore CHECKS
    it instead, in CI, where HEAD is the commit being shipped and the
    arithmetic is exact. R = commits on main minus 9. */
-const BUILD = 'JBH-88 · R288 · 2026-11-18 · an agent on your computer works in this window, no clone needed';
+const BUILD = 'JBH-88 · R289 · 2026-11-19 · review reads the chords you declared, and leaves the drums alone';
 /* BUMP THIS EVERY TIME YOU DEPLOY. It is the only thing in the app that says
    which build you are looking at, and it is the first thing anyone checks
    when they ask "do I have the newest version?". Two commits shipped under
@@ -14130,10 +14130,22 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
       const pu=await run('pulse',()=>window.MVX.pulse({src}));
       for(const f of ((pu&&pu.findings)||[])) findings.push({tool:'pulse', severity:'metre', says:f, fix:''});
       /* only lines, not percussion — the same filter the full pass uses */
+      /* A KIT LAID OUT WITH instrument() IS NOT A LINE. Its pads carry a
+         MIDI note like anything else, so the filter below took kick, snare,
+         hat and ride for melodies and motif() reported six times that
+         "nothing here comes back" about a drum kit — the cry-wolf fault this
+         function has had cured twice already. harmony() decides percussion
+         by the pack's own category and so does this now, plus the plainer
+         tell that a part which only ever plays one or two pitches is not a
+         tune whatever its pads say. */
       const ev=new Map();
       for(const e of (sch.events||[])){ const pd=S.pads[e.pad], k=pd&&pd.inst;
-        if(!k) continue; const r=ev.get(k)||{n:0,p:0}; r.n++; if(e.midi!=null) r.p++; ev.set(k,r); }
-      const lines=names.filter(n=>{ const r=ev.get(n); return r && r.n>=4 && r.p/r.n>=0.6; });
+        if(!k) continue; const r=ev.get(k)||{n:0,p:0,perc:0,pcs:new Set()}; r.n++;
+        if(e.midi!=null){ r.p++; r.pcs.add(e.midi); }
+        if(/^(DRUMS|PERC|FX)$/i.test(pd.srcCat||'')) r.perc++;
+        ev.set(k,r); }
+      const lines=names.filter(n=>{ const r=ev.get(n);
+        return r && r.n>=4 && r.p/r.n>=0.6 && r.perc/r.n<0.5 && r.pcs.size>=3; });
       for(const n of lines){
         const mo=await run('motif:'+n,()=>window.MVX.motif(n,{src}));
         for(const f of ((mo&&mo.findings)||[]))
@@ -14159,13 +14171,19 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
          progression, because nothing in this app stores one, so the
          only honest thing is to run it when given chords and to say
          out loud when it was not. */
-      if(Array.isArray(o.chords) && o.chords.length){
-        const hm=await run('harmony',()=>window.MVX.harmony({src, chords:o.chords,
-          beatsPerBar:o.beatsPerBar}));
-        for(const f of ((hm&&hm.findings)||[]))
-          if(f.severity!=='note') findings.push({tool:'harmony', severity:'harmony',
-            says:f.says, fix:''});
-      }
+      /* AND THE APP STORES A PROGRESSION NOW (key(), chords()), which this
+         never learned: with chords declared on every pattern it still said
+         "no progression was given" and did not check the harmony at all.
+         harmony() reads the declared chords itself when none are passed and
+         refuses, with its reason, when nothing is declared — so it is simply
+         asked, and its own refusal is what gets reported. */
+      const hm=await run('harmony',()=>window.MVX.harmony({src,
+        chords:(Array.isArray(o.chords) && o.chords.length)?o.chords:undefined,
+        beatsPerBar:o.beatsPerBar}));
+      for(const f of ((hm&&hm.findings)||[]))
+        if(f.severity!=='note') findings.push({tool:'harmony', severity:'harmony',
+          says:f.says, fix:''});
+      const harmonyRan=!!(hm && hm.ran!==false);
       /* FORM IS FREE AND NOTHING RAN IT. A piece can pass every other
          check here and be one pattern looping, because every other
          check looks inside a pattern. */
@@ -14179,11 +14197,11 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
               : f==='no-return' ? 'Bring an earlier pattern back, so there is something '
                 +'to recognise.' : 'Make those two patterns actually differ, or drop one.'});
       const notApplicable=[];
-      if(!(Array.isArray(o.chords) && o.chords.length))
-        notApplicable.push('harmony — no progression was given, so nothing checked whether '
-          +'the notes fit the chords. Nothing in this app stores a key or a progression, and '
-          +'it must not be guessed from the notes, because guessing it from the notes is what '
-          +'makes a wrong note look correct. Pass {chords:["Am","F",…]}, one per bar.');
+      if(!harmonyRan)
+        notApplicable.push('harmony — '+((hm && hm.says) || 'no progression is declared')
+          +' It is never guessed from the notes, because guessing it from the notes is what '
+          +'makes a wrong note look correct. Declare it with chords(pattern, [...]) or pass '
+          +'{chords:["Am","F",…]}, one per bar.');
       if(!lines.length) notApplicable.push('motif and counterpoint — no pad belongs to an '
         +'instrument, so there is no line to examine. Pads loaded with sound() are bare; '
         +'melodic material written on them is invisible to both.');
@@ -14395,14 +14413,16 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        without it this says so under no-progression rather than
        passing in silence — the same rule as compare() without a
        reference, and for the same reason. */
-    if(Array.isArray(o.chords) && o.chords.length){
-      const hm=await run('harmony',()=>window.MVX.harmony({src, chords:o.chords,
-        beatsPerBar:o.beatsPerBar}));
+    /* the declared progression counts, as in the quick pass above */
+    const hm=await run('harmony',()=>window.MVX.harmony({src,
+      chords:(Array.isArray(o.chords) && o.chords.length)?o.chords:undefined,
+      beatsPerBar:o.beatsPerBar}));
+    if(hm && hm.ran!==false){
       for(const f of ((hm&&hm.findings)||[])) if(f.severity!=='note')
         add('harmony','harmony', f.says,
           'change the pitch so it lands in the chord it rings into, not the length');
     } else add('harmony','no-progression','the notes were not checked against any '
-      +'harmony: no progression was given. melody(), motif() and counterpoint() all '
+      +'harmony: no progression is declared or given. melody(), motif() and counterpoint() all '
       +'passed and none of them knows what the chord is, so this is not covered by '
       +'them. Pass {chords:["Am","F",…]}, one per bar.',
       'review({src, chords:[…]}) with the progression you wrote to');
@@ -17826,6 +17846,31 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
        — the plural, the camelCase, the near miss — reported success and did
        nothing at all. It is named now. */
     const unknown=Object.keys(props).filter(k=>!(k in S));
+    /* THE SONG CHAIN IS {pat, reps} OBJECTS, and set({song:[[0,1],[1,2]]})
+       — the shape most people would guess — was stored as given. Nothing
+       threw: form() called it "no arrangement" and review() crashed reading
+       .sil off an array, so the error named neither the field nor the fix.
+       Pairs and bare pattern numbers are accepted and converted; anything
+       else is refused here, where the mistake was made. */
+    let songBad=null;
+    if('song' in props){
+      const src=props.song;
+      if(!Array.isArray(src)) songBad='song must be a list of {pat, reps}';
+      else{
+        const out=[];
+        for(const x of src){
+          const it=Array.isArray(x)?{pat:x[0], reps:x[1]}
+            : (typeof x==='number')?{pat:x, reps:1} : (x&&typeof x==='object')?x:null;
+          const pat=it?(+it.pat):NaN, reps=it&&it.reps!=null?(+it.reps):1;
+          if(!Number.isInteger(pat) || pat<0 || pat>=S.patterns.length || !(reps>=1)){
+            songBad='song entry '+JSON.stringify(x)+' is not {pat: 0-'+(S.patterns.length-1)
+              +', reps: 1 or more}'; break; }
+          out.push(Object.assign({}, it, {pat, reps:Math.round(reps)}));
+        }
+        if(!songBad) props=Object.assign({}, props, {song:out});
+      }
+      if(songBad){ props=Object.assign({}, props); delete props.song; }
+    }
     Object.keys(props).forEach(k=>{ if(k in S) S[k]=props[k]; });
     if('bpm' in props) try{ setBpm(S.bpm); }catch(e){}
     try{ applyMaster(); reapplyLivePads(); }catch(e){}
@@ -17835,6 +17880,8 @@ window.MVX={ get version(){ return BUILD; }, spec:SONGDOC_SPEC,
     if(unknown.length) w.push({field:unknown.join(', '), value:null, severity:'ignored',
       says:'no such setting: '+unknown.join(', ')+'. Nothing was changed for '
         +(unknown.length>1?'those keys':'that key')+'. params() lists the real names.'});
+    if(songBad) w.push({field:'song', value:null, severity:'ignored',
+      says:songBad+'. The song chain was left as it was. Pattern numbers start at 0.'});
     if(w.length) st.warnings=w;
     return st;
   }
